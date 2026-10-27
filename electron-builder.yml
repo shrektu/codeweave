@@ -1,0 +1,14 @@
+appId: dev.codeweave.app
+productName: Codeweave
+directories:
+  output: release
+files:
+  - out/**
+  - package.json
+linux:
+  target: AppImage
+  category: Development
+win:
+  target: nsis
+mac:
+  target: dmg
