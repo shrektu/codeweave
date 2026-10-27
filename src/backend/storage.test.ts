@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { makeTempDir } from "../../tests/fakes/processHelpers";
 import {
@@ -159,5 +159,72 @@ describe("json store writes", () => {
       entry,
       { ...entry, to: "acc-2", sessionId: "s2" },
     ]);
+  });
+});
+
+describe("readSwitchLog", () => {
+  const entry = {
+    at: 1,
+    sessionId: "s",
+    from: "a",
+    to: "b",
+    reason: SwitchReason.resetReached,
+    resetsAt: null,
+    contextPackageChars: 5,
+  };
+
+  it("missing_file_yields_an_empty_list", async () => {
+    const store = createJsonStore(await makeTempDir());
+
+    expect(await store.readSwitchLog(10)).toEqual([]);
+  });
+
+  it("returns_the_last_entries_in_file_order", async () => {
+    const store = createJsonStore(await makeTempDir());
+    for (const at of [1, 2, 3, 4]) {
+      await store.appendSwitchLog({ ...entry, at });
+    }
+
+    const entries = await store.readSwitchLog(2);
+
+    expect(entries.map(({ at }) => at)).toEqual([3, 4]);
+  });
+
+  it("a_zero_limit_yields_nothing", async () => {
+    const store = createJsonStore(await makeTempDir());
+    await store.appendSwitchLog(entry);
+
+    expect(await store.readSwitchLog(0)).toEqual([]);
+  });
+
+  it("skips_invalid_lines_with_their_line_number", async () => {
+    const dir = await makeTempDir();
+    await writeFile(
+      join(dir, "switch-log.jsonl"),
+      [
+        JSON.stringify(entry),
+        "{broken",
+        JSON.stringify({ ...entry, reason: "whim" }),
+        JSON.stringify({ ...entry, at: 9 }),
+        "",
+      ].join("\n"),
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const entries = await createJsonStore(dir).readSwitchLog(10);
+
+    expect(entries.map(({ at }) => at)).toEqual([1, 9]);
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenNthCalledWith(
+      1,
+      "Skipping invalid switch log line 2",
+      expect.anything(),
+    );
+    expect(warn).toHaveBeenNthCalledWith(
+      2,
+      "Skipping invalid switch log line 3",
+      expect.anything(),
+    );
+    warn.mockRestore();
   });
 });

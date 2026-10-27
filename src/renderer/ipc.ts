@@ -1,11 +1,13 @@
 import { PORT_CHANNEL, PROTOCOL_VERSION } from "../shared/constants";
 import type { PortLike } from "../shared/port";
 import {
+  EventSchema,
   ResponseSchema,
   ResultSchemas,
   type IpcErrorCode,
-  type IpcRequest,
+  type IpcEvent,
   type IpcResponse,
+  type ParamsMap,
   type RequestMethod,
   type ResultMap,
 } from "../shared/protocol";
@@ -23,7 +25,15 @@ export class IpcRemoteError extends Error {
 }
 
 export interface IpcClient {
-  request<M extends RequestMethod>(method: M): Promise<ResultMap[M]>;
+  request<M extends RequestMethod>(
+    method: M,
+    params: ParamsMap[M],
+  ): Promise<ResultMap[M]>;
+  subscribe(listener: (event: IpcEvent) => void): () => void;
+}
+
+function isEventMessage(data: unknown): boolean {
+  return typeof data === "object" && data !== null && "event" in data;
 }
 
 export function fromDomPort(port: MessagePort): PortLike {
@@ -52,8 +62,20 @@ export function fromDomPort(port: MessagePort): PortLike {
 
 export function createIpcClient(port: PortLike): IpcClient {
   const pending = new Map<string, (response: IpcResponse) => void>();
+  const listeners = new Set<(event: IpcEvent) => void>();
 
   port.onMessage((data) => {
+    if (isEventMessage(data)) {
+      const event = EventSchema.safeParse(data);
+      if (event.success) {
+        for (const listener of listeners) {
+          listener(event.data);
+        }
+      } else {
+        console.warn("Dropped an invalid IPC event", event.error);
+      }
+      return;
+    }
     const parsed = ResponseSchema.safeParse(data);
     if (parsed.success && parsed.data.id !== null) {
       pending.get(parsed.data.id)?.(parsed.data);
@@ -61,7 +83,16 @@ export function createIpcClient(port: PortLike): IpcClient {
   });
 
   return {
-    request<M extends RequestMethod>(method: M): Promise<ResultMap[M]> {
+    subscribe(listener: (event: IpcEvent) => void): () => void {
+      listeners.add(listener);
+      return (): void => {
+        listeners.delete(listener);
+      };
+    },
+    request<M extends RequestMethod>(
+      method: M,
+      params: ParamsMap[M],
+    ): Promise<ResultMap[M]> {
       const id = crypto.randomUUID();
       const { promise, resolve, reject } =
         Promise.withResolvers<ResultMap[M]>();
@@ -86,8 +117,7 @@ export function createIpcClient(port: PortLike): IpcClient {
         }
       });
 
-      const request: IpcRequest = { v: PROTOCOL_VERSION, id, method };
-      port.post(request);
+      port.post({ v: PROTOCOL_VERSION, id, method, params });
 
       return promise.finally(() => {
         window.clearTimeout(timer);
@@ -114,7 +144,8 @@ const clientPromise = waitForPort().then((port) =>
 
 export async function request<M extends RequestMethod>(
   method: M,
+  params: ParamsMap[M],
 ): Promise<ResultMap[M]> {
   const client = await clientPromise;
-  return client.request(method);
+  return client.request(method, params);
 }

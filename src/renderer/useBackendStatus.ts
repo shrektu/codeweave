@@ -12,7 +12,7 @@ export function useBackendStatus(): BackendStatus {
 
   useEffect(() => {
     let active = true;
-    void request("ping")
+    void request("ping", {})
       .then((result) => {
         if (active) {
           setStatus({ state: "ready", pid: result.backendPid });

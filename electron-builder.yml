@@ -5,6 +5,8 @@ directories:
 files:
   - out/**
   - package.json
+asarUnpack:
+  - node_modules/@agentclientprotocol/claude-agent-acp/**
 linux:
   target: AppImage
   category: Development

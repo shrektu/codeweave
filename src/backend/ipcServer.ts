@@ -3,17 +3,27 @@ import { z } from "zod";
 import { PROTOCOL_VERSION } from "../shared/constants";
 import type { PortLike } from "../shared/port";
 import {
+  IpcError,
   IpcErrorCode,
   RequestSchema,
-  type IpcRequest,
+  type IpcEvent,
   type IpcResponse,
+  type ParamsMap,
   type RequestMethod,
   type ResultMap,
 } from "../shared/protocol";
 
 export type IpcHandlers = {
-  [M in RequestMethod]: () => ResultMap[M] | Promise<ResultMap[M]>;
+  [M in RequestMethod]: (
+    params: ParamsMap[M],
+  ) => ResultMap[M] | Promise<ResultMap[M]>;
 };
+
+interface TypedRequest<M extends RequestMethod> {
+  readonly id: string;
+  readonly method: M;
+  readonly params: ParamsMap[M];
+}
 
 const EnvelopeSchema = z.looseObject({
   v: z.unknown().optional(),
@@ -34,16 +44,17 @@ function failure(
   };
 }
 
-async function dispatch(
-  request: IpcRequest,
+async function dispatch<M extends RequestMethod>(
+  request: TypedRequest<M>,
   handlers: IpcHandlers,
 ): Promise<IpcResponse> {
   try {
-    const result = await handlers[request.method]();
+    const result = await handlers[request.method](request.params);
     return { v: PROTOCOL_VERSION, id: request.id, ok: true, result };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return failure(request.id, IpcErrorCode.INTERNAL, message);
+    const code = error instanceof IpcError ? error.code : IpcErrorCode.INTERNAL;
+    return failure(request.id, code, message);
   }
 }
 
@@ -77,6 +88,7 @@ async function handleMessage(
 }
 
 export interface IpcServer {
+  push(event: IpcEvent): void;
   dispose(): void;
 }
 
@@ -93,6 +105,11 @@ export function createIpcServer(
     });
   });
   const server: IpcServer = {
+    push(event: IpcEvent): void {
+      if (!disposed) {
+        port.post(event);
+      }
+    },
     dispose(): void {
       if (disposed) {
         return;

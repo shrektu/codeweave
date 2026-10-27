@@ -1,5 +1,6 @@
 export interface CodeweaveApi {
   gpuAccelerated: boolean;
+  pickFolder: () => Promise<string | null>;
 }
 
 declare global {

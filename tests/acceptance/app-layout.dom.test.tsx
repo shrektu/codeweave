@@ -4,7 +4,10 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import { App } from "../../src/renderer/App";
 
 beforeEach(() => {
-  window.codeweave = { gpuAccelerated: true };
+  window.codeweave = {
+    gpuAccelerated: true,
+    pickFolder: () => Promise.resolve(null),
+  };
 });
 
 afterEach(cleanup);

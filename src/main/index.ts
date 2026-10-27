@@ -4,20 +4,32 @@ import { pathToFileURL } from "node:url";
 import {
   app,
   BrowserWindow,
+  dialog,
+  ipcMain,
   MessageChannelMain,
   utilityProcess,
+  type IpcMainInvokeEvent,
+  type OpenDialogOptions,
   type UtilityProcess,
 } from "electron";
 
 import {
   CONNECT_MESSAGE_TYPE,
   GPU_ACCELERATED_ARG,
+  PICK_FOLDER_CHANNEL,
   PORT_CHANNEL,
 } from "../shared/constants";
 import { RUN_ID_ENV } from "../backend/constants";
 import type { ConnectMessage } from "../shared/protocol";
 
 import { isAppUrl } from "./appUrl";
+import { buildBackendArgs, TEST_AGENT_ENV_VAR } from "./backendArgs";
+import {
+  createBackendShutdownPort,
+  createQuitGuard,
+  requestBackendShutdown,
+  SHUTDOWN_TIMEOUT_MS,
+} from "./shutdown";
 
 Reflect.deleteProperty(process.env, RUN_ID_ENV);
 
@@ -30,6 +42,49 @@ function isGpuAccelerated(): boolean {
   return app
     .getGPUFeatureStatus()
     .gpu_compositing.startsWith(GPU_COMPOSITING_ENABLED_PREFIX);
+}
+
+function rendererEntry(): string {
+  return (
+    process.env.ELECTRON_RENDERER_URL ?? pathToFileURL(RENDERER_INDEX_PATH).href
+  );
+}
+
+async function pickFolder(event: IpcMainInvokeEvent): Promise<string | null> {
+  if (!isAppUrl(event.senderFrame?.url ?? "", rendererEntry())) {
+    return null;
+  }
+  const options: OpenDialogOptions = { properties: ["openDirectory"] };
+  const parent = BrowserWindow.fromWebContents(event.sender);
+  const result = parent
+    ? await dialog.showOpenDialog(parent, options)
+    : await dialog.showOpenDialog(options);
+  return result.canceled ? null : (result.filePaths[0] ?? null);
+}
+
+function startBackend(): UtilityProcess {
+  const backend = utilityProcess.fork(
+    join(import.meta.dirname, "backend.js"),
+    buildBackendArgs({
+      userData: app.getPath("userData"),
+      isPackaged: app.isPackaged,
+      testAgentEnv: process.env[TEST_AGENT_ENV_VAR],
+    }),
+  );
+  const port = createBackendShutdownPort(backend);
+  app.on(
+    "before-quit",
+    createQuitGuard({
+      requestShutdown: () => requestBackendShutdown(port, SHUTDOWN_TIMEOUT_MS),
+      kill: () => {
+        backend.kill();
+      },
+      quit: () => {
+        app.quit();
+      },
+    }),
+  );
+  return backend;
 }
 
 function connectWindowToBackend(
@@ -56,7 +111,7 @@ function createWindow(backend: UtilityProcess): void {
     },
   });
   const rendererUrl = process.env.ELECTRON_RENDERER_URL;
-  const entry = rendererUrl ?? pathToFileURL(RENDERER_INDEX_PATH).href;
+  const entry = rendererEntry();
   const { webContents } = window;
 
   const blockForeignNavigation = (details: {
@@ -97,13 +152,8 @@ function focusExistingWindow(): void {
 if (app.requestSingleInstanceLock()) {
   app.on("second-instance", focusExistingWindow);
   void app.whenReady().then(() => {
-    const backend = utilityProcess.fork(
-      join(import.meta.dirname, "backend.js"),
-    );
-    app.on("will-quit", () => {
-      backend.kill();
-    });
-    createWindow(backend);
+    ipcMain.handle(PICK_FOLDER_CHANNEL, (event) => pickFolder(event));
+    createWindow(startBackend());
   });
 } else {
   app.quit();

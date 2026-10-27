@@ -55,5 +55,6 @@ export const WINDOWS_PATH_DELIMITER = ";";
 export const ACCOUNTS_FILE = "accounts.json";
 export const SETTINGS_FILE = "settings.json";
 export const SWITCH_LOG_FILE = "switch-log.jsonl";
+export const ACCOUNTS_DIR_NAME = "accounts";
 export const STORAGE_VERSION = 1;
 export const TEMP_FILE_SUFFIX = ".tmp";

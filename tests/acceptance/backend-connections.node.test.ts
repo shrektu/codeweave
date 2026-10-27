@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { createConnectionRegistry } from "../../src/backend/connections";
 import { fromNodePort } from "../../src/shared/port";
+import { fakeHandlers } from "../fakes/ipcHandlers";
 
 const openPorts: MessagePort[] = [];
 
@@ -14,9 +15,7 @@ afterEach(() => {
 });
 
 it("backend_drops_connection_after_reload", async () => {
-  const registry = createConnectionRegistry({
-    ping: () => ({ pong: true, backendPid: process.pid }),
-  });
+  const registry = createConnectionRegistry(fakeHandlers());
   const channels = [0, 1, 2].map(() => new MessageChannel());
   for (const { port1, port2 } of channels) {
     openPorts.push(port1, port2);
@@ -33,12 +32,47 @@ it("backend_drops_connection_after_reload", async () => {
   const survivor = channels[2];
   const reply = await new Promise((resolve) => {
     survivor?.port2.once("message", resolve);
-    survivor?.port2.postMessage({ v: 1, id: "alive", method: "ping" });
+    survivor?.port2.postMessage({
+      v: 2,
+      id: "alive",
+      method: "ping",
+      params: {},
+    });
   });
   expect(reply).toEqual({
-    v: 1,
+    v: 2,
     id: "alive",
     ok: true,
     result: { pong: true, backendPid: process.pid },
   });
+});
+
+it("push_reaches_all_clients_and_skips_closed_ports", async () => {
+  const registry = createConnectionRegistry(fakeHandlers());
+  const channels = [0, 1, 2].map(() => new MessageChannel());
+  const received: unknown[][] = channels.map(() => []);
+  for (const [index, { port1, port2 }] of channels.entries()) {
+    openPorts.push(port1, port2);
+    registry.connect(fromNodePort(port1));
+    port2.on("message", (message) => {
+      received[index]?.push(message);
+    });
+  }
+  channels[1]?.port2.close();
+  await vi.waitFor(() => {
+    expect(registry.size()).toBe(2);
+  });
+
+  registry.broadcast("accounts/changed", { accounts: [] });
+
+  const expected = {
+    v: 2,
+    event: "accounts/changed",
+    payload: { accounts: [] },
+  };
+  await vi.waitFor(() => {
+    expect(received[0]).toEqual([expected]);
+    expect(received[2]).toEqual([expected]);
+  });
+  expect(received[1]).toEqual([]);
 });

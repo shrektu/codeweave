@@ -16,6 +16,13 @@ export const PermissionProfile = {
 export type PermissionProfile =
   (typeof PermissionProfile)[keyof typeof PermissionProfile];
 
+export const EffectLevel = {
+  auto: "auto",
+  low: "low",
+  full: "full",
+} as const;
+export type EffectLevel = (typeof EffectLevel)[keyof typeof EffectLevel];
+
 export type EpochSeconds = number;
 export type EpochMillis = number;
 

@@ -12,8 +12,10 @@ import { join } from "node:path";
 import { z } from "zod";
 
 import {
+  EffectLevel,
   PermissionProfile,
   ProviderId,
+  SwitchReason,
   type Account,
   type SwitchLogEntry,
 } from "../domain/types";
@@ -39,19 +41,42 @@ export const AccountsFileSchema = z.object({
   accounts: z.array(AccountSchema),
 });
 
-export const EffectLevel = {
-  auto: "auto",
-  low: "low",
-  full: "full",
-} as const;
-export type EffectLevel = (typeof EffectLevel)[keyof typeof EffectLevel];
-
 export const SettingsFileSchema = z.object({
   version: z.literal(STORAGE_VERSION),
   permissionProfile: z.enum(PermissionProfile),
   effectLevel: z.enum(EffectLevel),
   claudeExecutable: z.string().nullable(),
 });
+
+const SwitchLogEntrySchema = z.object({
+  at: z.number(),
+  sessionId: z.string(),
+  from: z.string(),
+  to: z.string().nullable(),
+  reason: z.enum(SwitchReason),
+  resetsAt: z.number().nullable(),
+  contextPackageChars: z.number(),
+});
+
+function parseSwitchLogLine(
+  line: string,
+  lineNumber: number,
+): SwitchLogEntry | null {
+  const skipped = `Skipping invalid switch log line ${String(lineNumber)}`;
+  let json: unknown;
+  try {
+    json = JSON.parse(line);
+  } catch (error) {
+    console.warn(skipped, error);
+    return null;
+  }
+  const parsed = SwitchLogEntrySchema.safeParse(json);
+  if (!parsed.success) {
+    console.warn(skipped, parsed.error);
+    return null;
+  }
+  return parsed.data;
+}
 
 export type AccountsFile = z.infer<typeof AccountsFileSchema>;
 export type SettingsFile = z.infer<typeof SettingsFileSchema>;
@@ -79,6 +104,7 @@ export interface JsonStore {
   readSettings(): Promise<SettingsFile>;
   writeSettings(settings: SettingsFile): Promise<void>;
   appendSwitchLog(entry: SwitchLogEntry): Promise<void>;
+  readSwitchLog(limit: number): Promise<SwitchLogEntry[]>;
 }
 
 function isMissingFile(error: unknown): boolean {
@@ -170,6 +196,15 @@ export function createJsonStore(dir: string): JsonStore {
     async appendSwitchLog(entry): Promise<void> {
       await mkdir(dir, { recursive: true });
       await appendFile(switchLogPath, `${JSON.stringify(entry)}\n`);
+    },
+    async readSwitchLog(limit): Promise<SwitchLogEntry[]> {
+      const text = await readText(switchLogPath);
+      const entries = (text?.split("\n") ?? [])
+        .map((line, index) => ({ line, lineNumber: index + 1 }))
+        .filter(({ line }) => line.trim() !== "")
+        .map(({ line, lineNumber }) => parseSwitchLogLine(line, lineNumber))
+        .filter((entry) => entry !== null);
+      return entries.slice(Math.max(0, entries.length - limit));
     },
   };
 }
