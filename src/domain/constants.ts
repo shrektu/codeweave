@@ -1,0 +1,31 @@
+export const MS_PER_SECOND = 1000;
+export const SECONDS_PER_MINUTE = 60;
+
+export const DEFAULT_COOLDOWN_MINUTES = 60;
+export const DEFAULT_COOLDOWN_SECONDS =
+  DEFAULT_COOLDOWN_MINUTES * SECONDS_PER_MINUTE;
+
+export const EPOCH_MILLIS_THRESHOLD = 100_000_000_000;
+
+export const DEFAULT_MAX_RESULT_CHARS = 2000;
+
+export const ERROR_KIND_RATE_LIMIT = "rate_limit";
+export const ERROR_KIND_AUTH_REQUIRED = "auth_required";
+export const RPC_CODE_AUTH_REJECTED = -32000;
+export const RATE_LIMIT_STATUS_REJECTED = "rejected";
+
+export const SIDE_EFFECT_PATTERNS: readonly RegExp[] = [
+  /\bgit\s+push\b/,
+  /\bmigrat(?:e|ions?)\b/i,
+  /\b(?:curl|wget)\b/,
+  /\bhttps?:/,
+  /\b(?:npm|pnpm)\s+publish\b/,
+  /\bdeploy\b/i,
+  /\brm\s+-(?:rf|fr)\b/,
+  /\bkubectl\b/,
+  /\bterraform\s+apply\b/,
+];
+
+export const OLD_PROCESS_STILL_RUNNING = "old process still running";
+export const PORT_CALL_FAILED = "port call failed";
+export const UNKNOWN_ERROR = "unknown error";

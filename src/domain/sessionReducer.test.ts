@@ -1,0 +1,161 @@
+import { describe, expect, it } from "vitest";
+
+import type { AgentEvent } from "./events";
+import {
+  INITIAL_SESSION_STATE,
+  reduceSession,
+  type SessionState,
+} from "./sessionReducer";
+
+function reduceAll(events: readonly AgentEvent[]): SessionState {
+  return events.reduce(reduceSession, INITIAL_SESSION_STATE);
+}
+
+const BASH_CALL: AgentEvent = {
+  type: "tool_call",
+  toolCallId: "t1",
+  title: "Run tests",
+  kind: "execute",
+  status: "in_progress",
+  rawInput: { command: "pnpm test" },
+};
+
+describe("session reducer: text", () => {
+  it("concatenates chunks of one message in arrival order", () => {
+    const state = reduceAll([
+      { type: "text", messageId: "m1", text: "Hel" },
+      { type: "text", messageId: "m1", text: "lo " },
+      { type: "text", messageId: "m1", text: "world" },
+    ]);
+
+    expect(state.messages).toEqual([{ id: "m1", text: "Hello world" }]);
+  });
+
+  it("keeps separate messages apart and appends to the right one", () => {
+    const state = reduceAll([
+      { type: "text", messageId: "m1", text: "a" },
+      { type: "text", messageId: "m2", text: "b" },
+      { type: "text", messageId: "m1", text: "c" },
+    ]);
+
+    expect(state.messages).toEqual([
+      { id: "m1", text: "ac" },
+      { id: "m2", text: "b" },
+    ]);
+  });
+
+  it("joins chunks without a message id into one message", () => {
+    const state = reduceAll([
+      { type: "text", text: "x" },
+      { type: "text", text: "y" },
+    ]);
+
+    expect(state.messages).toEqual([{ id: null, text: "xy" }]);
+  });
+
+  it("does not mutate the previous state", () => {
+    const first = reduceAll([{ type: "text", messageId: "m1", text: "a" }]);
+    reduceSession(first, { type: "text", messageId: "m1", text: "b" });
+
+    expect(first.messages).toEqual([{ id: "m1", text: "a" }]);
+  });
+});
+
+describe("session reducer: tool calls", () => {
+  it("merges tool_call_update into the call by toolCallId", () => {
+    const state = reduceAll([
+      BASH_CALL,
+      {
+        type: "tool_call_update",
+        toolCallId: "t1",
+        status: "completed",
+        output: "42 passed",
+      },
+    ]);
+
+    expect(state.toolCalls).toEqual([
+      {
+        toolCallId: "t1",
+        title: "Run tests",
+        command: "pnpm test",
+        status: "completed",
+        output: "42 passed",
+      },
+    ]);
+  });
+
+  it("keeps the previous output when an update has only a status", () => {
+    const state = reduceAll([
+      BASH_CALL,
+      { type: "tool_call_update", toolCallId: "t1", output: "partial" },
+      { type: "tool_call_update", toolCallId: "t1", status: "failed" },
+    ]);
+
+    expect(state.toolCalls[0]).toMatchObject({
+      status: "failed",
+      output: "partial",
+    });
+  });
+
+  it("ignores an update for an unknown tool call", () => {
+    const state = reduceAll([
+      { type: "tool_call_update", toolCallId: "ghost", status: "completed" },
+    ]);
+
+    expect(state.toolCalls).toEqual([]);
+  });
+});
+
+describe("session reducer: turn log", () => {
+  it("resets the turn log on turn_end and keeps it as previousTurnLog", () => {
+    const state = reduceAll([
+      BASH_CALL,
+      { type: "turn_end", stopReason: "end_turn" },
+    ]);
+
+    expect(state.turnLog).toEqual([]);
+    expect(state.previousTurnLog.map((entry) => entry.toolCallId)).toEqual([
+      "t1",
+    ]);
+    expect(state.lastTurn).toEqual({ kind: "ended", stopReason: "end_turn" });
+  });
+
+  it("resets the turn log on turn_error", () => {
+    const state = reduceAll([
+      BASH_CALL,
+      {
+        type: "turn_error",
+        errorKind: "rate_limit",
+        rpcCode: null,
+        message: "limit",
+      },
+    ]);
+
+    expect(state.turnLog).toEqual([]);
+    expect(state.previousTurnLog).toHaveLength(1);
+    expect(state.lastTurn).toEqual({ kind: "failed", message: "limit" });
+  });
+});
+
+describe("session reducer: permissions", () => {
+  const request: AgentEvent = {
+    type: "permission_request",
+    requestId: "r1",
+    toolCallId: "t1",
+    options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }],
+  };
+
+  it("records a pending permission request once", () => {
+    const state = reduceAll([request, request]);
+
+    expect(state.permissions.map((p) => [p.requestId, p.state])).toEqual([
+      ["r1", "pending"],
+    ]);
+  });
+
+  it("session_marks_permissions_expired_on_exit", () => {
+    const state = reduceAll([request, { type: "process_exit" }]);
+
+    expect(state.permissions.map((p) => p.state)).toEqual(["expired"]);
+  });
+});
