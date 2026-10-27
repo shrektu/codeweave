@@ -3,6 +3,7 @@ import { posix, win32 } from "node:path";
 import type { Account } from "../domain/types";
 
 import {
+  CLAUDE_BASH_MAINTAIN_DIR_ENV,
   CLAUDE_CONFIG_DIR_ENV,
   CLAUDE_DISABLE_CRON_ENV,
   CLAUDE_EXECUTABLE_ENV,
@@ -66,6 +67,7 @@ export function buildAgentEnv(input: AgentEnvInput): Record<string, string> {
   }
   env[CLAUDE_EXECUTABLE_ENV] = input.claudeExecutable;
   env[CLAUDE_DISABLE_CRON_ENV] = FLAG_ENABLED;
+  env[CLAUDE_BASH_MAINTAIN_DIR_ENV] = FLAG_ENABLED;
   env[RUN_ID_ENV] = input.runMarker;
   return { ...env, ...input.overrides };
 }

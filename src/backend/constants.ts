@@ -1,3 +1,5 @@
+import type { ToolCallStatus } from "../domain/events";
+
 export const SCOPE_UNIT_PREFIX = "codeweave-";
 export const SCOPE_UNIT_SUFFIX = ".scope";
 export const SCOPE_UNIT_GLOB = `${SCOPE_UNIT_PREFIX}*`;
@@ -33,6 +35,9 @@ export const PROC_MISSING_ERRNO_CODES: readonly string[] = [
 export const CLAUDE_CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR";
 export const CLAUDE_EXECUTABLE_ENV = "CLAUDE_CODE_EXECUTABLE";
 export const CLAUDE_DISABLE_CRON_ENV = "CLAUDE_CODE_DISABLE_CRON";
+export const CLAUDE_BASH_MAINTAIN_DIR_ENV =
+  "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR";
+export const ELECTRON_RUN_AS_NODE_ENV = "ELECTRON_RUN_AS_NODE";
 export const FLAG_ENABLED = "1";
 export const DEFAULT_CLAUDE_DIR_NAME = ".claude";
 export const ENV_DENY_PREFIXES: readonly string[] = [
@@ -48,6 +53,22 @@ export const ENV_DENY_EXACT: readonly string[] = [
   "GOOGLE_API_KEY",
   "NODE_OPTIONS",
 ];
+
+export const CLAUDE_RATE_LIMIT_META_KEY = "_claude/rateLimit";
+export const UNKNOWN_RATE_LIMIT_STATUS = "unknown";
+export const DEFAULT_TOOL_KIND = "other";
+export const DEFAULT_TOOL_STATUS: ToolCallStatus = "pending";
+export const TOOL_OUTPUT_SEPARATOR = "\n";
+export const MODE_BYPASS = "bypassPermissions";
+export const MODE_DEFAULT = "default";
+export const STDERR_TAIL_CHARS = 4096;
+export const PROCESS_EXITED_MESSAGE = "Agent process exited";
+export const DEFAULT_STOP_GRACE_MS = 3000;
+export const LAUNCHER_SCRIPT = `delete process.env.${ELECTRON_RUN_AS_NODE_ENV};import(require("node:url").pathToFileURL(process.argv[1]).href)`;
+export const ASAR_SEGMENT_PATTERN = /app\.asar(?=[\\/])/;
+export const ASAR_UNPACKED_SEGMENT = "app.asar.unpacked";
+export const CLAUDE_ACP_PACKAGE = "@agentclientprotocol/claude-agent-acp";
+export const CLAUDE_ACP_ENTRY = "dist/index.js";
 
 export const DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD";
 export const WINDOWS_PATH_DELIMITER = ";";

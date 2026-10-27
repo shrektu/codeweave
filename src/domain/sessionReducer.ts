@@ -134,6 +134,7 @@ function finishTurn(state: SessionState, lastTurn: LastTurn): SessionState {
     turnLog: [],
     previousTurnLog: state.turnLog,
     lastTurn,
+    permissions: expireAll(state.permissions),
   };
 }
 

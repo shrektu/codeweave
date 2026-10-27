@@ -30,6 +30,10 @@ export type AgentEvent =
       readonly type: "permission_request";
       readonly requestId: string;
       readonly toolCallId: string;
+      readonly title: string;
+      readonly kind: string;
+      readonly rawInput?: unknown;
+      readonly locations: readonly string[];
       readonly options: readonly PermissionOption[];
     }
   | {

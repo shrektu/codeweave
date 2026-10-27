@@ -61,6 +61,7 @@ describe("buildAgentEnv", () => {
       CLAUDE_CONFIG_DIR: "/home/jane/.claude-work",
       CLAUDE_CODE_EXECUTABLE: "/usr/bin/claude",
       CLAUDE_CODE_DISABLE_CRON: "1",
+      CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: "1",
       CODEWEAVE_RUN_ID: "run-1",
     });
   });
@@ -90,5 +91,18 @@ describe("buildAgentEnv", () => {
 
     expect(env.CODEWEAVE_RUN_ID).toBe("forced");
     expect(env.ANTHROPIC_BASE_URL).toBe("http://f");
+  });
+
+  it("env_sets_bash_maintain_project_dir", () => {
+    const env = buildAgentEnv(
+      input({
+        parent: {
+          PATH: "/usr/bin",
+          CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: "0",
+        },
+      }),
+    );
+
+    expect(env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR).toBe("1");
   });
 });

@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import type { AgentEvent } from "./events";
 import {
+  createPermissionRecord,
+  type PermissionRecord,
+} from "./permissionRecords";
+import {
   INITIAL_SESSION_STATE,
   reduceSession,
   type SessionState,
@@ -142,6 +146,9 @@ describe("session reducer: permissions", () => {
     type: "permission_request",
     requestId: "r1",
     toolCallId: "t1",
+    title: "Run ls",
+    kind: "execute",
+    locations: [],
     options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }],
   };
 
@@ -157,5 +164,57 @@ describe("session reducer: permissions", () => {
     const state = reduceAll([request, { type: "process_exit" }]);
 
     expect(state.permissions.map((p) => p.state)).toEqual(["expired"]);
+  });
+
+  const secondRequest: AgentEvent = { ...request, requestId: "r2" };
+
+  it("turn_end_expires_pending_permissions", () => {
+    const state = reduceAll([
+      request,
+      secondRequest,
+      { type: "turn_end", stopReason: "cancelled" },
+    ]);
+
+    expect(state.permissions.map((p) => [p.requestId, p.state])).toEqual([
+      ["r1", "expired"],
+      ["r2", "expired"],
+    ]);
+  });
+
+  it("turn_error_expires_pending_permissions", () => {
+    const state = reduceAll([
+      request,
+      {
+        type: "turn_error",
+        errorKind: null,
+        rpcCode: null,
+        message: "boom",
+      },
+    ]);
+
+    expect(state.permissions.map((p) => p.state)).toEqual(["expired"]);
+  });
+
+  it("turn_end_keeps_resolved_permissions", () => {
+    const resolved: PermissionRecord = {
+      ...createPermissionRecord({
+        requestId: "r0",
+        toolCallId: "t0",
+        options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }],
+      }),
+      state: "resolved",
+      optionId: "allow",
+    };
+    const state = reduceSession(
+      {
+        ...reduceAll([]),
+        permissions: [resolved],
+      },
+      { type: "turn_end", stopReason: "end_turn" },
+    );
+
+    expect(state.permissions.map((p) => [p.requestId, p.state])).toEqual([
+      ["r0", "resolved"],
+    ]);
   });
 });
