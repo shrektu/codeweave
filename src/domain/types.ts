@@ -1,0 +1,54 @@
+export const ProviderId = {
+  claude: "claude",
+  codex: "codex",
+  gemini: "gemini",
+  opencode: "opencode",
+} as const;
+export type ProviderId = (typeof ProviderId)[keyof typeof ProviderId];
+
+export const PermissionProfile = {
+  bypass: "bypass",
+  unattended: "unattended",
+  acceptEdits: "accept-edits",
+  ask: "ask",
+  plan: "plan",
+} as const;
+export type PermissionProfile =
+  (typeof PermissionProfile)[keyof typeof PermissionProfile];
+
+export type EpochSeconds = number;
+export type EpochMillis = number;
+
+export interface Account {
+  readonly id: string;
+  readonly provider: ProviderId;
+  readonly label: string;
+  readonly configDir: string;
+  readonly order: number;
+}
+
+export const SwitchReason = {
+  rateLimit: "rate_limit",
+  needsLogin: "needs_login",
+  resetReached: "reset_reached",
+} as const;
+export type SwitchReason = (typeof SwitchReason)[keyof typeof SwitchReason];
+
+export interface SwitchLogEntry {
+  readonly at: EpochMillis;
+  readonly sessionId: string;
+  readonly from: string;
+  readonly to: string | null;
+  readonly reason: SwitchReason;
+  readonly resetsAt: EpochSeconds | null;
+  readonly contextPackageChars: number;
+}
+
+export type WorktreeState =
+  | { readonly isRepo: false; readonly cwd: string }
+  | {
+      readonly isRepo: true;
+      readonly root: string;
+      readonly porcelain: string;
+      readonly diffStat: string;
+    };
