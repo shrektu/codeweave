@@ -3,6 +3,9 @@ import type { PermissionOption } from "./events";
 export interface PermissionBase {
   readonly requestId: string;
   readonly toolCallId: string;
+  readonly title: string;
+  readonly command?: string;
+  readonly seq: number;
   readonly options: readonly PermissionOption[];
 }
 
@@ -71,6 +74,9 @@ export function expireAll(
       : {
           requestId: record.requestId,
           toolCallId: record.toolCallId,
+          title: record.title,
+          ...(record.command === undefined ? {} : { command: record.command }),
+          seq: record.seq,
           options: record.options,
           state: "expired",
         },

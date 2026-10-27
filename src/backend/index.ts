@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import { homedir } from "node:os";
+
 import { SHUTDOWN_DONE_MESSAGE_TYPE } from "../shared/constants";
 import { fromMainPort } from "../shared/port";
 import {
@@ -7,32 +10,67 @@ import {
 } from "../shared/protocol";
 
 import { parseBackendArgs } from "./args";
-import { createConnectionRegistry } from "./connections";
-import { createHandlers } from "./handlers";
-import { createJsonStore } from "./storage";
+import { locateClaudeAcpEntry } from "./claude/launch";
+import {
+  createConnectionRegistry,
+  type ConnectionRegistry,
+} from "./connections";
+import { createProcessContainer } from "./process/select";
+import { createClaudeExecutableResolver, startBackend } from "./startup";
+import { inspectWorktree } from "./worktree";
 
-const { userData } = parseBackendArgs(process.argv);
-const store = createJsonStore(userData);
+let connections: ConnectionRegistry | null = null;
 
-const handlers = createHandlers({
-  store,
-  userData,
+const ready = startBackend({
+  args: parseBackendArgs(process.argv),
   broadcast: (event, payload) => {
-    connections.broadcast(event, payload);
+    connections?.broadcast(event, payload);
   },
+  createContainer: (instanceId) =>
+    createProcessContainer(process.platform, undefined, instanceId),
+  execPath: process.execPath,
+  adapterEntry: locateClaudeAcpEntry(),
+  parentEnv: process.env,
+  homeDir: homedir(),
+  platform: process.platform,
+  now: () => Date.now(),
+  schedule: (atMillis, run) => {
+    const timer = setTimeout(run, Math.max(0, atMillis - Date.now()));
+    return () => {
+      clearTimeout(timer);
+    };
+  },
+  newRunId: () => randomUUID(),
+  resolveClaudeExecutable: createClaudeExecutableResolver(
+    process.env,
+    process.platform,
+  ),
+  inspectWorktree,
+}).then((backend) => {
+  connections = createConnectionRegistry(backend.handlers);
+  return { backend, registry: connections };
 });
-const connections = createConnectionRegistry(handlers);
 
-function handleShutdown(): Promise<void> {
-  return Promise.resolve();
+ready.catch((error: unknown) => {
+  console.error("backend failed to start", error);
+  process.exit(1);
+});
+
+async function handleShutdown(): Promise<void> {
+  const { backend } = await ready;
+  await backend.shutdown();
 }
 
 process.parentPort.on("message", (event) => {
   if (ShutdownMessageSchema.safeParse(event.data).success) {
-    void handleShutdown().then(() => {
-      const done: ShutdownDoneMessage = { type: SHUTDOWN_DONE_MESSAGE_TYPE };
-      process.parentPort.postMessage(done);
-    });
+    handleShutdown()
+      .catch((error: unknown) => {
+        console.error("backend shutdown failed", error);
+      })
+      .finally(() => {
+        const done: ShutdownDoneMessage = { type: SHUTDOWN_DONE_MESSAGE_TYPE };
+        process.parentPort.postMessage(done);
+      });
     return;
   }
   const [port] = event.ports;
@@ -42,5 +80,7 @@ process.parentPort.on("message", (event) => {
   ) {
     return;
   }
-  connections.connect(fromMainPort(port));
+  void ready.then(({ registry }) => {
+    registry.connect(fromMainPort(port));
+  });
 });

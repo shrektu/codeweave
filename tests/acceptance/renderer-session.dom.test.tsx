@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, it } from "vitest";
 
 import { PermissionCard } from "../../src/renderer/components/PermissionCard";
@@ -9,9 +15,11 @@ import type { RotationPhaseView } from "../../src/shared/views";
 import {
   createFakeIpcClient,
   makeAccount,
+  makeMessage,
   makePermission,
   makeSession,
   makeSnapshot,
+  makeTool,
   readyState,
   renderWithServices,
   staticStore,
@@ -141,7 +149,7 @@ it("session_start_shows_backend_error_inline", async () => {
 });
 
 it.each<[RotationPhaseView, string]>([
-  [{ phase: "running", accountId: "acc-1" }, "Running on Work"],
+  [{ phase: "running", accountId: "acc-1" }, "Idle on Work"],
   [
     { phase: "switching", from: "acc-1", to: "acc-2" },
     "Switching from Work to Personal",
@@ -176,13 +184,114 @@ it.each<[RotationPhaseView, string]>([
   expect(screen.getByText("/home/user/project")).toBeTruthy();
 });
 
+it.each<[RotationPhaseView]>([
+  [{ phase: "stopped" }],
+  [{ phase: "failed", reason: "spawn failed", runningAccountId: null }],
+  [{ phase: "halted" }],
+])("start_prompt_offered_after_session_stopped_%j", async (phase) => {
+  const client = createFakeIpcClient();
+  client.respond("session/start", makeSession({ cwd: PICKED_FOLDER }));
+  const state = readyState(
+    makeSnapshot({
+      session: makeSession({
+        phase,
+        messages: [makeMessage({ id: "m1", text: "Earlier reply", seq: 0 })],
+      }),
+    }),
+  );
+  renderWithServices(<SessionStream />, client, staticStore(state));
+
+  expect(screen.getByText("Earlier reply")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Choose folder…" }));
+
+  await waitFor(() => {
+    expect(client.requests).toContainEqual({
+      method: "session/start",
+      params: { cwd: PICKED_FOLDER },
+    });
+  });
+});
+
+it("start_prompt_hidden_while_session_is_running", () => {
+  renderWithServices(
+    <SessionStream />,
+    createFakeIpcClient(),
+    staticStore(readyState(makeSnapshot({ session: makeSession() }))),
+  );
+
+  expect(screen.queryByRole("button", { name: "Choose folder…" })).toBeNull();
+});
+
+it("session_stream_renders_in_arrival_order", () => {
+  const state = readyState(
+    makeSnapshot({
+      session: makeSession({
+        messages: [
+          makeMessage({ id: "m1", text: "First reply", seq: 0 }),
+          makeMessage({ id: "m2", text: "Second reply", seq: 3 }),
+        ],
+        toolCalls: [makeTool({ title: "Run tests", seq: 1 })],
+        permissions: [makePermission({ title: "Write file", seq: 2 })],
+      }),
+    }),
+  );
+  renderWithServices(
+    <SessionStream />,
+    createFakeIpcClient(),
+    staticStore(state),
+  );
+
+  const items = within(screen.getByRole("list")).getAllByRole("listitem");
+
+  expect(items).toHaveLength(4);
+  expect(items[0]?.textContent).toContain("First reply");
+  expect(items[1]?.textContent).toContain("Run tests");
+  expect(items[2]?.textContent).toContain("Write file");
+  expect(items[3]?.textContent).toContain("Second reply");
+});
+
+function renderRunning(turnInFlight: boolean): void {
+  renderWithServices(
+    <SessionStream />,
+    createFakeIpcClient(),
+    staticStore(
+      readyState(
+        makeSnapshot({
+          accounts: [makeAccount({ id: "acc-1", label: "Work" })],
+          session: makeSession({ turnInFlight }),
+        }),
+      ),
+    ),
+  );
+}
+
+it("session_head_working_during_turn", () => {
+  renderRunning(true);
+
+  expect(screen.getByText("Working on Work")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "End session" })).toBeNull();
+});
+
+it("session_head_idle_after_turn_end", () => {
+  renderRunning(false);
+
+  expect(screen.getByText("Idle on Work")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "End session" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+});
+
 it("session_stop_sends_request", () => {
   const client = createFakeIpcClient();
   client.respond("session/stop", { stopped: true });
   renderWithServices(
     <SessionStream />,
     client,
-    staticStore(readyState(makeSnapshot({ session: makeSession() }))),
+    staticStore(
+      readyState(
+        makeSnapshot({ session: makeSession({ turnInFlight: true }) }),
+      ),
+    ),
   );
 
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));

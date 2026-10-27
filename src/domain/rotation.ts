@@ -147,11 +147,13 @@ export type RotationPhase =
 export interface RotationController {
   readonly phase: () => RotationPhase;
   readonly runtime: () => ReadonlyMap<string, AccountRuntime>;
+  readonly busy: () => boolean;
   readonly subscribe: (listener: (phase: RotationPhase) => void) => () => void;
   readonly onTurnSettled: (
     accountId: string,
     outcome: TurnOutcome,
   ) => Promise<void>;
+  readonly setAccounts: (accounts: readonly Account[]) => void;
   readonly dispose: () => void;
 }
 
@@ -188,11 +190,11 @@ class RotationEngine implements RotationController {
   private readonly runtimeByAccount = new Map<string, AccountRuntime>();
   private readonly listeners = new Set<(phase: RotationPhase) => void>();
   private readonly ports: RotationPorts;
-  private readonly accounts: readonly Account[];
+  private accounts: readonly Account[];
   private readonly sessionId: string;
   private current: string;
   private state: RotationPhase;
-  private busy = false;
+  private chainActive = false;
   private disposed = false;
   private running: string | null;
   private cancelWait: (() => void) | null = null;
@@ -219,6 +221,10 @@ class RotationEngine implements RotationController {
     return this.runtimeByAccount;
   }
 
+  busy(): boolean {
+    return this.chainActive;
+  }
+
   subscribe(listener: (phase: RotationPhase) => void): () => void {
     this.listeners.add(listener);
     return () => {
@@ -228,7 +234,7 @@ class RotationEngine implements RotationController {
 
   async onTurnSettled(accountId: string, outcome: TurnOutcome): Promise<void> {
     if (
-      this.busy ||
+      this.chainActive ||
       this.state.phase !== "running" ||
       accountId !== this.current
     ) {
@@ -245,6 +251,10 @@ class RotationEngine implements RotationController {
     );
   }
 
+  setAccounts(accounts: readonly Account[]): void {
+    this.accounts = accounts;
+  }
+
   dispose(): void {
     if (this.disposed) {
       return;
@@ -256,13 +266,13 @@ class RotationEngine implements RotationController {
   }
 
   private async exclusively(work: () => Promise<void>): Promise<void> {
-    this.busy = true;
+    this.chainActive = true;
     try {
       await work();
     } catch (error: unknown) {
       this.fail(`${PORT_CALL_FAILED}: ${errorMessage(error)}`);
     } finally {
-      this.busy = false;
+      this.chainActive = false;
     }
   }
 

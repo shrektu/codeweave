@@ -17,6 +17,8 @@ function pending(requestId = "r1"): PermissionRecord {
   return createPermissionRecord({
     requestId,
     toolCallId: "t1",
+    title: "Run tests",
+    seq: 0,
     options: OPTIONS,
   });
 }

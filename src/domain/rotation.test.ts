@@ -539,6 +539,36 @@ describe("rotation controller: started agent cleanup", () => {
   });
 });
 
+describe("rotation controller: account list updates", () => {
+  it("rotation_set_accounts_used_for_next_switch", async () => {
+    const { harness, controller } = scenario({}, ACCOUNTS.slice(0, 1));
+    controller.setAccounts(TWO_ACCOUNTS);
+
+    await controller.onTurnSettled("A", exhausted(NOW_S + 3600));
+
+    expect(harness.calls).toEqual([
+      "stop:A",
+      "start:B",
+      "package",
+      "log",
+      "prompt:B",
+    ]);
+    expect(controller.phase()).toEqual({ phase: "running", accountId: "B" });
+  });
+
+  it("rotation_without_set_accounts_waits_for_the_only_account", async () => {
+    const { controller } = scenario({}, ACCOUNTS.slice(0, 1));
+
+    await controller.onTurnSettled("A", exhausted(NOW_S + 3600));
+
+    expect(controller.phase()).toEqual({
+      phase: "waiting",
+      accountId: "A",
+      until: NOW_S + 3600,
+    });
+  });
+});
+
 describe("rotation controller: needs_login on resume", () => {
   it("rotation_retry_keeps_needs_login_without_wait_loop", async () => {
     const { harness, controller } = scenario(
@@ -564,5 +594,72 @@ describe("rotation controller: needs_login on resume", () => {
       accountId: "A",
       until: NOW_S + 3600,
     });
+  });
+});
+
+describe("rotation controller: busy", () => {
+  it("prompt_rejected_while_rotation_chain_busy: settle chain", async () => {
+    const { harness, controller } = scenario(
+      { holdPrompts: true },
+      TWO_ACCOUNTS,
+    );
+    expect(controller.busy()).toBe(false);
+
+    const settled = controller.onTurnSettled("A", exhausted(NOW_S + 3600));
+
+    expect(controller.busy()).toBe(true);
+    await vi.waitFor(() => {
+      expect(harness.prompts).toHaveLength(1);
+    });
+    expect(controller.busy()).toBe(true);
+    harness.releasePrompt();
+    await settled;
+    expect(controller.busy()).toBe(false);
+  });
+
+  it("prompt_rejected_while_rotation_chain_busy: resume chain", async () => {
+    const { harness, controller } = scenario(
+      { holdPrompts: true },
+      TWO_ACCOUNTS,
+    );
+    const settled = controller.onTurnSettled("A", exhausted(NOW_S + 3600));
+    await vi.waitFor(() => {
+      expect(harness.prompts).toHaveLength(1);
+    });
+    harness.releasePrompt(exhausted(NOW_S + 1800));
+    await settled;
+    expect(controller.phase().phase).toBe("waiting");
+    expect(controller.busy()).toBe(false);
+
+    harness.advanceTo((NOW_S + 1800) * 1000);
+
+    expect(controller.busy()).toBe(true);
+    await vi.waitFor(() => {
+      expect(harness.prompts).toHaveLength(2);
+    });
+    expect(controller.busy()).toBe(true);
+    harness.releasePrompt();
+    await vi.waitFor(() => {
+      expect(controller.busy()).toBe(false);
+    });
+    expect(controller.phase()).toEqual({ phase: "running", accountId: "B" });
+  });
+
+  it("is false after a chain that failed", async () => {
+    const { harness, controller } = scenario({}, TWO_ACCOUNTS);
+    harness.failNext("stopAgent", new Error("stop blew up"));
+
+    await controller.onTurnSettled("A", exhausted(NOW_S + 3600));
+
+    expect(controller.phase().phase).toBe("failed");
+    expect(controller.busy()).toBe(false);
+  });
+
+  it("is false for a settle that needs no rotation", async () => {
+    const { controller } = scenario({}, TWO_ACCOUNTS);
+
+    await controller.onTurnSettled("A", { kind: "ok" });
+
+    expect(controller.busy()).toBe(false);
   });
 });

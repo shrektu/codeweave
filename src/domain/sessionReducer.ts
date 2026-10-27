@@ -13,9 +13,15 @@ export interface TurnLogEntry {
   readonly output?: string;
 }
 
+export interface ToolCallEntry extends TurnLogEntry {
+  readonly kind: string;
+  readonly seq: number;
+}
+
 export interface AssistantMessage {
   readonly id: string | null;
   readonly text: string;
+  readonly seq: number;
 }
 
 export type LastTurn =
@@ -24,11 +30,12 @@ export type LastTurn =
 
 export interface SessionState {
   readonly messages: readonly AssistantMessage[];
-  readonly toolCalls: readonly TurnLogEntry[];
+  readonly toolCalls: readonly ToolCallEntry[];
   readonly turnLog: readonly TurnLogEntry[];
   readonly previousTurnLog: readonly TurnLogEntry[];
   readonly permissions: readonly PermissionRecord[];
   readonly lastTurn: LastTurn | null;
+  readonly nextSeq: number;
 }
 
 export const INITIAL_SESSION_STATE: SessionState = {
@@ -38,6 +45,7 @@ export const INITIAL_SESSION_STATE: SessionState = {
   previousTurnLog: [],
   permissions: [],
   lastTurn: null,
+  nextSeq: 0,
 };
 
 function extractCommand(rawInput: unknown): string | undefined {
@@ -53,10 +61,11 @@ function extractCommand(rawInput: unknown): string | undefined {
 }
 
 function appendText(
-  messages: readonly AssistantMessage[],
+  state: SessionState,
   messageId: string | undefined,
   text: string,
-): readonly AssistantMessage[] {
+): SessionState {
+  const { messages } = state;
   const id = messageId ?? null;
   const index =
     id === null
@@ -64,21 +73,45 @@ function appendText(
       : messages.findIndex((message) => message.id === id);
   const target = messages[index];
   if (target?.id === id) {
-    return messages.with(index, { id, text: target.text + text });
+    return {
+      ...state,
+      messages: messages.with(index, { ...target, text: target.text + text }),
+    };
   }
-  return [...messages, { id, text }];
+  return {
+    ...state,
+    messages: [...messages, { id, text, seq: state.nextSeq }],
+    nextSeq: state.nextSeq + 1,
+  };
 }
 
-function upsert(
-  entries: readonly TurnLogEntry[],
-  entry: TurnLogEntry,
-): readonly TurnLogEntry[] {
+function upsert<T extends TurnLogEntry>(
+  entries: readonly T[],
+  entry: T,
+): readonly T[] {
   const index = entries.findIndex(
     (item) => item.toolCallId === entry.toolCallId,
   );
   return index === -1
     ? [...entries, entry]
     : entries.with(index, { ...entries[index], ...entry });
+}
+
+function addToolCall(
+  state: SessionState,
+  event: Extract<AgentEvent, { type: "tool_call" }>,
+): SessionState {
+  const known = state.toolCalls.find(
+    (item) => item.toolCallId === event.toolCallId,
+  );
+  const seq = known?.seq ?? state.nextSeq;
+  const entry = toEntry(event);
+  return {
+    ...state,
+    toolCalls: upsert(state.toolCalls, { ...entry, kind: event.kind, seq }),
+    turnLog: upsert(state.turnLog, entry),
+    nextSeq: known === undefined ? state.nextSeq + 1 : state.nextSeq,
+  };
 }
 
 function toEntry(
@@ -93,10 +126,10 @@ function toEntry(
   };
 }
 
-function applyUpdate(
-  entries: readonly TurnLogEntry[],
+function applyUpdate<T extends TurnLogEntry>(
+  entries: readonly T[],
   event: Extract<AgentEvent, { type: "tool_call_update" }>,
-): readonly TurnLogEntry[] {
+): readonly T[] {
   const index = entries.findIndex(
     (item) => item.toolCallId === event.toolCallId,
   );
@@ -120,12 +153,20 @@ function addPermission(
   ) {
     return state;
   }
+  const command = extractCommand(event.rawInput);
   const record = createPermissionRecord({
     requestId: event.requestId,
     toolCallId: event.toolCallId,
+    title: event.title,
+    ...(command === undefined ? {} : { command }),
+    seq: state.nextSeq,
     options: event.options,
   });
-  return { ...state, permissions: [...state.permissions, record] };
+  return {
+    ...state,
+    permissions: [...state.permissions, record],
+    nextSeq: state.nextSeq + 1,
+  };
 }
 
 function finishTurn(state: SessionState, lastTurn: LastTurn): SessionState {
@@ -144,18 +185,9 @@ export function reduceSession(
 ): SessionState {
   switch (event.type) {
     case "text":
-      return {
-        ...state,
-        messages: appendText(state.messages, event.messageId, event.text),
-      };
-    case "tool_call": {
-      const entry = toEntry(event);
-      return {
-        ...state,
-        toolCalls: upsert(state.toolCalls, entry),
-        turnLog: upsert(state.turnLog, entry),
-      };
-    }
+      return appendText(state, event.messageId, event.text);
+    case "tool_call":
+      return addToolCall(state, event);
     case "tool_call_update":
       return {
         ...state,

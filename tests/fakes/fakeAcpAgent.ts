@@ -293,9 +293,18 @@ export class ScriptedAcpContainer implements ProcessContainer {
   readonly contained: FakeContained[] = [];
   readonly config: FakeAcpConfig = {};
   private readonly inner: FakeContainer;
+  private readonly nextScripts: (readonly ScriptStep[])[] = [];
 
   constructor(stopResults: readonly StopResult[] = []) {
     this.inner = new FakeContainer(stopResults);
+  }
+
+  holdStops(): void {
+    this.inner.holdStops();
+  }
+
+  scriptNext(steps: readonly ScriptStep[]): void {
+    this.nextScripts.push(steps);
   }
 
   async spawn(spec: SpawnSpec): Promise<Contained> {
@@ -306,7 +315,12 @@ export class ScriptedAcpContainer implements ProcessContainer {
     }
     this.specs.push(spec);
     this.contained.push(fake);
-    this.agents.push(new FakeAcpAgent(fake, this.config));
+    const agent = new FakeAcpAgent(fake, this.config);
+    const steps = this.nextScripts.shift();
+    if (steps !== undefined) {
+      agent.enqueue(steps);
+    }
+    this.agents.push(agent);
     return spawned;
   }
 

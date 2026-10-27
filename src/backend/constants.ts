@@ -79,3 +79,15 @@ export const SWITCH_LOG_FILE = "switch-log.jsonl";
 export const ACCOUNTS_DIR_NAME = "accounts";
 export const STORAGE_VERSION = 1;
 export const TEMP_FILE_SUFFIX = ".tmp";
+
+export const AGENT_STOP_GRACE_MS = 5000;
+export const CONTAINER_UNAVAILABLE_MESSAGE =
+  "Process container is not available";
+export const CLAUDE_BINARY = "claude";
+export const SESSION_CLOSED_MESSAGE = "The session is closed";
+export const FILE_URL_PREFIX = "file://";
+export const ACP_KINDS_READ: readonly string[] = ["read", "search"];
+export const ACP_KINDS_EDIT: readonly string[] = ["edit", "delete", "move"];
+export const ACP_KINDS_EXECUTE: readonly string[] = ["execute"];
+export const OPTION_KIND_ALLOW_ONCE = "allow_once";
+export const OPTION_KIND_REJECT_ONCE = "reject_once";

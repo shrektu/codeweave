@@ -32,7 +32,7 @@ describe("session reducer: text", () => {
       { type: "text", messageId: "m1", text: "world" },
     ]);
 
-    expect(state.messages).toEqual([{ id: "m1", text: "Hello world" }]);
+    expect(state.messages).toEqual([{ id: "m1", text: "Hello world", seq: 0 }]);
   });
 
   it("keeps separate messages apart and appends to the right one", () => {
@@ -43,8 +43,8 @@ describe("session reducer: text", () => {
     ]);
 
     expect(state.messages).toEqual([
-      { id: "m1", text: "ac" },
-      { id: "m2", text: "b" },
+      { id: "m1", text: "ac", seq: 0 },
+      { id: "m2", text: "b", seq: 1 },
     ]);
   });
 
@@ -54,14 +54,14 @@ describe("session reducer: text", () => {
       { type: "text", text: "y" },
     ]);
 
-    expect(state.messages).toEqual([{ id: null, text: "xy" }]);
+    expect(state.messages).toEqual([{ id: null, text: "xy", seq: 0 }]);
   });
 
   it("does not mutate the previous state", () => {
     const first = reduceAll([{ type: "text", messageId: "m1", text: "a" }]);
     reduceSession(first, { type: "text", messageId: "m1", text: "b" });
 
-    expect(first.messages).toEqual([{ id: "m1", text: "a" }]);
+    expect(first.messages).toEqual([{ id: "m1", text: "a", seq: 0 }]);
   });
 });
 
@@ -81,11 +81,38 @@ describe("session reducer: tool calls", () => {
       {
         toolCallId: "t1",
         title: "Run tests",
+        kind: "execute",
         command: "pnpm test",
         status: "completed",
         output: "42 passed",
+        seq: 0,
       },
     ]);
+  });
+
+  it("reducer_assigns_increasing_seq", () => {
+    const state = reduceAll([
+      { type: "text", messageId: "m1", text: "a" },
+      BASH_CALL,
+      {
+        type: "permission_request",
+        requestId: "r1",
+        toolCallId: "t1",
+        title: "Run tests",
+        kind: "execute",
+        locations: [],
+        options: [{ optionId: "o1", name: "Allow", kind: "allow_once" }],
+      },
+      { type: "text", messageId: "m1", text: "b" },
+      BASH_CALL,
+      { type: "tool_call_update", toolCallId: "t1", status: "completed" },
+      { type: "text", messageId: "m2", text: "c" },
+    ]);
+
+    expect(state.messages.map((message) => message.seq)).toEqual([0, 3]);
+    expect(state.toolCalls.map((tool) => tool.seq)).toEqual([1]);
+    expect(state.permissions.map((record) => record.seq)).toEqual([2]);
+    expect(state.nextSeq).toBe(4);
   });
 
   it("keeps the previous output when an update has only a status", () => {
@@ -200,6 +227,8 @@ describe("session reducer: permissions", () => {
       ...createPermissionRecord({
         requestId: "r0",
         toolCallId: "t0",
+        title: "Read file",
+        seq: 0,
         options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }],
       }),
       state: "resolved",

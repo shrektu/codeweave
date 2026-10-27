@@ -45,12 +45,14 @@ export const ToolCallViewSchema = z.strictObject({
   status: z.enum(["pending", "in_progress", "completed", "failed"]),
   command: z.string().optional(),
   output: z.string().optional(),
+  seq: z.number().int(),
 });
 export type ToolCallView = z.infer<typeof ToolCallViewSchema>;
 
 export const MessageViewSchema = z.strictObject({
   id: z.string().nullable(),
   text: z.string(),
+  seq: z.number().int(),
 });
 export type MessageView = z.infer<typeof MessageViewSchema>;
 
@@ -59,6 +61,7 @@ export const PermissionViewSchema = z.strictObject({
   toolCallId: z.string(),
   title: z.string(),
   command: z.string().optional(),
+  seq: z.number().int(),
   options: z
     .array(
       z.strictObject({

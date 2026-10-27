@@ -24,6 +24,7 @@ import {
 import type {
   AccountView,
   LimitView,
+  MessageView,
   PermissionView,
   SessionView,
   SettingsView,
@@ -141,8 +142,13 @@ export function makeTool(overrides: Partial<ToolCallView> = {}): ToolCallView {
     title: "Run tests",
     kind: "execute",
     status: "in_progress",
+    seq: 0,
     ...overrides,
   };
+}
+
+export function makeMessage(overrides: Partial<MessageView> = {}): MessageView {
+  return { id: null, text: "Working on it", seq: 0, ...overrides };
 }
 
 export function makePermission(
@@ -153,6 +159,7 @@ export function makePermission(
     toolCallId: "tool-1",
     title: "Run tests",
     command: "pnpm test",
+    seq: 0,
     options: [
       { optionId: "opt-always", name: "Always allow", kind: "allow_always" },
       { optionId: "opt-once", name: "Allow this once", kind: "allow_once" },
