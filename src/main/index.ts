@@ -14,9 +14,12 @@ import {
   GPU_ACCELERATED_ARG,
   PORT_CHANNEL,
 } from "../shared/constants";
+import { RUN_ID_ENV } from "../backend/constants";
 import type { ConnectMessage } from "../shared/protocol";
 
 import { isAppUrl } from "./appUrl";
+
+Reflect.deleteProperty(process.env, RUN_ID_ENV);
 
 const RENDERER_INDEX_PATH = join(import.meta.dirname, "../renderer/index.html");
 const GPU_COMPOSITING_ENABLED_PREFIX = "enabled";
@@ -80,13 +83,31 @@ function createWindow(backend: UtilityProcess): void {
   }
 }
 
-void app.whenReady().then(() => {
-  const backend = utilityProcess.fork(join(import.meta.dirname, "backend.js"));
-  app.on("will-quit", () => {
-    backend.kill();
+function focusExistingWindow(): void {
+  const [window] = BrowserWindow.getAllWindows();
+  if (window === undefined) {
+    return;
+  }
+  if (window.isMinimized()) {
+    window.restore();
+  }
+  window.focus();
+}
+
+if (app.requestSingleInstanceLock()) {
+  app.on("second-instance", focusExistingWindow);
+  void app.whenReady().then(() => {
+    const backend = utilityProcess.fork(
+      join(import.meta.dirname, "backend.js"),
+    );
+    app.on("will-quit", () => {
+      backend.kill();
+    });
+    createWindow(backend);
   });
-  createWindow(backend);
-});
+} else {
+  app.quit();
+}
 
 app.on("window-all-closed", () => {
   app.quit();

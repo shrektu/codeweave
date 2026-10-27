@@ -20,6 +20,18 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Enable systemd user session (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo loginctl enable-linger "$USER"
+          runtime_dir="/run/user/$(id -u)"
+          for _ in $(seq 1 30); do
+            [ -S "$runtime_dir/bus" ] && break
+            sleep 1
+          done
+          test -S "$runtime_dir/bus"
+          echo "XDG_RUNTIME_DIR=$runtime_dir" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=$runtime_dir/bus" >> "$GITHUB_ENV"
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
