@@ -1,47 +1,46 @@
 import { useEffect, useState, type JSX } from "react";
 
+import { EffectLevel as EffectSetting } from "../domain/types";
+
+import { AccountsDialog } from "./components/AccountsDialog";
 import { LimitsPanel } from "./components/LimitsPanel";
 import { SessionStream } from "./components/SessionStream";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar } from "./components/Sidebar";
+import { SwitchLog } from "./components/SwitchLog";
 import {
   FPS_MEASURE_DURATION_MS,
   chooseEffectLevel,
   measureFps,
-  type EffectLevel,
 } from "./effects";
-import {
-  SAMPLE_ACCOUNTS,
-  SAMPLE_LIMITS,
-  SAMPLE_MESSAGES,
-  SAMPLE_TOOL_CARD,
-} from "./sampleData";
+import { useApp } from "./services";
 import { useBackendStatus, type BackendStatus } from "./useBackendStatus";
 
-const EFFECT_LABELS: Record<EffectLevel, string> = {
-  low: "niskie",
-  full: "pełne",
-};
+type OpenDialog = "accounts" | "settings" | null;
 
 function backendText(status: BackendStatus): string {
   switch (status.state) {
     case "connecting":
-      return "łączenie…";
+      return "Connecting…";
     case "ready":
       return `PID ${status.pid.toString()}`;
     case "unavailable":
-      return "brak połączenia";
+      return "Disconnected";
   }
 }
 
 export function App(): JSX.Element {
+  const { client, state } = useApp();
   const [measuredFps, setMeasuredFps] = useState<number | undefined>(undefined);
-  const [manual, setManual] = useState<EffectLevel | undefined>(undefined);
-  const backend = useBackendStatus();
+  const [openDialog, setOpenDialog] = useState<OpenDialog>(null);
+  const backend = useBackendStatus(client);
+  const effectSetting =
+    state.snapshot?.settings.effectLevel ?? EffectSetting.auto;
 
   const level = chooseEffectLevel({
     gpuAccelerated: window.codeweave.gpuAccelerated,
     measuredFps,
-    manual,
+    manual: effectSetting === EffectSetting.auto ? undefined : effectSetting,
   });
 
   useEffect(() => {
@@ -60,8 +59,8 @@ export function App(): JSX.Element {
     };
   }, []);
 
-  const toggleEffects = (): void => {
-    setManual(level === "full" ? "low" : "full");
+  const closeDialog = (): void => {
+    setOpenDialog(null);
   };
 
   return (
@@ -79,13 +78,37 @@ export function App(): JSX.Element {
         >
           {backendText(backend)}
         </output>
-        <button type="button" className="pill" onClick={toggleEffects}>
-          Efekty: {EFFECT_LABELS[level]}
+        <button
+          type="button"
+          className="pill"
+          onClick={() => {
+            setOpenDialog("accounts");
+          }}
+        >
+          Accounts
+        </button>
+        <button
+          type="button"
+          className="pill"
+          onClick={() => {
+            setOpenDialog("settings");
+          }}
+        >
+          Settings
         </button>
       </header>
-      <Sidebar accounts={SAMPLE_ACCOUNTS} />
-      <SessionStream messages={SAMPLE_MESSAGES} toolCard={SAMPLE_TOOL_CARD} />
-      <LimitsPanel limits={SAMPLE_LIMITS} />
+      <Sidebar
+        onManageAccounts={() => {
+          setOpenDialog("accounts");
+        }}
+      />
+      <SessionStream />
+      <div className="side-column">
+        <LimitsPanel />
+        <SwitchLog />
+      </div>
+      {openDialog === "accounts" && <AccountsDialog onClose={closeDialog} />}
+      {openDialog === "settings" && <SettingsDialog onClose={closeDialog} />}
     </div>
   );
 }

@@ -138,14 +138,6 @@ function waitForPort(): Promise<MessagePort> {
   return promise;
 }
 
-const clientPromise = waitForPort().then((port) =>
+export const connectedClient: Promise<IpcClient> = waitForPort().then((port) =>
   createIpcClient(fromDomPort(port)),
 );
-
-export async function request<M extends RequestMethod>(
-  method: M,
-  params: ParamsMap[M],
-): Promise<ResultMap[M]> {
-  const client = await clientPromise;
-  return client.request(method, params);
-}

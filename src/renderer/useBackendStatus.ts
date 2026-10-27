@@ -1,18 +1,20 @@
 import { useEffect, useState } from "react";
 
-import { request } from "./ipc";
+import { errorMessage } from "./errorMessage";
+import type { IpcClient } from "./ipc";
 
 export type BackendStatus =
   | { state: "connecting" }
   | { state: "ready"; pid: number }
   | { state: "unavailable"; message: string };
 
-export function useBackendStatus(): BackendStatus {
+export function useBackendStatus(client: IpcClient): BackendStatus {
   const [status, setStatus] = useState<BackendStatus>({ state: "connecting" });
 
   useEffect(() => {
     let active = true;
-    void request("ping", {})
+    void client
+      .request("ping", {})
       .then((result) => {
         if (active) {
           setStatus({ state: "ready", pid: result.backendPid });
@@ -20,15 +22,13 @@ export function useBackendStatus(): BackendStatus {
       })
       .catch((error: unknown) => {
         if (active) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          setStatus({ state: "unavailable", message });
+          setStatus({ state: "unavailable", message: errorMessage(error) });
         }
       });
     return () => {
       active = false;
     };
-  }, []);
+  }, [client]);
 
   return status;
 }

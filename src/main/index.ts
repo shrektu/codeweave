@@ -30,6 +30,7 @@ import {
   requestBackendShutdown,
   SHUTDOWN_TIMEOUT_MS,
 } from "./shutdown";
+import { resolveUserDataOverride } from "./userDataOverride";
 
 Reflect.deleteProperty(process.env, RUN_ID_ENV);
 
@@ -147,6 +148,14 @@ function focusExistingWindow(): void {
     window.restore();
   }
   window.focus();
+}
+
+const userDataOverride = resolveUserDataOverride({
+  isPackaged: app.isPackaged,
+  env: process.env,
+});
+if (userDataOverride !== null) {
+  app.setPath("userData", userDataOverride);
 }
 
 if (app.requestSingleInstanceLock()) {

@@ -17,3 +17,5 @@ export const TEST_AGENT_ENV_ARG = "--codeweave-test-agent-env";
 export const PICK_FOLDER_CHANNEL = "codeweave:pick-folder";
 
 export const SWITCH_LOG_SNAPSHOT_LIMIT = 50;
+
+export const SNAPSHOT_RETRY_MS = 2000;
