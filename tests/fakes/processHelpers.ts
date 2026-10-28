@@ -6,6 +6,8 @@ import { createInterface } from "node:readline";
 import type { Readable } from "node:stream";
 import { promisify } from "node:util";
 
+import { STOP_CONFIRM_TIMEOUT_MS } from "../../src/backend/constants";
+
 const execFileAsync = promisify(execFile);
 const ZOMBIE_STATE = "Z";
 const STAT_FIELDS_AFTER_COMM_OFFSET = 2;
@@ -19,6 +21,8 @@ const SYSTEMD_PROBE_ARGS = [
 
 export const SLEEP_SECONDS = "300";
 export const WAIT_TIMEOUT_MS = 10_000;
+export const PROCESS_TEST_TIMEOUT_MS =
+  WAIT_TIMEOUT_MS + STOP_CONFIRM_TIMEOUT_MS;
 
 export function stringEnv(
   source: NodeJS.ProcessEnv = process.env,

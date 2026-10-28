@@ -12,6 +12,7 @@ import {
   isRunning,
   killQuietly,
   makeTempDir,
+  PROCESS_TEST_TIMEOUT_MS,
   stringEnv,
   WAIT_TIMEOUT_MS,
 } from "../fakes/processHelpers";
@@ -27,44 +28,48 @@ afterEach(() => {
 });
 
 describe.runIf(process.platform === "linux")("env marker container", () => {
-  it("marker_container_kills_reparented_grandchild", async () => {
-    const container = createEnvMarkerContainer({
-      processTable: createProcProcessTable(),
-      kill: (pid, signal) => process.kill(pid, signal),
-    });
-    const contained = await container.spawn({
-      command: "sh",
-      args: ["-c", REPARENT_SCRIPT],
-      env: stringEnv(),
-      cwd: await makeTempDir(),
-      runId: "marker-run",
-    });
-    const chunks: string[] = [];
-    contained.stdout.on("data", (chunk: Buffer) => {
-      chunks.push(chunk.toString());
-    });
-    const exited = new Promise<void>((resolve) => {
-      contained.onExit(() => {
-        resolve();
+  it(
+    "marker_container_kills_reparented_grandchild",
+    { timeout: PROCESS_TEST_TIMEOUT_MS },
+    async () => {
+      const container = createEnvMarkerContainer({
+        processTable: createProcProcessTable(),
+        kill: (pid, signal) => process.kill(pid, signal),
       });
-    });
-    await exited;
-    await vi.waitFor(
-      () => {
-        expect(chunks.join("").trim()).not.toBe("");
-      },
-      { timeout: WAIT_TIMEOUT_MS },
-    );
-    const grandchild = Number(chunks.join("").trim());
-    trackedPids.push(grandchild);
-    expect(await isRunning(grandchild)).toBe(true);
+      const contained = await container.spawn({
+        command: "sh",
+        args: ["-c", REPARENT_SCRIPT],
+        env: stringEnv(),
+        cwd: await makeTempDir(),
+        runId: "marker-run",
+      });
+      const chunks: string[] = [];
+      contained.stdout.on("data", (chunk: Buffer) => {
+        chunks.push(chunk.toString());
+      });
+      const exited = new Promise<void>((resolve) => {
+        contained.onExit(() => {
+          resolve();
+        });
+      });
+      await exited;
+      await vi.waitFor(
+        () => {
+          expect(chunks.join("").trim()).not.toBe("");
+        },
+        { timeout: WAIT_TIMEOUT_MS },
+      );
+      const grandchild = Number(chunks.join("").trim());
+      trackedPids.push(grandchild);
+      expect(await isRunning(grandchild)).toBe(true);
 
-    const result = await contained.stop(GRACE_MS);
+      const result = await contained.stop(GRACE_MS);
 
-    expect(result).toEqual({ ok: true });
-    expect(await isRunning(grandchild)).toBe(false);
-    expect(await contained.isEmpty()).toBe(true);
-  });
+      expect(result).toEqual({ ok: true });
+      expect(await isRunning(grandchild)).toBe(false);
+      expect(await contained.isEmpty()).toBe(true);
+    },
+  );
 
   it("sweep_spares_live_instance_and_own_scope", async () => {
     const table: ProcessEntry[] = [
