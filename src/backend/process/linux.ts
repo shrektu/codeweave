@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { posix } from "node:path";
 
 import {
+  CGROUP_GONE_ERRNO_CODES,
   CGROUP_PROCS_FILE,
   CGROUP_ROOT,
   INSTANCE_ID_PATTERN,
@@ -79,8 +80,12 @@ export function parseScopeUnits(listOutput: string): string[] {
     );
 }
 
-function isMissingFile(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ENOENT";
+function isGoneCgroup(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    CGROUP_GONE_ERRNO_CODES.includes(String(error.code))
+  );
 }
 
 class SystemdScopeContainer implements ProcessContainer {
@@ -175,7 +180,7 @@ class SystemdScopeContainer implements ProcessContainer {
       );
       return procs.split("\n").filter(Boolean).map(Number);
     } catch (error) {
-      if (isMissingFile(error)) {
+      if (isGoneCgroup(error)) {
         return [];
       }
       throw error;
