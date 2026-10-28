@@ -82,6 +82,38 @@ describe("acp adapter: streaming", () => {
     ]);
     expect(agentOf(rig).prompts).toEqual(["list files"]);
   });
+
+  it("adapter_forwards_tool_call_update_command", async () => {
+    const rig = await createRig();
+    const { handle, events } = await startHandle(rig);
+    agentOf(rig).enqueue([
+      {
+        type: "tool_call",
+        toolCallId: "t9",
+        title: "Terminal",
+        kind: "execute",
+        rawInput: {},
+      },
+      {
+        type: "tool_call_update",
+        toolCallId: "t9",
+        status: "in_progress",
+        title: "echo deploy | tee -a x",
+        rawInput: { command: "echo deploy | tee -a x", description: "Deploy" },
+      },
+      { type: "end", stopReason: "end_turn" },
+    ]);
+
+    await handle.prompt("deploy it");
+
+    expect(events[1]).toEqual({
+      type: "tool_call_update",
+      toolCallId: "t9",
+      status: "in_progress",
+      title: "echo deploy | tee -a x",
+      rawInput: { command: "echo deploy | tee -a x", description: "Deploy" },
+    });
+  });
 });
 
 describe("acp adapter: permission answer", () => {

@@ -88,6 +88,8 @@ export type NotificationStep =
       readonly toolCallId: string;
       readonly status: ToolCallStatus;
       readonly text?: string;
+      readonly title?: string;
+      readonly rawInput?: unknown;
     }
   | {
       readonly type: "usage_update";
@@ -135,6 +137,8 @@ function toolCallUpdate(
     sessionUpdate: "tool_call_update",
     toolCallId: step.toolCallId,
     status: step.status,
+    ...(step.title === undefined ? {} : { title: step.title }),
+    ...(step.rawInput === undefined ? {} : { rawInput: step.rawInput }),
     ...(step.text === undefined
       ? {}
       : {

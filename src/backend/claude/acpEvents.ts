@@ -59,9 +59,25 @@ function mapToolCall(
   ];
 }
 
+const FENCED_BLOCK = /^(`{3,})[^\n`]*\r?\n(?:([\s\S]*?)\r?\n)?\1[ \t]*$/;
+const LINE_BREAK = /\r?\n/;
+
+function unfence(text: string): string {
+  const match = FENCED_BLOCK.exec(text.trim());
+  const fence = match?.[1];
+  if (fence === undefined) {
+    return text;
+  }
+  const inner = match?.[2] ?? "";
+  const closing = new RegExp(`^ {0,3}\`{${fence.length.toString()},}[ \\t]*$`);
+  return inner.split(LINE_BREAK).some((line) => closing.test(line))
+    ? text
+    : inner;
+}
+
 function textOf(content: ToolCallContent): string[] {
   return content.type === "content" && content.content.type === "text"
-    ? [content.content.text]
+    ? [unfence(content.content.text)]
     : [];
 }
 
@@ -84,6 +100,9 @@ function mapToolCallUpdate(
     {
       type: "tool_call_update",
       toolCallId: update.toolCallId,
+      ...(update.title == null ? {} : { title: update.title }),
+      ...(update.kind == null ? {} : { kind: update.kind }),
+      ...(update.rawInput === undefined ? {} : { rawInput: update.rawInput }),
       ...(status == null ? {} : { status }),
       ...(output === undefined ? {} : { output }),
     },

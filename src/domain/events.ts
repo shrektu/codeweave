@@ -23,6 +23,9 @@ export type AgentEvent =
   | {
       readonly type: "tool_call_update";
       readonly toolCallId: string;
+      readonly title?: string;
+      readonly kind?: string;
+      readonly rawInput?: unknown;
       readonly status?: ToolCallStatus;
       readonly output?: string;
     }

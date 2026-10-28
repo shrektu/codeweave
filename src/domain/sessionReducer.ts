@@ -126,22 +126,29 @@ function toEntry(
   };
 }
 
+function entryPatch(
+  event: Extract<AgentEvent, { type: "tool_call_update" }>,
+): Partial<TurnLogEntry> {
+  const command = extractCommand(event.rawInput);
+  return {
+    ...(event.title === undefined ? {} : { title: event.title }),
+    ...(command === undefined ? {} : { command }),
+    ...(event.status === undefined ? {} : { status: event.status }),
+    ...(event.output === undefined ? {} : { output: event.output }),
+  };
+}
+
 function applyUpdate<T extends TurnLogEntry>(
   entries: readonly T[],
-  event: Extract<AgentEvent, { type: "tool_call_update" }>,
+  toolCallId: string,
+  patch: Partial<T>,
 ): readonly T[] {
-  const index = entries.findIndex(
-    (item) => item.toolCallId === event.toolCallId,
-  );
+  const index = entries.findIndex((item) => item.toolCallId === toolCallId);
   const existing = entries[index];
   if (existing === undefined) {
     return entries;
   }
-  return entries.with(index, {
-    ...existing,
-    ...(event.status === undefined ? {} : { status: event.status }),
-    ...(event.output === undefined ? {} : { output: event.output }),
-  });
+  return entries.with(index, { ...existing, ...patch });
 }
 
 function addPermission(
@@ -188,12 +195,17 @@ export function reduceSession(
       return appendText(state, event.messageId, event.text);
     case "tool_call":
       return addToolCall(state, event);
-    case "tool_call_update":
+    case "tool_call_update": {
+      const patch = entryPatch(event);
       return {
         ...state,
-        toolCalls: applyUpdate(state.toolCalls, event),
-        turnLog: applyUpdate(state.turnLog, event),
+        toolCalls: applyUpdate(state.toolCalls, event.toolCallId, {
+          ...patch,
+          ...(event.kind === undefined ? {} : { kind: event.kind }),
+        }),
+        turnLog: applyUpdate(state.turnLog, event.toolCallId, patch),
       };
+    }
     case "permission_request":
       return addPermission(state, event);
     case "turn_end":

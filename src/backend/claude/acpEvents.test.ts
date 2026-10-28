@@ -120,6 +120,107 @@ describe("mapSessionUpdate tool call updates", () => {
     ]);
   });
 
+  it("tool_output_console_fence_unwrapped", () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "t5",
+      status: "completed",
+      content: [
+        {
+          type: "content",
+          content: {
+            type: "text",
+            text: "```console\ndeploy-side-effect\n```",
+          },
+        },
+      ],
+    });
+
+    expect(events).toStrictEqual([
+      {
+        type: "tool_call_update",
+        toolCallId: "t5",
+        status: "completed",
+        output: "deploy-side-effect",
+      },
+    ]);
+  });
+
+  it.each([
+    [
+      "unfence_longer_backtick_run_and_nested_fence",
+      "````md\n```\nx\n```\n````",
+      "```\nx\n```",
+    ],
+    [
+      "unfence_leaves_plain_text",
+      "just text\n```not a fence```",
+      "just text\n```not a fence```",
+    ],
+    [
+      "unfence_leaves_text_around_a_block",
+      "before\n```\na\n```",
+      "before\n```\na\n```",
+    ],
+    [
+      "unfence_leaves_two_blocks",
+      "```\na\n```\nb\n```\nc\n```",
+      "```\na\n```\nb\n```\nc\n```",
+    ],
+    ["unfence_empty_block_to_empty", "```console\n```", ""],
+    [
+      "unfence_interior_longer_fence_kept",
+      "```\na\n````\nb\n```",
+      "```\na\n````\nb\n```",
+    ],
+    [
+      "unfence_interior_indented_fence_kept",
+      "```\na\n   ```\nb\n```",
+      "```\na\n   ```\nb\n```",
+    ],
+    [
+      "unfence_interior_fence_trailing_space_kept",
+      "```\na\n``` \nb\n```",
+      "```\na\n``` \nb\n```",
+    ],
+    ["unfence_trailing_space_after_final_fence", "```console\nx\n```  ", "x"],
+    [
+      "unfence_crlf",
+      "```console\r\nline one\r\nline two\r\n```",
+      "line one\r\nline two",
+    ],
+  ])("%s", (_name, text, expected) => {
+    const events = mapSessionUpdate({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "t9",
+      content: [{ type: "content", content: { type: "text", text } }],
+    });
+
+    expect(events).toStrictEqual([
+      { type: "tool_call_update", toolCallId: "t9", output: expected },
+    ]);
+  });
+
+  it("tool_call_update_maps_title_kind_and_raw_input", () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "t7",
+      title: "ls -la",
+      kind: "execute",
+      rawInput: { command: "ls -la", description: "List" },
+    });
+
+    expect(events).toStrictEqual([
+      {
+        type: "tool_call_update",
+        toolCallId: "t7",
+        title: "ls -la",
+        kind: "execute",
+        rawInput: { command: "ls -la", description: "List" },
+      },
+    ]);
+  });
+
   it("tool_call_update_without_status_or_output_has_only_the_id", () => {
     const events = mapSessionUpdate({
       sessionUpdate: "tool_call_update",

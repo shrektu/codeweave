@@ -128,6 +128,63 @@ describe("session reducer: tool calls", () => {
     });
   });
 
+  it("tool_call_update_sets_title_and_command", () => {
+    const state = reduceAll([
+      {
+        type: "tool_call",
+        toolCallId: "t1",
+        title: "Terminal",
+        kind: "execute",
+        status: "pending",
+        rawInput: {},
+      },
+      {
+        type: "tool_call_update",
+        toolCallId: "t1",
+        title: "ls -la",
+        kind: "read",
+        rawInput: { command: "ls -la", description: "List" },
+      },
+    ]);
+
+    expect(state.toolCalls).toEqual([
+      {
+        toolCallId: "t1",
+        title: "ls -la",
+        kind: "read",
+        command: "ls -la",
+        status: "pending",
+        seq: 0,
+      },
+    ]);
+    expect(state.turnLog).toEqual([
+      {
+        toolCallId: "t1",
+        title: "ls -la",
+        command: "ls -la",
+        status: "pending",
+      },
+    ]);
+  });
+
+  it("tool_call_update_without_fields_keeps_title_and_command", () => {
+    const state = reduceAll([
+      BASH_CALL,
+      { type: "tool_call_update", toolCallId: "t1", status: "completed" },
+      { type: "tool_call_update", toolCallId: "t1", rawInput: {} },
+    ]);
+
+    expect(state.toolCalls[0]).toMatchObject({
+      title: "Run tests",
+      kind: "execute",
+      command: "pnpm test",
+    });
+    expect(state.turnLog[0]).toMatchObject({
+      title: "Run tests",
+      command: "pnpm test",
+    });
+  });
+
   it("ignores an update for an unknown tool call", () => {
     const state = reduceAll([
       { type: "tool_call_update", toolCallId: "ghost", status: "completed" },

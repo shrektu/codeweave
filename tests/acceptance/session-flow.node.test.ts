@@ -19,6 +19,7 @@ import {
   turnEnded,
 } from "../fakes/backendRig";
 import {
+  AUTH_REQUIRED_CODE,
   DEFAULT_PERMISSION_OPTIONS,
   type ScriptStep,
 } from "../fakes/fakeAcpAgent";
@@ -300,6 +301,137 @@ it("rotation_stops_a_before_spawning_b_with_context_package", async () => {
   expect(await rig.store.readSwitchLog(10)).toEqual([entry]);
   expect(rig.broadcastsOf("switchLog/appended")).toEqual([entry]);
 });
+it("accounts_changed_broadcast_marks_exhausted_account", async () => {
+  const rig = await open();
+  await rig.call("session/start", startParams(rig));
+  agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
+
+  await rig.call("session/prompt", { text: "go" });
+
+  await vi.waitFor(() => {
+    expect(rig.broadcastsOf("accounts/changed").at(-1)).toEqual({
+      accounts: [
+        {
+          ...ACCOUNT_A,
+          runtime: {
+            status: "exhausted",
+            resetsAt: RESET_AFTER_COOLDOWN_SECONDS,
+          },
+        },
+        { ...ACCOUNT_B, runtime: { status: "ready" } },
+      ],
+    });
+  });
+});
+
+it("exhausted_turn_records_rejected_limit", async () => {
+  const rig = await open();
+  await rig.call("session/start", startParams(rig));
+  agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
+
+  await rig.call("session/prompt", { text: "go" });
+
+  await vi.waitFor(async () => {
+    expect((await rig.session()).limits).toEqual([
+      {
+        accountId: ACCOUNT_A.id,
+        status: "rejected",
+        resetsAt: RESET_AFTER_COOLDOWN_SECONDS,
+        rateLimitType: null,
+        utilization: null,
+        observedAt: RIG_NOW_MS,
+      },
+    ]);
+  });
+});
+
+it("runtime_broadcast_only_on_change", async () => {
+  const rig = await open();
+  await rig.call("session/start", startParams(rig));
+  agentOf(rig).enqueue([{ type: "text", text: "hello" }, END_TURN]);
+
+  await rig.call("session/prompt", { text: "hi" });
+  await turnEnded(rig);
+
+  expect(rig.broadcastsOf("session/changed").length).toBeGreaterThan(2);
+  expect(rig.broadcastsOf("accounts/changed")).toEqual([]);
+});
+
+it("runtime_broadcast_on_needs_login", async () => {
+  const rig = await open();
+  await rig.call("session/start", startParams(rig));
+  agentOf(rig).enqueue([
+    { type: "fail", code: AUTH_REQUIRED_CODE, message: "Auth required" },
+  ]);
+
+  await rig.call("session/prompt", { text: "go" });
+
+  await vi.waitFor(() => {
+    expect(rig.broadcastsOf("accounts/changed").at(-1)).toEqual({
+      accounts: [
+        { ...ACCOUNT_A, runtime: { status: "needs_login" } },
+        { ...ACCOUNT_B, runtime: { status: "ready" } },
+      ],
+    });
+  });
+});
+
+it("runtime_broadcast_on_new_session_resets", async () => {
+  const rig = await open();
+  await rig.call("session/start", startParams(rig));
+  agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
+  await rig.call("session/prompt", { text: "go" });
+  await vi.waitFor(() => {
+    expect(rig.broadcastsOf("accounts/changed")).toHaveLength(1);
+  });
+
+  await rig.call("session/stop", {});
+  expect(rig.broadcastsOf("accounts/changed")).toHaveLength(1);
+  await rig.call("session/start", startParams(rig));
+
+  await vi.waitFor(() => {
+    expect(rig.broadcastsOf("accounts/changed").at(-1)).toEqual({
+      accounts: [
+        { ...ACCOUNT_A, runtime: { status: "ready" } },
+        { ...ACCOUNT_B, runtime: { status: "ready" } },
+      ],
+    });
+  });
+});
+
+it("context_package_names_command_from_tool_call_update", async () => {
+  const rig = await open();
+  await rig.call("session/start", startParams(rig));
+  agentOf(rig).enqueue([
+    {
+      type: "tool_call",
+      toolCallId: "t1",
+      title: "Terminal",
+      kind: "execute",
+      rawInput: {},
+    },
+    {
+      type: "tool_call_update",
+      toolCallId: "t1",
+      status: "completed",
+      title: "echo deploy | tee -a x",
+      rawInput: { command: "echo deploy | tee -a x" },
+      text: "deploy",
+    },
+    RATE_LIMIT_FAILURE,
+  ]);
+
+  await rig.call("session/prompt", { text: "ship it" });
+
+  await vi.waitFor(() => {
+    expect(agentOf(rig, 1).prompts).toHaveLength(1);
+  });
+  const handoff = agentOf(rig, 1).prompts[0] ?? "";
+  expect(handoff).toContain("- echo deploy | tee -a x\n  Status: completed");
+  expect(handoff).toContain("do not re-run automatically");
+  expect(handoff).not.toContain("- Terminal");
+});
+
 it("backend_start_sweeps_orphans_of_previous_instances", async () => {
   const first = await open();
   const second = await open({ userData: first.userData });
