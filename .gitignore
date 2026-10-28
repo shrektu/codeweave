@@ -7,3 +7,7 @@ docs/plan-*.md
 docs/stan-prac.md
 research_notes/
 reports/
+out/
+release/
+test-results/
+playwright-report/
