@@ -1,14 +1,7 @@
 import { parse } from "yaml";
 import { z } from "zod";
 
-import { PermissionProfile, ProviderId } from "./types";
-
-export const EdgeKind = {
-  waitsFor: "waits_for",
-  handsOffTo: "hands_off_to",
-  reviews: "reviews",
-} as const;
-export type EdgeKind = (typeof EdgeKind)[keyof typeof EdgeKind];
+import { EdgeKind, PermissionProfile, ProviderId } from "./types";
 
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---/;
 const FRONTMATTER_BLOCKS_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---$/gm;

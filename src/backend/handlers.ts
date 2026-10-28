@@ -1,7 +1,8 @@
 import { SWITCH_LOG_SNAPSHOT_LIMIT } from "../shared/constants";
 
-import { createAccountsService } from "./accountsService";
+import { createAccountsService, type AccountsService } from "./accountsService";
 import type { ConnectionRegistry } from "./connections";
+import { listFlows } from "./flows";
 import type { IpcHandlers } from "./ipcServer";
 import type { ContainerStatus, SessionService } from "./session";
 import { createSettingsService } from "./settingsService";
@@ -13,6 +14,17 @@ export interface HandlerDeps {
   broadcast: ConnectionRegistry["broadcast"];
   sessions: SessionService;
   containerStatus: ContainerStatus;
+}
+
+function publishOnRuntimeChange(
+  sessions: SessionService,
+  accounts: AccountsService,
+): void {
+  sessions.onRuntimeChanged(() => {
+    accounts.publish().catch((error: unknown) => {
+      console.error("failed to publish accounts", error);
+    });
+  });
 }
 
 export function createHandlers({
@@ -29,6 +41,7 @@ export function createHandlers({
     runtimeOf: (id) => sessions.runtimeOf(id),
     isInUse: (id) => sessions.isInUse(id),
   });
+  publishOnRuntimeChange(sessions, accounts);
   const synced = async <T>(mutation: Promise<T>): Promise<T> => {
     const result = await mutation;
     sessions.setAccounts(await store.readAccounts());
@@ -69,5 +82,6 @@ export function createHandlers({
     "switchLog/list": async () => ({
       entries: await store.readSwitchLog(SWITCH_LOG_SNAPSHOT_LIMIT),
     }),
+    "flows/list": ({ cwd }) => listFlows(cwd),
   };
 }

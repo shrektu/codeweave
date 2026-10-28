@@ -1,6 +1,7 @@
 import { render, type RenderResult } from "@testing-library/react";
 import { createElement, type ReactElement } from "react";
 
+import { EdgeKind } from "../../src/domain/types";
 import {
   EffectLevel,
   PermissionProfile,
@@ -23,6 +24,9 @@ import {
 } from "../../src/shared/protocol";
 import type {
   AccountView,
+  AgentView,
+  FlowsList,
+  FlowView,
   LimitView,
   MessageView,
   PermissionView,
@@ -209,6 +213,38 @@ export function makeSwitchEntry(
     reason: SwitchReason.rateLimit,
     resetsAt: null,
     contextPackageChars: 0,
+    ...overrides,
+  };
+}
+
+export function makeAgent(overrides: Partial<AgentView> = {}): AgentView {
+  return {
+    id: "implementer",
+    role: "Implements the planned change",
+    provider: ProviderId.claude,
+    permissionProfile: PermissionProfile.plan,
+    ...overrides,
+  };
+}
+
+export function makeFlow(overrides: Partial<FlowView> = {}): FlowView {
+  return {
+    id: "ship",
+    title: "Ship it",
+    nodes: [
+      { id: "build", agent: "implementer" },
+      { id: "review", agent: "reviewer" },
+    ],
+    edges: [{ from: "build", to: "review", kind: EdgeKind.handsOffTo }],
+    ...overrides,
+  };
+}
+
+export function makeFlowsList(overrides: Partial<FlowsList> = {}): FlowsList {
+  return {
+    flows: [makeFlow()],
+    agents: [makeAgent(), makeAgent({ id: "reviewer", role: "Reviews diffs" })],
+    errors: [],
     ...overrides,
   };
 }

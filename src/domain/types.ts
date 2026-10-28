@@ -23,6 +23,13 @@ export const EffectLevel = {
 } as const;
 export type EffectLevel = (typeof EffectLevel)[keyof typeof EffectLevel];
 
+export const EdgeKind = {
+  waitsFor: "waits_for",
+  handsOffTo: "hands_off_to",
+  reviews: "reviews",
+} as const;
+export type EdgeKind = (typeof EdgeKind)[keyof typeof EdgeKind];
+
 export type EpochSeconds = number;
 export type EpochMillis = number;
 

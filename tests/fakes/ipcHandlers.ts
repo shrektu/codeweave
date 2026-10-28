@@ -23,6 +23,7 @@ export function fakeHandlers(
     "settings/get": unavailable,
     "settings/set": unavailable,
     "switchLog/list": unavailable,
+    "flows/list": unavailable,
     ...overrides,
   };
 }

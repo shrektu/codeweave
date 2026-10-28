@@ -36,6 +36,7 @@ const VALID_REQUESTS: [string, unknown][] = [
   ["settings/set", { effectLevel: "low" }],
   ["settings/set", { claudeExecutable: null }],
   ["switchLog/list", {}],
+  ["flows/list", { cwd: "/work" }],
 ];
 
 const INVALID_REQUESTS: [string, unknown][] = [
@@ -95,6 +96,12 @@ const INVALID_REQUESTS: [string, unknown][] = [
   [
     "settings/set with numeric executable",
     request("settings/set", { claudeExecutable: 4 }),
+  ],
+  ["flows/list without cwd", request("flows/list", {})],
+  ["flows/list with empty cwd", request("flows/list", { cwd: "" })],
+  [
+    "flows/list with extra param",
+    request("flows/list", { cwd: "/w", glob: "*" }),
   ],
 ];
 

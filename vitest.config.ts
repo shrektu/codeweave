@@ -22,7 +22,10 @@ export default defineConfig({
         test: {
           name: "jsdom",
           environment: "jsdom",
-          setupFiles: ["tests/setup/jsdomDialog.ts"],
+          setupFiles: [
+            "tests/setup/jsdomDialog.ts",
+            "tests/setup/jsdomFlow.ts",
+          ],
           include: [
             "src/renderer/**/*.test.{ts,tsx}",
             "tests/acceptance/*.dom.test.tsx",

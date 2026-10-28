@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  EdgeKind,
   EffectLevel,
   PermissionProfile,
   ProviderId,
@@ -122,6 +123,41 @@ export const SessionViewSchema = z.strictObject({
   flowRef: FlowRefSchema.nullable(),
 });
 export type SessionView = z.infer<typeof SessionViewSchema>;
+
+export const AgentViewSchema = z.strictObject({
+  id: z.string(),
+  role: z.string(),
+  provider: z.enum(ProviderId),
+  permissionProfile: z.enum(PermissionProfile),
+});
+export type AgentView = z.infer<typeof AgentViewSchema>;
+
+export const FlowViewSchema = z.strictObject({
+  id: z.string(),
+  title: z.string(),
+  nodes: z.array(z.strictObject({ id: z.string(), agent: z.string() })),
+  edges: z.array(
+    z.strictObject({
+      from: z.string(),
+      to: z.string(),
+      kind: z.enum(EdgeKind),
+    }),
+  ),
+});
+export type FlowView = z.infer<typeof FlowViewSchema>;
+
+export const FlowFileErrorSchema = z.strictObject({
+  file: z.string(),
+  messages: z.array(z.string()),
+});
+export type FlowFileError = z.infer<typeof FlowFileErrorSchema>;
+
+export const FlowsListSchema = z.strictObject({
+  flows: z.array(FlowViewSchema),
+  agents: z.array(AgentViewSchema),
+  errors: z.array(FlowFileErrorSchema),
+});
+export type FlowsList = z.infer<typeof FlowsListSchema>;
 
 export const SettingsViewSchema = z.strictObject({
   permissionProfile: z.enum(PermissionProfile),

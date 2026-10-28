@@ -10,6 +10,7 @@ import {
 import {
   AccountViewSchema,
   FlowRefSchema,
+  FlowsListSchema,
   SessionViewSchema,
   SettingsViewSchema,
   SnapshotSchema,
@@ -79,6 +80,7 @@ export const ParamsSchemas = {
   "settings/get": EmptyParamsSchema,
   "settings/set": SettingsPatchSchema,
   "switchLog/list": EmptyParamsSchema,
+  "flows/list": z.strictObject({ cwd: NonEmptyString }),
 } as const;
 
 export type RequestMethod = keyof typeof ParamsSchemas;
@@ -117,6 +119,7 @@ export const RequestSchema = z.discriminatedUnion("method", [
   requestSchema("settings/get"),
   requestSchema("settings/set"),
   requestSchema("switchLog/list"),
+  requestSchema("flows/list"),
 ]);
 export type IpcRequest = z.infer<typeof RequestSchema>;
 
@@ -147,6 +150,7 @@ const resultSchemaDefinitions = {
   "switchLog/list": z.strictObject({
     entries: z.array(SwitchLogEntryViewSchema),
   }),
+  "flows/list": FlowsListSchema,
 } as const;
 
 export type ResultMap = {

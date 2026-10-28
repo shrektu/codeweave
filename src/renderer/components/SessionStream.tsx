@@ -1,7 +1,9 @@
-import type { JSX } from "react";
+import { useState, type JSX } from "react";
 
 import type {
   AccountView,
+  FlowRef,
+  FlowsList,
   MessageView,
   PermissionView,
   RotationPhaseView,
@@ -30,10 +32,11 @@ const RESTARTABLE_PHASES: readonly RotationPhaseView["phase"][] = [
 function phaseText(
   phase: RotationPhaseView,
   accounts: readonly AccountView[],
+  turnInFlight: boolean,
 ): string {
   switch (phase.phase) {
     case "running":
-      return `Running on ${accountLabel(accounts, phase.accountId)}`;
+      return `${turnInFlight ? "Working" : "Idle"} on ${accountLabel(accounts, phase.accountId)}`;
     case "switching":
       return `Switching from ${accountLabel(accounts, phase.from)} to ${accountLabel(accounts, phase.to)}`;
     case "waiting":
@@ -96,17 +99,77 @@ function StreamEntry({ item }: { item: StreamItem }): JSX.Element {
   }
 }
 
+interface NodeChoice {
+  flowRef: FlowRef;
+  label: string;
+}
+
+interface PendingStart {
+  cwd: string;
+  choices: NodeChoice[];
+}
+
+const NO_CHOICE = "";
+
+function nodeChoices(list: FlowsList): NodeChoice[] {
+  return list.flows.flatMap((flow) =>
+    flow.nodes.map((node) => ({
+      flowRef: { flowId: flow.id, nodeId: node.id },
+      label: `${flow.title} / ${node.id}`,
+    })),
+  );
+}
+
 function StartPrompt(): JSX.Element {
   const { client, state } = useApp();
   const start = useAsyncAction();
+  const [pending, setPending] = useState<PendingStart | null>(null);
+  const [chosen, setChosen] = useState(NO_CHOICE);
+
+  const startSession = async (
+    cwd: string,
+    flowRef: FlowRef | undefined,
+  ): Promise<void> => {
+    await client.request(
+      "session/start",
+      flowRef === undefined ? { cwd } : { cwd, flowRef },
+    );
+    setPending(null);
+    setChosen(NO_CHOICE);
+  };
+
+  const listChoices = async (cwd: string): Promise<NodeChoice[]> => {
+    try {
+      return nodeChoices(await client.request("flows/list", { cwd }));
+    } catch (error: unknown) {
+      console.error("Could not list flows", error);
+      return [];
+    }
+  };
 
   const chooseFolder = (): void => {
     void start.run(async () => {
       const cwd = await window.codeweave.pickFolder();
-      if (cwd !== null) {
-        await client.request("session/start", { cwd });
+      if (cwd === null) {
+        return;
       }
+      const choices = await listChoices(cwd);
+      if (choices.length === 0) {
+        await startSession(cwd, undefined);
+        return;
+      }
+      setChosen(NO_CHOICE);
+      setPending({ cwd, choices });
     });
+  };
+
+  const startChosen = (): void => {
+    if (pending === null) {
+      return;
+    }
+    const choice =
+      chosen === NO_CHOICE ? undefined : pending.choices[Number(chosen)];
+    void start.run(() => startSession(pending.cwd, choice?.flowRef));
   };
 
   return (
@@ -121,6 +184,37 @@ function StartPrompt(): JSX.Element {
       >
         Choose folder…
       </button>
+      {pending !== null && (
+        <>
+          <label className="field">
+            Flow node
+            <select
+              value={chosen}
+              onChange={(event) => {
+                setChosen(event.target.value);
+              }}
+            >
+              <option value={NO_CHOICE}>None</option>
+              {pending.choices.map((choice, index) => (
+                <option
+                  key={`${choice.flowRef.flowId}/${choice.flowRef.nodeId}`}
+                  value={index.toString()}
+                >
+                  {choice.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="btn pri"
+            disabled={start.pending}
+            onClick={startChosen}
+          >
+            Start session
+          </button>
+        </>
+      )}
       {start.error !== null && <p className="error">{start.error}</p>}
       {state.error !== null && <p className="error">{state.error}</p>}
     </div>
@@ -135,7 +229,9 @@ function SessionBody({ session, accounts }: SessionBodyProps): JSX.Element {
     <>
       <div className="session-head">
         <span className="cwd">{session.cwd}</span>
-        <span className="phase">{phaseText(session.phase, accounts)}</span>
+        <span className="phase">
+          {phaseText(session.phase, accounts, session.turnInFlight)}
+        </span>
         {session.phase.phase !== "stopped" && (
           <button
             type="button"
@@ -145,7 +241,7 @@ function SessionBody({ session, accounts }: SessionBodyProps): JSX.Element {
               void stop.run(() => client.request("session/stop", {}));
             }}
           >
-            Stop
+            {session.turnInFlight ? "Stop" : "End session"}
           </button>
         )}
       </div>
