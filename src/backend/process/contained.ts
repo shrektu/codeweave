@@ -47,11 +47,20 @@ function notEmpty(survivors: readonly number[]): StopResult {
   };
 }
 
+async function killQuietly(ops: ContainerOps): Promise<void> {
+  try {
+    await ops.killMembers();
+  } catch (error) {
+    console.error("killing container members failed", error);
+  }
+}
+
 async function confirmEmpty(ops: ContainerOps): Promise<StopResult> {
   const deadline = Date.now() + STOP_CONFIRM_TIMEOUT_MS;
   try {
     let survivors = await ops.members();
     while (survivors.length > 0 && Date.now() < deadline) {
+      await killQuietly(ops);
       await delay(EMPTY_POLL_INTERVAL_MS);
       survivors = await ops.members();
     }
@@ -62,14 +71,6 @@ async function confirmEmpty(ops: ContainerOps): Promise<StopResult> {
       error,
     );
     return notEmpty([]);
-  }
-}
-
-async function killQuietly(ops: ContainerOps): Promise<void> {
-  try {
-    await ops.killMembers();
-  } catch (error) {
-    console.error("killing container members failed", error);
   }
 }
 

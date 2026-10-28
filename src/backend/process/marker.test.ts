@@ -3,13 +3,21 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { makeTempDir } from "../../../tests/fakes/processHelpers";
+import {
+  PROCESS_TEST_TIMEOUT_MS,
+  makeTempDir,
+  stringEnv,
+} from "../../../tests/fakes/processHelpers";
+import { RUN_MARKER_SEPARATOR } from "../constants";
 
 import {
   createEnvMarkerContainer,
   createProcProcessTable,
   type ProcessEntry,
 } from "./marker";
+
+const LATE_PID = 4_000_000;
+const GRACE_MS = 100;
 
 async function writeProc(
   root: string,
@@ -46,6 +54,55 @@ describe("proc process table", () => {
     ]);
   });
 });
+
+describe.runIf(process.platform !== "win32")(
+  "env marker container stop",
+  () => {
+    it(
+      "stop_kills_marked_process_missed_by_first_scan",
+      { timeout: PROCESS_TEST_TIMEOUT_MS },
+      async () => {
+        const instanceId = "inst";
+        const marker = `${instanceId}${RUN_MARKER_SEPARATOR}run-1`;
+        let scans = 0;
+        const killed: number[] = [];
+        const container = createEnvMarkerContainer({
+          processTable: {
+            list: () => {
+              scans += 1;
+              const late: ProcessEntry[] =
+                scans > 1 && !killed.includes(LATE_PID)
+                  ? [{ pid: LATE_PID, ppid: 1, marker }]
+                  : [];
+              return Promise.resolve(late);
+            },
+          },
+          kill: (pid) => {
+            killed.push(pid);
+          },
+          instanceId,
+        });
+        const contained = await container.spawn({
+          command: "sh",
+          args: ["-c", "sleep 0.1"],
+          env: stringEnv(),
+          cwd: await makeTempDir(),
+          runId: "run-1",
+        });
+        await new Promise<void>((resolve) => {
+          contained.onExit(() => {
+            resolve();
+          });
+        });
+
+        const result = await contained.stop(GRACE_MS);
+
+        expect(result).toEqual({ ok: true });
+        expect(killed).toContain(LATE_PID);
+      },
+    );
+  },
+);
 
 describe("env marker container sweep", () => {
   it("sweep_kills_marked_processes_but_spares_self_and_ancestors", async () => {
