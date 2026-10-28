@@ -20,6 +20,7 @@ export const RUN_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 export const RUN_MARKER_SEPARATOR = ":";
 export const CGROUP_ROOT = "/sys/fs/cgroup";
 export const CGROUP_PROCS_FILE = "cgroup.procs";
+export const CGROUP_GONE_ERRNO_CODES: readonly string[] = ["ENODEV", "ENOENT"];
 export const SYSTEMD_RUN_BINARY = "systemd-run";
 export const SYSTEMCTL_BINARY = "systemctl";
 export const KILL_SIGNAL_ARG = "--signal=SIGKILL";

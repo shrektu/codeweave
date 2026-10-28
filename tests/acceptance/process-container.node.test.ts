@@ -305,6 +305,39 @@ describe("systemd container call timeouts", () => {
   });
 });
 
+describe("systemd container teardown", () => {
+  it("dying_scope_enodev_releases_lock_on_stop", async () => {
+    const dying = Object.assign(new Error("ENODEV: no such device, read"), {
+      code: "ENODEV",
+    });
+    const failures: AgentFailure[] = [];
+    const agents = createAgentProcesses({
+      container: createSystemdScopeContainer({
+        exec: (_file, args) =>
+          Promise.resolve(
+            args.includes("show") ? "/user.slice/codeweave-dying.scope\n" : "",
+          ),
+        instanceId: TEST_INSTANCE_ID,
+        spawnChild: idleChild,
+        readFile: vi
+          .fn<(path: string) => Promise<string>>()
+          .mockResolvedValueOnce("4242\n")
+          .mockRejectedValue(dying),
+      }),
+      locks: new WorktreeLocks(),
+      onFailure: (failure) => failures.push(failure),
+    });
+    const agent = await agents.start(specFor(KEEP_ALIVE_SCRIPT));
+
+    const result = await agent.stop(0);
+
+    expect(result).toEqual({ ok: true });
+    expect(failures).toEqual([]);
+    const next = await agents.start(specFor(KEEP_ALIVE_SCRIPT));
+    expect(next.contained.runId).toBeTruthy();
+  });
+});
+
 describe("systemd container orphan sweep", () => {
   it("sweep_spares_live_instance_and_own_scope", async () => {
     const killedUnits: string[] = [];

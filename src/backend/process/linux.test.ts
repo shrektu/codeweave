@@ -253,6 +253,26 @@ describe("systemd scope membership", () => {
     expect(await contained.isEmpty()).toBe(true);
   });
 
+  it("dying_scope_enodev_confirms_empty_on_stop", async () => {
+    const dying = Object.assign(new Error("ENODEV: no such device, read"), {
+      code: "ENODEV",
+    });
+    const container = createSystemdScopeContainer({
+      exec: () => Promise.resolve("/user.slice/codeweave-r.scope\n"),
+      spawnChild: () => spawnIdleChild(),
+      readFile: () => Promise.reject(dying),
+    });
+    const contained = await container.spawn({
+      command: "claude",
+      args: [],
+      env: {},
+      cwd: process.cwd(),
+      runId: "r",
+    });
+
+    expect(await contained.stop(0)).toEqual({ ok: true });
+  });
+
   it("rejects_run_id_that_is_not_a_safe_unit_name", async () => {
     const container = createSystemdScopeContainer({
       spawnChild: () => spawnIdleChild(),
