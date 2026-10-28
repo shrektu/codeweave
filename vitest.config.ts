@@ -1,6 +1,8 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
+const ROTATION_E2E_ENABLED = "1";
+
 export default defineConfig({
   test: {
     projects: [
@@ -32,6 +34,17 @@ export default defineConfig({
           ],
         },
       },
+      ...(process.env.CODEWEAVE_ROTATION_E2E === ROTATION_E2E_ENABLED
+        ? [
+            {
+              test: {
+                name: "rotation",
+                environment: "node",
+                include: ["tests/e2e/rotation.node.test.ts"],
+              },
+            },
+          ]
+        : []),
     ],
   },
 });
