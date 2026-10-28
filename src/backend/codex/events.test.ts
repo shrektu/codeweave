@@ -1,0 +1,406 @@
+import { describe, expect, it } from "vitest";
+
+import { PermissionProfile } from "../../domain/types";
+import {
+  commandItem,
+  fileChangeItem,
+  rateWindow,
+} from "../../../tests/fakes/fakeCodexAppServer";
+
+import {
+  EMPTY_RATE_LIMITS,
+  commandPermission,
+  errorKindOf,
+  fileChangeOf,
+  mapAgentMessageDelta,
+  mapItemCompleted,
+  mapItemStarted,
+  mapTurnError,
+  mergeRateLimits,
+  permissionsPermission,
+  policyFor,
+  replaceRateLimits,
+  sandboxPolicyFor,
+  toRateLimitEvent,
+} from "./events";
+import {
+  RateLimitSnapshotSchema,
+  ThreadItemSchema,
+  type RateLimitSnapshot,
+  type ThreadItem,
+} from "./protocol";
+
+function item(raw: Readonly<Record<string, unknown>>): ThreadItem {
+  return ThreadItemSchema.parse(raw);
+}
+
+function snapshot(raw: Readonly<Record<string, unknown>>): RateLimitSnapshot {
+  return RateLimitSnapshotSchema.parse(raw);
+}
+
+const RESET_EARLY = 1_700_000_000;
+const RESET_LATE = 1_700_009_000;
+
+describe("codex item mapping", () => {
+  it("command_started_and_completed_carry_command_and_output", () => {
+    expect(
+      mapItemStarted(item(commandItem("c1", "ls -la", "inProgress"))),
+    ).toEqual([
+      {
+        type: "tool_call",
+        toolCallId: "c1",
+        title: "ls -la",
+        kind: "execute",
+        status: "in_progress",
+        rawInput: { command: "ls -la" },
+      },
+    ]);
+    expect(
+      mapItemCompleted(item(commandItem("c1", "ls -la", "failed", "boom"))),
+    ).toEqual([
+      {
+        type: "tool_call_update",
+        toolCallId: "c1",
+        status: "failed",
+        rawInput: { command: "ls -la" },
+        output: "boom",
+      },
+    ]);
+  });
+
+  it("declined_command_maps_to_failed_and_empty_output_is_omitted", () => {
+    expect(
+      mapItemCompleted(item(commandItem("c2", "rm x", "declined", ""))),
+    ).toEqual([
+      {
+        type: "tool_call_update",
+        toolCallId: "c2",
+        status: "failed",
+        rawInput: { command: "rm x" },
+      },
+    ]);
+  });
+});
+
+describe("codex item mapping: edits and searches", () => {
+  it("file_change_lists_paths_in_title_and_has_no_raw_input", () => {
+    const change = item(
+      fileChangeItem("f1", ["/w/a.ts", "/w/b.ts"], "inProgress"),
+    );
+
+    expect(mapItemStarted(change)).toEqual([
+      {
+        type: "tool_call",
+        toolCallId: "f1",
+        title: "Edit /w/a.ts, /w/b.ts",
+        kind: "edit",
+        status: "in_progress",
+      },
+    ]);
+    expect(fileChangeOf(change)).toEqual({
+      itemId: "f1",
+      paths: ["/w/a.ts", "/w/b.ts"],
+    });
+    expect(fileChangeOf(item(commandItem("c", "ls", "inProgress")))).toBeNull();
+  });
+
+  it("mcp_tool_call_uses_server_dot_tool_title", () => {
+    expect(
+      mapItemStarted(
+        item({
+          type: "mcpToolCall",
+          id: "m1",
+          server: "github",
+          tool: "search_issues",
+          status: "inProgress",
+          arguments: {},
+        }),
+      ),
+    ).toEqual([
+      {
+        type: "tool_call",
+        toolCallId: "m1",
+        title: "github.search_issues",
+        kind: "other",
+        status: "in_progress",
+      },
+    ]);
+  });
+});
+
+describe("codex item mapping: searches and messages", () => {
+  it("web_search_without_status_defaults_by_lifecycle_stage", () => {
+    const search = item({ type: "webSearch", id: "w1", query: "zod 4 loose" });
+
+    expect(mapItemStarted(search)).toEqual([
+      {
+        type: "tool_call",
+        toolCallId: "w1",
+        title: "zod 4 loose",
+        kind: "search",
+        status: "in_progress",
+      },
+    ]);
+    expect(mapItemCompleted(search)).toEqual([
+      { type: "tool_call_update", toolCallId: "w1", status: "completed" },
+    ]);
+  });
+
+  it("unknown_and_message_items_produce_no_tool_events", () => {
+    expect(mapItemStarted(item({ type: "reasoning", id: "r1" }))).toEqual([]);
+    expect(
+      mapItemCompleted(item({ type: "plan", id: "p1", text: "x" })),
+    ).toEqual([]);
+    expect(
+      mapItemStarted(item({ type: "agentMessage", id: "a1", text: "hi" })),
+    ).toEqual([]);
+    expect(
+      mapItemStarted(item({ type: "commandExecution", id: "broken" })),
+    ).toEqual([]);
+  });
+
+  it("agent_message_delta_uses_item_id_as_message_id", () => {
+    expect(mapAgentMessageDelta({ itemId: "a1", delta: "He" })).toEqual({
+      type: "text",
+      messageId: "a1",
+      text: "He",
+    });
+  });
+});
+
+const FULL = snapshot({
+  primary: rateWindow(40, 300, RESET_EARLY),
+  secondary: rateWindow(70, 10_080, RESET_LATE),
+});
+
+describe("codex rate limit merging", () => {
+  it("sparse_rate_limit_update_merges", () => {
+    const first = mergeRateLimits(EMPTY_RATE_LIMITS, FULL, true);
+
+    const merged = mergeRateLimits(
+      first,
+      snapshot({ primary: rateWindow(55, 300, RESET_EARLY), secondary: null }),
+    );
+
+    expect(merged.primary).toEqual(rateWindow(55, 300, RESET_EARLY));
+    expect(merged.secondary).toEqual(rateWindow(70, 10_080, RESET_LATE));
+    expect(merged.ordinaryUsageAllowed).toBe(true);
+    expect(
+      mergeRateLimits(first, snapshot({ rateLimitReachedType: null })).primary,
+    ).toEqual(rateWindow(40, 300, RESET_EARLY));
+  });
+
+  it("full_rate_limit_read_clears_reached_type", () => {
+    const stuck = mergeRateLimits(
+      EMPTY_RATE_LIMITS,
+      snapshot({
+        primary: rateWindow(100, 300, RESET_EARLY),
+        rateLimitReachedType: "rate_limit_reached",
+      }),
+      false,
+    );
+
+    const replaced = replaceRateLimits(
+      snapshot({ primary: rateWindow(5, 300, RESET_EARLY), secondary: null }),
+      true,
+    );
+
+    expect(stuck.rateLimitReachedType).toBe("rate_limit_reached");
+    expect(replaced).toEqual({
+      primary: rateWindow(5, 300, RESET_EARLY),
+      secondary: null,
+      rateLimitReachedType: null,
+      ordinaryUsageAllowed: true,
+    });
+    expect(toRateLimitEvent(replaced)?.status).toBe("allowed");
+  });
+
+  it("sparse_update_with_window_clears_reached_type", () => {
+    const stuck = mergeRateLimits(
+      EMPTY_RATE_LIMITS,
+      snapshot({
+        primary: rateWindow(100, 300, RESET_EARLY),
+        rateLimitReachedType: "rate_limit_reached",
+      }),
+      true,
+    );
+
+    const cleared = mergeRateLimits(
+      stuck,
+      snapshot({ secondary: rateWindow(20, 10_080, RESET_LATE) }),
+    );
+
+    expect(cleared.rateLimitReachedType).toBeNull();
+    expect(cleared.primary).toEqual(rateWindow(100, 300, RESET_EARLY));
+  });
+
+  it("sparse_update_with_only_reached_type_marks_exhausted", () => {
+    const allowed = mergeRateLimits(EMPTY_RATE_LIMITS, FULL, true);
+
+    const exhausted = mergeRateLimits(
+      allowed,
+      snapshot({ rateLimitReachedType: "rate_limit_reached" }),
+    );
+
+    expect(exhausted.rateLimitReachedType).toBe("rate_limit_reached");
+    expect(exhausted.primary).toEqual(rateWindow(40, 300, RESET_EARLY));
+    expect(toRateLimitEvent(exhausted)?.status).toBe("rejected");
+  });
+
+  it("sparse_update_without_window_keeps_reached_type", () => {
+    const stuck = mergeRateLimits(
+      EMPTY_RATE_LIMITS,
+      snapshot({
+        primary: rateWindow(100, 300, RESET_EARLY),
+        rateLimitReachedType: "rate_limit_reached",
+      }),
+    );
+
+    const kept = mergeRateLimits(
+      stuck,
+      snapshot({ primary: null, rateLimitReachedType: null }),
+    );
+
+    expect(kept.rateLimitReachedType).toBe("rate_limit_reached");
+  });
+
+  it("binding_window_is_the_highest_used_percent", () => {
+    expect(toRateLimitEvent(mergeRateLimits(EMPTY_RATE_LIMITS, FULL))).toEqual({
+      type: "rate_limit",
+      status: "allowed",
+      resetsAt: RESET_LATE,
+      rateLimitType: "seven_day",
+      utilization: 0.7,
+    });
+  });
+});
+
+describe("codex rate limit event", () => {
+  it("exhausted_prefers_full_window_with_latest_reset", () => {
+    const state = mergeRateLimits(
+      EMPTY_RATE_LIMITS,
+      snapshot({
+        primary: rateWindow(100, 300, RESET_EARLY),
+        secondary: rateWindow(100, 10_080, RESET_LATE),
+        rateLimitReachedType: "rate_limit_reached",
+      }),
+    );
+
+    expect(toRateLimitEvent(state)).toEqual({
+      type: "rate_limit",
+      status: "rejected",
+      resetsAt: RESET_LATE,
+      rateLimitType: "seven_day",
+      utilization: 1,
+    });
+  });
+
+  it("ordinary_usage_not_allowed_means_rejected", () => {
+    const state = mergeRateLimits(EMPTY_RATE_LIMITS, FULL, false);
+
+    expect(toRateLimitEvent(state)?.status).toBe("rejected");
+  });
+
+  it.each([
+    [300, "five_hour"],
+    [10_080, "seven_day"],
+    [45, "window_45m"],
+  ])("window_of_%d_minutes_is_%s", (minutes, expected) => {
+    const state = mergeRateLimits(
+      EMPTY_RATE_LIMITS,
+      snapshot({ primary: rateWindow(5, minutes, null) }),
+    );
+
+    expect(toRateLimitEvent(state)).toMatchObject({
+      rateLimitType: expected,
+      resetsAt: null,
+    });
+  });
+
+  it("empty_state_yields_no_event_unless_forced", () => {
+    expect(toRateLimitEvent(EMPTY_RATE_LIMITS)).toBeNull();
+    expect(toRateLimitEvent(EMPTY_RATE_LIMITS, true)).toEqual({
+      type: "rate_limit",
+      status: "rejected",
+      resetsAt: null,
+      rateLimitType: null,
+      utilization: null,
+    });
+  });
+});
+
+describe("codex error mapping", () => {
+  it.each([
+    ["usageLimitExceeded", "rate_limit"],
+    ["unauthorized", "auth_required"],
+    ["rateLimitExceeded", null],
+    ["serverOverloaded", null],
+    [{ httpConnectionFailed: { httpStatusCode: 401 } }, "auth_required"],
+    [{ httpConnectionFailed: { httpStatusCode: 500 } }, null],
+    [{ httpConnectionFailed: { httpStatusCode: null } }, null],
+    [{ somethingNew: { x: 1 } }, null],
+    [null, null],
+  ])("error_info_%j_maps_to_%s", (info, expected) => {
+    expect(errorKindOf(info)).toBe(expected);
+  });
+
+  it("turn_error_keeps_message_and_has_no_rpc_code", () => {
+    expect(
+      mapTurnError({ message: "limit", codexErrorInfo: "usageLimitExceeded" }),
+    ).toEqual({
+      type: "turn_error",
+      errorKind: "rate_limit",
+      rpcCode: null,
+      message: "limit",
+    });
+  });
+});
+
+describe("codex profile and permission mapping", () => {
+  it.each([
+    [PermissionProfile.bypass, "never", "danger-full-access"],
+    [PermissionProfile.unattended, "untrusted", "workspace-write"],
+    [PermissionProfile.acceptEdits, "untrusted", "workspace-write"],
+    [PermissionProfile.ask, "untrusted", "workspace-write"],
+    [PermissionProfile.plan, "untrusted", "read-only"],
+  ])("profile_%s_maps_to_%s_and_%s", (profile, approvalPolicy, sandbox) => {
+    expect(policyFor(profile)).toEqual({ approvalPolicy, sandbox });
+  });
+
+  it("sandbox_policy_objects_follow_the_wire_contract", () => {
+    expect(sandboxPolicyFor("danger-full-access")).toEqual({
+      type: "dangerFullAccess",
+    });
+    expect(sandboxPolicyFor("workspace-write")).toEqual({
+      type: "workspaceWrite",
+    });
+    expect(sandboxPolicyFor("read-only")).toEqual({
+      type: "readOnly",
+      networkAccess: false,
+    });
+  });
+
+  it("command_permission_without_command_has_default_title_and_no_raw_input", () => {
+    const event = commandPermission("r1", { itemId: "c1" });
+
+    expect(event).toMatchObject({
+      toolCallId: "c1",
+      title: "Run command",
+      kind: "execute",
+    });
+    expect(event).not.toHaveProperty("rawInput");
+  });
+
+  it("permissions_request_offers_grant_and_deny", () => {
+    const event = permissionsPermission("r2", {
+      itemId: "p1",
+      permissions: { network: { enabled: true } },
+    });
+
+    expect(event.kind).toBe("other");
+    expect(event.options).toEqual([
+      { optionId: "grant", name: "Grant", kind: "allow_once" },
+      { optionId: "deny", name: "Deny", kind: "reject_once" },
+    ]);
+  });
+});

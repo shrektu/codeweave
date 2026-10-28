@@ -145,6 +145,9 @@ class EnvMarkerContainer implements ProcessContainer {
     const child = await this.spawnChild(spec.command, spec.args, {
       env: { ...spec.env, [RUN_ID_ENV]: marker },
       cwd: spec.cwd,
+      ...(spec.windowsVerbatimArguments === undefined
+        ? {}
+        : { windowsVerbatimArguments: spec.windowsVerbatimArguments }),
     });
     this.liveMarkers.add(marker);
     return createContained(child, spec.runId, this.opsFor(marker, child));

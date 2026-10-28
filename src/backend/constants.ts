@@ -92,3 +92,5 @@ export const ACP_KINDS_EDIT: readonly string[] = ["edit", "delete", "move"];
 export const ACP_KINDS_EXECUTE: readonly string[] = ["execute"];
 export const OPTION_KIND_ALLOW_ONCE = "allow_once";
 export const OPTION_KIND_REJECT_ONCE = "reject_once";
+export const OPTION_KIND_ALLOW_ALWAYS = "allow_always";
+export const CODEX_HOME_ENV = "CODEX_HOME";
