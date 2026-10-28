@@ -4,7 +4,11 @@ import { isAbsolute, join, resolve } from "node:path";
 
 import { ProviderId, type Account } from "../domain/types";
 import { IpcError, IpcErrorCode, type ParamsMap } from "../shared/protocol";
-import type { AccountRuntimeView, AccountView } from "../shared/views";
+import type {
+  AccountRuntimeView,
+  AccountView,
+  LimitView,
+} from "../shared/views";
 
 import type { ConnectionRegistry } from "./connections";
 import {
@@ -24,6 +28,7 @@ export interface AccountsServiceDeps {
   userData: string;
   broadcast: ConnectionRegistry["broadcast"];
   runtimeOf: (id: string) => AccountRuntimeView;
+  limitOf: (id: string) => LimitView | null;
   isInUse: (id: string) => boolean;
 }
 
@@ -65,10 +70,11 @@ function absoluteConfigDir(configDir: string): string {
 }
 
 function createRepository(deps: AccountsServiceDeps): Repository {
-  const { store, runtimeOf, broadcast } = deps;
+  const { store, runtimeOf, limitOf, broadcast } = deps;
   const toView = (account: Account): AccountView => ({
     ...account,
     runtime: runtimeOf(account.id),
+    limit: limitOf(account.id),
   });
   return {
     toView,

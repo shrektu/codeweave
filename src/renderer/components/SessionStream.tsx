@@ -10,7 +10,14 @@ import type {
   SessionView,
   ToolCallView,
 } from "../../shared/views";
-import { accountLabel, formatLocalTime } from "../format";
+import {
+  accountLabel,
+  formatLocalTime,
+  isSelectable,
+  PROVIDER_LABELS,
+  providerOf,
+  type SelectableProvider,
+} from "../format";
 import { useApp } from "../services";
 import { useAsyncAction } from "../useAsyncAction";
 
@@ -120,20 +127,32 @@ function nodeChoices(list: FlowsList): NodeChoice[] {
   );
 }
 
+function distinctProviders(
+  accounts: readonly AccountView[],
+): SelectableProvider[] {
+  return [...new Set(accounts.map((account) => account.provider))].filter(
+    isSelectable,
+  );
+}
+
 function StartPrompt(): JSX.Element {
   const { client, state } = useApp();
   const start = useAsyncAction();
   const [pending, setPending] = useState<PendingStart | null>(null);
   const [chosen, setChosen] = useState(NO_CHOICE);
+  const [picked, setPicked] = useState<SelectableProvider | null>(null);
+  const providers = distinctProviders(state.snapshot?.accounts ?? []);
+  const provider = providers.find((id) => id === picked) ?? providers[0];
 
   const startSession = async (
     cwd: string,
     flowRef: FlowRef | undefined,
   ): Promise<void> => {
-    await client.request(
-      "session/start",
-      flowRef === undefined ? { cwd } : { cwd, flowRef },
-    );
+    await client.request("session/start", {
+      cwd,
+      ...(provider === undefined ? {} : { provider }),
+      ...(flowRef === undefined ? {} : { flowRef }),
+    });
     setPending(null);
     setChosen(NO_CHOICE);
   };
@@ -176,6 +195,21 @@ function StartPrompt(): JSX.Element {
     <div className="empty-state">
       <p className="empty-title">No session</p>
       <p className="empty">Choose a project folder to start.</p>
+      {providers.length > 1 && (
+        <select
+          aria-label="Agent"
+          value={provider}
+          onChange={(event) => {
+            setPicked(providerOf(event.target.value));
+          }}
+        >
+          {providers.map((id) => (
+            <option key={id} value={id}>
+              {PROVIDER_LABELS[id]}
+            </option>
+          ))}
+        </select>
+      )}
       <button
         type="button"
         className="btn pri"

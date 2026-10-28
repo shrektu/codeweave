@@ -89,6 +89,7 @@ it("account_label_falls_back_to_id", () => {
       configDir: "/a",
       order: 0,
       runtime: { status: "ready" },
+      limit: null,
     },
   ] as const;
 

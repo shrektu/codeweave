@@ -71,7 +71,15 @@ export function LimitsPanel(): JSX.Element {
   const now = useNow(MS_PER_MINUTE);
   const accounts = state.snapshot?.accounts ?? [];
   const session = state.snapshot?.session ?? null;
-  const limits = session?.limits ?? [];
+  const sessionLimits = session?.limits ?? [];
+  const limits = [
+    ...sessionLimits,
+    ...accounts.flatMap(({ id, limit }) =>
+      limit !== null && !sessionLimits.some((item) => item.accountId === id)
+        ? [limit]
+        : [],
+    ),
+  ];
 
   return (
     <section className="glass panel" aria-label="Limits">

@@ -25,9 +25,6 @@ import type { StopResult } from "../process/container";
 
 import {
   APPROVALS_REVIEWER_USER,
-  CLIENT_NAME,
-  CLIENT_TITLE,
-  CLIENT_VERSION,
   CodexDecision,
   CodexMethod,
   CodexNotification,
@@ -64,16 +61,15 @@ import {
   type ProfilePolicy,
   type RateLimitState,
 } from "./events";
+import { openCodexAccount, withTimeout } from "./handshake";
 import { buildCodexLaunch } from "./launch";
 import {
   AccountRateLimitsUpdatedSchema,
-  AccountReadResponseSchema,
   AgentMessageDeltaParamsSchema,
   CommandApprovalParamsSchema,
   EmptyResultSchema,
   ErrorNotificationParamsSchema,
   FileChangeApprovalParamsSchema,
-  InitializeResponseSchema,
   ItemNotificationParamsSchema,
   PermissionsApprovalParamsSchema,
   RateLimitsReadResponseSchema,
@@ -156,16 +152,6 @@ function permissionAnswers(
         : DENIED_PERMISSIONS,
     declined: DENIED_PERMISSIONS,
   };
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  const timeout = Promise.withResolvers<never>();
-  const timer = setTimeout(() => {
-    timeout.reject(new Error(`Timed out after ${String(ms)} ms`));
-  }, ms);
-  return Promise.race([promise, timeout.promise]).finally(() => {
-    clearTimeout(timer);
-  });
 }
 
 function messageOf(error: unknown): string {
@@ -370,24 +356,8 @@ class CodexAppServerSession implements AgentHandle {
   }
 
   private async negotiate(spec: AgentStartSpec): Promise<void> {
-    await this.rpc.request(
-      CodexMethod.initialize,
-      {
-        clientInfo: {
-          name: CLIENT_NAME,
-          title: CLIENT_TITLE,
-          version: CLIENT_VERSION,
-        },
-      },
-      InitializeResponseSchema,
-    );
-    this.rpc.notify(CodexMethod.initialized);
-    const account = await this.rpc.request(
-      CodexMethod.accountRead,
-      {},
-      AccountReadResponseSchema,
-    );
-    if (account.account === null && account.requiresOpenaiAuth) {
+    const { needsLogin } = await openCodexAccount(this.rpc);
+    if (needsLogin) {
       throw new CodexNeedsLoginError();
     }
     await this.loadInitialRateLimits();

@@ -13,6 +13,7 @@ import type { TurnOutcome } from "./rateLimit";
 import {
   createRotationController,
   decideNext,
+  mergeRuntime,
   type AccountRuntime,
   type RotationController,
 } from "./rotation";
@@ -216,6 +217,27 @@ describe("rotation controller: login", () => {
       "prompt:C",
     ]);
     expect(controller.runtime().get("B")).toEqual({ status: "needs_login" });
+    expect(controller.phase()).toEqual({ phase: "running", accountId: "C" });
+  });
+});
+
+describe("rotation controller: unavailable target", () => {
+  it("rotation_retries_next_account_when_target_unavailable", async () => {
+    const { harness, controller } = scenario({
+      startResults: { B: { ok: false, reason: "unavailable" } },
+    });
+
+    await controller.onTurnSettled("A", exhausted(NOW_S + 60));
+
+    expect(harness.calls).toEqual([
+      "stop:A",
+      "start:B",
+      "start:C",
+      "package",
+      "log",
+      "prompt:C",
+    ]);
+    expect(controller.runtime().has("B")).toBe(false);
     expect(controller.phase()).toEqual({ phase: "running", accountId: "C" });
   });
 });
@@ -661,5 +683,134 @@ describe("rotation controller: busy", () => {
     await controller.onTurnSettled("A", { kind: "ok" });
 
     expect(controller.busy()).toBe(false);
+  });
+});
+
+describe("decideNext: external runtime", () => {
+  const accounts = [account("A", 1), account("B", 2), account("C", 3)];
+
+  function decideExternal(
+    own: Record<string, AccountRuntime>,
+    external: Record<string, AccountRuntime>,
+  ): ReturnType<typeof decideNext> {
+    return decideNext({
+      accounts,
+      runtime: new Map(Object.entries(own)),
+      current: "A",
+      outcome: exhausted(NOW_S + 60),
+      now: NOW_MS,
+      externalRuntime: (id) => external[id] ?? null,
+    });
+  }
+
+  it("skips an account the probe saw exhausted", () => {
+    const result = decideExternal(
+      {},
+      { B: { status: "exhausted", resetsAt: NOW_S + 3600 } },
+    );
+
+    expect(result).toEqual({ kind: "switch", to: "C", reason: "rate_limit" });
+  });
+
+  it("lets a probe exhaustion in the future override the own ready state", () => {
+    const result = decideExternal(
+      { B: { status: "ready" } },
+      { B: { status: "exhausted", resetsAt: NOW_S + 3600 } },
+    );
+
+    expect(result).toMatchObject({ kind: "switch", to: "C" });
+  });
+
+  it("probe_exhausted_overrides_expired_own_exhaustion", () => {
+    const result = decideExternal(
+      { B: { status: "exhausted", resetsAt: NOW_S - 10 } },
+      { B: { status: "exhausted", resetsAt: NOW_S + 3600 } },
+    );
+
+    expect(result).toMatchObject({ kind: "switch", to: "C" });
+  });
+
+  it("lets the own needs_login win over a probe that is ready", () => {
+    const result = decideExternal(
+      { B: { status: "needs_login" } },
+      { B: { status: "ready" } },
+    );
+
+    expect(result).toMatchObject({ kind: "switch", to: "C" });
+  });
+
+  it("counts a probe exhaustion whose reset has passed as ready", () => {
+    const result = decideExternal(
+      {},
+      { B: { status: "exhausted", resetsAt: NOW_S - 10 } },
+    );
+
+    expect(result).toMatchObject({ kind: "switch", to: "B" });
+  });
+
+  it("waits for the earliest probe reset when everything is exhausted", () => {
+    const result = decideExternal(
+      {},
+      {
+        B: { status: "exhausted", resetsAt: NOW_S + 7200 },
+        C: { status: "exhausted", resetsAt: NOW_S + 30 },
+      },
+    );
+
+    expect(result).toEqual({
+      kind: "wait",
+      accountId: "C",
+      until: NOW_S + 30,
+    });
+  });
+});
+
+describe("mergeRuntime", () => {
+  const future = (offset: number): AccountRuntime => ({
+    status: "exhausted",
+    resetsAt: NOW_S + offset,
+  });
+  const expired: AccountRuntime = { status: "exhausted", resetsAt: NOW_S - 10 };
+  const ready: AccountRuntime = { status: "ready" };
+  const needsLogin: AccountRuntime = { status: "needs_login" };
+
+  it("keeps own needs_login over a future probe exhaustion", () => {
+    expect(mergeRuntime(needsLogin, future(3600), NOW_MS)).toEqual(needsLogin);
+  });
+
+  it("takes the later of two future resets", () => {
+    expect(mergeRuntime(future(100), future(500), NOW_MS)).toEqual(future(500));
+    expect(mergeRuntime(future(900), future(500), NOW_MS)).toEqual(future(900));
+  });
+
+  it("takes a future probe exhaustion over an expired own one", () => {
+    expect(mergeRuntime(expired, future(3600), NOW_MS)).toEqual(future(3600));
+  });
+
+  it("takes a future own exhaustion over an expired probe one", () => {
+    expect(mergeRuntime(future(3600), expired, NOW_MS)).toEqual(future(3600));
+  });
+
+  it("takes a future probe exhaustion over an own ready state", () => {
+    expect(mergeRuntime(ready, future(3600), NOW_MS)).toEqual(future(3600));
+  });
+
+  it("falls back to own, then probe, then ready", () => {
+    expect(mergeRuntime(expired, expired, NOW_MS)).toEqual(expired);
+    expect(mergeRuntime(null, needsLogin, NOW_MS)).toEqual(needsLogin);
+    expect(mergeRuntime(null, null, NOW_MS)).toEqual(ready);
+  });
+
+  it("counts a state with only expired exhaustion as ready for rotation", () => {
+    const result = decideNext({
+      accounts: [account("A", 1), account("B", 2)],
+      runtime: new Map([["B", expired]]),
+      current: "A",
+      outcome: exhausted(NOW_S + 60),
+      now: NOW_MS,
+      externalRuntime: () => expired,
+    });
+
+    expect(result).toMatchObject({ kind: "switch", to: "B" });
   });
 });

@@ -34,6 +34,7 @@ async function setup(): Promise<Harness> {
     userData,
     broadcast,
     runtimeOf: () => ({ status: "ready" }),
+    limitOf: () => null,
     isInUse: (id) => inUse.has(id),
   });
   return { service, store, userData, broadcast, inUse };
@@ -95,6 +96,7 @@ it("accounts_add_creates_default_config_dir_and_broadcasts", async () => {
     configDir,
     order: 0,
     runtime: { status: "ready" },
+    limit: null,
   });
   expect(await store.readAccounts()).toEqual([
     { id: account.id, provider: "claude", label: "Work", configDir, order: 0 },

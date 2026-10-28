@@ -4,6 +4,7 @@ import { createAccountsService, type AccountsService } from "./accountsService";
 import type { ConnectionRegistry } from "./connections";
 import { listFlows } from "./flows";
 import type { IpcHandlers } from "./ipcServer";
+import type { LimitProbeService } from "./limitProbe";
 import type { ContainerStatus, SessionService } from "./session";
 import { createSettingsService } from "./settingsService";
 import type { JsonStore } from "./storage";
@@ -13,17 +14,13 @@ export interface HandlerDeps {
   userData: string;
   broadcast: ConnectionRegistry["broadcast"];
   sessions: SessionService;
+  probes: LimitProbeService;
   containerStatus: ContainerStatus;
 }
 
-function publishOnRuntimeChange(
-  sessions: SessionService,
-  accounts: AccountsService,
-): void {
-  sessions.onRuntimeChanged(() => {
-    accounts.publish().catch((error: unknown) => {
-      console.error("failed to publish accounts", error);
-    });
+function publishAccounts(accounts: AccountsService): void {
+  accounts.publish().catch((error: unknown) => {
+    console.error("failed to publish accounts", error);
   });
 }
 
@@ -32,6 +29,7 @@ export function createHandlers({
   userData,
   broadcast,
   sessions,
+  probes,
   containerStatus,
 }: HandlerDeps): IpcHandlers {
   const accounts = createAccountsService({
@@ -39,12 +37,23 @@ export function createHandlers({
     userData,
     broadcast,
     runtimeOf: (id) => sessions.runtimeOf(id),
+    limitOf: (id) => probes.limitOf(id),
     isInUse: (id) => sessions.isInUse(id),
   });
-  publishOnRuntimeChange(sessions, accounts);
+  sessions.onRuntimeChanged(() => {
+    publishAccounts(accounts);
+  });
+  probes.onChanged(() => {
+    publishAccounts(accounts);
+  });
   const synced = async <T>(mutation: Promise<T>): Promise<T> => {
     const result = await mutation;
     sessions.setAccounts(await store.readAccounts());
+    return result;
+  };
+  const probed = async <T>(mutation: Promise<T>): Promise<T> => {
+    const result = await synced(mutation);
+    probes.trigger();
     return result;
   };
   const settings = createSettingsService({ store, broadcast });
@@ -73,8 +82,8 @@ export function createHandlers({
     },
     "accounts/list": () => accounts.list(),
     "accounts/suggest": () => accounts.suggest(),
-    "accounts/add": (params) => synced(accounts.add(params)),
-    "accounts/remove": ({ id }) => synced(accounts.remove(id)),
+    "accounts/add": (params) => probed(accounts.add(params)),
+    "accounts/remove": ({ id }) => probed(accounts.remove(id)),
     "accounts/move": ({ id, direction }) =>
       synced(accounts.move(id, direction)),
     "settings/get": () => settings.get(),

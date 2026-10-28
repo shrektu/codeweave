@@ -35,6 +35,11 @@ export type RateLimitRead =
   | { readonly kind: "ok"; readonly response: Json }
   | { readonly kind: "hang" }
   | {
+      readonly kind: "gated";
+      readonly gate: Promise<void>;
+      readonly response: Json;
+    }
+  | {
       readonly kind: "delayed";
       readonly delayMs: number;
       readonly response: Json;
@@ -398,6 +403,13 @@ export class FakeCodexAppServer {
           }),
         );
         return;
+      case "gated":
+        this.delayedReplies.push(
+          read.gate.then(() => {
+            this.reply(id, read.response);
+          }),
+        );
+        return;
       case "hang":
         return;
     }
@@ -506,6 +518,10 @@ export class ScriptedCodexContainer implements ProcessContainer {
   readonly servers: FakeCodexAppServer[] = [];
   readonly contained: FakeContained[] = [];
   readonly config: FakeCodexConfig = {};
+  readonly configByHome = new Map<string, FakeCodexConfig>();
+  readonly stopResultsByHome = new Map<string, StopResult[]>();
+  spawnGate: Promise<void> | null = null;
+  spawnRequests = 0;
   private readonly inner: FakeContainer;
   private readonly nextScripts: (readonly TurnStep[])[] = [];
 
@@ -518,6 +534,8 @@ export class ScriptedCodexContainer implements ProcessContainer {
   }
 
   async spawn(spec: SpawnSpec): Promise<Contained> {
+    this.spawnRequests += 1;
+    await this.spawnGate;
     const spawned = await this.inner.spawn(spec);
     const fake = this.inner.spawned[this.inner.spawned.length - 1];
     if (fake === undefined) {
@@ -525,13 +543,37 @@ export class ScriptedCodexContainer implements ProcessContainer {
     }
     this.specs.push(spec);
     this.contained.push(fake);
-    const server = new FakeCodexAppServer(fake, this.config);
+    const home = spec.env.CODEX_HOME;
+    const server = new FakeCodexAppServer(
+      fake,
+      (home === undefined ? undefined : this.configByHome.get(home)) ??
+        this.config,
+    );
     const steps = this.nextScripts.shift();
     if (steps !== undefined) {
       server.enqueue(steps);
     }
     this.servers.push(server);
-    return spawned;
+    const forced =
+      home === undefined ? undefined : this.stopResultsByHome.get(home);
+    if (forced === undefined) {
+      return spawned;
+    }
+    return {
+      pid: spawned.pid,
+      runId: spawned.runId,
+      stdin: spawned.stdin,
+      stdout: spawned.stdout,
+      stderr: spawned.stderr,
+      isEmpty: () => spawned.isEmpty(),
+      onExit: (listener) => {
+        spawned.onExit(listener);
+      },
+      stop: async (graceMs) => {
+        const real = await spawned.stop(graceMs);
+        return forced.shift() ?? real;
+      },
+    };
   }
 
   sweepOrphans(): Promise<number> {

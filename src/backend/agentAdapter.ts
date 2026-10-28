@@ -14,6 +14,7 @@ export interface AgentStartSpec {
 export const AgentStartFailure = {
   needsLogin: "needs_login",
   error: "error",
+  unavailable: "unavailable",
 } as const;
 export type AgentStartFailure =
   (typeof AgentStartFailure)[keyof typeof AgentStartFailure];

@@ -1,3 +1,5 @@
+import { ProviderId } from "../domain/types";
+
 const SINGLE_QUOTE = "'";
 const BASH_ESCAPED_QUOTE = "'\\''";
 const POWERSHELL_SINGLE_QUOTES = /['‘’‚‛]/g;
@@ -5,16 +7,45 @@ const POWERSHELL_SINGLE_QUOTES = /['‘’‚‛]/g;
 export interface LoginCommands {
   bash: string;
   powershell: string;
+  hint: string;
 }
 
-export function loginCommands(configDir: string): LoginCommands {
+interface LoginSpec {
+  readonly variable: string;
+  readonly command: string;
+  readonly hint: string;
+}
+
+const LOGIN_SPECS: Readonly<Partial<Record<ProviderId, LoginSpec>>> = {
+  [ProviderId.claude]: {
+    variable: "CLAUDE_CONFIG_DIR",
+    command: "claude",
+    hint: "Run this in a terminal, then type /login:",
+  },
+  [ProviderId.codex]: {
+    variable: "CODEX_HOME",
+    command: "codex login",
+    hint: "Run this in a terminal:",
+  },
+};
+
+export function loginCommands(
+  provider: ProviderId,
+  configDir: string,
+): LoginCommands | null {
+  const spec = LOGIN_SPECS[provider];
+  if (spec === undefined) {
+    return null;
+  }
+  const { variable, command, hint } = spec;
   const bashDir = configDir.replaceAll(SINGLE_QUOTE, BASH_ESCAPED_QUOTE);
   const powershellDir = configDir.replace(
     POWERSHELL_SINGLE_QUOTES,
     (quote) => quote + quote,
   );
   return {
-    bash: `CLAUDE_CONFIG_DIR='${bashDir}' claude`,
-    powershell: `$env:CLAUDE_CONFIG_DIR='${powershellDir}'; claude`,
+    bash: `${variable}='${bashDir}' ${command}`,
+    powershell: `$env:${variable}='${powershellDir}'; ${command}`,
+    hint,
   };
 }

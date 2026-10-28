@@ -82,6 +82,9 @@ export const STORAGE_VERSION = 1;
 export const TEMP_FILE_SUFFIX = ".tmp";
 
 export const AGENT_STOP_GRACE_MS = 5000;
+export const PROBE_INTERVAL_MS = 5 * 60 * 1000;
+export const PROBE_TIMEOUT_MS = 15_000;
+export const PROBE_RUN_ID_PREFIX = "probe-";
 export const CONTAINER_UNAVAILABLE_MESSAGE =
   "Process container is not available";
 export const CLAUDE_BINARY = "claude";

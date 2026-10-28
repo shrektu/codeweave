@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { PermissionProfile } from "../../src/domain/types";
@@ -17,6 +23,10 @@ import {
 
 const SUGGESTED_DIR = "/home/user/.claude-next";
 const BYPASS_WARNING =
+  "In Bypass mode the agent never asks, so Codeweave cannot block dangerous commands.";
+const BYPASS_DESCRIPTION = "The agent runs every tool without asking.";
+const CLAUDE_BYPASS_DESCRIPTION = "Claude runs every tool without asking.";
+const CLAUDE_BYPASS_WARNING =
   "In Bypass mode Claude never asks, so Codeweave cannot block dangerous commands.";
 
 afterEach(() => {
@@ -36,7 +46,10 @@ function settingsClient(): FakeIpcClient {
         patch.claudeExecutable === undefined
           ? current.claudeExecutable
           : patch.claudeExecutable,
-      codexExecutable: current.codexExecutable,
+      codexExecutable:
+        patch.codexExecutable === undefined
+          ? current.codexExecutable
+          : patch.codexExecutable,
     };
     client.emit({ v: 3, event: "settings/changed", payload: current });
     return current;
@@ -63,15 +76,24 @@ function configDirInput(): HTMLInputElement {
   return screen.getByLabelText<HTMLInputElement>("Config directory");
 }
 
+const CLAUDE_SAVE_INDEX = 0;
+const CODEX_SAVE_INDEX = 1;
+
+function saveButton(index: number): HTMLElement {
+  const button = screen.getAllByRole("button", { name: "Save" })[index];
+  if (button === undefined) {
+    throw new Error(`no Save button at ${index.toString()}`);
+  }
+  return button;
+}
+
 it("settings_dialog_sends_profile_and_warns_on_bypass", async () => {
   const client = settingsClient();
   renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
 
   const bypass = await screen.findByRole("radio", { name: "Bypass" });
   expect(screen.queryByText(BYPASS_WARNING)).toBeNull();
-  expect(
-    screen.getByText("Claude runs every tool without asking."),
-  ).toBeTruthy();
+  expect(screen.getByText(BYPASS_DESCRIPTION)).toBeTruthy();
   expect(
     screen.getByText("Read-only: edits and commands are denied."),
   ).toBeTruthy();
@@ -104,10 +126,10 @@ it("settings_dialog_sends_effect_level", async () => {
 it("settings_dialog_saves_executable_and_null_when_empty", async () => {
   const client = settingsClient();
   renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
-  const input = await screen.findByPlaceholderText("Found on PATH");
+  const input = await screen.findByLabelText("Claude executable");
 
   fireEvent.change(input, { target: { value: "/opt/claude/bin/claude" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  fireEvent.click(saveButton(CLAUDE_SAVE_INDEX));
   await waitFor(() => {
     expect(client.requests).toContainEqual({
       method: "settings/set",
@@ -116,13 +138,53 @@ it("settings_dialog_saves_executable_and_null_when_empty", async () => {
   });
 
   fireEvent.change(input, { target: { value: "" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  fireEvent.click(saveButton(CLAUDE_SAVE_INDEX));
   await waitFor(() => {
     expect(client.requests).toContainEqual({
       method: "settings/set",
       params: { claudeExecutable: null },
     });
   });
+});
+
+it("settings_dialog_saves_codex_executable", async () => {
+  const client = settingsClient();
+  renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
+  const input = await screen.findByLabelText("Codex executable");
+
+  fireEvent.change(input, { target: { value: "/opt/codex/bin/codex" } });
+  fireEvent.click(saveButton(CODEX_SAVE_INDEX));
+  await waitFor(() => {
+    expect(client.requests).toContainEqual({
+      method: "settings/set",
+      params: { codexExecutable: "/opt/codex/bin/codex" },
+    });
+  });
+
+  fireEvent.change(input, { target: { value: "" } });
+  fireEvent.click(saveButton(CODEX_SAVE_INDEX));
+  await waitFor(() => {
+    expect(client.requests).toContainEqual({
+      method: "settings/set",
+      params: { codexExecutable: null },
+    });
+  });
+});
+
+it("bypass_texts_do_not_name_claude", async () => {
+  renderWithServices(
+    <SettingsDialog onClose={vi.fn<() => void>()} />,
+    settingsClient(),
+  );
+
+  fireEvent.click(await screen.findByRole("radio", { name: "Bypass" }));
+
+  await waitFor(() => {
+    expect(screen.getByText(BYPASS_WARNING)).toBeTruthy();
+  });
+  expect(screen.getByText(BYPASS_DESCRIPTION)).toBeTruthy();
+  expect(screen.queryByText(CLAUDE_BYPASS_DESCRIPTION)).toBeNull();
+  expect(screen.queryByText(CLAUDE_BYPASS_WARNING)).toBeNull();
 });
 
 it("settings_dialog_close_button_calls_onClose", async () => {
@@ -166,9 +228,76 @@ it("accounts_dialog_adds_account", async () => {
   await waitFor(() => {
     expect(client.requests).toContainEqual({
       method: "accounts/add",
-      params: { label: "Personal", configDir: SUGGESTED_DIR },
+      params: {
+        label: "Personal",
+        configDir: SUGGESTED_DIR,
+        provider: "claude",
+      },
     });
   });
+});
+
+it("accounts_dialog_adds_codex_account_with_provider", async () => {
+  const client = accountsClient();
+  client.respond("accounts/add", {
+    account: makeAccount({ label: "Codex main", provider: "codex" }),
+  });
+  renderWithServices(<AccountsDialog onClose={vi.fn<() => void>()} />, client);
+  await waitFor(() => {
+    expect(configDirInput().value).toBe(SUGGESTED_DIR);
+  });
+
+  const agent = screen.getByLabelText<HTMLSelectElement>("Agent");
+  expect(
+    within(agent)
+      .getAllByRole("option")
+      .map((option) => option.textContent),
+  ).toEqual(["Claude", "Codex"]);
+  expect(agent.value).toBe("claude");
+  fireEvent.change(agent, { target: { value: "codex" } });
+  fireEvent.change(screen.getByLabelText("Label"), {
+    target: { value: "Codex main" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Add account" }));
+
+  await waitFor(() => {
+    expect(client.requests).toContainEqual({
+      method: "accounts/add",
+      params: {
+        label: "Codex main",
+        configDir: SUGGESTED_DIR,
+        provider: "codex",
+      },
+    });
+  });
+});
+
+it("accounts_dialog_shows_codex_login_command", async () => {
+  const client = accountsClient();
+  client.respond(
+    "sessions/snapshot",
+    makeSnapshot({
+      accounts: [
+        makeAccount({
+          id: "acc-codex",
+          provider: "codex",
+          label: "Codex main",
+          configDir: "/home/us er/it's",
+        }),
+      ],
+    }),
+  );
+  renderWithServices(<AccountsDialog onClose={vi.fn<() => void>()} />, client);
+
+  expect(await screen.findByText("Sign in")).toBeTruthy();
+  expect(screen.getByText("Run this in a terminal:")).toBeTruthy();
+  expect(
+    screen.getByText("CODEX_HOME='/home/us er/it'\\''s' codex login"),
+  ).toBeTruthy();
+  expect(
+    screen.getByText("$env:CODEX_HOME='/home/us er/it''s'; codex login"),
+  ).toBeTruthy();
+  expect(screen.queryByText(/CLAUDE_CONFIG_DIR/)).toBeNull();
 });
 
 it("accounts_dialog_rejects_empty_label", async () => {

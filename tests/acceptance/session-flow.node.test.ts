@@ -317,8 +317,9 @@ it("accounts_changed_broadcast_marks_exhausted_account", async () => {
             status: "exhausted",
             resetsAt: RESET_AFTER_COOLDOWN_SECONDS,
           },
+          limit: null,
         },
-        { ...ACCOUNT_B, runtime: { status: "ready" } },
+        { ...ACCOUNT_B, runtime: { status: "ready" }, limit: null },
       ],
     });
   });
@@ -369,8 +370,8 @@ it("runtime_broadcast_on_needs_login", async () => {
   await vi.waitFor(() => {
     expect(rig.broadcastsOf("accounts/changed").at(-1)).toEqual({
       accounts: [
-        { ...ACCOUNT_A, runtime: { status: "needs_login" } },
-        { ...ACCOUNT_B, runtime: { status: "ready" } },
+        { ...ACCOUNT_A, runtime: { status: "needs_login" }, limit: null },
+        { ...ACCOUNT_B, runtime: { status: "ready" }, limit: null },
       ],
     });
   });
@@ -392,8 +393,8 @@ it("runtime_broadcast_on_new_session_resets", async () => {
   await vi.waitFor(() => {
     expect(rig.broadcastsOf("accounts/changed").at(-1)).toEqual({
       accounts: [
-        { ...ACCOUNT_A, runtime: { status: "ready" } },
-        { ...ACCOUNT_B, runtime: { status: "ready" } },
+        { ...ACCOUNT_A, runtime: { status: "ready" }, limit: null },
+        { ...ACCOUNT_B, runtime: { status: "ready" }, limit: null },
       ],
     });
   });

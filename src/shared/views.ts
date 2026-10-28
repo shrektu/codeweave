@@ -19,16 +19,6 @@ export const AccountRuntimeViewSchema = z.discriminatedUnion("status", [
 ]);
 export type AccountRuntimeView = z.infer<typeof AccountRuntimeViewSchema>;
 
-export const AccountViewSchema = z.strictObject({
-  id: z.string(),
-  provider: z.enum(ProviderId),
-  label: z.string(),
-  configDir: z.string(),
-  order: z.int(),
-  runtime: AccountRuntimeViewSchema,
-});
-export type AccountView = z.infer<typeof AccountViewSchema>;
-
 export const LimitViewSchema = z.strictObject({
   accountId: z.string(),
   status: z.string(),
@@ -38,6 +28,17 @@ export const LimitViewSchema = z.strictObject({
   observedAt: z.number(),
 });
 export type LimitView = z.infer<typeof LimitViewSchema>;
+
+export const AccountViewSchema = z.strictObject({
+  id: z.string(),
+  provider: z.enum(ProviderId),
+  label: z.string(),
+  configDir: z.string(),
+  order: z.int(),
+  runtime: AccountRuntimeViewSchema,
+  limit: LimitViewSchema.nullable(),
+});
+export type AccountView = z.infer<typeof AccountViewSchema>;
 
 export const ToolCallViewSchema = z.strictObject({
   toolCallId: z.string(),

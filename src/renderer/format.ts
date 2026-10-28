@@ -1,4 +1,27 @@
+import { ProviderId } from "../domain/types";
 import type { AccountView, LimitView } from "../shared/views";
+
+export type SelectableProvider =
+  typeof ProviderId.claude | typeof ProviderId.codex;
+
+export const PROVIDER_LABELS: Readonly<Record<SelectableProvider, string>> = {
+  [ProviderId.claude]: "Claude",
+  [ProviderId.codex]: "Codex",
+};
+export const PROVIDER_IDS: readonly SelectableProvider[] = [
+  ProviderId.claude,
+  ProviderId.codex,
+];
+
+export function isSelectable(
+  provider: ProviderId,
+): provider is SelectableProvider {
+  return PROVIDER_IDS.some((id) => id === provider);
+}
+
+export function providerOf(value: string): SelectableProvider {
+  return PROVIDER_IDS.find((id) => id === value) ?? ProviderId.claude;
+}
 
 export const MS_PER_SECOND = 1000;
 export const SECONDS_PER_MINUTE = 60;

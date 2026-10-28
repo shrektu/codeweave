@@ -144,6 +144,66 @@ it("limits_panel_without_limits_shows_placeholder", () => {
   expect(screen.getByText("No limit data yet")).toBeTruthy();
 });
 
+it("limits_panel_shows_probe_limit", () => {
+  renderPanel(
+    <LimitsPanel />,
+    makeSnapshot({
+      accounts: [
+        makeAccount({ id: "acc-1", label: "Work" }),
+        makeAccount({
+          id: "codex-1",
+          provider: "codex",
+          label: "Codex main",
+          order: 1,
+          limit: makeLimit({
+            accountId: "codex-1",
+            resetsAt: atMinutesFromNow(90),
+            utilization: 0.25,
+            observedAt: NOW_MS,
+          }),
+        }),
+        makeAccount({
+          id: "codex-2",
+          provider: "codex",
+          label: "Codex spare",
+          order: 2,
+          limit: makeLimit({
+            accountId: "codex-2",
+            utilization: 0.9,
+            observedAt: NOW_MS,
+          }),
+        }),
+      ],
+      session: makeSession({
+        activeAccountId: "codex-2",
+        limits: [
+          makeLimit({
+            accountId: "codex-2",
+            utilization: 0.6,
+            observedAt: NOW_MS,
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(screen.queryByText("No limit data yet")).toBeNull();
+  expect(screen.getByText("Codex main")).toBeTruthy();
+  expect(screen.getByText("Resets at 11:30 (in 1 h 30 min)")).toBeTruthy();
+  expect(
+    screen
+      .getAllByRole("progressbar")
+      .map((bar) => [
+        bar.getAttribute("aria-label"),
+        bar.getAttribute("aria-valuenow"),
+      ]),
+  ).toEqual([
+    ["Codex spare", "60"],
+    ["Codex main", "25"],
+  ]);
+  expect(screen.getByText("stale")).toBeTruthy();
+});
+
 it("limits_panel_null_utilization_is_zero", () => {
   renderPanel(
     <LimitsPanel />,

@@ -124,6 +124,7 @@ export function makeAccount(overrides: Partial<AccountView> = {}): AccountView {
     configDir: "/home/user/.claude-work",
     order: 0,
     runtime: { status: "ready" },
+    limit: null,
     ...overrides,
   };
 }
