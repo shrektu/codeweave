@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 
 import { ProviderId, type Account } from "../domain/types";
@@ -7,7 +7,11 @@ import { IpcError, IpcErrorCode, type ParamsMap } from "../shared/protocol";
 import type { AccountRuntimeView, AccountView } from "../shared/views";
 
 import type { ConnectionRegistry } from "./connections";
-import { ACCOUNTS_DIR_NAME } from "./constants";
+import {
+  ACCOUNTS_DIR_NAME,
+  CODEX_CONFIG_FILE_NAME,
+  CODEX_FILE_CREDENTIAL_STORE_CONFIG,
+} from "./constants";
 import { createSerializer } from "./serialize";
 import type { JsonStore } from "./storage";
 
@@ -85,20 +89,41 @@ function createRepository(deps: AccountsServiceDeps): Repository {
   };
 }
 
+async function writeCodexConfig(directory: string): Promise<void> {
+  try {
+    await writeFile(
+      join(directory, CODEX_CONFIG_FILE_NAME),
+      CODEX_FILE_CREDENTIAL_STORE_CONFIG,
+      { flag: "wx" },
+    );
+  } catch (error) {
+    if (!(
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "EEXIST"
+    )) {
+      throw error;
+    }
+  }
+}
+
 async function addAccount(
   repository: Repository,
-  { label, configDir }: ParamsMap["accounts/add"],
+  { label, configDir, provider = ProviderId.claude }: ParamsMap["accounts/add"],
 ): Promise<{ account: AccountView }> {
   const directory = absoluteConfigDir(configDir);
   const accounts = await repository.readSorted();
   const account: Account = {
     id: randomUUID(),
-    provider: ProviderId.claude,
+    provider,
     label: label.trim(),
     configDir: directory,
     order: accounts.length,
   };
   await mkdir(directory, { recursive: true });
+  if (provider === ProviderId.codex) {
+    await writeCodexConfig(directory);
+  }
   await repository.persist([...accounts, account]);
   return { account: repository.toView(account) };
 }

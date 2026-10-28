@@ -111,6 +111,7 @@ export const LastTurnViewSchema = z.discriminatedUnion("kind", [
 export const SessionViewSchema = z.strictObject({
   id: z.string(),
   cwd: z.string(),
+  provider: z.enum(ProviderId),
   profile: z.enum(PermissionProfile),
   phase: RotationPhaseViewSchema,
   activeAccountId: z.string().nullable(),
@@ -163,6 +164,7 @@ export const SettingsViewSchema = z.strictObject({
   permissionProfile: z.enum(PermissionProfile),
   effectLevel: z.enum(EffectLevel),
   claudeExecutable: z.string().nullable(),
+  codexExecutable: z.string().nullable(),
 });
 export type SettingsView = z.infer<typeof SettingsViewSchema>;
 

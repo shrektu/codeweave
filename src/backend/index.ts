@@ -16,7 +16,7 @@ import {
   type ConnectionRegistry,
 } from "./connections";
 import { createProcessContainer } from "./process/select";
-import { createClaudeExecutableResolver, startBackend } from "./startup";
+import { createExecutableResolver, startBackend } from "./startup";
 import { inspectWorktree } from "./worktree";
 
 let connections: ConnectionRegistry | null = null;
@@ -41,10 +41,7 @@ const ready = startBackend({
     };
   },
   newRunId: () => randomUUID(),
-  resolveClaudeExecutable: createClaudeExecutableResolver(
-    process.env,
-    process.platform,
-  ),
+  resolveExecutable: createExecutableResolver(process.env, process.platform),
   inspectWorktree,
 }).then((backend) => {
   connections = createConnectionRegistry(backend.handlers);

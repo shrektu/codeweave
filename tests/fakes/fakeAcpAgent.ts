@@ -373,7 +373,7 @@ export async function createRig(
         platform: "linux",
         homeDir: "/home/jane",
         account: spec.account,
-        claudeExecutable: spec.claudeExecutable,
+        executable: spec.executable,
         runMarker: spec.runId,
         testMode: false,
       }),
@@ -390,7 +390,7 @@ export async function createRig(
         cwd,
         profile,
         runId,
-        claudeExecutable: "/usr/bin/claude",
+        executable: "/usr/bin/claude",
       }),
   };
 }

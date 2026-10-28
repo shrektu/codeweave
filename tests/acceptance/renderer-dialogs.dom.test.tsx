@@ -36,8 +36,9 @@ function settingsClient(): FakeIpcClient {
         patch.claudeExecutable === undefined
           ? current.claudeExecutable
           : patch.claudeExecutable,
+      codexExecutable: current.codexExecutable,
     };
-    client.emit({ v: 2, event: "settings/changed", payload: current });
+    client.emit({ v: 3, event: "settings/changed", payload: current });
     return current;
   });
   return client;

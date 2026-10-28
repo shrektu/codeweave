@@ -8,7 +8,7 @@ export interface AgentStartSpec {
   readonly cwd: string;
   readonly profile: PermissionProfile;
   readonly runId: string;
-  readonly claudeExecutable: string;
+  readonly executable: string;
 }
 
 export const AgentStartFailure = {

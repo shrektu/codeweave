@@ -35,6 +35,7 @@ import {
 } from "../domain/sessionReducer";
 import {
   PermissionProfile,
+  ProviderId,
   type Account,
   type EpochMillis,
   type SwitchLogEntry,
@@ -76,7 +77,10 @@ export interface SessionServiceDeps {
   readonly schedule: RotationPorts["schedule"];
   readonly inspectWorktree: (cwd: string) => Promise<WorktreeState>;
   readonly newRunId: () => string;
-  readonly resolveClaudeExecutable: (configured: string | null) => string;
+  readonly resolveExecutable: (
+    provider: ProviderId,
+    configured: string | null,
+  ) => string;
   readonly stopGraceMs: number;
   readonly containerStatus: ContainerStatus;
 }
@@ -158,6 +162,7 @@ interface SessionRunInit {
 
 class SessionRun {
   readonly id = randomUUID();
+  readonly provider: ProviderId;
   private readonly deps: SessionServiceDeps;
   private readonly spec: RunSpec;
   private readonly onRuntimeSettled: () => void;
@@ -185,6 +190,7 @@ class SessionRun {
     onRuntimeSettled,
   }: SessionRunInit) {
     this.deps = deps;
+    this.provider = initial.provider;
     this.onRuntimeSettled = onRuntimeSettled;
     this.spec = spec;
     this.accounts = accounts;
@@ -220,6 +226,7 @@ class SessionRun {
     return toSessionView({
       id: this.id,
       cwd: this.spec.cwd,
+      provider: this.provider,
       profile: this.spec.profile,
       phase: this.phase(),
       state: this.state,
@@ -273,8 +280,10 @@ class SessionRun {
   }
 
   setAccounts(accounts: readonly Account[]): void {
-    this.accounts = accounts;
-    this.controller.setAccounts(accounts);
+    this.accounts = accounts.filter(
+      (account) => account.provider === this.provider,
+    );
+    this.controller.setAccounts(this.accounts);
   }
 
   prompt(text: string): void {
@@ -346,8 +355,11 @@ class SessionRun {
       cwd: this.spec.cwd,
       profile: this.spec.profile,
       runId: this.deps.newRunId(),
-      claudeExecutable: this.deps.resolveClaudeExecutable(
-        settings.claudeExecutable,
+      executable: this.deps.resolveExecutable(
+        account.provider,
+        account.provider === ProviderId.codex
+          ? settings.codexExecutable
+          : settings.claudeExecutable,
       ),
     });
     if (!result.ok) {
@@ -616,9 +628,13 @@ async function beginRun(
   runtimeOf: (accountId: string) => AccountRuntime,
   onRuntimeSettled: () => void,
 ): Promise<SessionRun> {
-  const accounts = (await deps.store.readAccounts()).toSorted(
+  const registered = (await deps.store.readAccounts()).toSorted(
     (left, right) =>
       left.order - right.order || left.id.localeCompare(right.id),
+  );
+  const provider = params.provider ?? registered[0]?.provider;
+  const accounts = registered.filter(
+    (account) => account.provider === provider,
   );
   const initial = accounts.find((account) =>
     isUsable(runtimeOf(account.id), deps.now()),

@@ -8,7 +8,7 @@ import { IpcError, IpcErrorCode, type IpcEvent } from "../shared/protocol";
 
 import { createIpcServer, type IpcHandlers, type IpcServer } from "./ipcServer";
 
-const PING_REQUEST = { v: 2, id: "ok-1", method: "ping", params: {} };
+const PING_REQUEST = { v: 3, id: "ok-1", method: "ping", params: {} };
 const EXPECTED_MESSAGE = expect.any(String) as string;
 
 interface Connection {
@@ -65,13 +65,13 @@ describe("createIpcServer", () => {
     const served = await send(PING_REQUEST);
 
     expect(failed).toEqual({
-      v: 2,
+      v: 3,
       id: "a",
       ok: false,
       error: { code: "INTERNAL", message: "boom" },
     });
     expect(served).toEqual({
-      v: 2,
+      v: 3,
       id: "ok-1",
       ok: true,
       result: { pong: true, backendPid: 7 },
@@ -86,7 +86,7 @@ describe("createIpcServer", () => {
     const response = await send({ ...PING_REQUEST, id: "a" });
 
     expect(response).toEqual({
-      v: 2,
+      v: 3,
       id: "a",
       ok: false,
       error: { code: "INTERNAL", message: "denied" },
@@ -107,7 +107,7 @@ describe("createIpcServer", () => {
       const response = await send({ ...PING_REQUEST, id: "t" });
 
       expect(response).toEqual({
-        v: 2,
+        v: 3,
         id: "t",
         ok: false,
         error: { code, message: "typed failure" },
@@ -122,7 +122,7 @@ describe("createIpcServer", () => {
     const { send } = connect(fakeHandlers({ "accounts/remove": remove }));
 
     await send({
-      v: 2,
+      v: 3,
       id: "r",
       method: "accounts/remove",
       params: { id: "acc-9" },
@@ -146,7 +146,7 @@ describe("createIpcServer with malformed input", () => {
       const response = await send(payload);
 
       expect(response).toEqual({
-        v: 2,
+        v: 3,
         id: null,
         ok: false,
         error: { code: "VALIDATION", message: EXPECTED_MESSAGE },
@@ -157,10 +157,10 @@ describe("createIpcServer with malformed input", () => {
   it("missing_id_is_validation_with_null_id", async () => {
     const { send } = connect(fakeHandlers());
 
-    const response = await send({ v: 2, method: "ping", params: {} });
+    const response = await send({ v: 3, method: "ping", params: {} });
 
     expect(response).toEqual({
-      v: 2,
+      v: 3,
       id: null,
       ok: false,
       error: { code: "VALIDATION", message: EXPECTED_MESSAGE },
@@ -171,14 +171,14 @@ describe("createIpcServer with malformed input", () => {
     const { send } = connect(fakeHandlers());
 
     const response = await send({
-      v: 2,
+      v: 3,
       id: "z",
       method: "shutdown",
       params: {},
     });
 
     expect(response).toEqual({
-      v: 2,
+      v: 3,
       id: "z",
       ok: false,
       error: { code: "UNKNOWN_METHOD", message: EXPECTED_MESSAGE },
@@ -191,7 +191,7 @@ describe("createIpcServer with malformed input", () => {
     const response = await send({ v: 1, method: "ping", params: {} });
 
     expect(response).toEqual({
-      v: 2,
+      v: 3,
       id: null,
       ok: false,
       error: { code: "UNSUPPORTED_VERSION", message: EXPECTED_MESSAGE },
@@ -203,14 +203,14 @@ describe("createIpcServer with malformed input", () => {
     const { send } = connect(fakeHandlers({ "accounts/remove": remove }));
 
     const response = await send({
-      v: 2,
+      v: 3,
       id: "w",
       method: "accounts/remove",
       params: { id: 5 },
     });
 
     expect(response).toEqual({
-      v: 2,
+      v: 3,
       id: "w",
       ok: false,
       error: { code: "VALIDATION", message: EXPECTED_MESSAGE },
@@ -221,7 +221,7 @@ describe("createIpcServer with malformed input", () => {
 
 describe("createIpcServer push", () => {
   const event: IpcEvent = {
-    v: 2,
+    v: 3,
     event: "accounts/changed",
     payload: { accounts: [] },
   };
@@ -252,7 +252,7 @@ describe("createIpcServer disposal", () => {
     const slow = Promise.withResolvers<{ pong: true; backendPid: number }>();
     const ping = vi.fn<IpcHandlers["ping"]>(() => slow.promise);
     createIpcServer(port, fakeHandlers({ ping }));
-    port2.postMessage({ v: 2, id: "late", method: "ping", params: {} });
+    port2.postMessage({ v: 3, id: "late", method: "ping", params: {} });
     await vi.waitFor(() => {
       expect(ping).toHaveBeenCalledTimes(1);
     });

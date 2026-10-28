@@ -46,6 +46,7 @@ export const SettingsFileSchema = z.object({
   permissionProfile: z.enum(PermissionProfile),
   effectLevel: z.enum(EffectLevel),
   claudeExecutable: z.string().nullable(),
+  codexExecutable: z.string().nullable().default(null),
 });
 
 const SwitchLogEntrySchema = z.object({
@@ -86,6 +87,7 @@ const DEFAULT_SETTINGS: SettingsFile = {
   permissionProfile: PermissionProfile.bypass,
   effectLevel: EffectLevel.auto,
   claudeExecutable: null,
+  codexExecutable: null,
 };
 
 export class StorageCorruptError extends Error {

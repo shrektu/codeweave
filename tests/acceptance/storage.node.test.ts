@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { expect, it } from "vitest";
 
+import { createSettingsService } from "../../src/backend/settingsService";
 import {
   createJsonStore,
   StorageCorruptError,
@@ -10,6 +11,31 @@ import {
 import { makeTempDir } from "../fakes/processHelpers";
 
 const CORRUPT_BYTES = '{"version":1,"accounts":[{"id":';
+const V1_SETTINGS_WITHOUT_CODEX =
+  '{"version":1,"permissionProfile":"plan","effectLevel":"low","claudeExecutable":"/usr/bin/claude"}';
+
+it("settings_without_codex_executable_loads", async () => {
+  const dir = await makeTempDir();
+  const file = join(dir, "settings.json");
+  await writeFile(file, V1_SETTINGS_WITHOUT_CODEX);
+  const store = createJsonStore(dir);
+
+  const settings = await store.readSettings();
+  expect(settings.codexExecutable).toBeNull();
+  expect(settings.claudeExecutable).toBe("/usr/bin/claude");
+
+  const service = createSettingsService({ store, broadcast: () => undefined });
+  const view = await service.set({ codexExecutable: "/opt/codex" });
+
+  expect(view.codexExecutable).toBe("/opt/codex");
+  expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
+    version: 1,
+    permissionProfile: "plan",
+    effectLevel: "low",
+    claudeExecutable: "/usr/bin/claude",
+    codexExecutable: "/opt/codex",
+  });
+});
 
 it("storage_refuses_to_overwrite_corrupt_file", async () => {
   const dir = await makeTempDir();
@@ -23,6 +49,7 @@ it("storage_refuses_to_overwrite_corrupt_file", async () => {
       permissionProfile: "plan",
       effectLevel: "auto",
       claudeExecutable: null,
+      codexExecutable: null,
     }),
   ).rejects.toBeInstanceOf(StorageCorruptError);
 

@@ -605,7 +605,7 @@ export function specFor(
     cwd,
     profile,
     runId,
-    claudeExecutable: "/usr/bin/claude",
+    executable: CODEX_RIG_EXECUTABLE,
   };
 }
 

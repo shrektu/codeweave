@@ -1,7 +1,11 @@
 import { statSync } from "node:fs";
 
 import type { RotationPorts } from "../domain/rotation";
-import type { EpochMillis, WorktreeState } from "../domain/types";
+import {
+  ProviderId,
+  type EpochMillis,
+  type WorktreeState,
+} from "../domain/types";
 import { IpcError, IpcErrorCode } from "../shared/protocol";
 
 import {
@@ -12,10 +16,12 @@ import {
 import { createAgentProcesses } from "./agentProcesses";
 import type { BackendArgs } from "./args";
 import { createClaudeAcpAdapter } from "./claude/acpAdapter";
+import { createCodexAdapter } from "./codex/adapter";
 import type { ConnectionRegistry } from "./connections";
 import {
   AGENT_STOP_GRACE_MS,
   CLAUDE_BINARY,
+  CODEX_BINARY,
   CONTAINER_UNAVAILABLE_MESSAGE,
 } from "./constants";
 import { buildAgentEnv } from "./env";
@@ -28,6 +34,7 @@ import {
   ContainerUnavailableError,
   type ProcessContainer,
 } from "./process/container";
+import { createProviderAdapter } from "./providerAdapter";
 import {
   createSessionService,
   type ContainerStatus,
@@ -47,7 +54,10 @@ export interface BackendDeps {
   readonly now: () => EpochMillis;
   readonly schedule: RotationPorts["schedule"];
   readonly newRunId: () => string;
-  readonly resolveClaudeExecutable: (configured: string | null) => string;
+  readonly resolveExecutable: (
+    provider: ProviderId,
+    configured: string | null,
+  ) => string;
   readonly inspectWorktree: (cwd: string) => Promise<WorktreeState>;
 }
 
@@ -101,38 +111,75 @@ function createAdapter(
     return UNAVAILABLE_ADAPTER;
   }
   const { testAgentEnv } = deps.args;
-  return createClaudeAcpAdapter({
-    processes: createAgentProcesses({
-      container,
-      locks: new WorktreeLocks(),
-      onFailure: (failure) => {
-        console.error(
-          `agent ${failure.runId} left processes behind: ${failure.survivors.join(",")}`,
-        );
-      },
+  const processes = createAgentProcesses({
+    container,
+    locks: new WorktreeLocks(),
+    onFailure: (failure) => {
+      console.error(
+        `agent ${failure.runId} left processes behind: ${failure.survivors.join(",")}`,
+      );
+    },
+  });
+  const envFor = (spec: AgentStartSpec): Record<string, string> =>
+    buildAgentEnv({
+      parent: deps.parentEnv,
+      platform: deps.platform,
+      homeDir: deps.homeDir,
+      account: spec.account,
+      executable: spec.executable,
+      runMarker: spec.runId,
+      ...(testAgentEnv === null ? {} : { overrides: testAgentEnv }),
+      testMode: testAgentEnv !== null,
+    });
+  return createProviderAdapter({
+    [ProviderId.claude]: createClaudeAcpAdapter({
+      processes,
+      envFor,
+      execPath: deps.execPath,
+      adapterEntry: deps.adapterEntry,
     }),
-    envFor: (spec: AgentStartSpec) =>
-      buildAgentEnv({
-        parent: deps.parentEnv,
-        platform: deps.platform,
-        homeDir: deps.homeDir,
-        account: spec.account,
-        claudeExecutable: spec.claudeExecutable,
-        runMarker: spec.runId,
-        ...(testAgentEnv === null ? {} : { overrides: testAgentEnv }),
-        testMode: testAgentEnv !== null,
-      }),
-    execPath: deps.execPath,
-    adapterEntry: deps.adapterEntry,
+    [ProviderId.codex]: createCodexAdapter({
+      processes,
+      envFor,
+      executableFor: (spec) => spec.executable,
+      platform: deps.platform,
+      ...(deps.parentEnv.ComSpec === undefined
+        ? {}
+        : { comSpec: deps.parentEnv.ComSpec }),
+    }),
   });
 }
 
-export function createClaudeExecutableResolver(
+interface ExecutableSpec {
+  readonly binary: string;
+  readonly notFoundMessage: string;
+}
+
+const EXECUTABLE_SPECS: Readonly<Partial<Record<ProviderId, ExecutableSpec>>> =
+  {
+    [ProviderId.claude]: {
+      binary: CLAUDE_BINARY,
+      notFoundMessage: "The Claude executable was not found",
+    },
+    [ProviderId.codex]: {
+      binary: CODEX_BINARY,
+      notFoundMessage: "The Codex executable was not found",
+    },
+  };
+
+export function createExecutableResolver(
   env: NodeJS.ProcessEnv,
   platform: NodeJS.Platform,
-): (configured: string | null) => string {
-  return (configured) => {
-    const found = resolveExecutable(configured ?? CLAUDE_BINARY, {
+): (provider: ProviderId, configured: string | null) => string {
+  return (provider, configured) => {
+    const spec = EXECUTABLE_SPECS[provider];
+    if (spec === undefined) {
+      throw new IpcError(
+        IpcErrorCode.UNAVAILABLE,
+        `Provider ${provider} is not supported`,
+      );
+    }
+    const found = resolveExecutable(configured ?? spec.binary, {
       pathEnv: env.PATH ?? "",
       pathExt: env.PATHEXT,
       platform,
@@ -140,10 +187,7 @@ export function createClaudeExecutableResolver(
         statSync(path, { throwIfNoEntry: false })?.isFile() === true,
     });
     if (found === null) {
-      throw new IpcError(
-        IpcErrorCode.UNAVAILABLE,
-        "The Claude executable was not found",
-      );
+      throw new IpcError(IpcErrorCode.UNAVAILABLE, spec.notFoundMessage);
     }
     return found;
   };
@@ -166,7 +210,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     schedule: deps.schedule,
     inspectWorktree: deps.inspectWorktree,
     newRunId: deps.newRunId,
-    resolveClaudeExecutable: deps.resolveClaudeExecutable,
+    resolveExecutable: deps.resolveExecutable,
     stopGraceMs: AGENT_STOP_GRACE_MS,
     containerStatus: status,
   });

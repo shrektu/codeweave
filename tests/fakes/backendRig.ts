@@ -15,7 +15,7 @@ import type {
   ProcessContainer,
   SpawnSpec,
 } from "../../src/backend/process/container";
-import type { Account } from "../../src/domain/types";
+import { ProviderId, type Account } from "../../src/domain/types";
 import { SessionViewSchema, type SessionView } from "../../src/shared/views";
 import type {
   EventName,
@@ -30,11 +30,16 @@ import {
   ScriptedAcpContainer,
   type FakeAcpAgent,
 } from "./fakeAcpAgent";
+import {
+  CODEX_RIG_EXECUTABLE,
+  ScriptedCodexContainer,
+} from "./fakeCodexAppServer";
 import type { ScheduledTask } from "./rotationHarness";
 
 export const RIG_NOW_MS = 1_700_000_000_000;
 export const RIG_NOW_SECONDS = 1_700_000_000;
 export const RIG_CLAUDE_PATH = "/usr/bin/claude";
+export const RIG_CODEX_PATH = CODEX_RIG_EXECUTABLE;
 
 export const ACCOUNT_A: Account = {
   id: "acc-a",
@@ -50,6 +55,27 @@ export const ACCOUNT_B: Account = {
   configDir: "/cfg/b",
   order: 1,
 };
+export const ACCOUNT_CODEX_A: Account = {
+  id: "codex-a",
+  provider: "codex",
+  label: "Codex A",
+  configDir: "/cfg/codex-a",
+  order: 0,
+};
+export const ACCOUNT_CODEX_B: Account = {
+  id: "codex-b",
+  provider: "codex",
+  label: "Codex B",
+  configDir: "/cfg/codex-b",
+  order: 1,
+};
+export const ACCOUNT_CLAUDE_C: Account = {
+  id: "claude-c",
+  provider: "claude",
+  label: "Claude C",
+  configDir: "/cfg/claude-c",
+  order: 2,
+};
 
 export interface RecordedBroadcast {
   readonly event: string;
@@ -63,11 +89,13 @@ export interface BackendRigOptions {
   readonly stopResults?: ConstructorParameters<typeof ScriptedAcpContainer>[0];
   readonly platform?: NodeJS.Platform;
   readonly worktreeGate?: Promise<void>;
+  readonly resolveExecutable?: BackendDeps["resolveExecutable"];
 }
 
 export interface BackendRig {
   readonly backend: Backend;
   readonly container: ScriptedAcpContainer;
+  readonly codexContainer: ScriptedCodexContainer;
   readonly store: JsonStore;
   readonly userData: string;
   readonly cwd: string;
@@ -101,14 +129,16 @@ export async function removeBackendRigDirs(): Promise<void> {
 }
 
 function recordingContainer(
-  inner: ScriptedAcpContainer,
+  claude: ScriptedAcpContainer,
+  codex: ScriptedCodexContainer,
   rig: Pick<BackendRig, "order" | "sweeps" | "contained">,
 ): ProcessContainer {
   return {
-    kind: inner.kind,
+    kind: claude.kind,
     async spawn(spec: SpawnSpec): Promise<Contained> {
       rig.order.push(`spawn:${spec.runId}`);
-      const contained = await inner.spawn(spec);
+      const target = spec.command === RIG_CODEX_PATH ? codex : claude;
+      const contained = await target.spawn(spec);
       rig.contained.push(contained);
       return {
         pid: contained.pid,
@@ -129,7 +159,7 @@ function recordingContainer(
     },
     sweepOrphans(stale: readonly string[]): Promise<number> {
       rig.sweeps.push(stale);
-      return inner.sweepOrphans();
+      return claude.sweepOrphans();
     },
   };
 }
@@ -166,7 +196,10 @@ interface RigLog {
 function rigDeps(
   options: BackendRigOptions,
   userData: string,
-  container: ScriptedAcpContainer,
+  containers: {
+    readonly claude: ScriptedAcpContainer;
+    readonly codex: ScriptedCodexContainer;
+  },
   log: RigLog,
 ): BackendDeps {
   return {
@@ -177,7 +210,9 @@ function rigDeps(
     createContainer: (instanceId) => {
       log.instanceIds.push(instanceId);
       return options.containerError === undefined
-        ? Promise.resolve(recordingContainer(container, log))
+        ? Promise.resolve(
+            recordingContainer(containers.claude, containers.codex, log),
+          )
         : Promise.reject(options.containerError);
     },
     execPath: RIG_EXEC_PATH,
@@ -188,7 +223,10 @@ function rigDeps(
     now: () => RIG_NOW_MS,
     schedule: scheduler(log.scheduled),
     newRunId: runIds(),
-    resolveClaudeExecutable: () => RIG_CLAUDE_PATH,
+    resolveExecutable:
+      options.resolveExecutable ??
+      ((provider) =>
+        provider === ProviderId.codex ? RIG_CODEX_PATH : RIG_CLAUDE_PATH),
     inspectWorktree: async (dir) => {
       await options.worktreeGate;
       return { isRepo: false, cwd: dir };
@@ -207,6 +245,7 @@ export async function createBackendRig(
     await store.writeAccounts(options.accounts);
   }
   const container = new ScriptedAcpContainer(options.stopResults);
+  const codexContainer = new ScriptedCodexContainer();
   const broadcasts: RecordedBroadcast[] = [];
   const scheduled: ScheduledTask[] = [];
   const instanceIds: string[] = [];
@@ -216,12 +255,12 @@ export async function createBackendRig(
     contained: [] as Contained[],
   };
   const backend = await startBackend(
-    rigDeps(options, userData, container, {
-      ...parts,
-      broadcasts,
-      scheduled,
-      instanceIds,
-    }),
+    rigDeps(
+      options,
+      userData,
+      { claude: container, codex: codexContainer },
+      { ...parts, broadcasts, scheduled, instanceIds },
+    ),
   );
   const call = async <M extends RequestMethod>(
     method: M,
@@ -230,6 +269,7 @@ export async function createBackendRig(
   return {
     backend,
     container,
+    codexContainer,
     store,
     userData,
     cwd,

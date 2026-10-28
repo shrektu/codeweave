@@ -10,7 +10,11 @@ import { IpcErrorCode } from "../shared/protocol";
 
 import type { AgentAdapter, AgentHandle, AgentStartSpec } from "./agentAdapter";
 import { StopFailureReason, type StopResult } from "./process/container";
-import { createSessionService, type SessionService } from "./session";
+import {
+  createSessionService,
+  type SessionService,
+  type SessionServiceDeps,
+} from "./session";
 import { createJsonStore, type JsonStore } from "./storage";
 
 const NOW_MS = 1_700_000_000_000;
@@ -46,9 +50,12 @@ interface Setup {
   readonly store: JsonStore;
   readonly log: string[];
   readonly cwd: string;
+  readonly specs: AgentStartSpec[];
 }
 
 interface SetupOptions {
+  readonly accounts?: readonly Account[];
+  readonly resolveExecutable?: SessionServiceDeps["resolveExecutable"];
   readonly events: Readonly<Record<string, readonly AgentEvent[]>>;
   readonly stopResult?: StopResult;
   readonly stopGate?: Promise<void>;
@@ -103,10 +110,12 @@ async function setup(options: SetupOptions): Promise<Setup> {
   const cwd = await mkdtemp(join(tmpdir(), "codeweave-session-cwd-"));
   tempDirs.push(userData, cwd);
   const store = createJsonStore(userData);
-  await store.writeAccounts([ACCOUNT_A]);
+  await store.writeAccounts(options.accounts ?? [ACCOUNT_A]);
   const log: string[] = [];
+  const specs: AgentStartSpec[] = [];
   const adapter: AgentAdapter = {
     start: (spec) => {
+      specs.push(spec);
       log.push(`start:${spec.runId}`);
       return Promise.resolve({
         ok: true,
@@ -126,12 +135,12 @@ async function setup(options: SetupOptions): Promise<Setup> {
       runs += 1;
       return `run-${String(runs)}`;
     },
-    resolveClaudeExecutable: () => "/usr/bin/claude",
+    resolveExecutable: options.resolveExecutable ?? (() => "/usr/bin/claude"),
     stopGraceMs: GRACE_MS,
     containerStatus: { available: true, message: null },
   });
   services.push(service);
-  return { service, store, log, cwd };
+  return { service, store, log, cwd, specs };
 }
 
 async function haltedSession(options: SetupOptions): Promise<Setup> {
@@ -201,4 +210,74 @@ it("account_remove_rejected_while_switching: isInUse true for any id", async () 
     });
     expect(rig.service.isInUse(ACCOUNT_A.id)).toBe(false);
   });
+});
+
+const CODEX_A: Account = {
+  id: "codex-a",
+  provider: ProviderId.codex,
+  label: "Codex A",
+  configDir: "/cfg/codex-a",
+  order: 0,
+};
+const CLAUDE_X: Account = {
+  id: "claude-x",
+  provider: ProviderId.claude,
+  label: "Claude X",
+  configDir: "/cfg/claude-x",
+  order: 1,
+};
+const CODEX_B: Account = {
+  ...CODEX_A,
+  id: "codex-b",
+  label: "Codex B",
+  order: 2,
+};
+
+it("spawn_resolves_the_executable_of_the_accounts_provider", async () => {
+  const resolveExecutable: SessionServiceDeps["resolveExecutable"] = (
+    provider,
+    configured,
+  ) => `${provider}:${configured ?? "path"}`;
+  const codex = await setup({
+    accounts: [CODEX_A],
+    events: {},
+    resolveExecutable,
+  });
+  await codex.store.writeSettings({
+    ...(await codex.store.readSettings()),
+    claudeExecutable: "/opt/claude",
+    codexExecutable: "/opt/codex",
+  });
+  const claude = await setup({ events: {}, resolveExecutable });
+
+  await codex.service.start({ cwd: codex.cwd });
+  await claude.service.start({ cwd: claude.cwd });
+
+  expect(codex.specs.map((spec) => spec.executable)).toEqual([
+    "codex:/opt/codex",
+  ]);
+  expect(claude.specs.map((spec) => spec.executable)).toEqual(["claude:path"]);
+});
+
+it("set_accounts_during_codex_run_keeps_rotation_on_codex", async () => {
+  const rig = await setup({
+    accounts: [CODEX_A],
+    events: { "codex-a": [RATE_LIMITED] },
+  });
+  await rig.service.start({ cwd: rig.cwd, provider: ProviderId.codex });
+
+  rig.service.setAccounts([CODEX_A, CLAUDE_X, CODEX_B]);
+  await rig.service.prompt("go");
+
+  await vi.waitFor(() => {
+    expect(rig.service.view()?.phase).toEqual({
+      phase: "running",
+      accountId: CODEX_B.id,
+    });
+  });
+  expect(rig.specs.map((spec) => spec.account.id)).toEqual([
+    "codex-a",
+    "codex-b",
+  ]);
+  expect(rig.service.view()?.provider).toBe(ProviderId.codex);
 });

@@ -9,7 +9,7 @@ import {
 } from "./protocol";
 
 function request(method: string, params: unknown): unknown {
-  return { v: 2, id: "a", method, params };
+  return { v: 3, id: "a", method, params };
 }
 
 const VALID_REQUESTS: [string, unknown][] = [
@@ -24,12 +24,15 @@ const VALID_REQUESTS: [string, unknown][] = [
       flowRef: { flowId: "f", nodeId: "n" },
     },
   ],
+  ["session/start", { cwd: "/work", provider: "codex" }],
   ["session/prompt", { text: "hi" }],
   ["session/stop", {}],
   ["permission/answer", { requestId: "r", optionId: "o" }],
   ["accounts/list", {}],
   ["accounts/suggest", {}],
   ["accounts/add", { label: "Work", configDir: "/x" }],
+  ["accounts/add", { label: "Work", configDir: "/x", provider: "codex" }],
+  ["settings/set", { codexExecutable: "/opt/codex" }],
   ["accounts/remove", { id: "acc" }],
   ["accounts/move", { id: "acc", direction: "up" }],
   ["settings/get", {}],
@@ -41,7 +44,7 @@ const VALID_REQUESTS: [string, unknown][] = [
 
 const INVALID_REQUESTS: [string, unknown][] = [
   ["ping with a param", request("ping", { extra: 1 })],
-  ["ping without params", { v: 2, id: "a", method: "ping" }],
+  ["ping without params", { v: 3, id: "a", method: "ping" }],
   ["session/start without cwd", request("session/start", {})],
   ["session/start with empty cwd", request("session/start", { cwd: "" })],
   [
@@ -53,6 +56,18 @@ const INVALID_REQUESTS: [string, unknown][] = [
     request("session/start", {
       cwd: "/w",
       flowRef: { flowId: "f", nodeId: "" },
+    }),
+  ],
+  [
+    "session/start with unknown provider",
+    request("session/start", { cwd: "/w", provider: "cursor" }),
+  ],
+  [
+    "accounts/add with an unsupported provider",
+    request("accounts/add", {
+      label: "G",
+      configDir: "/x",
+      provider: "gemini",
     }),
   ],
   ["session/prompt without text", request("session/prompt", {})],
@@ -115,13 +130,13 @@ describe("RequestSchema", () => {
   });
 
   it.each([
-    ["an empty id", { v: 2, id: "", method: "ping", params: {} }],
-    ["an extra key", { v: 2, id: "a", method: "ping", params: {}, extra: 1 }],
-    ["an unknown method", { v: 2, id: "a", method: "pong", params: {} }],
+    ["an empty id", { v: 3, id: "", method: "ping", params: {} }],
+    ["an extra key", { v: 3, id: "a", method: "ping", params: {}, extra: 1 }],
+    ["an unknown method", { v: 3, id: "a", method: "pong", params: {} }],
     ["a missing version", { id: "a", method: "ping", params: {} }],
     ["a non-numeric version", { v: "2", id: "a", method: "ping", params: {} }],
     ["a fractional version", { v: 1.5, id: "a", method: "ping", params: {} }],
-    ["a missing id", { v: 2, method: "ping", params: {} }],
+    ["a missing id", { v: 3, method: "ping", params: {} }],
   ])("rejects_%s", (_label, payload) => {
     expect(RequestSchema.safeParse(payload).success).toBe(false);
   });
@@ -130,7 +145,7 @@ describe("RequestSchema", () => {
 describe("ResponseSchema", () => {
   it("accepts_a_ping_result", () => {
     const parsed = ResponseSchema.safeParse({
-      v: 2,
+      v: 3,
       id: "a",
       ok: true,
       result: { pong: true, backendPid: 42 },
@@ -148,7 +163,7 @@ describe("ResponseSchema", () => {
     "EXPIRED",
   ])("accepts_the_error_code_%s", (code) => {
     const parsed = ResponseSchema.safeParse({
-      v: 2,
+      v: 3,
       id: null,
       ok: false,
       error: { code, message: "bad" },
@@ -160,11 +175,11 @@ describe("ResponseSchema", () => {
   it.each([
     [
       "an unknown error code",
-      { v: 2, id: "a", ok: false, error: { code: "NOPE", message: "x" } },
+      { v: 3, id: "a", ok: false, error: { code: "NOPE", message: "x" } },
     ],
     [
       "a success without a request id",
-      { v: 2, id: null, ok: true, result: { pong: true, backendPid: 1 } },
+      { v: 3, id: null, ok: true, result: { pong: true, backendPid: 1 } },
     ],
   ])("rejects_%s", (_label, payload) => {
     expect(ResponseSchema.safeParse(payload).success).toBe(false);
@@ -176,6 +191,7 @@ describe("EventSchema", () => {
     permissionProfile: "ask",
     effectLevel: "full",
     claudeExecutable: "/usr/bin/claude",
+    codexExecutable: null,
   };
   const logEntry = {
     at: 1,
@@ -193,24 +209,24 @@ describe("EventSchema", () => {
     ["settings/changed", settings],
     ["switchLog/appended", logEntry],
   ])("accepts_%s", (event, payload) => {
-    expect(EventSchema.safeParse({ v: 2, event, payload }).success).toBe(true);
+    expect(EventSchema.safeParse({ v: 3, event, payload }).success).toBe(true);
   });
 
   it.each([
-    ["an unknown event", { v: 2, event: "nope", payload: null }],
+    ["an unknown event", { v: 3, event: "nope", payload: null }],
     [
       "a settings event with a session payload",
-      { v: 2, event: "settings/changed", payload: null },
+      { v: 3, event: "settings/changed", payload: null },
     ],
     [
       "a log entry with an unknown reason",
       {
-        v: 2,
+        v: 3,
         event: "switchLog/appended",
         payload: { ...logEntry, reason: "whim" },
       },
     ],
-    ["an event without payload", { v: 2, event: "accounts/changed" }],
+    ["an event without payload", { v: 3, event: "accounts/changed" }],
   ])("rejects_%s", (_label, payload) => {
     expect(EventSchema.safeParse(payload).success).toBe(false);
   });

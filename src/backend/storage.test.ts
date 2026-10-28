@@ -31,6 +31,7 @@ describe("json store", () => {
       permissionProfile: "bypass",
       effectLevel: "auto",
       claudeExecutable: null,
+      codexExecutable: null,
     });
   });
 
@@ -42,6 +43,7 @@ describe("json store", () => {
       permissionProfile: PermissionProfile.plan,
       effectLevel: "low",
       claudeExecutable: "/usr/bin/claude",
+      codexExecutable: "/usr/bin/codex",
     } as const;
 
     await store.writeAccounts([account]);
@@ -111,6 +113,7 @@ describe("json store writes", () => {
         permissionProfile: PermissionProfile.plan,
         effectLevel: "low",
         claudeExecutable: null,
+        codexExecutable: null,
       }),
     ).rejects.toBeInstanceOf(StorageCorruptError);
 

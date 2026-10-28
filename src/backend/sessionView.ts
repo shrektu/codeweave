@@ -1,6 +1,6 @@
 import type { RotationPhase } from "../domain/rotation";
 import type { SessionState } from "../domain/sessionReducer";
-import type { PermissionProfile } from "../domain/types";
+import type { PermissionProfile, ProviderId } from "../domain/types";
 import type {
   FlowRef,
   LimitView,
@@ -11,6 +11,7 @@ import type {
 export interface SessionViewInput {
   readonly id: string;
   readonly cwd: string;
+  readonly provider: ProviderId;
   readonly profile: PermissionProfile;
   readonly phase: RotationPhase;
   readonly state: SessionState;
@@ -59,6 +60,7 @@ export function toSessionView(input: SessionViewInput): SessionView {
   return {
     id: input.id,
     cwd: input.cwd,
+    provider: input.provider,
     profile: input.profile,
     phase: input.phase,
     activeAccountId: activeAccountOf(input.phase),

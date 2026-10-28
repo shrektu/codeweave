@@ -1,6 +1,6 @@
 import { posix, win32 } from "node:path";
 
-import type { Account } from "../domain/types";
+import { ProviderId, type Account } from "../domain/types";
 
 import {
   CLAUDE_BASH_MAINTAIN_DIR_ENV,
@@ -26,7 +26,7 @@ export interface AgentEnvInput {
   readonly platform: NodeJS.Platform;
   readonly homeDir: string;
   readonly account: Account;
-  readonly claudeExecutable: string;
+  readonly executable: string;
   readonly runMarker: string;
   readonly overrides?: Readonly<Record<string, string>>;
   readonly testMode: boolean;
@@ -52,6 +52,17 @@ function isDefaultConfigDir(input: AgentEnvInput): boolean {
   );
 }
 
+function claudeVariables(input: AgentEnvInput): Record<string, string> {
+  return {
+    ...(isDefaultConfigDir(input)
+      ? {}
+      : { [CLAUDE_CONFIG_DIR_ENV]: input.account.configDir }),
+    [CLAUDE_EXECUTABLE_ENV]: input.executable,
+    [CLAUDE_DISABLE_CRON_ENV]: FLAG_ENABLED,
+    [CLAUDE_BASH_MAINTAIN_DIR_ENV]: FLAG_ENABLED,
+  };
+}
+
 export function buildAgentEnv(input: AgentEnvInput): Record<string, string> {
   if (input.overrides !== undefined && !input.testMode) {
     throw new AgentEnvOverridesRejectedError();
@@ -62,12 +73,9 @@ export function buildAgentEnv(input: AgentEnvInput): Record<string, string> {
       env[key] = value;
     }
   }
-  if (!isDefaultConfigDir(input)) {
-    env[CLAUDE_CONFIG_DIR_ENV] = input.account.configDir;
+  if (input.account.provider === ProviderId.claude) {
+    Object.assign(env, claudeVariables(input));
   }
-  env[CLAUDE_EXECUTABLE_ENV] = input.claudeExecutable;
-  env[CLAUDE_DISABLE_CRON_ENV] = FLAG_ENABLED;
-  env[CLAUDE_BASH_MAINTAIN_DIR_ENV] = FLAG_ENABLED;
   env[RUN_ID_ENV] = input.runMarker;
   return { ...env, ...input.overrides };
 }
