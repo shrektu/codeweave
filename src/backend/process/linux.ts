@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { posix } from "node:path";
 
 import {
   CGROUP_PROCS_FILE,
@@ -171,7 +171,7 @@ class SystemdScopeContainer implements ProcessContainer {
     }
     try {
       const procs = await this.deps.readFile(
-        join(CGROUP_ROOT, controlGroup, CGROUP_PROCS_FILE),
+        posix.join(CGROUP_ROOT, controlGroup, CGROUP_PROCS_FILE),
       );
       return procs.split("\n").filter(Boolean).map(Number);
     } catch (error) {

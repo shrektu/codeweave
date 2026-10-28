@@ -47,7 +47,7 @@ Prompt
 `;
 
 const FLOWS_DIR = "flows";
-const NOT_ROOT = process.getuid?.() !== 0;
+const CHMOD_DENIES = process.platform !== "win32" && process.getuid?.() !== 0;
 
 async function project(files: Record<string, string>): Promise<string> {
   const cwd = await makeTempDir();
@@ -175,7 +175,7 @@ it("flows_list_rejects_flow_using_unknown_agent", async () => {
   ]);
 });
 
-it.runIf(NOT_ROOT)("flows_list_unreadable_dir_reports_error", async () => {
+it.runIf(CHMOD_DENIES)("flows_list_unreadable_dir_reports_error", async () => {
   const cwd = await project({
     "flows/ship.md": VALID_FLOW,
     "agents/coder.md": CODER_AGENT,
@@ -195,7 +195,7 @@ it.runIf(NOT_ROOT)("flows_list_unreadable_dir_reports_error", async () => {
   }
 });
 
-it.runIf(NOT_ROOT)("flows_list_unreadable_file_reports_error", async () => {
+it.runIf(CHMOD_DENIES)("flows_list_unreadable_file_reports_error", async () => {
   const cwd = await project({
     "flows/ship.md": VALID_FLOW,
     "flows/locked.md": VALID_FLOW,

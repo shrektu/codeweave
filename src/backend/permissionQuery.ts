@@ -37,11 +37,15 @@ function absolutePath(raw: string, cwd: string): string {
   }
   if (raw.startsWith(FILE_URL_PREFIX)) {
     try {
-      return fileURLToPath(raw);
+      const url = new URL(raw);
+      if (url.host === "") {
+        return fileURLToPath(url);
+      }
+      console.warn(`remote file URL in permission request: ${raw}`);
     } catch (error) {
       console.warn(`unreadable file URL in permission request: ${raw}`, error);
-      return `${UNRESOLVED_PATH_PREFIX}${raw}`;
     }
+    return `${UNRESOLVED_PATH_PREFIX}${raw}`;
   }
   return isAbsolute(raw) ? raw : resolve(cwd, raw);
 }

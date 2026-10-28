@@ -1,5 +1,6 @@
 import { statSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { expect, it, vi } from "vitest";
 
@@ -9,6 +10,8 @@ import {
 } from "../../src/backend/accountsService";
 import { createJsonStore, type JsonStore } from "../../src/backend/storage";
 import { makeTempDir } from "../fakes/processHelpers";
+
+const QUEUE_SETTLE_MS = 50;
 
 interface Harness {
   service: AccountsService;
@@ -44,10 +47,38 @@ async function addNamed(
   return account.id;
 }
 
+it("accounts_publish_serialized_with_mutations", async () => {
+  const harness = await setup();
+  const keep = await addNamed(harness, "keep");
+  const drop = await addNamed(harness, "drop");
+  harness.broadcast.mockClear();
+  const writeGate = Promise.withResolvers<undefined>();
+  const realWrite = harness.store.writeAccounts.bind(harness.store);
+  vi.spyOn(harness.store, "writeAccounts").mockImplementation(
+    async (accounts) => {
+      await writeGate.promise;
+      await realWrite(accounts);
+    },
+  );
+
+  const removal = harness.service.remove(drop);
+  const published = harness.service.publish();
+  await sleep(QUEUE_SETTLE_MS);
+  writeGate.resolve(undefined);
+  await Promise.all([removal, published]);
+
+  expect(harness.broadcast).toHaveBeenCalledTimes(2);
+  for (const [, payload] of harness.broadcast.mock.calls) {
+    expect(payload).toEqual({
+      accounts: [expect.objectContaining({ id: keep })],
+    });
+  }
+});
+
 it("accounts_add_creates_default_config_dir_and_broadcasts", async () => {
   const { service, store, userData, broadcast } = await setup();
   const { configDir } = service.suggest();
-  expect(configDir.startsWith(join(userData, "accounts") + "/")).toBe(true);
+  expect(configDir.startsWith(join(userData, "accounts") + sep)).toBe(true);
 
   const { account } = await service.add({ label: "Work", configDir });
 

@@ -1,3 +1,6 @@
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentEvent } from "../domain/events";
@@ -11,7 +14,7 @@ import { pickOption, toPermissionQuery } from "./permissionQuery";
 
 type PermissionRequest = Extract<AgentEvent, { type: "permission_request" }>;
 
-const CWD = "/work/project";
+const CWD = resolve("/work/project");
 const OPTIONS = [
   { optionId: "once", name: "Allow once", kind: "allow_once" },
   { optionId: "always", name: "Always allow", kind: "allow_always" },
@@ -43,30 +46,33 @@ const KIND_CASES: [string, Partial<PermissionRequest>, PermissionQuery][] = [
   [
     "edit",
     { locations: ["src/a.ts"] },
-    { kind: "edit", paths: ["/work/project/src/a.ts"] },
+    { kind: "edit", paths: [resolve(CWD, "src/a.ts")] },
   ],
   [
     "edit",
     {
-      locations: ["/work/project/a.ts"],
-      rawInput: { file_path: "/work/project/a.ts" },
+      locations: [resolve(CWD, "a.ts")],
+      rawInput: { file_path: resolve(CWD, "a.ts") },
     },
-    { kind: "edit", paths: ["/work/project/a.ts"] },
+    { kind: "edit", paths: [resolve(CWD, "a.ts")] },
   ],
   [
     "delete",
-    { locations: ["file:///work/project/old%20name.ts"] },
-    { kind: "edit", paths: ["/work/project/old name.ts"] },
+    { locations: [pathToFileURL(resolve(CWD, "old name.ts")).href] },
+    { kind: "edit", paths: [resolve(CWD, "old name.ts")] },
   ],
   [
     "move",
     { locations: ["a.ts"], rawInput: { file_path: "../b.ts" } },
-    { kind: "edit", paths: ["/work/project/a.ts", "/work/b.ts"] },
+    {
+      kind: "edit",
+      paths: [resolve(CWD, "a.ts"), resolve(CWD, "..", "b.ts")],
+    },
   ],
   [
     "edit",
     { locations: ["a.ts"], rawInput: { file_path: 42 } },
-    { kind: "edit", paths: ["/work/project/a.ts"] },
+    { kind: "edit", paths: [resolve(CWD, "a.ts")] },
   ],
   ["edit", {}, { kind: "edit", paths: [] }],
   [
@@ -89,7 +95,7 @@ describe("toPermissionQuery", () => {
     expect(toPermissionQuery(request(kind, extra), CWD)).toEqual(expected);
   });
 
-  it("marks an unreadable file URL as unresolved", () => {
+  it("remote_host_file_url_stays_unresolved", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     const query = toPermissionQuery(

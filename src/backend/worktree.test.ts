@@ -1,11 +1,21 @@
 import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { makeTempDir, runGit } from "../../tests/fakes/processHelpers";
 
-import { inspectWorktree } from "./worktree";
+import { inspectWorktree, normalizeGitRoot } from "./worktree";
+
+describe("normalizeGitRoot", () => {
+  it("normalize_git_root_converts_forward_slashes_on_windows", () => {
+    expect(normalizeGitRoot("C:/a/b\n", win32)).toBe("C:\\a\\b");
+  });
+
+  it("normalize_git_root_keeps_posix_path_unchanged", () => {
+    expect(normalizeGitRoot("/a/b\n", posix)).toBe("/a/b");
+  });
+});
 
 describe("inspectWorktree", () => {
   it("non_repo_directory_reports_not_a_repo", async () => {
