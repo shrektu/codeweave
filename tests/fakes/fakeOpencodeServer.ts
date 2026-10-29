@@ -262,7 +262,13 @@ function eventFor(step: EventStep): Json {
 type Route =
   | {
       readonly kind:
-        "config" | "events" | "create" | "status" | "messages" | "unknown";
+        | "config"
+        | "providers"
+        | "events"
+        | "create"
+        | "status"
+        | "messages"
+        | "unknown";
     }
   | { readonly kind: "prompt" | "abort" }
   | { readonly kind: "permission"; readonly match: RegExpExecArray };
@@ -270,6 +276,7 @@ type Route =
 const UNKNOWN_ROUTE: Route = { kind: "unknown" };
 const GET_ROUTES = new Map<string, Route>([
   ["/config", { kind: "config" }],
+  ["/config/providers", { kind: "providers" }],
   ["/event", { kind: "events" }],
   ["/session/status", { kind: "status" }],
 ]);
@@ -315,6 +322,7 @@ function sendJson(response: ServerResponse, value: unknown): void {
 }
 
 export class FakeOpencodeServer {
+  providers: unknown = { providers: [], default: {} };
   readonly requests: RecordedRequest[] = [];
   readonly replies: PermissionReply[] = [];
   private readonly scripts: (readonly OpencodeStep[])[] = [];
@@ -490,6 +498,9 @@ export class FakeOpencodeServer {
       case "config":
         sendJson(response, {});
         return;
+      case "providers":
+        sendJson(response, this.providers);
+        return;
       case "events":
         this.openStream(response);
         return;
@@ -641,6 +652,7 @@ export interface FakeOpencodeConfig {
   stderrText?: string;
   stalledRoutes?: readonly Route["kind"][];
   delayedRoutes?: ReadonlyMap<Route["kind"], number>;
+  providers?: unknown;
 }
 
 const StartupConfigSchema = z.looseObject({
@@ -680,9 +692,14 @@ export class ScriptedOpencodeContainer implements ProcessContainer {
   readonly startups: OpencodeStartup[] = [];
   readonly config: FakeOpencodeConfig = {};
   private readonly stopResults: readonly StopResult[];
+  private readonly nextScripts: (readonly OpencodeStep[])[] = [];
 
   constructor(stopResults: readonly StopResult[]) {
     this.stopResults = stopResults;
+  }
+
+  scriptNextServer(steps: readonly OpencodeStep[]): void {
+    this.nextScripts.push(steps);
   }
 
   async spawn(spec: SpawnSpec): Promise<Contained> {
@@ -705,6 +722,13 @@ export class ScriptedOpencodeContainer implements ProcessContainer {
     this.startups.push(startup);
     const server = new FakeOpencodeServer(spec.env[PASSWORD_ENV] ?? "");
     this.servers.push(server);
+    const script = this.nextScripts.shift();
+    if (script !== undefined) {
+      server.enqueue(script);
+    }
+    if (this.config.providers !== undefined) {
+      server.providers = this.config.providers;
+    }
     this.config.stalledRoutes?.forEach((kind) => {
       server.stall(kind);
     });

@@ -12,11 +12,13 @@ import {
   type OpencodePermissionResponse,
 } from "./constants";
 import {
+  ProvidersResponseSchema,
   SessionResponseSchema,
   LatestMessagesSchema,
   SessionStatusMapSchema,
   parseOpencodeEvent,
   type OpencodeEvent,
+  type ProvidersResponse,
 } from "./protocol";
 import { sseEvents } from "./sse";
 
@@ -58,6 +60,7 @@ export interface OpencodeClient {
     response: OpencodePermissionResponse,
   ): Promise<void>;
   events(signal: AbortSignal): Promise<AsyncIterable<OpencodeEvent>>;
+  providers(): Promise<ProvidersResponse>;
 }
 
 interface RequestInput {
@@ -155,6 +158,14 @@ export function createOpencodeClient(
         path: OpencodePath.config,
         timeoutMs: warmUpTimeoutMs,
       }),
+    async providers() {
+      const response = await send({
+        method: "GET",
+        path: OpencodePath.providers,
+        accept: CONTENT_TYPE_JSON,
+      });
+      return ProvidersResponseSchema.parse(await response.json());
+    },
     async createSession() {
       const response = await send({
         method: "POST",

@@ -50,6 +50,10 @@ function settingsClient(): FakeIpcClient {
         patch.codexExecutable === undefined
           ? current.codexExecutable
           : patch.codexExecutable,
+      opencodeExecutable:
+        patch.opencodeExecutable === undefined
+          ? current.opencodeExecutable
+          : patch.opencodeExecutable,
     };
     client.emit({ v: 4, event: "settings/changed", payload: current });
     return current;

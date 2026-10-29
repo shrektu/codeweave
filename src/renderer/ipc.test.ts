@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { PortLike } from "../shared/port";
 import type { IpcEvent } from "../shared/protocol";
@@ -50,6 +50,7 @@ const SETTINGS_EVENT = {
     effectLevel: "low",
     claudeExecutable: null,
     codexExecutable: null,
+    opencodeExecutable: null,
   },
 };
 
@@ -126,5 +127,80 @@ describe("ipc client requests", () => {
     });
     await expect(pending).rejects.toBeInstanceOf(IpcRemoteError);
     await expect(pending).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+});
+
+describe("ipc client request timeouts", () => {
+  const SETKEY_PARAMS = { id: "acc-1", apiKey: "sk-test-0001-key" };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function rejectionCounter(promise: Promise<unknown>): () => number {
+    const rejected = vi.fn();
+    promise.catch(rejected);
+    return () => rejected.mock.calls.length;
+  }
+
+  it("default_method_times_out_after_five_seconds", async () => {
+    vi.useFakeTimers();
+    const { port } = fakePort();
+    const client = createIpcClient(port);
+    const rejections = rejectionCounter(client.request("ping", {}));
+
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(rejections()).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(rejections()).toBe(1);
+  });
+
+  it("set_key_waits_past_five_seconds_and_times_out_after_130_seconds", async () => {
+    vi.useFakeTimers();
+    const { port } = fakePort();
+    const client = createIpcClient(port);
+    const rejections = rejectionCounter(
+      client.request("accounts/setKey", SETKEY_PARAMS),
+    );
+
+    await vi.advanceTimersByTimeAsync(5001);
+    expect(rejections()).toBe(0);
+    await vi.advanceTimersByTimeAsync(124_998);
+    expect(rejections()).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(rejections()).toBe(1);
+  });
+
+  it("add_account_waits_130_seconds", async () => {
+    vi.useFakeTimers();
+    const { port } = fakePort();
+    const client = createIpcClient(port);
+    const rejections = rejectionCounter(
+      client.request("accounts/add", {
+        label: "Main",
+        configDir: "/cfg/main",
+      }),
+    );
+
+    await vi.advanceTimersByTimeAsync(129_999);
+    expect(rejections()).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(rejections()).toBe(1);
+  });
+
+  it("catalog_timeout_exceeds_backend_probe_budget", async () => {
+    vi.useFakeTimers();
+    const { port } = fakePort();
+    const client = createIpcClient(port);
+    const rejections = rejectionCounter(client.request("models/catalog", {}));
+
+    await vi.advanceTimersByTimeAsync(64_999);
+    expect(rejections()).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(rejections()).toBe(1);
   });
 });

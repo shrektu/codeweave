@@ -18,6 +18,13 @@ export const SessionStatusMapSchema = z.record(
   z.looseObject({ type: z.string() }),
 );
 
+export const ProvidersResponseSchema = z.object({
+  providers: z.array(
+    z.object({ id: z.string(), models: z.record(z.string(), z.unknown()) }),
+  ),
+});
+export type ProvidersResponse = z.infer<typeof ProvidersResponseSchema>;
+
 export const TextPartSchema = z.looseObject({
   type: z.literal(OpencodePartType.text),
   id: z.string(),

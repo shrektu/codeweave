@@ -40,6 +40,11 @@ import {
   ScriptedCodexContainer,
   type FakeCodexConfig,
 } from "./fakeCodexAppServer";
+import {
+  OPENCODE_RIG_EXECUTABLE,
+  ScriptedOpencodeContainer,
+  type FakeOpencodeConfig,
+} from "./fakeOpencodeServer";
 import { createFakeVault, type FakeVault } from "./fakeVault";
 import type { ScheduledTask } from "./rotationHarness";
 
@@ -48,6 +53,8 @@ export const RIG_NOW_MS = 1_700_000_000_000;
 export const RIG_NOW_SECONDS = 1_700_000_000;
 export const RIG_CLAUDE_PATH = "/usr/bin/claude";
 export const RIG_CODEX_PATH = CODEX_RIG_EXECUTABLE;
+export const RIG_OPENCODE_PATH = OPENCODE_RIG_EXECUTABLE;
+export const RIG_OPENCODE_ALT_PATH = "/opt/other/opencode";
 
 export const ACCOUNT_A: Account = {
   id: "acc-a",
@@ -101,6 +108,9 @@ export interface BackendRigOptions {
   readonly probeConfig?: FakeCodexConfig;
   readonly probeConfigByHome?: Readonly<Record<string, FakeCodexConfig>>;
   readonly now?: () => number;
+  readonly parentEnv?: NodeJS.ProcessEnv;
+  readonly opencodeConfig?: FakeOpencodeConfig;
+  readonly catalogProbeTimeoutMs?: number;
   readonly vault?: FakeVault;
   readonly probeStopResults?: ConstructorParameters<
     typeof ScriptedCodexContainer
@@ -122,6 +132,7 @@ export interface BackendRig {
   readonly backend: Backend;
   readonly container: ScriptedAcpContainer;
   readonly codexContainer: ScriptedCodexContainer;
+  readonly opencodeContainer: ScriptedOpencodeContainer;
   readonly probeContainer: ScriptedCodexContainer;
   readonly probeTasks: ScheduledTask[];
   readonly probeStats: ProbeStats;
@@ -184,9 +195,24 @@ async function spawnProbe(
   };
 }
 
+function targetOf(
+  spec: SpawnSpec,
+  containers: Pick<AgentContainers, "claude" | "codex" | "opencode">,
+): ProcessContainer {
+  switch (spec.command) {
+    case RIG_CODEX_PATH:
+      return containers.codex;
+    case RIG_OPENCODE_PATH:
+    case RIG_OPENCODE_ALT_PATH:
+      return containers.opencode;
+    default:
+      return containers.claude;
+  }
+}
+
 function recordingContainer(
   claude: ScriptedAcpContainer,
-  codex: ScriptedCodexContainer,
+  others: Pick<AgentContainers, "codex" | "opencode">,
   probe: { container: ScriptedCodexContainer; stats: ProbeStats },
   rig: Pick<BackendRig, "order" | "sweeps" | "contained">,
 ): ProcessContainer {
@@ -197,7 +223,7 @@ function recordingContainer(
         return spawnProbe(probe.container, probe.stats, spec);
       }
       rig.order.push(`spawn:${spec.runId}`);
-      const target = spec.command === RIG_CODEX_PATH ? codex : claude;
+      const target = targetOf(spec, { claude, ...others });
       const contained = await target.spawn(spec);
       rig.contained.push(contained);
       return {
@@ -256,15 +282,18 @@ interface RigLog {
   readonly instanceIds: string[];
 }
 
+interface AgentContainers {
+  readonly claude: ScriptedAcpContainer;
+  readonly codex: ScriptedCodexContainer;
+  readonly opencode: ScriptedOpencodeContainer;
+  readonly probe: ScriptedCodexContainer;
+}
+
 function rigDeps(
   options: BackendRigOptions,
   userData: string,
   vault: FakeVault,
-  containers: {
-    readonly claude: ScriptedAcpContainer;
-    readonly codex: ScriptedCodexContainer;
-    readonly probe: ScriptedCodexContainer;
-  },
+  containers: AgentContainers,
   log: RigLog,
 ): BackendDeps {
   return {
@@ -279,7 +308,7 @@ function rigDeps(
         ? Promise.resolve(
             recordingContainer(
               containers.claude,
-              containers.codex,
+              containers,
               { container: containers.probe, stats: log.probeStats },
               log,
             ),
@@ -288,16 +317,27 @@ function rigDeps(
     },
     execPath: RIG_EXEC_PATH,
     adapterEntry: RIG_ADAPTER_ENTRY,
-    parentEnv: { PATH: "/usr/bin" },
+    parentEnv: options.parentEnv ?? { PATH: "/usr/bin" },
     homeDir: "/home/jane",
     platform: options.platform ?? "linux",
     now: options.now ?? (() => RIG_NOW_MS),
+    ...(options.catalogProbeTimeoutMs === undefined
+      ? {}
+      : { catalogProbeTimeoutMs: options.catalogProbeTimeoutMs }),
     schedule: scheduler(log.scheduled, log.probeTasks),
     newRunId: runIds(),
     resolveExecutable:
       options.resolveExecutable ??
-      ((provider) =>
-        provider === ProviderId.codex ? RIG_CODEX_PATH : RIG_CLAUDE_PATH),
+      ((provider) => {
+        switch (provider) {
+          case ProviderId.codex:
+            return RIG_CODEX_PATH;
+          case ProviderId.opencode:
+            return RIG_OPENCODE_PATH;
+          default:
+            return RIG_CLAUDE_PATH;
+        }
+      }),
     inspectWorktree: async (dir) => {
       await options.worktreeGate;
       return { isRepo: false, cwd: dir };
@@ -317,6 +357,8 @@ export async function createBackendRig(
   }
   const container = new ScriptedAcpContainer(options.stopResults);
   const codexContainer = new ScriptedCodexContainer();
+  const opencodeContainer = new ScriptedOpencodeContainer([]);
+  Object.assign(opencodeContainer.config, options.opencodeConfig);
   const probeContainer = new ScriptedCodexContainer(options.probeStopResults);
   for (const [home, results] of Object.entries(
     options.probeStopResultsByHome ?? {},
@@ -350,7 +392,12 @@ export async function createBackendRig(
       options,
       userData,
       vault,
-      { claude: container, codex: codexContainer, probe: probeContainer },
+      {
+        claude: container,
+        codex: codexContainer,
+        opencode: opencodeContainer,
+        probe: probeContainer,
+      },
       {
         ...parts,
         broadcasts,
@@ -369,6 +416,7 @@ export async function createBackendRig(
     backend,
     container,
     codexContainer,
+    opencodeContainer,
     probeContainer,
     probeStats,
     probeTasks,
@@ -407,7 +455,13 @@ export async function openRig(
 }
 
 export async function closeRigs(): Promise<void> {
-  await Promise.all(openRigs.splice(0).map((rig) => rig.dispose()));
+  const rigs = openRigs.splice(0);
+  await Promise.all(rigs.map((rig) => rig.dispose()));
+  await Promise.allSettled(
+    rigs.flatMap((rig) =>
+      rig.opencodeContainer.servers.map((server) => server.close()),
+    ),
+  );
   await removeBackendRigDirs();
 }
 

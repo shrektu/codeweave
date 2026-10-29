@@ -135,6 +135,7 @@ export async function createRotationWorkspace(
     effectLevel: EffectLevel.auto,
     claudeExecutable: null,
     codexExecutable: null,
+    opencodeExecutable: null,
   });
   return {
     root,

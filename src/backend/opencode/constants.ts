@@ -1,5 +1,6 @@
 export const OpencodePath = {
   config: "/config",
+  providers: "/config/providers",
   session: "/session",
   sessionStatus: "/session/status",
   message: "message",

@@ -3,25 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   API_PROVIDERS,
   ApiProviderId,
-  excludedByCompanyCode,
   PROVIDER_KEY_ENV_NAMES,
 } from "./apiProviders";
-
-describe("excludedByCompanyCode", () => {
-  it.each([
-    ["groq", false],
-    ["cerebras", false],
-    ["openrouter", true],
-    ["google", true],
-    ["mistral", true],
-    ["zai", true],
-    ["deepseek", true],
-    ["moonshotai", true],
-    ["custom", true],
-  ] as const)("%s_excluded_%s", (provider, excluded) => {
-    expect(excludedByCompanyCode(provider)).toBe(excluded);
-  });
-});
 
 describe("provider registry", () => {
   it("lists_every_provider_id_exactly_once", () => {

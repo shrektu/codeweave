@@ -5,6 +5,7 @@ import type { ConnectionRegistry } from "./connections";
 import { listFlows } from "./flows";
 import type { IpcHandlers } from "./ipcServer";
 import type { LimitProbeService } from "./limitProbe";
+import type { ModelCatalogService } from "./opencode/catalog";
 import type { KeyStore } from "./secrets/keyStore";
 import type { SecretVault } from "./secrets/vault";
 import type { ContainerStatus, SessionService } from "./session";
@@ -19,6 +20,7 @@ export interface HandlerDeps {
   broadcast: ConnectionRegistry["broadcast"];
   sessions: SessionService;
   probes: LimitProbeService;
+  catalog: ModelCatalogService;
   containerStatus: ContainerStatus;
 }
 
@@ -36,6 +38,7 @@ export function createHandlers({
   broadcast,
   sessions,
   probes,
+  catalog,
   containerStatus,
 }: HandlerDeps): IpcHandlers {
   const accounts = createAccountsService({
@@ -92,6 +95,7 @@ export function createHandlers({
     "accounts/add": (params) => probed(accounts.add(params)),
     "accounts/setKey": (params) => accounts.setKey(params),
     "vault/status": () => vault.status(),
+    "models/catalog": () => catalog.load(),
     "accounts/remove": ({ id }) => probed(accounts.remove(id)),
     "accounts/move": ({ id, direction }) =>
       synced(accounts.move(id, direction)),

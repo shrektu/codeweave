@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { ApiProviderId } from "../domain/apiProviders";
+import { ApiProviderId, TRAINING_UNKNOWN } from "../domain/apiProviders";
 import {
   EdgeKind,
   EffectLevel,
@@ -127,6 +127,7 @@ export const SessionViewSchema = z.strictObject({
   profile: z.enum(PermissionProfile),
   phase: RotationPhaseViewSchema,
   activeAccountId: z.string().nullable(),
+  activeProvider: z.enum(ProviderId),
   messages: z.array(MessageViewSchema),
   toolCalls: z.array(ToolCallViewSchema),
   permissions: z.array(PermissionViewSchema),
@@ -177,8 +178,27 @@ export const SettingsViewSchema = z.strictObject({
   effectLevel: z.enum(EffectLevel),
   claudeExecutable: z.string().nullable(),
   codexExecutable: z.string().nullable(),
+  opencodeExecutable: z.string().nullable(),
 });
 export type SettingsView = z.infer<typeof SettingsViewSchema>;
+
+export const CatalogModelSchema = z.strictObject({
+  providerId: z.enum(ApiProviderId),
+  modelId: NonEmptyString,
+  name: z.string(),
+  contextWindow: z.number().nullable(),
+  costIn: z.number().nullable(),
+  costOut: z.number().nullable(),
+  free: z.boolean(),
+  trainsOnData: z.union([z.boolean(), z.literal(TRAINING_UNKNOWN)]),
+});
+export type CatalogModel = z.infer<typeof CatalogModelSchema>;
+
+export const ModelCatalogSchema = z.strictObject({
+  models: z.array(CatalogModelSchema),
+  error: z.string().nullable(),
+});
+export type ModelCatalog = z.infer<typeof ModelCatalogSchema>;
 
 export const SwitchLogEntryViewSchema = z.strictObject({
   at: z.number(),

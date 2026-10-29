@@ -17,12 +17,19 @@ export const ApiTier = {
 } as const;
 export type ApiTier = (typeof ApiTier)[keyof typeof ApiTier];
 
+export const FreeModels = {
+  all: "all",
+  marked: "marked",
+} as const;
+export type FreeModels = (typeof FreeModels)[keyof typeof FreeModels];
+
 export const TRAINING_UNKNOWN = "unknown";
 
 export interface ApiProviderInfo {
   readonly label: string;
   readonly opencodeId: string;
   readonly tier: ApiTier;
+  readonly freeModels: FreeModels;
   readonly trainsOnData: boolean | typeof TRAINING_UNKNOWN;
   readonly defaultRotation: boolean;
   readonly keyEnvNames: readonly string[];
@@ -33,6 +40,7 @@ export const API_PROVIDERS: Readonly<Record<ApiProviderId, ApiProviderInfo>> = {
     label: "Groq",
     opencodeId: "groq",
     tier: ApiTier.free,
+    freeModels: FreeModels.all,
     trainsOnData: false,
     defaultRotation: true,
     keyEnvNames: ["GROQ_API_KEY"],
@@ -41,6 +49,7 @@ export const API_PROVIDERS: Readonly<Record<ApiProviderId, ApiProviderInfo>> = {
     label: "Cerebras",
     opencodeId: "cerebras",
     tier: ApiTier.free,
+    freeModels: FreeModels.all,
     trainsOnData: false,
     defaultRotation: true,
     keyEnvNames: ["CEREBRAS_API_KEY"],
@@ -49,6 +58,7 @@ export const API_PROVIDERS: Readonly<Record<ApiProviderId, ApiProviderInfo>> = {
     label: "OpenRouter",
     opencodeId: "openrouter",
     tier: ApiTier.free,
+    freeModels: FreeModels.marked,
     trainsOnData: TRAINING_UNKNOWN,
     defaultRotation: true,
     keyEnvNames: ["OPENROUTER_API_KEY"],
@@ -57,6 +67,7 @@ export const API_PROVIDERS: Readonly<Record<ApiProviderId, ApiProviderInfo>> = {
     label: "Google AI Studio",
     opencodeId: "google",
     tier: ApiTier.free,
+    freeModels: FreeModels.all,
     trainsOnData: true,
     defaultRotation: true,
     keyEnvNames: [
@@ -69,6 +80,7 @@ export const API_PROVIDERS: Readonly<Record<ApiProviderId, ApiProviderInfo>> = {
     label: "Mistral",
     opencodeId: "mistral",
     tier: ApiTier.free,
+    freeModels: FreeModels.all,
     trainsOnData: true,
     defaultRotation: true,
     keyEnvNames: ["MISTRAL_API_KEY"],
@@ -77,6 +89,7 @@ export const API_PROVIDERS: Readonly<Record<ApiProviderId, ApiProviderInfo>> = {
     label: "Z.ai",
     opencodeId: "zai",
     tier: ApiTier.free,
+    freeModels: FreeModels.marked,
     trainsOnData: TRAINING_UNKNOWN,
     defaultRotation: true,
     keyEnvNames: ["ZHIPU_API_KEY"],
@@ -85,6 +98,7 @@ export const API_PROVIDERS: Readonly<Record<ApiProviderId, ApiProviderInfo>> = {
     label: "DeepSeek",
     opencodeId: "deepseek",
     tier: ApiTier.paid,
+    freeModels: FreeModels.marked,
     trainsOnData: TRAINING_UNKNOWN,
     defaultRotation: false,
     keyEnvNames: ["DEEPSEEK_API_KEY"],
@@ -93,6 +107,7 @@ export const API_PROVIDERS: Readonly<Record<ApiProviderId, ApiProviderInfo>> = {
     label: "Kimi (Moonshot)",
     opencodeId: "moonshotai",
     tier: ApiTier.paid,
+    freeModels: FreeModels.marked,
     trainsOnData: TRAINING_UNKNOWN,
     defaultRotation: false,
     keyEnvNames: ["MOONSHOT_API_KEY"],
@@ -101,15 +116,12 @@ export const API_PROVIDERS: Readonly<Record<ApiProviderId, ApiProviderInfo>> = {
     label: "Custom OpenAI-compatible",
     opencodeId: "custom",
     tier: ApiTier.free,
+    freeModels: FreeModels.marked,
     trainsOnData: TRAINING_UNKNOWN,
     defaultRotation: true,
     keyEnvNames: [],
   },
 };
-
-export function excludedByCompanyCode(provider: ApiProviderId): boolean {
-  return API_PROVIDERS[provider].trainsOnData !== false;
-}
 
 export const PROVIDER_KEY_ENV_NAMES: readonly string[] = Object.values(
   API_PROVIDERS,

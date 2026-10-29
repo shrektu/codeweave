@@ -28,6 +28,7 @@ describe("settings service", () => {
       effectLevel: "auto",
       claudeExecutable: null,
       codexExecutable: null,
+      opencodeExecutable: null,
     });
   });
 
@@ -41,6 +42,7 @@ describe("settings service", () => {
       effectLevel: "auto",
       claudeExecutable: null,
       codexExecutable: null,
+      opencodeExecutable: null,
     };
     expect(view).toEqual(expected);
     expect(await store.readSettings()).toEqual({ version: 1, ...expected });
@@ -83,7 +85,29 @@ describe("settings service", () => {
       effectLevel: "low",
       claudeExecutable: "/opt/claude",
       codexExecutable: null,
+      opencodeExecutable: null,
     });
+  });
+
+  it("set_opencode_executable_is_independent_of_the_other_executables", async () => {
+    const { service, store } = await setup();
+    await service.set({
+      claudeExecutable: "/opt/claude",
+      codexExecutable: "/opt/codex",
+    });
+
+    const set = await service.set({ opencodeExecutable: "/opt/opencode" });
+    const kept = await service.set({ effectLevel: "low" });
+    const cleared = await service.set({ opencodeExecutable: null });
+
+    expect(set).toMatchObject({
+      claudeExecutable: "/opt/claude",
+      codexExecutable: "/opt/codex",
+      opencodeExecutable: "/opt/opencode",
+    });
+    expect(kept.opencodeExecutable).toBe("/opt/opencode");
+    expect(cleared.opencodeExecutable).toBeNull();
+    expect((await store.readSettings()).opencodeExecutable).toBeNull();
   });
 
   it("concurrent_sets_do_not_lose_updates", async () => {
@@ -99,6 +123,7 @@ describe("settings service", () => {
       effectLevel: "full",
       claudeExecutable: null,
       codexExecutable: null,
+      opencodeExecutable: null,
     });
   });
 });

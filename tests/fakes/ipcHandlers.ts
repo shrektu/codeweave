@@ -20,6 +20,7 @@ export function fakeHandlers(
     "accounts/add": unavailable,
     "accounts/setKey": unavailable,
     "vault/status": unavailable,
+    "models/catalog": unavailable,
     "accounts/remove": unavailable,
     "accounts/move": unavailable,
     "settings/get": unavailable,

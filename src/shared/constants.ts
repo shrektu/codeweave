@@ -14,6 +14,10 @@ export const VAULT_RESPONSE_MESSAGE_TYPE = "vault/response";
 
 export const VAULT_REQUEST_TIMEOUT_MS = 5000;
 
+export const CATALOG_PROBE_TIMEOUT_MS = 45_000;
+
+export const CATALOG_STOP_MARGIN_MS = 20_000;
+
 export const GPU_ACCELERATED_ARG = "--codeweave-gpu-accelerated";
 
 export const USER_DATA_ARG = "--codeweave-user-data";

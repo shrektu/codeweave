@@ -229,6 +229,7 @@ it("flows_list_handler_delegates_to_listFlows", async () => {
     broadcast: vi.fn(),
     sessions: fakeSessions(),
     probes: fakeProbes(),
+    catalog: { load: () => Promise.resolve({ models: [], error: null }) },
     containerStatus: { available: true, message: null },
   });
 

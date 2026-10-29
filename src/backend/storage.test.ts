@@ -32,6 +32,7 @@ describe("json store", () => {
       effectLevel: "auto",
       claudeExecutable: null,
       codexExecutable: null,
+      opencodeExecutable: null,
     });
   });
 
@@ -44,6 +45,7 @@ describe("json store", () => {
       effectLevel: "low",
       claudeExecutable: "/usr/bin/claude",
       codexExecutable: "/usr/bin/codex",
+      opencodeExecutable: "/usr/bin/opencode",
     } as const;
 
     await store.writeAccounts([account]);
@@ -206,6 +208,7 @@ describe("json store writes", () => {
         effectLevel: "low",
         claudeExecutable: null,
         codexExecutable: null,
+        opencodeExecutable: null,
       }),
     ).rejects.toBeInstanceOf(StorageCorruptError);
 

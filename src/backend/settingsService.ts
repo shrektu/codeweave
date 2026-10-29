@@ -1,3 +1,4 @@
+import { ProviderId } from "../domain/types";
 import type { ParamsMap } from "../shared/protocol";
 import type { SettingsView } from "../shared/views";
 
@@ -15,12 +16,34 @@ export interface SettingsService {
   set(patch: ParamsMap["settings/set"]): Promise<SettingsView>;
 }
 
+type ExecutableSetting = keyof Pick<
+  SettingsFile,
+  "claudeExecutable" | "codexExecutable" | "opencodeExecutable"
+>;
+
+const EXECUTABLE_SETTINGS: Readonly<
+  Partial<Record<ProviderId, ExecutableSetting>>
+> = {
+  [ProviderId.claude]: "claudeExecutable",
+  [ProviderId.codex]: "codexExecutable",
+  [ProviderId.opencode]: "opencodeExecutable",
+};
+
+export function configuredExecutable(
+  settings: SettingsFile,
+  provider: ProviderId,
+): string | null {
+  const field = EXECUTABLE_SETTINGS[provider];
+  return field === undefined ? null : settings[field];
+}
+
 function toView(settings: SettingsFile): SettingsView {
   return {
     permissionProfile: settings.permissionProfile,
     effectLevel: settings.effectLevel,
     claudeExecutable: settings.claudeExecutable,
     codexExecutable: settings.codexExecutable,
+    opencodeExecutable: settings.opencodeExecutable,
   };
 }
 
@@ -49,6 +72,10 @@ export function createSettingsService({
             patch.codexExecutable === undefined
               ? current.codexExecutable
               : patch.codexExecutable,
+          opencodeExecutable:
+            patch.opencodeExecutable === undefined
+              ? current.opencodeExecutable
+              : patch.opencodeExecutable,
         };
         await store.writeSettings(next);
         const view = toView(next);

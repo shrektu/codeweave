@@ -65,7 +65,10 @@ const VALID_REQUESTS: [string, unknown][] = [
   ],
   ["accounts/setKey", { id: "acc", apiKey: "sk-test-groq-0002" }],
   ["vault/status", {}],
+  ["models/catalog", {}],
   ["settings/set", { codexExecutable: "/opt/codex" }],
+  ["settings/set", { opencodeExecutable: "/opt/opencode" }],
+  ["settings/set", { opencodeExecutable: null }],
   ["accounts/remove", { id: "acc" }],
   ["accounts/move", { id: "acc", direction: "up" }],
   ["settings/get", {}],
@@ -169,6 +172,11 @@ const INVALID_REQUESTS: [string, unknown][] = [
     request("accounts/setKey", { apiKey: "sk-test-groq-0001" }),
   ],
   ["vault/status with a param", request("vault/status", { verbose: true })],
+  ["models/catalog with a param", request("models/catalog", { force: true })],
+  [
+    "settings/set with a numeric opencode executable",
+    request("settings/set", { opencodeExecutable: 7 }),
+  ],
   ["session/prompt without text", request("session/prompt", {})],
   [
     "session/prompt with blank text",
@@ -291,6 +299,7 @@ describe("EventSchema", () => {
     effectLevel: "full",
     claudeExecutable: "/usr/bin/claude",
     codexExecutable: null,
+    opencodeExecutable: null,
   };
   const logEntry = {
     at: 1,

@@ -185,6 +185,7 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
     profile: PermissionProfile.ask,
     phase: { phase: "running", accountId: "acc-1" },
     activeAccountId: "acc-1",
+    activeProvider: ProviderId.claude,
     messages: [],
     toolCalls: [],
     permissions: [],
@@ -204,6 +205,7 @@ export function makeSettings(
     effectLevel: EffectLevel.auto,
     claudeExecutable: null,
     codexExecutable: null,
+    opencodeExecutable: null,
     ...overrides,
   };
 }

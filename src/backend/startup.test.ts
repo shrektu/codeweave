@@ -1,16 +1,24 @@
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ProviderId } from "../domain/types";
+import { ProviderId, type Account, type ApiAccount } from "../domain/types";
 import { IpcErrorCode } from "../shared/protocol";
+import { createFakeVault, fakeSecrets } from "../../tests/fakes/fakeVault";
 import {
   hostBinDirWith as binDirWith,
   hostExecutable,
   hostResolverEnv,
+  makeTempDir,
 } from "../../tests/fakes/processHelpers";
 
-import { createExecutableResolver } from "./startup";
+import { API_KEYS_FILE } from "./constants";
+import { createKeyStore, type KeyStore } from "./secrets/keyStore";
+import { createCredentialsFor, createExecutableResolver } from "./startup";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("createExecutableResolver", () => {
   it("resolves_each_provider_binary_from_path", async () => {
@@ -63,6 +71,30 @@ describe("createExecutableResolver", () => {
     );
   });
 
+  it("resolves_opencode_binary_from_path", async () => {
+    const dir = await binDirWith("opencode");
+    const resolve = createExecutableResolver(
+      hostResolverEnv(dir),
+      process.platform,
+    );
+
+    expect(resolve(ProviderId.opencode, null)).toBe(
+      hostExecutable(dir, "opencode"),
+    );
+  });
+
+  it("missing_opencode_binary_is_unavailable", async () => {
+    const dir = await binDirWith("unrelated");
+    const resolve = createExecutableResolver({ PATH: dir }, "linux");
+
+    expect(() => resolve(ProviderId.opencode, null)).toThrow(
+      expect.objectContaining({
+        code: IpcErrorCode.UNAVAILABLE,
+        message: "The OpenCode executable was not found",
+      }),
+    );
+  });
+
   it("unsupported_provider_is_unavailable", async () => {
     const dir = await binDirWith("gemini");
     const resolve = createExecutableResolver({ PATH: dir }, "linux");
@@ -74,4 +106,104 @@ describe("createExecutableResolver", () => {
       }),
     );
   });
+});
+
+const STORED_KEY = "sk-test-credentials-0001";
+
+function apiAccount(id: string, api: ApiAccount | undefined): Account {
+  return {
+    id,
+    provider: api === undefined ? ProviderId.claude : ProviderId.opencode,
+    label: id,
+    configDir: `/cfg/${id}`,
+    order: 0,
+    api,
+  };
+}
+
+const GROQ_API: ApiAccount = {
+  provider: "groq",
+  model: "llama-3.3-70b-versatile",
+  baseUrl: null,
+  rotation: true,
+};
+
+async function credentialsRig(): Promise<{
+  readonly dir: string;
+  readonly keyStore: KeyStore;
+}> {
+  const dir = await makeTempDir();
+  const { keyStore } = fakeSecrets(dir);
+  return { dir, keyStore };
+}
+
+it("credentials_are_null_for_an_account_without_api_data", async () => {
+  const { keyStore } = await credentialsRig();
+  await keyStore.set("sub-1", STORED_KEY);
+
+  expect(
+    await createCredentialsFor(keyStore)(apiAccount("sub-1", undefined)),
+  ).toBeNull();
+});
+
+it("credentials_are_null_when_no_key_is_stored", async () => {
+  const { keyStore } = await credentialsRig();
+
+  expect(
+    await createCredentialsFor(keyStore)(apiAccount("api-1", GROQ_API)),
+  ).toBeNull();
+});
+
+it("credentials_carry_registry_provider_id_model_and_stored_key", async () => {
+  const { keyStore } = await credentialsRig();
+  await keyStore.set("api-1", STORED_KEY);
+
+  expect(
+    await createCredentialsFor(keyStore)(apiAccount("api-1", GROQ_API)),
+  ).toEqual({
+    providerId: "groq",
+    model: "llama-3.3-70b-versatile",
+    baseUrl: null,
+    apiKey: STORED_KEY,
+  });
+});
+
+it("credentials_for_custom_provider_keep_the_base_url", async () => {
+  const { keyStore } = await credentialsRig();
+  await keyStore.set("api-2", STORED_KEY);
+
+  expect(
+    await createCredentialsFor(keyStore)(
+      apiAccount("api-2", {
+        provider: "custom",
+        model: "local-model",
+        baseUrl: "http://127.0.0.1:9000/v1",
+        rotation: false,
+      }),
+    ),
+  ).toEqual({
+    providerId: "custom",
+    model: "local-model",
+    baseUrl: "http://127.0.0.1:9000/v1",
+    apiKey: STORED_KEY,
+  });
+});
+
+it("undecryptable_key_is_logged_and_yields_null", async () => {
+  const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const { dir, keyStore } = await credentialsRig();
+  await keyStore.set("api-1", STORED_KEY);
+  const reopened = createKeyStore({
+    path: join(dir, API_KEYS_FILE),
+    vault: createFakeVault(false),
+  });
+
+  const credentials = await createCredentialsFor(reopened)(
+    apiAccount("api-1", GROQ_API),
+  );
+
+  expect(credentials).toBeNull();
+  expect(error).toHaveBeenCalledTimes(1);
+  expect(JSON.stringify(error.mock.calls)).not.toContain(STORED_KEY);
 });

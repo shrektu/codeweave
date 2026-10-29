@@ -240,6 +240,7 @@ async function opencodeSession(
     externalRuntime: () => null,
     beforeLaunch: () => Promise.resolve(),
     isBlocked: () => false,
+    hasKey: () => true,
     secrets: () => [{ value: KEY, label: LABEL }],
   });
   services.push(service);

@@ -9,6 +9,7 @@ import {
 import { buildContextPackage } from "../domain/contextPackage";
 import type { AgentEvent } from "../domain/events";
 import { decidePermission } from "../domain/permissionPolicy";
+import { rotationPool } from "../domain/rotationPool";
 import {
   beginAnswer,
   expireAll,
@@ -70,6 +71,7 @@ import { ProbeStillRunningError } from "./limitProbe";
 import { pickOption, toPermissionQuery } from "./permissionQuery";
 import type { StopResult } from "./process/container";
 import { toSessionView } from "./sessionView";
+import { configuredExecutable } from "./settingsService";
 import type { JsonStore } from "./storage";
 
 type PermissionRequest = Extract<AgentEvent, { type: "permission_request" }>;
@@ -96,6 +98,7 @@ export interface SessionServiceDeps {
   readonly externalRuntime: (accountId: string) => AccountRuntime | null;
   readonly beforeLaunch: (accountId: string) => Promise<void>;
   readonly isBlocked: (accountId: string) => boolean;
+  readonly hasKey: (accountId: string) => boolean;
   readonly secrets: (accounts: readonly Account[]) => readonly SecretEntry[];
 }
 
@@ -124,7 +127,9 @@ const INACTIVE_PHASES: readonly RotationPhase["phase"][] = [
   "failed",
 ];
 const READY: AccountRuntime = { status: "ready" };
+const NEEDS_LOGIN: AccountRuntime = { status: "needs_login" };
 const PREVIOUS_AGENT_RUNNING_MESSAGE = "The previous agent is still running";
+const NO_USABLE_ACCOUNT_MESSAGE = "No usable account";
 
 function transitionError(reason: TransitionFailure): IpcError {
   switch (reason) {
@@ -185,13 +190,24 @@ function exhaustedOnly(
   };
 }
 
+function externalRuntimeOf(
+  deps: SessionServiceDeps,
+  loginFailures: ReadonlySet<string>,
+): (accountId: string) => AccountRuntime | null {
+  const exhausted = exhaustedOnly(deps);
+  return (accountId) =>
+    loginFailures.has(accountId) ? NEEDS_LOGIN : exhausted(accountId);
+}
+
 interface SessionRunInit {
   deps: SessionServiceDeps;
   spec: RunSpec;
+  provider: ProviderId;
   registered: readonly Account[];
   accounts: readonly Account[];
   initial: Account;
   reserved: Set<string>;
+  loginFailures: ReadonlySet<string>;
   onRuntimeSettled: () => void;
 }
 
@@ -202,6 +218,7 @@ class SessionRun {
   private readonly spec: RunSpec;
   private readonly onRuntimeSettled: () => void;
   private readonly reserved: Set<string>;
+  private readonly loginFailures: ReadonlySet<string>;
   private readonly controller: RotationController;
   private accounts: readonly Account[];
   private registered: readonly Account[];
@@ -225,15 +242,18 @@ class SessionRun {
   constructor({
     deps,
     spec,
+    provider,
     registered,
     accounts,
     initial,
     reserved,
+    loginFailures,
     onRuntimeSettled,
   }: SessionRunInit) {
     this.deps = deps;
     this.reserved = reserved;
-    this.provider = initial.provider;
+    this.loginFailures = loginFailures;
+    this.provider = provider;
     this.onRuntimeSettled = onRuntimeSettled;
     this.spec = spec;
     this.registered = registered;
@@ -247,7 +267,7 @@ class SessionRun {
         appendSwitchLog: (entry) => this.logSwitch(entry),
         schedule: deps.schedule,
         now: deps.now,
-        externalRuntime: exhaustedOnly(deps),
+        externalRuntime: externalRuntimeOf(deps, loginFailures),
       },
       accounts,
       initial.id,
@@ -273,6 +293,7 @@ class SessionRun {
       id: this.id,
       cwd: this.spec.cwd,
       provider: this.provider,
+      accounts: this.registered,
       profile: this.spec.profile,
       phase: this.phase(),
       state: this.state,
@@ -306,7 +327,10 @@ class SessionRun {
   }
 
   ownRuntimeOf(accountId: string): AccountRuntime | null {
-    return this.controller.runtime().get(accountId) ?? null;
+    return (
+      this.controller.runtime().get(accountId) ??
+      (this.loginFailures.has(accountId) ? NEEDS_LOGIN : null)
+    );
   }
 
   runtime(): ReadonlyMap<string, AccountRuntime> {
@@ -323,9 +347,7 @@ class SessionRun {
 
   setAccounts(accounts: readonly Account[]): void {
     this.registered = accounts;
-    this.accounts = accounts.filter(
-      (account) => account.provider === this.provider,
-    );
+    this.accounts = rotationPool(this.provider, accounts);
     this.controller.setAccounts(this.accounts);
   }
 
@@ -423,9 +445,7 @@ class SessionRun {
       runId: this.deps.newRunId(),
       executable: this.deps.resolveExecutable(
         account.provider,
-        account.provider === ProviderId.codex
-          ? settings.codexExecutable
-          : settings.claudeExecutable,
+        configuredExecutable(settings, account.provider),
       ),
     });
     if (!result.ok) {
@@ -733,29 +753,44 @@ interface CreatedRun {
 interface RunWiring {
   readonly runtimeOf: (accountId: string) => AccountRuntime;
   readonly reserved: Set<string>;
+  readonly loginFailures: ReadonlySet<string>;
   readonly onRuntimeSettled: () => void;
+}
+
+function canStartWith(
+  deps: SessionServiceDeps,
+  wiring: RunWiring,
+  account: Account,
+): boolean {
+  const keyed =
+    account.provider !== ProviderId.opencode || deps.hasKey(account.id);
+  return (
+    keyed &&
+    !wiring.loginFailures.has(account.id) &&
+    !deps.isBlocked(account.id) &&
+    isUsable(wiring.runtimeOf(account.id), deps.now())
+  );
 }
 
 async function createRun(
   deps: SessionServiceDeps,
   params: ParamsMap["session/start"],
-  { runtimeOf, reserved, onRuntimeSettled }: RunWiring,
+  wiring: RunWiring,
 ): Promise<CreatedRun> {
   const registered = (await deps.store.readAccounts()).toSorted(
     (left, right) =>
       left.order - right.order || left.id.localeCompare(right.id),
   );
   const provider = params.provider ?? registered[0]?.provider;
-  const accounts = registered.filter(
-    (account) => account.provider === provider,
-  );
-  const initial = accounts.find(
-    (account) =>
-      !deps.isBlocked(account.id) &&
-      isUsable(runtimeOf(account.id), deps.now()),
+  if (provider === undefined) {
+    throw new IpcError(IpcErrorCode.CONFLICT, NO_USABLE_ACCOUNT_MESSAGE);
+  }
+  const accounts = rotationPool(provider, registered);
+  const initial = accounts.find((account) =>
+    canStartWith(deps, wiring, account),
   );
   if (initial === undefined) {
-    throw new IpcError(IpcErrorCode.CONFLICT, "No usable account");
+    throw new IpcError(IpcErrorCode.CONFLICT, NO_USABLE_ACCOUNT_MESSAGE);
   }
   const settings = await deps.store.readSettings();
   const run = new SessionRun({
@@ -765,11 +800,13 @@ async function createRun(
       profile: params.profile ?? settings.permissionProfile,
       flowRef: params.flowRef ?? null,
     },
+    provider,
     registered,
     accounts,
     initial,
-    reserved,
-    onRuntimeSettled,
+    reserved: wiring.reserved,
+    loginFailures: wiring.loginFailures,
+    onRuntimeSettled: wiring.onRuntimeSettled,
   });
   return { run, initial };
 }
@@ -815,20 +852,64 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     );
   const openRun = async (
     params: ParamsMap["session/start"],
+    loginFailures: ReadonlySet<string>,
   ): Promise<CreatedRun> => {
     opening = null;
     const created = await createRun(deps, params, {
       runtimeOf: startRuntimeOf,
       reserved,
+      loginFailures,
       onRuntimeSettled: checkRuntime,
     });
     opening = created.run;
     return created;
   };
-  const isRetryable = (result: AgentStartResult, initial: Account): boolean =>
+  const isLoginFailure = (
+    result: AgentStartResult,
+    account: Account,
+  ): boolean =>
     !result.ok &&
-    result.reason === AgentStartFailure.unavailable &&
-    deps.isBlocked(initial.id);
+    result.reason === AgentStartFailure.needsLogin &&
+    account.provider === ProviderId.opencode;
+  const isRetryable = (result: AgentStartResult, initial: Account): boolean =>
+    isLoginFailure(result, initial) ||
+    (!result.ok &&
+      result.reason === AgentStartFailure.unavailable &&
+      deps.isBlocked(initial.id));
+  const reopen = async (
+    params: ParamsMap["session/start"],
+    loginFailures: ReadonlySet<string>,
+    failed: CreatedRun,
+    result: AgentStartResult,
+  ): Promise<CreatedRun> => {
+    try {
+      return await openRun(params, loginFailures);
+    } catch (error) {
+      const exhausted =
+        error instanceof IpcError && error.code === IpcErrorCode.CONFLICT;
+      if (exhausted && loginFailures.has(failed.initial.id)) {
+        throw startError(failed.initial, result, (text) =>
+          failed.run.maskText(text),
+        );
+      }
+      throw error;
+    }
+  };
+  const beginRun = async (
+    params: ParamsMap["session/start"],
+  ): Promise<{ created: CreatedRun; result: AgentStartResult }> => {
+    const loginFailures = new Set<string>();
+    let created = await openRun(params, loginFailures);
+    let result = await created.run.begin(created.initial);
+    while (isRetryable(result, created.initial)) {
+      if (isLoginFailure(result, created.initial)) {
+        loginFailures.add(created.initial.id);
+      }
+      created = await reopen(params, loginFailures, created, result);
+      result = await created.run.begin(created.initial);
+    }
+    return { created, result };
+  };
   const releasePrevious = async (): Promise<void> => {
     await run?.close();
     if (run?.hasAgents() === true) {
@@ -854,12 +935,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       starting = true;
       try {
         await releasePrevious();
-        let created = await openRun(params);
-        let result = await created.run.begin(created.initial);
-        while (isRetryable(result, created.initial)) {
-          created = await openRun(params);
-          result = await created.run.begin(created.initial);
-        }
+        const { created, result } = await beginRun(params);
         if (!result.ok) {
           throw startError(created.initial, result, (text) =>
             created.run.maskText(text),

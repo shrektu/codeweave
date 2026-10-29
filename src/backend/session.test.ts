@@ -151,6 +151,7 @@ async function setup(options: SetupOptions): Promise<Setup> {
     externalRuntime: () => null,
     beforeLaunch: options.beforeLaunch ?? (() => Promise.resolve()),
     isBlocked: options.isBlocked ?? (() => false),
+    hasKey: () => true,
     secrets: () => [],
   });
   services.push(service);

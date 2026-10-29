@@ -14,6 +14,7 @@ import {
   ApiAccountSchema,
   FlowRefSchema,
   FlowsListSchema,
+  ModelCatalogSchema,
   SessionViewSchema,
   SettingsViewSchema,
   SnapshotSchema,
@@ -54,6 +55,7 @@ const SettingsPatchSchema = z
     effectLevel: z.enum(EffectLevel).optional(),
     claudeExecutable: z.string().nullable().optional(),
     codexExecutable: z.string().nullable().optional(),
+    opencodeExecutable: z.string().nullable().optional(),
   })
   .refine((patch) => Object.values(patch).some((value) => value !== undefined));
 
@@ -93,6 +95,7 @@ export const ParamsSchemas = {
     apiKey: ApiKeySchema,
   }),
   "vault/status": EmptyParamsSchema,
+  "models/catalog": EmptyParamsSchema,
   "accounts/remove": z.strictObject({ id: z.string() }),
   "accounts/move": z.strictObject({
     id: z.string(),
@@ -143,6 +146,7 @@ export const RequestSchema = z.discriminatedUnion("method", [
   requestSchema("switchLog/list"),
   requestSchema("flows/list"),
   requestSchema("vault/status"),
+  requestSchema("models/catalog"),
 ]);
 export type IpcRequest = z.infer<typeof RequestSchema>;
 
@@ -176,6 +180,7 @@ const resultSchemaDefinitions = {
   }),
   "flows/list": FlowsListSchema,
   "vault/status": VaultStatusSchema,
+  "models/catalog": ModelCatalogSchema,
 } as const;
 
 export type ResultMap = {

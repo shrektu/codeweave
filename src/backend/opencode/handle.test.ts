@@ -61,6 +61,7 @@ function createClient(
 ): OpencodeClient {
   return {
     warmUp: () => Promise.resolve(),
+    providers: () => Promise.resolve({ providers: [] }),
     createSession: () => Promise.resolve(SESSION),
     promptAsync: ({ text }) => {
       sinks.prompts.push(text);
