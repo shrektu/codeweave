@@ -124,6 +124,7 @@ export function makeAccount(overrides: Partial<AccountView> = {}): AccountView {
     configDir: "/home/user/.claude-work",
     order: 0,
     runtime: { status: "ready" },
+    limit: null,
     ...overrides,
   };
 }
@@ -177,6 +178,7 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
   return {
     id: "sess-1",
     cwd: "/home/user/project",
+    provider: ProviderId.claude,
     profile: PermissionProfile.ask,
     phase: { phase: "running", accountId: "acc-1" },
     activeAccountId: "acc-1",
@@ -198,6 +200,7 @@ export function makeSettings(
     permissionProfile: PermissionProfile.ask,
     effectLevel: EffectLevel.auto,
     claudeExecutable: null,
+    codexExecutable: null,
     ...overrides,
   };
 }

@@ -39,6 +39,35 @@ export interface DecideInput {
   readonly outcome: TurnOutcome;
   readonly now: EpochMillis;
   readonly excluded?: ReadonlySet<string>;
+  readonly externalRuntime?: (accountId: string) => AccountRuntime | null;
+}
+
+function exhaustedInFuture(
+  runtime: AccountRuntime | null,
+  now: EpochMillis,
+): EpochSeconds | null {
+  return runtime?.status === "exhausted" &&
+    runtime.resetsAt * MS_PER_SECOND > now
+    ? runtime.resetsAt
+    : null;
+}
+
+export function mergeRuntime(
+  own: AccountRuntime | null,
+  probe: AccountRuntime | null,
+  now: EpochMillis,
+): AccountRuntime {
+  if (own?.status === "needs_login") {
+    return own;
+  }
+  const resets = [own, probe].flatMap((runtime) => {
+    const resetsAt = exhaustedInFuture(runtime, now);
+    return resetsAt === null ? [] : [resetsAt];
+  });
+  if (resets.length > 0) {
+    return { status: "exhausted", resetsAt: Math.max(...resets) };
+  }
+  return own ?? probe ?? { status: "ready" };
 }
 
 function effectiveRuntime(
@@ -53,7 +82,11 @@ function effectiveRuntime(
       return { status: "needs_login" };
     }
   }
-  return input.runtime.get(account.id) ?? { status: "ready" };
+  return mergeRuntime(
+    input.runtime.get(account.id) ?? null,
+    input.externalRuntime?.(account.id) ?? null,
+    input.now,
+  );
 }
 
 function isReady(runtime: AccountRuntime, now: EpochMillis): boolean {
@@ -109,7 +142,10 @@ export function decideNext(input: DecideInput): RotationDecision {
 
 export type StartResult =
   | { readonly ok: true }
-  | { readonly ok: false; readonly reason: "needs_login" | "error" };
+  | {
+      readonly ok: false;
+      readonly reason: "needs_login" | "error" | "unavailable";
+    };
 
 export interface RotationPorts {
   readonly stopAgent: (accountId: string) => Promise<{ ok: boolean }>;
@@ -122,6 +158,7 @@ export interface RotationPorts {
   readonly appendSwitchLog: (entry: SwitchLogEntry) => Promise<void>;
   readonly schedule: (atMillis: EpochMillis, run: () => void) => () => void;
   readonly now: () => EpochMillis;
+  readonly externalRuntime?: (accountId: string) => AccountRuntime | null;
 }
 
 export type RotationPhase =
@@ -327,6 +364,9 @@ class RotationEngine implements RotationController {
         outcome: chain.outcome,
         now: this.ports.now(),
         excluded: chain.tried,
+        ...(this.ports.externalRuntime === undefined
+          ? {}
+          : { externalRuntime: this.ports.externalRuntime }),
       });
     if (decision.kind === "stay") {
       return null;
@@ -418,6 +458,10 @@ class RotationEngine implements RotationController {
       return this.abortStarted(started.ok ? decision.to : null);
     }
     if (!started.ok) {
+      if (started.reason === "unavailable") {
+        chain.tried.add(decision.to);
+        return { kind: "retry" };
+      }
       if (started.reason === "needs_login") {
         this.runtimeByAccount.set(decision.to, { status: "needs_login" });
         chain.tried.add(decision.to);

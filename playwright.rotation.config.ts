@@ -4,7 +4,7 @@ const TEST_TIMEOUT_MS = 240_000;
 
 export default defineConfig({
   testDir: "tests/e2e",
-  testMatch: "rotation.spec.ts",
+  testMatch: ["rotation.spec.ts", "codexRotation.spec.ts"],
   timeout: TEST_TIMEOUT_MS,
   workers: 1,
   reporter: "list",

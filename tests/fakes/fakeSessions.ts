@@ -1,3 +1,4 @@
+import type { LimitProbeService } from "../../src/backend/limitProbe";
 import type { SessionService } from "../../src/backend/session";
 
 export function fakeSessions(
@@ -14,6 +15,22 @@ export function fakeSessions(
     onRuntimeChanged: () => () => undefined,
     setAccounts: () => undefined,
     shutdown: () => Promise.resolve(),
+    ...overrides,
+  };
+}
+
+export function fakeProbes(
+  overrides: Partial<LimitProbeService> = {},
+): LimitProbeService {
+  return {
+    start: () => undefined,
+    trigger: () => undefined,
+    release: () => Promise.resolve(),
+    isBlocked: () => false,
+    limitOf: () => null,
+    runtimeOf: () => null,
+    onChanged: () => () => undefined,
+    dispose: () => Promise.resolve(),
     ...overrides,
   };
 }

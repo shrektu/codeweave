@@ -26,7 +26,7 @@ const PROFILE_OPTIONS: readonly ProfileOption[] = [
   {
     value: PermissionProfile.bypass,
     label: "Bypass",
-    description: "Claude runs every tool without asking.",
+    description: "The agent runs every tool without asking.",
   },
   {
     value: PermissionProfile.unattended,
@@ -58,7 +58,7 @@ const EFFECT_OPTIONS: readonly { value: EffectLevel; label: string }[] = [
 ];
 
 const BYPASS_WARNING =
-  "In Bypass mode Claude never asks, so Codeweave cannot block dangerous commands.";
+  "In Bypass mode the agent never asks, so Codeweave cannot block dangerous commands.";
 
 function ProfileFieldset({ settings, onPatch }: PatchProps): JSX.Element {
   return (
@@ -102,13 +102,25 @@ function EffectsFieldset({ settings, onPatch }: PatchProps): JSX.Element {
   );
 }
 
-function ExecutableField({ settings, onPatch }: PatchProps): JSX.Element {
-  const [executable, setExecutable] = useState(settings.claudeExecutable ?? "");
+interface ExecutableFieldProps {
+  id: string;
+  label: string;
+  current: string | null;
+  onSave: (value: string | null) => void;
+}
+
+function ExecutableField({
+  id,
+  label,
+  current,
+  onSave,
+}: ExecutableFieldProps): JSX.Element {
+  const [executable, setExecutable] = useState(current ?? "");
   return (
     <div className="field">
-      <label htmlFor="claude-executable">Claude executable</label>
+      <label htmlFor={id}>{label}</label>
       <input
-        id="claude-executable"
+        id={id}
         type="text"
         placeholder="Found on PATH"
         value={executable}
@@ -120,7 +132,7 @@ function ExecutableField({ settings, onPatch }: PatchProps): JSX.Element {
         type="button"
         className="btn"
         onClick={() => {
-          onPatch({ claudeExecutable: executable === "" ? null : executable });
+          onSave(executable === "" ? null : executable);
         }}
       >
         Save
@@ -140,7 +152,22 @@ function SettingsForm({ settings }: { settings: SettingsView }): JSX.Element {
     <>
       <ProfileFieldset settings={settings} onPatch={onPatch} />
       <EffectsFieldset settings={settings} onPatch={onPatch} />
-      <ExecutableField settings={settings} onPatch={onPatch} />
+      <ExecutableField
+        id="claude-executable"
+        label="Claude executable"
+        current={settings.claudeExecutable}
+        onSave={(claudeExecutable) => {
+          onPatch({ claudeExecutable });
+        }}
+      />
+      <ExecutableField
+        id="codex-executable"
+        label="Codex executable"
+        current={settings.codexExecutable}
+        onSave={(codexExecutable) => {
+          onPatch({ codexExecutable });
+        }}
+      />
       {save.error !== null && <p className="error">{save.error}</p>}
     </>
   );

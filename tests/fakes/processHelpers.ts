@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, realpath } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -88,6 +88,25 @@ export async function systemdUserAvailable(): Promise<boolean> {
 
 export async function makeTempDir(): Promise<string> {
   return realpath(await mkdtemp(join(tmpdir(), "codeweave-test-")));
+}
+
+export const HOST_EXECUTABLE_SUFFIX =
+  process.platform === "win32" ? ".exe" : "";
+
+export function hostExecutable(dir: string, name: string): string {
+  return join(dir, `${name}${HOST_EXECUTABLE_SUFFIX}`);
+}
+
+export async function hostBinDirWith(...names: string[]): Promise<string> {
+  const dir = await makeTempDir();
+  await Promise.all(
+    names.map((name) => writeFile(hostExecutable(dir, name), "")),
+  );
+  return dir;
+}
+
+export function hostResolverEnv(binDir: string): NodeJS.ProcessEnv {
+  return { PATH: binDir, PATHEXT: HOST_EXECUTABLE_SUFFIX };
 }
 
 export async function runGit(cwd: string, args: string[]): Promise<void> {

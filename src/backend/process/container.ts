@@ -16,6 +16,7 @@ export interface SpawnSpec {
   readonly env: Readonly<Record<string, string>>;
   readonly cwd: string;
   readonly runId: string;
+  readonly windowsVerbatimArguments?: boolean;
 }
 
 export type StopResult =

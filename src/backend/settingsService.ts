@@ -20,6 +20,7 @@ function toView(settings: SettingsFile): SettingsView {
     permissionProfile: settings.permissionProfile,
     effectLevel: settings.effectLevel,
     claudeExecutable: settings.claudeExecutable,
+    codexExecutable: settings.codexExecutable,
   };
 }
 
@@ -44,6 +45,10 @@ export function createSettingsService({
             patch.claudeExecutable === undefined
               ? current.claudeExecutable
               : patch.claudeExecutable,
+          codexExecutable:
+            patch.codexExecutable === undefined
+              ? current.codexExecutable
+              : patch.codexExecutable,
         };
         await store.writeSettings(next);
         const view = toView(next);

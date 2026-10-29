@@ -13,7 +13,7 @@ import type {
 } from "../../src/backend/process/container";
 import { createProcessContainer } from "../../src/backend/process/select";
 import {
-  createClaudeExecutableResolver,
+  createExecutableResolver,
   startBackend,
   type Backend,
 } from "../../src/backend/startup";
@@ -133,10 +133,7 @@ async function openRig(profile: PermissionProfile): Promise<Rig> {
       };
     },
     newRunId: () => randomUUID(),
-    resolveClaudeExecutable: createClaudeExecutableResolver(
-      process.env,
-      process.platform,
-    ),
+    resolveExecutable: createExecutableResolver(process.env, process.platform),
     inspectWorktree,
   });
   cleanup.add(() => backend.shutdown());

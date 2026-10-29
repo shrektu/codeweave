@@ -22,16 +22,25 @@ const parent: NodeJS.ProcessEnv = {
   SSL_CERT_FILE: "/etc/ssl/corp.pem",
 };
 
+const codexAccount: Account = {
+  id: "acc-2",
+  provider: ProviderId.codex,
+  label: "Codex",
+  configDir: "/home/jane/.codex-work",
+  order: 1,
+};
+
 function build(
   overrides?: Readonly<Record<string, string>>,
   testMode = false,
+  target: Account = account,
 ): Record<string, string> {
   return buildAgentEnv({
     parent,
     platform: "linux",
     homeDir: "/home/jane",
-    account,
-    claudeExecutable: "/usr/local/bin/claude",
+    account: target,
+    executable: "/usr/local/bin/claude",
     runMarker: "run-7",
     testMode,
     ...(overrides === undefined ? {} : { overrides }),
@@ -48,6 +57,26 @@ describe("agent env", () => {
     expect(env.SSL_CERT_FILE).toBe("/etc/ssl/corp.pem");
     expect(env.CLAUDE_CONFIG_DIR).toBe("/home/jane/.claude-work");
     expect(env.CODEWEAVE_RUN_ID).toBe("run-7");
+  });
+
+  it("claude_env_carries_claude_variables", () => {
+    const env = build();
+
+    expect(env.CLAUDE_CODE_EXECUTABLE).toBe("/usr/local/bin/claude");
+    expect(env.CLAUDE_CODE_DISABLE_CRON).toBe("1");
+    expect(env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR).toBe("1");
+  });
+
+  it("codex_env_has_no_claude_variables", () => {
+    const env = build(undefined, false, codexAccount);
+
+    expect(env).not.toHaveProperty("CLAUDE_CONFIG_DIR");
+    expect(env).not.toHaveProperty("CLAUDE_CODE_EXECUTABLE");
+    expect(env).not.toHaveProperty("CLAUDE_CODE_DISABLE_CRON");
+    expect(env).not.toHaveProperty("CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR");
+    expect(env.CODEWEAVE_RUN_ID).toBe("run-7");
+    expect(env).not.toHaveProperty("ANTHROPIC_BASE_URL");
+    expect(env.HTTPS_PROXY).toBe("http://proxy.corp:3128");
   });
 
   it("agent_env_overrides_rejected_outside_test_mode", () => {

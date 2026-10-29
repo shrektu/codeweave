@@ -8,12 +8,13 @@ export interface AgentStartSpec {
   readonly cwd: string;
   readonly profile: PermissionProfile;
   readonly runId: string;
-  readonly claudeExecutable: string;
+  readonly executable: string;
 }
 
 export const AgentStartFailure = {
   needsLogin: "needs_login",
   error: "error",
+  unavailable: "unavailable",
 } as const;
 export type AgentStartFailure =
   (typeof AgentStartFailure)[keyof typeof AgentStartFailure];

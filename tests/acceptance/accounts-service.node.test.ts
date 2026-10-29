@@ -1,4 +1,5 @@
 import { statSync } from "node:fs";
+import { chmod, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -12,6 +13,8 @@ import { createJsonStore, type JsonStore } from "../../src/backend/storage";
 import { makeTempDir } from "../fakes/processHelpers";
 
 const QUEUE_SETTLE_MS = 50;
+const READ_ONLY_DIR_MODE = 0o500;
+const WRITABLE_DIR_MODE = 0o700;
 
 interface Harness {
   service: AccountsService;
@@ -31,6 +34,7 @@ async function setup(): Promise<Harness> {
     userData,
     broadcast,
     runtimeOf: () => ({ status: "ready" }),
+    limitOf: () => null,
     isInUse: (id) => inUse.has(id),
   });
   return { service, store, userData, broadcast, inUse };
@@ -92,6 +96,7 @@ it("accounts_add_creates_default_config_dir_and_broadcasts", async () => {
     configDir,
     order: 0,
     runtime: { status: "ready" },
+    limit: null,
   });
   expect(await store.readAccounts()).toEqual([
     { id: account.id, provider: "claude", label: "Work", configDir, order: 0 },
@@ -191,6 +196,67 @@ it("accounts_add_rejects_relative_config_dir", async () => {
 
   expect(await store.readAccounts()).toEqual([]);
 });
+
+const CODEX_CONFIG_BYTES = 'cli_auth_credentials_store = "file"\n';
+
+it("codex_account_add_writes_file_credential_store", async () => {
+  const { service, store, userData } = await setup();
+  const configDir = join(userData, "codex", "main");
+
+  const { account } = await service.add({
+    label: "Codex",
+    configDir,
+    provider: "codex",
+  });
+
+  expect(account.provider).toBe("codex");
+  expect(await readFile(join(configDir, "config.toml"), "utf8")).toBe(
+    CODEX_CONFIG_BYTES,
+  );
+  expect(await readdir(configDir)).toEqual(["config.toml"]);
+  expect((await store.readAccounts()).map(({ provider }) => provider)).toEqual([
+    "codex",
+  ]);
+});
+
+it("codex_account_add_keeps_existing_config", async () => {
+  const { service, userData } = await setup();
+  const configDir = join(userData, "codex", "existing");
+  const existing = 'model = "gpt-5"\n';
+  await mkdir(configDir, { recursive: true });
+  await writeFile(join(configDir, "config.toml"), existing);
+
+  await service.add({ label: "Codex", configDir, provider: "codex" });
+
+  expect(await readFile(join(configDir, "config.toml"), "utf8")).toBe(existing);
+});
+
+it("accounts_add_without_provider_creates_claude_account_without_config", async () => {
+  const { service, userData } = await setup();
+  const configDir = join(userData, "claude", "main");
+
+  const { account } = await service.add({ label: "Claude", configDir });
+
+  expect(account.provider).toBe("claude");
+  expect(await readdir(configDir)).toEqual([]);
+});
+
+it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+  "codex_account_add_propagates_config_write_error_and_persists_nothing",
+  async () => {
+    const { service, store, userData } = await setup();
+    const configDir = join(userData, "codex", "readonly");
+    await mkdir(configDir, { recursive: true });
+    await chmod(configDir, READ_ONLY_DIR_MODE);
+
+    await expect(
+      service.add({ label: "Codex", configDir, provider: "codex" }),
+    ).rejects.toMatchObject({ code: "EACCES" });
+
+    await chmod(configDir, WRITABLE_DIR_MODE);
+    expect(await store.readAccounts()).toEqual([]);
+  },
+);
 
 it("accounts_move_unknown_rejected_with_not_found", async () => {
   const { service } = await setup();

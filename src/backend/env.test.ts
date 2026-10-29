@@ -18,7 +18,7 @@ function input(overrides: Partial<AgentEnvInput> = {}): AgentEnvInput {
     platform: "linux",
     homeDir: "/home/jane",
     account,
-    claudeExecutable: "/usr/bin/claude",
+    executable: "/usr/bin/claude",
     runMarker: "run-1",
     testMode: false,
     ...overrides,

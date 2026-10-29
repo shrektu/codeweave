@@ -22,6 +22,7 @@ import {
 } from "../domain/rateLimit";
 import {
   createRotationController,
+  mergeRuntime,
   type AccountRuntime,
   type RotationController,
   type RotationPhase,
@@ -35,6 +36,7 @@ import {
 } from "../domain/sessionReducer";
 import {
   PermissionProfile,
+  ProviderId,
   type Account,
   type EpochMillis,
   type SwitchLogEntry,
@@ -56,6 +58,7 @@ import {
   PROCESS_EXITED_MESSAGE,
   SESSION_CLOSED_MESSAGE,
 } from "./constants";
+import { ProbeStillRunningError } from "./limitProbe";
 import { pickOption, toPermissionQuery } from "./permissionQuery";
 import type { StopResult } from "./process/container";
 import { toSessionView } from "./sessionView";
@@ -76,9 +79,15 @@ export interface SessionServiceDeps {
   readonly schedule: RotationPorts["schedule"];
   readonly inspectWorktree: (cwd: string) => Promise<WorktreeState>;
   readonly newRunId: () => string;
-  readonly resolveClaudeExecutable: (configured: string | null) => string;
+  readonly resolveExecutable: (
+    provider: ProviderId,
+    configured: string | null,
+  ) => string;
   readonly stopGraceMs: number;
   readonly containerStatus: ContainerStatus;
+  readonly externalRuntime: (accountId: string) => AccountRuntime | null;
+  readonly beforeLaunch: (accountId: string) => Promise<void>;
+  readonly isBlocked: (accountId: string) => boolean;
 }
 
 export interface SessionService {
@@ -148,19 +157,31 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function exhaustedOnly(
+  deps: SessionServiceDeps,
+): (accountId: string) => AccountRuntime | null {
+  return (accountId) => {
+    const runtime = deps.externalRuntime(accountId);
+    return runtime?.status === "exhausted" ? runtime : null;
+  };
+}
+
 interface SessionRunInit {
   deps: SessionServiceDeps;
   spec: RunSpec;
   accounts: readonly Account[];
   initial: Account;
+  reserved: Set<string>;
   onRuntimeSettled: () => void;
 }
 
 class SessionRun {
   readonly id = randomUUID();
+  readonly provider: ProviderId;
   private readonly deps: SessionServiceDeps;
   private readonly spec: RunSpec;
   private readonly onRuntimeSettled: () => void;
+  private readonly reserved: Set<string>;
   private readonly controller: RotationController;
   private accounts: readonly Account[];
   private state: SessionState = INITIAL_SESSION_STATE;
@@ -182,9 +203,12 @@ class SessionRun {
     spec,
     accounts,
     initial,
+    reserved,
     onRuntimeSettled,
   }: SessionRunInit) {
     this.deps = deps;
+    this.reserved = reserved;
+    this.provider = initial.provider;
     this.onRuntimeSettled = onRuntimeSettled;
     this.spec = spec;
     this.accounts = accounts;
@@ -197,6 +221,7 @@ class SessionRun {
         appendSwitchLog: (entry) => this.logSwitch(entry),
         schedule: deps.schedule,
         now: deps.now,
+        externalRuntime: exhaustedOnly(deps),
       },
       accounts,
       initial.id,
@@ -204,22 +229,24 @@ class SessionRun {
     );
   }
 
-  async begin(account: Account): Promise<void> {
+  async begin(account: Account): Promise<AgentStartResult> {
     const result = await this.launch(account);
     if (!result.ok) {
       this.controller.dispose();
-      throw startError(account, result);
+      return result;
     }
     this.controller.subscribe(() => {
       this.publish();
       this.onRuntimeSettled();
     });
+    return result;
   }
 
   view(): SessionView {
     return toSessionView({
       id: this.id,
       cwd: this.spec.cwd,
+      provider: this.provider,
       profile: this.spec.profile,
       phase: this.phase(),
       state: this.state,
@@ -249,23 +276,11 @@ class SessionRun {
   }
 
   isInUse(accountId: string): boolean {
-    if (this.controller.busy()) {
-      return true;
-    }
-    const phase = this.phase();
-    switch (phase.phase) {
-      case "running":
-      case "waiting":
-        return phase.accountId === accountId;
-      case "switching":
-        return phase.from === accountId || phase.to === accountId;
-      default:
-        return false;
-    }
+    return this.controller.busy() || this.handles.has(accountId);
   }
 
-  runtimeOf(accountId: string): AccountRuntime {
-    return this.controller.runtime().get(accountId) ?? READY;
+  ownRuntimeOf(accountId: string): AccountRuntime | null {
+    return this.controller.runtime().get(accountId) ?? null;
   }
 
   runtime(): ReadonlyMap<string, AccountRuntime> {
@@ -273,8 +288,10 @@ class SessionRun {
   }
 
   setAccounts(accounts: readonly Account[]): void {
-    this.accounts = accounts;
-    this.controller.setAccounts(accounts);
+    this.accounts = accounts.filter(
+      (account) => account.provider === this.provider,
+    );
+    this.controller.setAccounts(this.accounts);
   }
 
   prompt(text: string): void {
@@ -340,21 +357,48 @@ class SessionRun {
   }
 
   private async spawnAgent(account: Account): Promise<AgentStartResult> {
+    this.reserved.add(account.id);
+    try {
+      return await this.reserveAndStart(account);
+    } finally {
+      this.reserved.delete(account.id);
+    }
+  }
+
+  private async reserveAndStart(account: Account): Promise<AgentStartResult> {
+    try {
+      await this.deps.beforeLaunch(account.id);
+    } catch (error) {
+      return {
+        ok: false,
+        reason:
+          error instanceof ProbeStillRunningError
+            ? AgentStartFailure.unavailable
+            : AgentStartFailure.error,
+        message: errorText(error),
+      };
+    }
     const settings = await this.deps.store.readSettings();
     const result = await this.deps.adapter.start({
       account,
       cwd: this.spec.cwd,
       profile: this.spec.profile,
       runId: this.deps.newRunId(),
-      claudeExecutable: this.deps.resolveClaudeExecutable(
-        settings.claudeExecutable,
+      executable: this.deps.resolveExecutable(
+        account.provider,
+        account.provider === ProviderId.codex
+          ? settings.codexExecutable
+          : settings.claudeExecutable,
       ),
     });
     if (!result.ok) {
       return result;
     }
     if (this.closed) {
-      await this.haltHandle(result.handle);
+      const stopped = await this.haltHandle(result.handle);
+      if (!stopped.ok) {
+        this.handles.set(result.handle.accountId, result.handle);
+      }
       return {
         ok: false,
         reason: AgentStartFailure.error,
@@ -610,18 +654,34 @@ function isUsable(runtime: AccountRuntime, now: EpochMillis): boolean {
   );
 }
 
-async function beginRun(
+interface CreatedRun {
+  readonly run: SessionRun;
+  readonly initial: Account;
+}
+
+interface RunWiring {
+  readonly runtimeOf: (accountId: string) => AccountRuntime;
+  readonly reserved: Set<string>;
+  readonly onRuntimeSettled: () => void;
+}
+
+async function createRun(
   deps: SessionServiceDeps,
   params: ParamsMap["session/start"],
-  runtimeOf: (accountId: string) => AccountRuntime,
-  onRuntimeSettled: () => void,
-): Promise<SessionRun> {
-  const accounts = (await deps.store.readAccounts()).toSorted(
+  { runtimeOf, reserved, onRuntimeSettled }: RunWiring,
+): Promise<CreatedRun> {
+  const registered = (await deps.store.readAccounts()).toSorted(
     (left, right) =>
       left.order - right.order || left.id.localeCompare(right.id),
   );
-  const initial = accounts.find((account) =>
-    isUsable(runtimeOf(account.id), deps.now()),
+  const provider = params.provider ?? registered[0]?.provider;
+  const accounts = registered.filter(
+    (account) => account.provider === provider,
+  );
+  const initial = accounts.find(
+    (account) =>
+      !deps.isBlocked(account.id) &&
+      isUsable(runtimeOf(account.id), deps.now()),
   );
   if (initial === undefined) {
     throw new IpcError(IpcErrorCode.CONFLICT, "No usable account");
@@ -636,15 +696,17 @@ async function beginRun(
     },
     accounts,
     initial,
+    reserved,
     onRuntimeSettled,
   });
-  await run.begin(initial);
-  return run;
+  return { run, initial };
 }
 
 export function createSessionService(deps: SessionServiceDeps): SessionService {
   let run: SessionRun | null = null;
+  let opening: SessionRun | null = null;
   let starting = false;
+  const reserved = new Set<string>();
   let lastSignature = runtimeSignature(undefined);
   const listeners = new Set<() => void>();
 
@@ -664,8 +726,37 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     }
     return run;
   };
+  const exhaustedProbe = exhaustedOnly(deps);
+  const ownRuntimeOf = (accountId: string): AccountRuntime | null =>
+    run?.ownRuntimeOf(accountId) ?? null;
   const runtimeOf = (accountId: string): AccountRuntime =>
-    run?.runtimeOf(accountId) ?? READY;
+    mergeRuntime(
+      ownRuntimeOf(accountId),
+      deps.externalRuntime(accountId),
+      deps.now(),
+    );
+  const startRuntimeOf = (accountId: string): AccountRuntime =>
+    mergeRuntime(
+      ownRuntimeOf(accountId),
+      exhaustedProbe(accountId),
+      deps.now(),
+    );
+  const openRun = async (
+    params: ParamsMap["session/start"],
+  ): Promise<CreatedRun> => {
+    opening = null;
+    const created = await createRun(deps, params, {
+      runtimeOf: startRuntimeOf,
+      reserved,
+      onRuntimeSettled: checkRuntime,
+    });
+    opening = created.run;
+    return created;
+  };
+  const isRetryable = (result: AgentStartResult, initial: Account): boolean =>
+    !result.ok &&
+    result.reason === AgentStartFailure.unavailable &&
+    deps.isBlocked(initial.id);
   const releasePrevious = async (): Promise<void> => {
     await run?.close();
     if (run?.hasAgents() === true) {
@@ -691,8 +782,18 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       starting = true;
       try {
         await releasePrevious();
-        run = await beginRun(deps, params, runtimeOf, checkRuntime);
+        let created = await openRun(params);
+        let result = await created.run.begin(created.initial);
+        while (isRetryable(result, created.initial)) {
+          created = await openRun(params);
+          result = await created.run.begin(created.initial);
+        }
+        if (!result.ok) {
+          throw startError(created.initial, result);
+        }
+        run = created.run;
       } finally {
+        opening = null;
         starting = false;
       }
       const view = run.view();
@@ -717,7 +818,10 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     answerPermission: (requestId, optionId) => {
       requireRun().answerPermission(requestId, optionId);
     },
-    isInUse: (accountId) => run?.isInUse(accountId) ?? false,
+    isInUse: (accountId) =>
+      reserved.has(accountId) ||
+      (opening?.isInUse(accountId) ?? false) ||
+      (run?.isInUse(accountId) ?? false),
     runtimeOf,
     setAccounts: (next) => {
       run?.setAccounts(next);

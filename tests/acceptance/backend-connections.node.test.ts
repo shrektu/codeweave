@@ -33,14 +33,14 @@ it("backend_drops_connection_after_reload", async () => {
   const reply = await new Promise((resolve) => {
     survivor?.port2.once("message", resolve);
     survivor?.port2.postMessage({
-      v: 2,
+      v: 3,
       id: "alive",
       method: "ping",
       params: {},
     });
   });
   expect(reply).toEqual({
-    v: 2,
+    v: 3,
     id: "alive",
     ok: true,
     result: { pong: true, backendPid: process.pid },
@@ -66,7 +66,7 @@ it("push_reaches_all_clients_and_skips_closed_ports", async () => {
   registry.broadcast("accounts/changed", { accounts: [] });
 
   const expected = {
-    v: 2,
+    v: 3,
     event: "accounts/changed",
     payload: { accounts: [] },
   };

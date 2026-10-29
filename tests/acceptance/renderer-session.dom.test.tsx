@@ -110,6 +110,85 @@ it("session_start_uses_picked_folder", async () => {
   });
 });
 
+it("start_prompt_sends_provider", async () => {
+  const client = createFakeIpcClient();
+  client.respond(
+    "sessions/snapshot",
+    makeSnapshot({
+      accounts: [
+        makeAccount({ id: "codex-1", provider: "codex", label: "Codex" }),
+        makeAccount({ id: "codex-2", provider: "codex", label: "Spare" }),
+      ],
+    }),
+  );
+  client.respond("session/start", makeSession({ provider: "codex" }));
+  renderWithServices(<SessionStream />, client);
+
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Choose folder…" }),
+  );
+
+  await waitFor(() => {
+    expect(client.requests).toContainEqual({
+      method: "session/start",
+      params: { cwd: PICKED_FOLDER, provider: "codex" },
+    });
+  });
+});
+
+it("start_prompt_shows_agent_select_only_for_multiple_providers", async () => {
+  const single = createFakeIpcClient();
+  single.respond(
+    "sessions/snapshot",
+    makeSnapshot({ accounts: [makeAccount({ id: "acc-1" })] }),
+  );
+  const first = renderWithServices(<SessionStream />, single);
+  await screen.findByRole("button", { name: "Choose folder…" });
+  expect(screen.queryByLabelText("Agent")).toBeNull();
+  first.unmount();
+
+  const mixed = createFakeIpcClient();
+  mixed.respond(
+    "sessions/snapshot",
+    makeSnapshot({
+      accounts: [
+        makeAccount({ id: "acc-1", provider: "claude", label: "Work" }),
+        makeAccount({
+          id: "codex-1",
+          provider: "codex",
+          label: "Codex",
+          order: 1,
+        }),
+        makeAccount({
+          id: "acc-2",
+          provider: "claude",
+          label: "Spare",
+          order: 2,
+        }),
+      ],
+    }),
+  );
+  mixed.respond("session/start", makeSession({ provider: "codex" }));
+  renderWithServices(<SessionStream />, mixed);
+
+  const agent = await screen.findByLabelText<HTMLSelectElement>("Agent");
+  expect(
+    within(agent)
+      .getAllByRole("option")
+      .map((option) => option.textContent),
+  ).toEqual(["Claude", "Codex"]);
+  expect(agent.value).toBe("claude");
+  fireEvent.change(agent, { target: { value: "codex" } });
+  fireEvent.click(screen.getByRole("button", { name: "Choose folder…" }));
+
+  await waitFor(() => {
+    expect(mixed.requests).toContainEqual({
+      method: "session/start",
+      params: { cwd: PICKED_FOLDER, provider: "codex" },
+    });
+  });
+});
+
 it("session_start_does_nothing_when_picker_is_cancelled", async () => {
   let pickerCalls = 0;
   window.codeweave.pickFolder = () => {

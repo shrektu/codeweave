@@ -82,9 +82,16 @@ export const STORAGE_VERSION = 1;
 export const TEMP_FILE_SUFFIX = ".tmp";
 
 export const AGENT_STOP_GRACE_MS = 5000;
+export const PROBE_INTERVAL_MS = 5 * 60 * 1000;
+export const PROBE_TIMEOUT_MS = 15_000;
+export const PROBE_RUN_ID_PREFIX = "probe-";
 export const CONTAINER_UNAVAILABLE_MESSAGE =
   "Process container is not available";
 export const CLAUDE_BINARY = "claude";
+export const CODEX_BINARY = "codex";
+export const CODEX_CONFIG_FILE_NAME = "config.toml";
+export const CODEX_FILE_CREDENTIAL_STORE_CONFIG =
+  'cli_auth_credentials_store = "file"\n';
 export const SESSION_CLOSED_MESSAGE = "The session is closed";
 export const FILE_URL_PREFIX = "file://";
 export const ACP_KINDS_READ: readonly string[] = ["read", "search"];
@@ -92,3 +99,5 @@ export const ACP_KINDS_EDIT: readonly string[] = ["edit", "delete", "move"];
 export const ACP_KINDS_EXECUTE: readonly string[] = ["execute"];
 export const OPTION_KIND_ALLOW_ONCE = "allow_once";
 export const OPTION_KIND_REJECT_ONCE = "reject_once";
+export const OPTION_KIND_ALLOW_ALWAYS = "allow_always";
+export const CODEX_HOME_ENV = "CODEX_HOME";

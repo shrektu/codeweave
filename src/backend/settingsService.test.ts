@@ -27,6 +27,7 @@ describe("settings service", () => {
       permissionProfile: "bypass",
       effectLevel: "auto",
       claudeExecutable: null,
+      codexExecutable: null,
     });
   });
 
@@ -39,6 +40,7 @@ describe("settings service", () => {
       permissionProfile: "plan",
       effectLevel: "auto",
       claudeExecutable: null,
+      codexExecutable: null,
     };
     expect(view).toEqual(expected);
     expect(await store.readSettings()).toEqual({ version: 1, ...expected });
@@ -57,6 +59,19 @@ describe("settings service", () => {
     expect(view.claudeExecutable).toBeNull();
   });
 
+  it("set_codex_executable_is_independent_of_claude_executable", async () => {
+    const { service } = await setup();
+    await service.set({ claudeExecutable: "/opt/claude" });
+
+    const set = await service.set({ codexExecutable: "/opt/codex" });
+    const cleared = await service.set({ codexExecutable: null });
+
+    expect(set.codexExecutable).toBe("/opt/codex");
+    expect(set.claudeExecutable).toBe("/opt/claude");
+    expect(cleared.codexExecutable).toBeNull();
+    expect(cleared.claudeExecutable).toBe("/opt/claude");
+  });
+
   it("set_keeps_untouched_fields", async () => {
     const { service } = await setup();
     await service.set({ claudeExecutable: "/opt/claude", effectLevel: "low" });
@@ -67,6 +82,7 @@ describe("settings service", () => {
       permissionProfile: "ask",
       effectLevel: "low",
       claudeExecutable: "/opt/claude",
+      codexExecutable: null,
     });
   });
 
@@ -82,6 +98,7 @@ describe("settings service", () => {
       permissionProfile: "unattended",
       effectLevel: "full",
       claudeExecutable: null,
+      codexExecutable: null,
     });
   });
 });

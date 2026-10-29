@@ -1,3 +1,4 @@
+import type { SpawnOptionsWithoutStdio } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -10,6 +11,7 @@ import {
 } from "../../../tests/fakes/processHelpers";
 import { RUN_MARKER_SEPARATOR } from "../constants";
 
+import { spawnChild } from "./contained";
 import {
   createEnvMarkerContainer,
   createProcProcessTable,
@@ -101,6 +103,46 @@ describe.runIf(process.platform !== "win32")(
         expect(killed).toContain(LATE_PID);
       },
     );
+  },
+);
+
+describe.runIf(process.platform !== "win32")(
+  "env marker container spawn options",
+  () => {
+    async function spawnOptionsFor(
+      verbatim: boolean | undefined,
+    ): Promise<SpawnOptionsWithoutStdio> {
+      let captured: SpawnOptionsWithoutStdio = {};
+      const container = createEnvMarkerContainer({
+        processTable: { list: () => Promise.resolve([]) },
+        kill: () => undefined,
+        spawnChild: (command, args, options) => {
+          captured = options;
+          return spawnChild(command, args, options);
+        },
+      });
+      const contained = await container.spawn({
+        command: "sh",
+        args: ["-c", "exit 0"],
+        env: stringEnv(),
+        cwd: await makeTempDir(),
+        runId: "run-1",
+        ...(verbatim === undefined
+          ? {}
+          : { windowsVerbatimArguments: verbatim }),
+      });
+      await contained.stop(GRACE_MS);
+      return captured;
+    }
+
+    it("verbatim_arguments_reach_spawn_options", async () => {
+      expect(await spawnOptionsFor(true)).toMatchObject({
+        windowsVerbatimArguments: true,
+      });
+      expect(await spawnOptionsFor(undefined)).not.toHaveProperty(
+        "windowsVerbatimArguments",
+      );
+    });
   },
 );
 

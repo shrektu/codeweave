@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { EffectLevel, PermissionProfile } from "../domain/types";
+import { EffectLevel, PermissionProfile, ProviderId } from "../domain/types";
 
 import {
   CONNECT_MESSAGE_TYPE,
@@ -49,6 +49,7 @@ const SettingsPatchSchema = z
     permissionProfile: z.enum(PermissionProfile).optional(),
     effectLevel: z.enum(EffectLevel).optional(),
     claudeExecutable: z.string().nullable().optional(),
+    codexExecutable: z.string().nullable().optional(),
   })
   .refine((patch) => Object.values(patch).some((value) => value !== undefined));
 
@@ -59,6 +60,7 @@ export const ParamsSchemas = {
     cwd: NonEmptyString,
     profile: z.enum(PermissionProfile).optional(),
     flowRef: FlowRefSchema.optional(),
+    provider: z.enum(ProviderId).optional(),
   }),
   "session/prompt": z.strictObject({ text: NonBlankString }),
   "session/stop": EmptyParamsSchema,
@@ -71,6 +73,7 @@ export const ParamsSchemas = {
   "accounts/add": z.strictObject({
     label: NonBlankString,
     configDir: NonEmptyString,
+    provider: z.enum([ProviderId.claude, ProviderId.codex]).optional(),
   }),
   "accounts/remove": z.strictObject({ id: z.string() }),
   "accounts/move": z.strictObject({

@@ -1,8 +1,15 @@
 import { useState, type JSX } from "react";
 
+import { ProviderId } from "../../domain/types";
 import type { AccountView } from "../../shared/views";
 import type { IpcClient } from "../ipc";
-import { compactPath } from "../format";
+import {
+  compactPath,
+  PROVIDER_IDS,
+  PROVIDER_LABELS,
+  providerOf,
+  type SelectableProvider,
+} from "../format";
 import { loginCommands } from "../loginCommand";
 import { useApp } from "../services";
 import { useAsyncAction } from "../useAsyncAction";
@@ -23,12 +30,15 @@ interface AddFormProps {
   client: IpcClient;
 }
 
-function SignIn({ configDir }: { configDir: string }): JSX.Element {
-  const commands = loginCommands(configDir);
+function SignIn({ account }: { account: AccountView }): JSX.Element | null {
+  const commands = loginCommands(account.provider, account.configDir);
+  if (commands === null) {
+    return null;
+  }
   return (
     <div className="signin">
       <b>Sign in</b>
-      <p>Run this in a terminal, then type /login:</p>
+      <p>{commands.hint}</p>
       <div className="cmd">
         <span>bash</span>
         <code>{commands.bash}</code>
@@ -91,7 +101,7 @@ function AccountRow({
           ✕
         </button>
       </div>
-      <SignIn configDir={account.configDir} />
+      <SignIn account={account} />
     </li>
   );
 }
@@ -99,6 +109,9 @@ function AccountRow({
 function AddAccountForm({ client }: AddFormProps): JSX.Element {
   const add = useAsyncAction();
   const [label, setLabel] = useState("");
+  const [provider, setProvider] = useState<SelectableProvider>(
+    ProviderId.claude,
+  );
   const suggestion = useSuggestedDirectory(client);
   const { configDir, setConfigDir } = suggestion;
   const error = add.error ?? suggestion.error;
@@ -109,7 +122,7 @@ function AddAccountForm({ client }: AddFormProps): JSX.Element {
       return;
     }
     const added = await add.run(async () => {
-      await client.request("accounts/add", { label, configDir });
+      await client.request("accounts/add", { label, configDir, provider });
       await suggestion.refresh();
     });
     if (added) {
@@ -125,6 +138,20 @@ function AddAccountForm({ client }: AddFormProps): JSX.Element {
         void submit();
       }}
     >
+      <label htmlFor="account-provider">Agent</label>
+      <select
+        id="account-provider"
+        value={provider}
+        onChange={(event) => {
+          setProvider(providerOf(event.target.value));
+        }}
+      >
+        {PROVIDER_IDS.map((id) => (
+          <option key={id} value={id}>
+            {PROVIDER_LABELS[id]}
+          </option>
+        ))}
+      </select>
       <label htmlFor="account-label">Label</label>
       <input
         id="account-label"

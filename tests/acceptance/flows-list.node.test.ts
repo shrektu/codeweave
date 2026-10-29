@@ -6,7 +6,7 @@ import { expect, it, vi } from "vitest";
 import { listFlows } from "../../src/backend/flows";
 import { createHandlers } from "../../src/backend/handlers";
 import { createJsonStore } from "../../src/backend/storage";
-import { fakeSessions } from "../fakes/fakeSessions";
+import { fakeProbes, fakeSessions } from "../fakes/fakeSessions";
 import { makeTempDir } from "../fakes/processHelpers";
 
 const VALID_FLOW = `---
@@ -226,6 +226,7 @@ it("flows_list_handler_delegates_to_listFlows", async () => {
     userData: cwd,
     broadcast: vi.fn(),
     sessions: fakeSessions(),
+    probes: fakeProbes(),
     containerStatus: { available: true, message: null },
   });
 
