@@ -16,7 +16,7 @@ import { MockScenario } from "../fakes/anthropicMock";
 
 const execFileAsync = promisify(execFile);
 
-const WORKSPACE_PREFIX = "codeweave-rotation-";
+export const WORKSPACE_PREFIX = "codeweave-rotation-";
 const API_KEY_HELPER_KEY = "apiKeyHelper";
 const SETTINGS_FILE = "settings.json";
 const EFFECTS_FILE = "effects.log";
@@ -91,7 +91,7 @@ async function git(cwd: string, args: readonly string[]): Promise<void> {
   await execFileAsync("git", [...GIT_IDENTITY_ARGS, ...args], { cwd });
 }
 
-async function createRepo(dir: string): Promise<void> {
+export async function createRepo(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true });
   await git(dir, ["init", "--quiet"]);
   await writeFile(join(dir, REPO_SEED_FILE), "rotation test\n");

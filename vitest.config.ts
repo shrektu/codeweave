@@ -16,6 +16,7 @@ export default defineConfig({
             "src/backend/**/*.test.ts",
             "src/main/**/*.test.ts",
             "tests/acceptance/*.node.test.ts",
+            "tests/fakes/*.node.test.ts",
           ],
         },
       },
@@ -40,7 +41,10 @@ export default defineConfig({
               test: {
                 name: "rotation",
                 environment: "node",
-                include: ["tests/e2e/rotation.node.test.ts"],
+                include: [
+                  "tests/e2e/rotation.node.test.ts",
+                  "tests/e2e/codexRotation.node.test.ts",
+                ],
               },
             },
           ]
