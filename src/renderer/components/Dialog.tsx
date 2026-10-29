@@ -31,6 +31,7 @@ export function Dialog({
       className="glass dialog"
       aria-labelledby={titleId}
       onCancel={(event) => {
+        event.stopPropagation();
         event.preventDefault();
         onClose();
       }}

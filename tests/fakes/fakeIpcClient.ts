@@ -1,6 +1,7 @@
 import { render, type RenderResult } from "@testing-library/react";
 import { createElement, type ReactElement } from "react";
 
+import { ApiProviderId } from "../../src/domain/apiProviders";
 import { EdgeKind } from "../../src/domain/types";
 import {
   EffectLevel,
@@ -25,10 +26,12 @@ import {
 import type {
   AccountView,
   AgentView,
+  CatalogModel,
   FlowsList,
   FlowView,
   LimitView,
   MessageView,
+  ModelCatalog,
   PermissionView,
   SessionView,
   SettingsView,
@@ -36,6 +39,7 @@ import type {
   SwitchLogEntryView,
   ToolCallView,
 } from "../../src/shared/views";
+import type { VaultStatus } from "../../src/shared/vault";
 
 type Handler<M extends RequestMethod> = {
   bivarianceHack(params: ParamsMap[M]): ResultMap[M] | Promise<ResultMap[M]>;
@@ -255,6 +259,34 @@ export function makeFlowsList(overrides: Partial<FlowsList> = {}): FlowsList {
     errors: [],
     ...overrides,
   };
+}
+
+export function makeCatalogModel(
+  overrides: Partial<CatalogModel> = {},
+): CatalogModel {
+  return {
+    providerId: ApiProviderId.groq,
+    modelId: "llama-3.3-70b",
+    name: "Llama 3.3 70B",
+    contextWindow: 131072,
+    costIn: 0.59,
+    costOut: 0.79,
+    free: false,
+    trainsOnData: false,
+    ...overrides,
+  };
+}
+
+export function makeModelCatalog(
+  overrides: Partial<ModelCatalog> = {},
+): ModelCatalog {
+  return { models: [makeCatalogModel()], error: null, ...overrides };
+}
+
+export function makeVaultStatus(
+  overrides: Partial<VaultStatus> = {},
+): VaultStatus {
+  return { available: true, reason: null, ...overrides };
 }
 
 export function makeSnapshot(overrides: Partial<Snapshot> = {}): Snapshot {

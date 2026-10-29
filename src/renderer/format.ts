@@ -1,17 +1,29 @@
+import { ApiProviderId } from "../domain/apiProviders";
 import { ProviderId } from "../domain/types";
 import type { AccountView, LimitView } from "../shared/views";
 
 export type SelectableProvider =
-  typeof ProviderId.claude | typeof ProviderId.codex;
+  | typeof ProviderId.claude
+  | typeof ProviderId.codex
+  | typeof ProviderId.opencode;
 
 export const PROVIDER_LABELS: Readonly<Record<SelectableProvider, string>> = {
   [ProviderId.claude]: "Claude",
   [ProviderId.codex]: "Codex",
+  [ProviderId.opencode]: "OpenCode (API key)",
 };
 export const PROVIDER_IDS: readonly SelectableProvider[] = [
   ProviderId.claude,
   ProviderId.codex,
+  ProviderId.opencode,
 ];
+
+export const API_PROVIDER_IDS: readonly ApiProviderId[] =
+  Object.values(ApiProviderId);
+
+export function parseApiProvider(value: string): ApiProviderId | null {
+  return API_PROVIDER_IDS.find((id) => id === value) ?? null;
+}
 
 export function isSelectable(
   provider: ProviderId,

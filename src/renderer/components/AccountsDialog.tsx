@@ -15,7 +15,17 @@ import { useApp } from "../services";
 import { useAsyncAction } from "../useAsyncAction";
 import { useSuggestedDirectory } from "../useSuggestedDirectory";
 
+import { ApiAccountDetails } from "./ApiAccountDetails";
+import {
+  ApiAccountFields,
+  INITIAL_API_DRAFT,
+  toApiParams,
+  useVaultStatus,
+  validateApiDraft,
+  withPickedModel,
+} from "./ApiAccountFields";
 import { Dialog, type DialogProps } from "./Dialog";
+import { ModelCatalogDialog } from "./ModelCatalogDialog";
 
 interface AccountRowProps {
   account: AccountView;
@@ -101,8 +111,38 @@ function AccountRow({
           ✕
         </button>
       </div>
-      <SignIn account={account} />
+      {account.api === null ? (
+        <SignIn account={account} />
+      ) : (
+        <ApiAccountDetails account={account} api={account.api} />
+      )}
     </li>
+  );
+}
+
+interface AgentSelectProps {
+  provider: SelectableProvider;
+  onChange: (provider: SelectableProvider) => void;
+}
+
+function AgentSelect({ provider, onChange }: AgentSelectProps): JSX.Element {
+  return (
+    <>
+      <label htmlFor="account-provider">Agent</label>
+      <select
+        id="account-provider"
+        value={provider}
+        onChange={(event) => {
+          onChange(providerOf(event.target.value));
+        }}
+      >
+        {PROVIDER_IDS.map((id) => (
+          <option key={id} value={id}>
+            {PROVIDER_LABELS[id]}
+          </option>
+        ))}
+      </select>
+    </>
   );
 }
 
@@ -112,69 +152,101 @@ function AddAccountForm({ client }: AddFormProps): JSX.Element {
   const [provider, setProvider] = useState<SelectableProvider>(
     ProviderId.claude,
   );
+  const [api, setApi] = useState(INITIAL_API_DRAFT);
+  const [browsing, setBrowsing] = useState(false);
   const suggestion = useSuggestedDirectory(client);
   const { configDir, setConfigDir } = suggestion;
+  const isApi = provider === ProviderId.opencode;
+  const vault = useVaultStatus(client, isApi);
   const error = add.error ?? suggestion.error;
 
   const submit = async (): Promise<void> => {
-    if (label.trim() === "") {
-      add.setError("Label is required");
+    const invalid = label.trim() === "" ? "Label is required" : null;
+    const apiInvalid = isApi ? validateApiDraft(api) : null;
+    if (invalid !== null || apiInvalid !== null) {
+      add.setError(invalid ?? apiInvalid);
       return;
     }
-    const added = await add.run(async () => {
-      await client.request("accounts/add", { label, configDir, provider });
+    await add.run(async () => {
+      await client.request(
+        "accounts/add",
+        isApi
+          ? { label, configDir, provider, ...toApiParams(api) }
+          : { label, configDir, provider },
+      );
+      setLabel("");
+      setApi((current) => ({ ...current, model: "", apiKey: "" }));
       await suggestion.refresh();
     });
-    if (added) {
-      setLabel("");
-    }
   };
 
   return (
-    <form
-      className="add-account"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void submit();
-      }}
-    >
-      <label htmlFor="account-provider">Agent</label>
-      <select
-        id="account-provider"
-        value={provider}
-        onChange={(event) => {
-          setProvider(providerOf(event.target.value));
+    <>
+      <form
+        className="add-account"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
         }}
       >
-        {PROVIDER_IDS.map((id) => (
-          <option key={id} value={id}>
-            {PROVIDER_LABELS[id]}
-          </option>
-        ))}
-      </select>
-      <label htmlFor="account-label">Label</label>
-      <input
-        id="account-label"
-        type="text"
-        value={label}
-        onChange={(event) => {
-          setLabel(event.target.value);
-        }}
-      />
-      <label htmlFor="account-config-dir">Config directory</label>
-      <input
-        id="account-config-dir"
-        type="text"
-        value={configDir}
-        onChange={(event) => {
-          setConfigDir(event.target.value);
-        }}
-      />
-      <button type="submit" className="btn pri" disabled={add.pending}>
-        Add account
-      </button>
-      {error !== null && <p className="error">{error}</p>}
-    </form>
+        <AgentSelect
+          provider={provider}
+          onChange={(next) => {
+            setProvider(next);
+            if (next !== ProviderId.opencode) {
+              setApi(INITIAL_API_DRAFT);
+            }
+          }}
+        />
+        <label htmlFor="account-label">Label</label>
+        <input
+          id="account-label"
+          type="text"
+          value={label}
+          onChange={(event) => {
+            setLabel(event.target.value);
+          }}
+        />
+        <label htmlFor="account-config-dir">Config directory</label>
+        <input
+          id="account-config-dir"
+          type="text"
+          value={configDir}
+          onChange={(event) => {
+            setConfigDir(event.target.value);
+          }}
+        />
+        {isApi && (
+          <ApiAccountFields
+            draft={api}
+            vault={vault}
+            onChange={setApi}
+            onBrowse={() => {
+              setBrowsing(true);
+            }}
+          />
+        )}
+        <button
+          type="submit"
+          className="btn pri"
+          disabled={add.pending || (isApi && vault?.available === false)}
+        >
+          Add account
+        </button>
+        {error !== null && <p className="error">{error}</p>}
+      </form>
+      {browsing && (
+        <ModelCatalogDialog
+          provider={api.provider}
+          onPick={(model) => {
+            setApi((current) => withPickedModel(current, model));
+          }}
+          onClose={() => {
+            setBrowsing(false);
+          }}
+        />
+      )}
+    </>
   );
 }
 

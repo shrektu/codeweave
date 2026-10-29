@@ -256,7 +256,7 @@ it("accounts_dialog_adds_codex_account_with_provider", async () => {
     within(agent)
       .getAllByRole("option")
       .map((option) => option.textContent),
-  ).toEqual(["Claude", "Codex"]);
+  ).toEqual(["Claude", "Codex", "OpenCode (API key)"]);
   expect(agent.value).toBe("claude");
   fireEvent.change(agent, { target: { value: "codex" } });
   fireEvent.change(screen.getByLabelText("Label"), {
