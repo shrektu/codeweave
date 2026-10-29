@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import { FLAG_ENABLED } from "../constants";
 import {
   WINDOWS_CMD_ARGS,
@@ -41,11 +43,11 @@ export interface OpencodeLaunch {
 
 export function accountDirs(configDir: string): Record<string, string> {
   return {
-    [OpencodeEnv.home]: `${configDir}/${ACCOUNT_HOME_DIR}`,
-    [OpencodeEnv.configHome]: `${configDir}/${ACCOUNT_CONFIG_DIR}`,
-    [OpencodeEnv.dataHome]: `${configDir}/${ACCOUNT_DATA_DIR}`,
-    [OpencodeEnv.cacheHome]: `${configDir}/${ACCOUNT_CACHE_DIR}`,
-    [OpencodeEnv.stateHome]: `${configDir}/${ACCOUNT_STATE_DIR}`,
+    [OpencodeEnv.home]: join(configDir, ACCOUNT_HOME_DIR),
+    [OpencodeEnv.configHome]: join(configDir, ACCOUNT_CONFIG_DIR),
+    [OpencodeEnv.dataHome]: join(configDir, ACCOUNT_DATA_DIR),
+    [OpencodeEnv.cacheHome]: join(configDir, ACCOUNT_CACHE_DIR),
+    [OpencodeEnv.stateHome]: join(configDir, ACCOUNT_STATE_DIR),
   };
 }
 

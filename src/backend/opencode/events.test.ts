@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import type { AgentEvent } from "../../domain/events";
@@ -338,8 +340,8 @@ describe("permission.asked for edits", () => {
     expect(request).toMatchObject({
       kind: "edit",
       title: "Edit file",
-      rawInput: { file_path: "/work/repo/src/a.ts" },
-      locations: ["/work/repo/src/a.ts", "/work/repo/docs/b.md"],
+      rawInput: { file_path: resolve(CWD, "src/a.ts") },
+      locations: [resolve(CWD, "src/a.ts"), resolve(CWD, "docs/b.md")],
     });
   });
 
@@ -349,8 +351,8 @@ describe("permission.asked for edits", () => {
     ]);
 
     expect(request).toMatchObject({
-      rawInput: { file_path: "/work/repo/lib/x.ts" },
-      locations: ["/work/repo/lib/x.ts"],
+      rawInput: { file_path: resolve(CWD, "lib/x.ts") },
+      locations: [resolve(CWD, "lib/x.ts")],
     });
   });
 });

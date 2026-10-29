@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -36,11 +37,11 @@ describe("buildOpencodeLaunch", () => {
       args: ["serve", "--hostname", "127.0.0.1", "--port", "4567", "--pure"],
       env: {
         PATH: "/usr/bin",
-        HOME: "/home/jane/.oc-main/home",
-        XDG_CONFIG_HOME: "/home/jane/.oc-main/config",
-        XDG_DATA_HOME: "/home/jane/.oc-main/data",
-        XDG_CACHE_HOME: "/home/jane/.oc-main/cache",
-        XDG_STATE_HOME: "/home/jane/.oc-main/state",
+        HOME: join(BASE.configDir, "home"),
+        XDG_CONFIG_HOME: join(BASE.configDir, "config"),
+        XDG_DATA_HOME: join(BASE.configDir, "data"),
+        XDG_CACHE_HOME: join(BASE.configDir, "cache"),
+        XDG_STATE_HOME: join(BASE.configDir, "state"),
         OPENCODE_CONFIG: BASE.configFile,
         OPENCODE_SERVER_PASSWORD: SERVER_SECRET,
         ...ISOLATION_ENV,
