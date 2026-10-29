@@ -78,13 +78,23 @@ it("api_key_account_add_stores_only_encrypted_key", async () => {
   expect(stored.keys[account.id]?.hint).toBe("0001");
   expect(stored.keys[account.id]?.ciphertext).not.toContain(KEY);
   expect(JSON.stringify(stored)).not.toContain(KEY);
-  expect(statSync(join(rig.userData, KEYS_FILE)).mode & PERMISSION_BITS).toBe(
-    KEY_FILE_MODE,
-  );
   expect(
     await readFile(join(rig.userData, ACCOUNTS_FILE), "utf8"),
   ).not.toContain(KEY);
 });
+
+it.skipIf(process.platform === "win32")(
+  "api_key_file_is_readable_by_owner_only",
+  async () => {
+    const rig = await openRig({});
+
+    await rig.call("accounts/add", opencodeParams(rig));
+
+    expect(statSync(join(rig.userData, KEYS_FILE)).mode & PERMISSION_BITS).toBe(
+      KEY_FILE_MODE,
+    );
+  },
+);
 
 it("api_key_never_appears_in_ipc_responses_or_events", async () => {
   const rig = await openRig({});
