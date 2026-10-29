@@ -60,6 +60,5 @@ jobs:
       - name: Rotation end-to-end tests (Linux)
         if: runner.os == 'Linux'
         run: |
-          eval "$(echo -n "" | gnome-keyring-daemon --unlock --components=secrets)"
-          export GNOME_KEYRING_CONTROL
+          openssl rand -hex 16 | tr -d '\n' | gnome-keyring-daemon --unlock --components=secrets
           xvfb-run --auto-servernum pnpm e2e:rotation
