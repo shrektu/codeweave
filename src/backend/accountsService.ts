@@ -16,6 +16,7 @@ import {
   CODEX_CONFIG_FILE_NAME,
   CODEX_FILE_CREDENTIAL_STORE_CONFIG,
 } from "./constants";
+import type { KeyStore } from "./secrets/keyStore";
 import { createSerializer } from "./serialize";
 import type { JsonStore } from "./storage";
 
@@ -25,6 +26,7 @@ export interface AccountsResult {
 
 export interface AccountsServiceDeps {
   store: JsonStore;
+  keyStore: KeyStore;
   userData: string;
   broadcast: ConnectionRegistry["broadcast"];
   runtimeOf: (id: string) => AccountRuntimeView;
@@ -37,6 +39,7 @@ export interface AccountsService {
   suggest(): { configDir: string };
   publish(): Promise<void>;
   add(params: ParamsMap["accounts/add"]): Promise<{ account: AccountView }>;
+  setKey(params: ParamsMap["accounts/setKey"]): Promise<AccountView>;
   remove(id: string): Promise<AccountsResult>;
   move(
     id: string,
@@ -49,6 +52,11 @@ interface Repository {
   persist(accounts: readonly Account[]): Promise<AccountsResult>;
   publish(): Promise<void>;
   toView: (account: Account) => AccountView;
+}
+
+interface AccountsServiceParts {
+  readonly repository: Repository;
+  readonly keyStore: KeyStore;
 }
 
 function byOrder(left: Account, right: Account): number {
@@ -70,9 +78,12 @@ function absoluteConfigDir(configDir: string): string {
 }
 
 function createRepository(deps: AccountsServiceDeps): Repository {
-  const { store, runtimeOf, limitOf, broadcast } = deps;
+  const { store, keyStore, runtimeOf, limitOf, broadcast } = deps;
   const toView = (account: Account): AccountView => ({
     ...account,
+    api: account.api ?? null,
+    hasKey: keyStore.hint(account.id) !== null,
+    keyHint: keyStore.hint(account.id),
     runtime: runtimeOf(account.id),
     limit: limitOf(account.id),
   });
@@ -113,34 +124,85 @@ async function writeCodexConfig(directory: string): Promise<void> {
   }
 }
 
+async function persistWithKey(
+  {
+    repository,
+    keyStore,
+  }: Pick<AccountsServiceParts, "repository" | "keyStore">,
+  accounts: readonly Account[],
+  account: Account,
+  apiKey: string,
+): Promise<void> {
+  await keyStore.set(account.id, apiKey);
+  try {
+    await repository.persist([...accounts, account]);
+  } catch (error) {
+    await keyStore.remove(account.id).catch((removeError: unknown) => {
+      console.error(
+        "failed to remove the key of a rejected account",
+        removeError,
+      );
+    });
+    throw error;
+  }
+}
+
 async function addAccount(
-  repository: Repository,
-  { label, configDir, provider = ProviderId.claude }: ParamsMap["accounts/add"],
+  parts: AccountsServiceParts,
+  params: ParamsMap["accounts/add"],
 ): Promise<{ account: AccountView }> {
-  const directory = absoluteConfigDir(configDir);
+  const { repository } = parts;
+  const directory = absoluteConfigDir(params.configDir);
   const accounts = await repository.readSorted();
   const account: Account = {
     id: randomUUID(),
-    provider,
-    label: label.trim(),
+    provider: params.provider ?? ProviderId.claude,
+    label: params.label.trim(),
     configDir: directory,
     order: accounts.length,
+    ...(params.provider === ProviderId.opencode ? { api: params.api } : {}),
   };
   await mkdir(directory, { recursive: true });
-  if (provider === ProviderId.codex) {
+  if (params.provider === ProviderId.codex) {
     await writeCodexConfig(directory);
   }
-  await repository.persist([...accounts, account]);
+  if (params.provider === ProviderId.opencode) {
+    await persistWithKey(parts, accounts, account, params.apiKey);
+  } else {
+    await repository.persist([...accounts, account]);
+  }
   return { account: repository.toView(account) };
 }
 
+async function setAccountKey(
+  { repository, keyStore }: AccountsServiceParts,
+  { id, apiKey }: ParamsMap["accounts/setKey"],
+): Promise<AccountView> {
+  const account = (await repository.readSorted()).find(
+    (item) => item.id === id,
+  );
+  if (account === undefined) {
+    throw accountNotFound();
+  }
+  if (account.provider !== ProviderId.opencode) {
+    throw new IpcError(
+      IpcErrorCode.VALIDATION,
+      "Only API key accounts hold a key",
+    );
+  }
+  await keyStore.set(id, apiKey);
+  await repository.publish();
+  return repository.toView(account);
+}
+
 async function removeAccount(
-  repository: Repository,
+  { repository, keyStore }: AccountsServiceParts,
   isInUse: (id: string) => boolean,
   id: string,
 ): Promise<AccountsResult> {
   const accounts = await repository.readSorted();
-  if (!accounts.some((account) => account.id === id)) {
+  const target = accounts.find((account) => account.id === id);
+  if (target === undefined) {
     throw accountNotFound();
   }
   if (isInUse(id)) {
@@ -148,6 +210,9 @@ async function removeAccount(
       IpcErrorCode.CONFLICT,
       "Account is used by the running session",
     );
+  }
+  if (target.provider === ProviderId.opencode) {
+    await keyStore.remove(id);
   }
   return repository.persist(accounts.filter((account) => account.id !== id));
 }
@@ -177,6 +242,7 @@ export function createAccountsService(
   deps: AccountsServiceDeps,
 ): AccountsService {
   const repository = createRepository(deps);
+  const parts: AccountsServiceParts = { repository, keyStore: deps.keyStore };
   const serialized = createSerializer();
   return {
     async list(): Promise<AccountsResult> {
@@ -188,9 +254,9 @@ export function createAccountsService(
       configDir: join(deps.userData, ACCOUNTS_DIR_NAME, randomUUID()),
     }),
     publish: () => serialized(() => repository.publish()),
-    add: (params) => serialized(() => addAccount(repository, params)),
-    remove: (id) =>
-      serialized(() => removeAccount(repository, deps.isInUse, id)),
+    add: (params) => serialized(() => addAccount(parts, params)),
+    setKey: (params) => serialized(() => setAccountKey(parts, params)),
+    remove: (id) => serialized(() => removeAccount(parts, deps.isInUse, id)),
     move: (id, direction) =>
       serialized(() => moveAccount(repository, id, direction)),
   };

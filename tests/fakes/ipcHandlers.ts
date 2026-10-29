@@ -18,6 +18,8 @@ export function fakeHandlers(
     "accounts/list": unavailable,
     "accounts/suggest": unavailable,
     "accounts/add": unavailable,
+    "accounts/setKey": unavailable,
+    "vault/status": unavailable,
     "accounts/remove": unavailable,
     "accounts/move": unavailable,
     "settings/get": unavailable,

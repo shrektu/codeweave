@@ -40,6 +40,7 @@ import {
   ScriptedCodexContainer,
   type FakeCodexConfig,
 } from "./fakeCodexAppServer";
+import { createFakeVault, type FakeVault } from "./fakeVault";
 import type { ScheduledTask } from "./rotationHarness";
 
 
@@ -100,6 +101,7 @@ export interface BackendRigOptions {
   readonly probeConfig?: FakeCodexConfig;
   readonly probeConfigByHome?: Readonly<Record<string, FakeCodexConfig>>;
   readonly now?: () => number;
+  readonly vault?: FakeVault;
   readonly probeStopResults?: ConstructorParameters<
     typeof ScriptedCodexContainer
   >[0];
@@ -124,6 +126,7 @@ export interface BackendRig {
   readonly probeTasks: ScheduledTask[];
   readonly probeStats: ProbeStats;
   readonly store: JsonStore;
+  readonly vault: FakeVault;
   readonly userData: string;
   readonly cwd: string;
   readonly order: string[];
@@ -256,6 +259,7 @@ interface RigLog {
 function rigDeps(
   options: BackendRigOptions,
   userData: string,
+  vault: FakeVault,
   containers: {
     readonly claude: ScriptedAcpContainer;
     readonly codex: ScriptedCodexContainer;
@@ -265,6 +269,7 @@ function rigDeps(
 ): BackendDeps {
   return {
     args: { userData, testAgentEnv: null },
+    vault,
     broadcast: (event, payload) => {
       log.broadcasts.push({ event, payload });
     },
@@ -339,10 +344,12 @@ export async function createBackendRig(
     sweeps: [] as (readonly string[])[],
     contained: [] as Contained[],
   };
+  const vault = options.vault ?? createFakeVault();
   const backend = await startBackend(
     rigDeps(
       options,
       userData,
+      vault,
       { claude: container, codex: codexContainer, probe: probeContainer },
       {
         ...parts,
@@ -366,6 +373,7 @@ export async function createBackendRig(
     probeStats,
     probeTasks,
     store,
+    vault,
     userData,
     cwd,
     ...parts,

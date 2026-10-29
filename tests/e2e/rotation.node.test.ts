@@ -25,6 +25,7 @@ import {
   userTexts,
   type AnthropicMock,
 } from "../fakes/anthropicMock";
+import { createFakeVault } from "../fakes/fakeVault";
 
 import {
   ALLOW_ONCE_KIND,
@@ -108,6 +109,7 @@ async function openRig(profile: PermissionProfile): Promise<Rig> {
   });
   cleanup.add(() => mock.close());
   const backend = await startBackend({
+    vault: createFakeVault(),
     args: {
       userData: workspace.userData,
       testAgentEnv: rotationAgentEnv(mock.url),

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { ApiProviderId } from "../domain/apiProviders";
 import {
   EdgeKind,
   EffectLevel,
@@ -29,12 +30,22 @@ export const LimitViewSchema = z.strictObject({
 });
 export type LimitView = z.infer<typeof LimitViewSchema>;
 
+export const ApiAccountSchema = z.strictObject({
+  provider: z.enum(ApiProviderId),
+  model: NonEmptyString,
+  baseUrl: z.url().nullable(),
+  rotation: z.boolean(),
+});
+
 export const AccountViewSchema = z.strictObject({
   id: z.string(),
   provider: z.enum(ProviderId),
   label: z.string(),
   configDir: z.string(),
   order: z.int(),
+  api: ApiAccountSchema.nullable(),
+  hasKey: z.boolean(),
+  keyHint: z.string().nullable(),
   runtime: AccountRuntimeViewSchema,
   limit: LimitViewSchema.nullable(),
 });

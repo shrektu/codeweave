@@ -16,6 +16,7 @@ import {
   type ConnectionRegistry,
 } from "./connections";
 import { createProcessContainer } from "./process/select";
+import { createParentPortVault } from "./secrets/vault";
 import { createExecutableResolver, startBackend } from "./startup";
 import { inspectWorktree } from "./worktree";
 
@@ -23,6 +24,7 @@ let connections: ConnectionRegistry | null = null;
 
 const ready = startBackend({
   args: parseBackendArgs(process.argv),
+  vault: createParentPortVault(process.parentPort),
   broadcast: (event, payload) => {
     connections?.broadcast(event, payload);
   },

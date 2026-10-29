@@ -1,3 +1,5 @@
+import type { ApiProviderId } from "./apiProviders";
+
 export const ProviderId = {
   claude: "claude",
   codex: "codex",
@@ -33,12 +35,20 @@ export type EdgeKind = (typeof EdgeKind)[keyof typeof EdgeKind];
 export type EpochSeconds = number;
 export type EpochMillis = number;
 
+export interface ApiAccount {
+  readonly provider: ApiProviderId;
+  readonly model: string;
+  readonly baseUrl: string | null;
+  readonly rotation: boolean;
+}
+
 export interface Account {
   readonly id: string;
   readonly provider: ProviderId;
   readonly label: string;
   readonly configDir: string;
   readonly order: number;
+  readonly api?: ApiAccount | undefined;
 }
 
 export const SwitchReason = {

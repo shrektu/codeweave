@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
+import { join } from "node:path";
 
 import type { RotationPorts } from "../domain/rotation";
 import {
@@ -22,6 +23,7 @@ import { createCodexLimitProbe } from "./codex/probe";
 import type { ConnectionRegistry } from "./connections";
 import {
   AGENT_STOP_GRACE_MS,
+  API_KEYS_FILE,
   CLAUDE_BINARY,
   CODEX_BINARY,
   CONTAINER_UNAVAILABLE_MESSAGE,
@@ -40,6 +42,9 @@ import {
   type ProcessContainer,
 } from "./process/container";
 import { createProviderAdapter } from "./providerAdapter";
+import { createKeyStore } from "./secrets/keyStore";
+import { createSecretSource } from "./secrets/source";
+import type { SecretVault } from "./secrets/vault";
 import {
   createSessionService,
   type ContainerStatus,
@@ -49,6 +54,7 @@ import { createJsonStore, type JsonStore } from "./storage";
 
 export interface BackendDeps {
   readonly args: BackendArgs;
+  readonly vault: SecretVault;
   readonly broadcast: ConnectionRegistry["broadcast"];
   readonly createContainer: (instanceId: string) => Promise<ProcessContainer>;
   readonly execPath: string;
@@ -249,6 +255,13 @@ export function createExecutableResolver(
 export async function startBackend(deps: BackendDeps): Promise<Backend> {
   const { userData } = deps.args;
   const store = createJsonStore(userData);
+  const keyStore = createKeyStore({
+    path: join(userData, API_KEYS_FILE),
+    vault: deps.vault,
+  });
+  await keyStore.ready().catch((error: unknown) => {
+    console.error("the API key store could not be loaded", error);
+  });
   const instance = await recordInstance(userData);
   const { container, status } = await openContainer(
     deps,
@@ -272,9 +285,12 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     externalRuntime: (accountId) => probes.runtimeOf(accountId),
     beforeLaunch: (accountId) => probes.release(accountId),
     isBlocked: (accountId) => probes.isBlocked(accountId),
+    secrets: createSecretSource(keyStore),
   });
   const handlers = createHandlers({
     store,
+    keyStore,
+    vault: deps.vault,
     userData,
     broadcast: deps.broadcast,
     sessions,

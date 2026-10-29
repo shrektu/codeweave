@@ -83,6 +83,98 @@ describe("json store", () => {
   });
 });
 
+const apiAccount: Account = {
+  id: "acc-api",
+  provider: ProviderId.opencode,
+  label: "Groq main",
+  configDir: "/home/jane/.codeweave/groq",
+  order: 0,
+  api: {
+    provider: "groq",
+    model: "llama-3.3-70b-versatile",
+    baseUrl: null,
+    rotation: true,
+  },
+};
+
+describe("json store api accounts", () => {
+  it("opencode_account_with_api_data_round_trips", async () => {
+    const store = createJsonStore(await makeTempDir());
+
+    await store.writeAccounts([apiAccount, { ...account, order: 1 }]);
+
+    expect(await store.readAccounts()).toEqual([
+      apiAccount,
+      { ...account, order: 1 },
+    ]);
+  });
+
+  it("accounts_without_api_data_are_written_without_an_api_key", async () => {
+    const dir = await makeTempDir();
+
+    await createJsonStore(dir).writeAccounts([account]);
+
+    const written = JSON.parse(
+      await readFile(join(dir, "accounts.json"), "utf8"),
+    ) as { accounts: object[] };
+    expect(written.accounts).toEqual([
+      {
+        id: "acc-1",
+        provider: "claude",
+        label: "Work",
+        configDir: "/home/jane/.claude-work",
+        order: 1,
+      },
+    ]);
+  });
+});
+
+describe("json store api account rules", () => {
+  it("opencode_account_without_api_data_is_rejected", async () => {
+    const withoutApi: Account = {
+      id: "acc-api",
+      provider: ProviderId.opencode,
+      label: "Groq main",
+      configDir: "/home/jane/.codeweave/groq",
+      order: 0,
+    };
+    const store = createJsonStore(await makeTempDir());
+
+    await expect(store.writeAccounts([withoutApi])).rejects.toThrow();
+  });
+
+  it("claude_account_with_api_data_is_rejected", async () => {
+    const store = createJsonStore(await makeTempDir());
+
+    await expect(
+      store.writeAccounts([{ ...account, api: apiAccount.api }]),
+    ).rejects.toThrow();
+  });
+
+  it("stored_opencode_account_without_api_data_is_corrupt", async () => {
+    const dir = await makeTempDir();
+    await writeFile(
+      join(dir, "accounts.json"),
+      JSON.stringify({
+        version: 1,
+        accounts: [
+          {
+            id: "x",
+            provider: "opencode",
+            label: "X",
+            configDir: "/x",
+            order: 0,
+          },
+        ],
+      }),
+    );
+
+    await expect(createJsonStore(dir).readAccounts()).rejects.toBeInstanceOf(
+      StorageCorruptError,
+    );
+  });
+});
+
 describe("json store writes", () => {
   it("failed_write_leaves_no_temp_file_and_keeps_target", async () => {
     const dir = await makeTempDir();

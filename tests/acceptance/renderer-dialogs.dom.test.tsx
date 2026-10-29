@@ -51,7 +51,7 @@ function settingsClient(): FakeIpcClient {
           ? current.codexExecutable
           : patch.codexExecutable,
     };
-    client.emit({ v: 3, event: "settings/changed", payload: current });
+    client.emit({ v: 4, event: "settings/changed", payload: current });
     return current;
   });
   return client;

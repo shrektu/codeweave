@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   DEFAULT_MAX_RESULT_CHARS,
   MS_PER_SECOND,
+  NO_MESSAGE_KEY,
   RATE_LIMIT_STATUS_REJECTED,
 } from "../domain/constants";
 import { buildContextPackage } from "../domain/contextPackage";
@@ -29,6 +30,13 @@ import {
   type RotationPorts,
   type StartResult,
 } from "../domain/rotation";
+import {
+  createSecretMasker,
+  createStreamingMasker,
+  type SecretEntry,
+  type SecretMasker,
+  type StreamingMasker,
+} from "../domain/secretMask";
 import {
   INITIAL_SESSION_STATE,
   reduceSession,
@@ -88,6 +96,7 @@ export interface SessionServiceDeps {
   readonly externalRuntime: (accountId: string) => AccountRuntime | null;
   readonly beforeLaunch: (accountId: string) => Promise<void>;
   readonly isBlocked: (accountId: string) => boolean;
+  readonly secrets: (accounts: readonly Account[]) => readonly SecretEntry[];
 }
 
 export interface SessionService {
@@ -140,7 +149,11 @@ function transitionError(reason: TransitionFailure): IpcError {
   }
 }
 
-function startError(account: Account, result: AgentStartResult): IpcError {
+function startError(
+  account: Account,
+  result: AgentStartResult,
+  mask: (text: string) => string,
+): IpcError {
   if (!result.ok && result.reason === AgentStartFailure.needsLogin) {
     return new IpcError(
       IpcErrorCode.CONFLICT,
@@ -149,8 +162,14 @@ function startError(account: Account, result: AgentStartResult): IpcError {
   }
   return new IpcError(
     IpcErrorCode.UNAVAILABLE,
-    `Could not start the agent: ${result.ok ? "" : result.message}`,
+    mask(`Could not start the agent: ${result.ok ? "" : result.message}`),
   );
+}
+
+function textEventFor(key: string, text: string): AgentEvent {
+  return key === NO_MESSAGE_KEY
+    ? { type: "text", text }
+    : { type: "text", messageId: key, text };
 }
 
 function errorText(error: unknown): string {
@@ -169,6 +188,7 @@ function exhaustedOnly(
 interface SessionRunInit {
   deps: SessionServiceDeps;
   spec: RunSpec;
+  registered: readonly Account[];
   accounts: readonly Account[];
   initial: Account;
   reserved: Set<string>;
@@ -184,6 +204,10 @@ class SessionRun {
   private readonly reserved: Set<string>;
   private readonly controller: RotationController;
   private accounts: readonly Account[];
+  private registered: readonly Account[];
+  private readonly streaming: StreamingMasker = createStreamingMasker(() =>
+    this.secretMasker(),
+  );
   private state: SessionState = INITIAL_SESSION_STATE;
   private readonly userPrompts: string[] = [];
   private readonly limits = new Map<string, LimitView>();
@@ -201,6 +225,7 @@ class SessionRun {
   constructor({
     deps,
     spec,
+    registered,
     accounts,
     initial,
     reserved,
@@ -211,6 +236,7 @@ class SessionRun {
     this.provider = initial.provider;
     this.onRuntimeSettled = onRuntimeSettled;
     this.spec = spec;
+    this.registered = registered;
     this.accounts = accounts;
     this.controller = createRotationController(
       {
@@ -287,7 +313,16 @@ class SessionRun {
     return this.controller.runtime();
   }
 
+  maskText(text: string): string {
+    return this.secretMasker().mask(text);
+  }
+
+  private maskedText(error: unknown): string {
+    return this.maskText(errorText(error));
+  }
+
   setAccounts(accounts: readonly Account[]): void {
+    this.registered = accounts;
     this.accounts = accounts.filter(
       (account) => account.provider === this.provider,
     );
@@ -331,7 +366,9 @@ class SessionRun {
     await Promise.all(
       [...this.handles.keys()].map((accountId) =>
         this.stopAgent(accountId).catch((error: unknown) => {
-          console.error(`failed to stop ${accountId}`, error);
+          console.error(
+            `failed to stop ${accountId}: ${this.maskedText(error)}`,
+          );
         }),
       ),
     );
@@ -420,7 +457,9 @@ class SessionRun {
   private async haltHandle(handle: AgentHandle): Promise<StopResult> {
     this.retired.add(handle);
     await handle.cancel().catch((error: unknown) => {
-      console.warn(`cancel before stop failed: ${handle.runId}`, error);
+      console.warn(
+        `cancel before stop failed: ${handle.runId}: ${this.maskedText(error)}`,
+      );
     });
     return handle.stop(this.deps.stopGraceMs);
   }
@@ -446,7 +485,9 @@ class SessionRun {
     if (result.ok) {
       return { ok: true };
     }
-    console.error(`failed to start ${accountId}: ${result.message}`);
+    console.error(
+      `failed to start ${accountId}: ${this.maskText(result.message)}`,
+    );
     return { ok: false, reason: result.reason };
   }
 
@@ -472,7 +513,7 @@ class SessionRun {
       const outcome = await this.runTurn(accountId, text);
       await this.controller.onTurnSettled(accountId, outcome);
     } catch (error) {
-      console.error(`turn failed on ${accountId}`, error);
+      console.error(`turn failed on ${accountId}: ${this.maskedText(error)}`);
     } finally {
       this.activeTurns -= 1;
       this.publish();
@@ -492,7 +533,7 @@ class SessionRun {
     try {
       await handle.prompt(text);
     } catch (error) {
-      console.error(`prompt failed on ${accountId}`, error);
+      console.error(`prompt failed on ${accountId}: ${this.maskedText(error)}`);
       this.onEvent(handle, {
         type: "turn_error",
         errorKind: null,
@@ -521,6 +562,32 @@ class SessionRun {
     if (handle !== this.current) {
       return;
     }
+    for (const safe of this.sanitize(event)) {
+      this.applyEvent(handle, safe);
+    }
+  }
+
+  private sanitize(event: AgentEvent): AgentEvent[] {
+    if (event.type === "text") {
+      const text = this.streaming.push(
+        event.messageId ?? NO_MESSAGE_KEY,
+        event.text,
+      );
+      return text === "" ? [] : [{ ...event, text }];
+    }
+    return [
+      ...this.streaming
+        .flushAll()
+        .map(({ key, text }) => textEventFor(key, text)),
+      this.secretMasker().maskDeep(event),
+    ];
+  }
+
+  private secretMasker(): SecretMasker {
+    return createSecretMasker(this.deps.secrets(this.registered));
+  }
+
+  private applyEvent(handle: AgentHandle, event: AgentEvent): void {
     this.state = reduceSession(this.state, event);
     this.detector?.observe(event);
     switch (event.type) {
@@ -577,7 +644,9 @@ class SessionRun {
         this.answerPermission(event.requestId, optionId);
       }
     } catch (error) {
-      console.warn(`auto answer failed: ${event.requestId}`, error);
+      console.warn(
+        `auto answer failed: ${event.requestId}: ${this.maskedText(error)}`,
+      );
     }
     this.publish();
   }
@@ -591,7 +660,9 @@ class SessionRun {
       );
       return pickOption(decision, event.options);
     } catch (error) {
-      console.error(`permission decision failed: ${event.requestId}`, error);
+      console.error(
+        `permission decision failed: ${event.requestId}: ${this.maskedText(error)}`,
+      );
       this.worktreeRoot = null;
       return null;
     }
@@ -694,6 +765,7 @@ async function createRun(
       profile: params.profile ?? settings.permissionProfile,
       flowRef: params.flowRef ?? null,
     },
+    registered,
     accounts,
     initial,
     reserved,
@@ -789,7 +861,9 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
           result = await created.run.begin(created.initial);
         }
         if (!result.ok) {
-          throw startError(created.initial, result);
+          throw startError(created.initial, result, (text) =>
+            created.run.maskText(text),
+          );
         }
         run = created.run;
       } finally {

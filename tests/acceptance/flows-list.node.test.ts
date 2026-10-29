@@ -7,6 +7,7 @@ import { listFlows } from "../../src/backend/flows";
 import { createHandlers } from "../../src/backend/handlers";
 import { createJsonStore } from "../../src/backend/storage";
 import { fakeProbes, fakeSessions } from "../fakes/fakeSessions";
+import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
 
 const VALID_FLOW = `---
@@ -223,6 +224,7 @@ it("flows_list_handler_delegates_to_listFlows", async () => {
   });
   const handlers = createHandlers({
     store: createJsonStore(cwd),
+    ...fakeSecrets(cwd),
     userData: cwd,
     broadcast: vi.fn(),
     sessions: fakeSessions(),

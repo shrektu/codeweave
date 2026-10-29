@@ -236,7 +236,7 @@ it("ui_reconnect_restores_pending_permission", async () => {
     second.port2.once("message", resolve);
   });
   second.port2.postMessage({
-    v: 3,
+    v: 4,
     id: "snap",
     method: "sessions/snapshot",
     params: {},
@@ -313,13 +313,23 @@ it("accounts_changed_broadcast_marks_exhausted_account", async () => {
       accounts: [
         {
           ...ACCOUNT_A,
+          api: null,
+          hasKey: false,
+          keyHint: null,
           runtime: {
             status: "exhausted",
             resetsAt: RESET_AFTER_COOLDOWN_SECONDS,
           },
           limit: null,
         },
-        { ...ACCOUNT_B, runtime: { status: "ready" }, limit: null },
+        {
+          ...ACCOUNT_B,
+          api: null,
+          hasKey: false,
+          keyHint: null,
+          runtime: { status: "ready" },
+          limit: null,
+        },
       ],
     });
   });
@@ -370,8 +380,22 @@ it("runtime_broadcast_on_needs_login", async () => {
   await vi.waitFor(() => {
     expect(rig.broadcastsOf("accounts/changed").at(-1)).toEqual({
       accounts: [
-        { ...ACCOUNT_A, runtime: { status: "needs_login" }, limit: null },
-        { ...ACCOUNT_B, runtime: { status: "ready" }, limit: null },
+        {
+          ...ACCOUNT_A,
+          api: null,
+          hasKey: false,
+          keyHint: null,
+          runtime: { status: "needs_login" },
+          limit: null,
+        },
+        {
+          ...ACCOUNT_B,
+          api: null,
+          hasKey: false,
+          keyHint: null,
+          runtime: { status: "ready" },
+          limit: null,
+        },
       ],
     });
   });
@@ -393,8 +417,22 @@ it("runtime_broadcast_on_new_session_resets", async () => {
   await vi.waitFor(() => {
     expect(rig.broadcastsOf("accounts/changed").at(-1)).toEqual({
       accounts: [
-        { ...ACCOUNT_A, runtime: { status: "ready" }, limit: null },
-        { ...ACCOUNT_B, runtime: { status: "ready" }, limit: null },
+        {
+          ...ACCOUNT_A,
+          api: null,
+          hasKey: false,
+          keyHint: null,
+          runtime: { status: "ready" },
+          limit: null,
+        },
+        {
+          ...ACCOUNT_B,
+          api: null,
+          hasKey: false,
+          keyHint: null,
+          runtime: { status: "ready" },
+          limit: null,
+        },
       ],
     });
   });

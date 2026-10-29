@@ -6,6 +6,7 @@ import { expect, it, vi } from "vitest";
 import { createHandlers } from "../../src/backend/handlers";
 import { createJsonStore } from "../../src/backend/storage";
 import { fakeProbes, fakeSessions } from "../fakes/fakeSessions";
+import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
 
 const GOOD_FIRST = {
@@ -34,6 +35,7 @@ it("switch_log_list_skips_malformed_lines", async () => {
   const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
   const handlers = createHandlers({
     store: createJsonStore(userData),
+    ...fakeSecrets(userData),
     userData,
     broadcast: vi.fn(),
     sessions: fakeSessions(),

@@ -1,3 +1,4 @@
+import { PROVIDER_KEY_ENV_NAMES } from "../domain/apiProviders";
 import type { ToolCallStatus } from "../domain/events";
 
 export const SCOPE_UNIT_PREFIX = "codeweave-";
@@ -49,10 +50,11 @@ export const ENV_DENY_PREFIXES: readonly string[] = [
   "OPENAI_",
   "GEMINI_",
   "ELECTRON_",
+  "OPENCODE_",
 ];
 export const ENV_DENY_EXACT: readonly string[] = [
-  "GOOGLE_API_KEY",
   "NODE_OPTIONS",
+  ...PROVIDER_KEY_ENV_NAMES,
 ];
 
 export const CLAUDE_RATE_LIMIT_META_KEY = "_claude/rateLimit";
@@ -78,6 +80,10 @@ export const ACCOUNTS_FILE = "accounts.json";
 export const SETTINGS_FILE = "settings.json";
 export const SWITCH_LOG_FILE = "switch-log.jsonl";
 export const ACCOUNTS_DIR_NAME = "accounts";
+export const API_KEYS_FILE = "api-keys.json";
+export const KEY_STORE_FILE_MODE = 0o600;
+export const VAULT_CRYPTO_TIMEOUT_MS = 120_000;
+export const KEY_DECRYPT_RETRY_INTERVAL_MS = 5000;
 export const STORAGE_VERSION = 1;
 export const TEMP_FILE_SUFFIX = ".tmp";
 
