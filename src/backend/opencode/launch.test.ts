@@ -100,12 +100,10 @@ describe("buildOpencodeLaunch direct execution", () => {
 
 describe("accountDirs", () => {
   it("lists_every_directory_the_server_writes_to", () => {
-    expect(Object.values(accountDirs("/a"))).toEqual([
-      "/a/home",
-      "/a/config",
-      "/a/data",
-      "/a/cache",
-      "/a/state",
-    ]);
+    expect(Object.values(accountDirs("/a"))).toEqual(
+      ["home", "config", "data", "cache", "state"].map((dir) =>
+        join("/a", dir),
+      ),
+    );
   });
 });
