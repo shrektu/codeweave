@@ -1,6 +1,6 @@
 import type { RotationPhase } from "../domain/rotation";
 import type { SessionState } from "../domain/sessionReducer";
-import type { PermissionProfile, ProviderId } from "../domain/types";
+import type { Account, PermissionProfile, ProviderId } from "../domain/types";
 import type {
   FlowRef,
   LimitView,
@@ -12,6 +12,7 @@ export interface SessionViewInput {
   readonly id: string;
   readonly cwd: string;
   readonly provider: ProviderId;
+  readonly accounts: readonly Account[];
   readonly profile: PermissionProfile;
   readonly phase: RotationPhase;
   readonly state: SessionState;
@@ -57,13 +58,17 @@ function pendingPermissions(input: SessionViewInput): PermissionView[] {
 
 export function toSessionView(input: SessionViewInput): SessionView {
   const { state } = input;
+  const activeAccountId = activeAccountOf(input.phase);
   return {
     id: input.id,
     cwd: input.cwd,
     provider: input.provider,
     profile: input.profile,
     phase: input.phase,
-    activeAccountId: activeAccountOf(input.phase),
+    activeAccountId,
+    activeProvider:
+      input.accounts.find((account) => account.id === activeAccountId)
+        ?.provider ?? input.provider,
     messages: state.messages.map((message) => ({ ...message })),
     toolCalls: state.toolCalls.map((tool) => ({ ...tool })),
     permissions: pendingPermissions(input),

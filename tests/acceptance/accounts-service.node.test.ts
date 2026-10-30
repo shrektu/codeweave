@@ -9,7 +9,9 @@ import {
   createAccountsService,
   type AccountsService,
 } from "../../src/backend/accountsService";
+import { createKeyStore } from "../../src/backend/secrets/keyStore";
 import { createJsonStore, type JsonStore } from "../../src/backend/storage";
+import { createFakeVault } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
 
 const QUEUE_SETTLE_MS = 50;
@@ -31,6 +33,10 @@ async function setup(): Promise<Harness> {
   const inUse = new Set<string>();
   const service = createAccountsService({
     store,
+    keyStore: createKeyStore({
+      path: join(userData, "api-keys.json"),
+      vault: createFakeVault(),
+    }),
     userData,
     broadcast,
     runtimeOf: () => ({ status: "ready" }),
@@ -95,6 +101,9 @@ it("accounts_add_creates_default_config_dir_and_broadcasts", async () => {
     label: "Work",
     configDir,
     order: 0,
+    api: null,
+    hasKey: false,
+    keyHint: null,
     runtime: { status: "ready" },
     limit: null,
   });
@@ -257,6 +266,33 @@ it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     expect(await store.readAccounts()).toEqual([]);
   },
 );
+
+it("api_key_account_add_removes_the_stored_key_when_persisting_fails", async () => {
+  const harness = await setup();
+  vi.spyOn(harness.store, "writeAccounts").mockRejectedValue(
+    new Error("disk full"),
+  );
+
+  await expect(
+    harness.service.add({
+      label: "Groq",
+      configDir: join(harness.userData, "dirs", "groq"),
+      provider: "opencode",
+      api: {
+        provider: "groq",
+        model: "llama-3.3-70b-versatile",
+        baseUrl: null,
+        rotation: true,
+      },
+      apiKey: "sk-test-groq-0001",
+    }),
+  ).rejects.toThrow("disk full");
+
+  expect(
+    JSON.parse(await readFile(join(harness.userData, "api-keys.json"), "utf8")),
+  ).toEqual({ version: 1, keys: {} });
+  expect(harness.broadcast).not.toHaveBeenCalled();
+});
 
 it("accounts_move_unknown_rejected_with_not_found", async () => {
   const { service } = await setup();

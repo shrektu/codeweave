@@ -1,9 +1,12 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
+import { join } from "node:path";
 
+import { API_PROVIDERS } from "../domain/apiProviders";
 import type { RotationPorts } from "../domain/rotation";
 import {
   ProviderId,
+  type Account,
   type EpochMillis,
   type WorktreeState,
 } from "../domain/types";
@@ -14,7 +17,7 @@ import {
   type AgentAdapter,
   type AgentStartSpec,
 } from "./agentAdapter";
-import { createAgentProcesses } from "./agentProcesses";
+import { createAgentProcesses, type AgentProcesses } from "./agentProcesses";
 import type { BackendArgs } from "./args";
 import { createClaudeAcpAdapter } from "./claude/acpAdapter";
 import { createCodexAdapter } from "./codex/adapter";
@@ -22,6 +25,7 @@ import { createCodexLimitProbe } from "./codex/probe";
 import type { ConnectionRegistry } from "./connections";
 import {
   AGENT_STOP_GRACE_MS,
+  API_KEYS_FILE,
   CLAUDE_BINARY,
   CODEX_BINARY,
   CONTAINER_UNAVAILABLE_MESSAGE,
@@ -35,11 +39,26 @@ import { recordInstance } from "./instance";
 import type { IpcHandlers } from "./ipcServer";
 import { createLimitProbeService, type LimitProbeService } from "./limitProbe";
 import { WorktreeLocks } from "./locks";
+import { createOpencodeAdapter } from "./opencode/adapter";
+import {
+  CATALOG_DIR_NAME,
+  CATALOG_RUN_ID_PREFIX,
+  createModelCatalog,
+  type ModelCatalogService,
+} from "./opencode/catalog";
+import {
+  defaultRuntimeRoot,
+  type OpencodeCredentials,
+} from "./opencode/config";
+import { findFreePort } from "./opencode/port";
 import {
   ContainerUnavailableError,
   type ProcessContainer,
 } from "./process/container";
 import { createProviderAdapter } from "./providerAdapter";
+import { createKeyStore, type KeyStore } from "./secrets/keyStore";
+import { createSecretSource } from "./secrets/source";
+import type { SecretVault } from "./secrets/vault";
 import {
   createSessionService,
   type ContainerStatus,
@@ -49,6 +68,7 @@ import { createJsonStore, type JsonStore } from "./storage";
 
 export interface BackendDeps {
   readonly args: BackendArgs;
+  readonly vault: SecretVault;
   readonly broadcast: ConnectionRegistry["broadcast"];
   readonly createContainer: (instanceId: string) => Promise<ProcessContainer>;
   readonly execPath: string;
@@ -64,6 +84,7 @@ export interface BackendDeps {
     configured: string | null,
   ) => string;
   readonly inspectWorktree: (cwd: string) => Promise<WorktreeState>;
+  readonly catalogProbeTimeoutMs?: number;
 }
 
 export interface Backend {
@@ -106,6 +127,18 @@ async function openContainer(
     }
     throw error;
   }
+}
+
+const OPENCODE_BINARY = "opencode";
+const SERVER_PASSWORD_BYTES = 32;
+
+const UNAVAILABLE_CATALOG: ModelCatalogService = {
+  load: () =>
+    Promise.resolve({ models: [], error: CONTAINER_UNAVAILABLE_MESSAGE }),
+};
+
+function newServerPassword(): string {
+  return randomBytes(SERVER_PASSWORD_BYTES).toString("hex");
 }
 
 const NO_PROBES: LimitProbeService = {
@@ -167,14 +200,8 @@ function createProbes(
   });
 }
 
-function createAdapter(
-  deps: BackendDeps,
-  container: ProcessContainer | null,
-): AgentAdapter {
-  if (container === null) {
-    return UNAVAILABLE_ADAPTER;
-  }
-  const processes = createAgentProcesses({
+function createProcesses(container: ProcessContainer): AgentProcesses {
+  return createAgentProcesses({
     container,
     locks: new WorktreeLocks(),
     onFailure: (failure) => {
@@ -183,6 +210,48 @@ function createAdapter(
       );
     },
   });
+}
+
+function comSpecOf(deps: BackendDeps): { comSpec?: string } {
+  return deps.parentEnv.ComSpec === undefined
+    ? {}
+    : { comSpec: deps.parentEnv.ComSpec };
+}
+
+export function createCredentialsFor(
+  keyStore: KeyStore,
+): (account: Account) => Promise<OpencodeCredentials | null> {
+  return async (account) => {
+    const { api } = account;
+    if (api === undefined) {
+      return null;
+    }
+    let apiKey: string | null;
+    try {
+      apiKey = await keyStore.get(account.id);
+    } catch (error) {
+      console.error(`the stored key of ${account.id} cannot be read`, error);
+      return null;
+    }
+    return apiKey === null
+      ? null
+      : {
+          providerId: API_PROVIDERS[api.provider].opencodeId,
+          model: api.model,
+          baseUrl: api.baseUrl,
+          apiKey,
+        };
+  };
+}
+
+function createAdapter(
+  deps: BackendDeps,
+  processes: AgentProcesses | null,
+  keyStore: KeyStore,
+): AgentAdapter {
+  if (processes === null) {
+    return UNAVAILABLE_ADAPTER;
+  }
   const envFor = createEnvFor(deps);
   return createProviderAdapter({
     [ProviderId.claude]: createClaudeAcpAdapter({
@@ -196,10 +265,51 @@ function createAdapter(
       envFor,
       executableFor: (spec) => spec.executable,
       platform: deps.platform,
-      ...(deps.parentEnv.ComSpec === undefined
-        ? {}
-        : { comSpec: deps.parentEnv.ComSpec }),
+      ...comSpecOf(deps),
     }),
+    [ProviderId.opencode]: createOpencodeAdapter({
+      processes,
+      envFor,
+      executableFor: (spec) => spec.executable,
+      credentialsFor: createCredentialsFor(keyStore),
+      runtimeRoot: defaultRuntimeRoot(deps.parentEnv),
+      platform: deps.platform,
+      ...comSpecOf(deps),
+      fetchImpl: fetch,
+      now: deps.now,
+      freePort: findFreePort,
+      newPassword: newServerPassword,
+    }),
+  });
+}
+
+function createCatalog(
+  deps: BackendDeps,
+  processes: AgentProcesses | null,
+  store: JsonStore,
+): ModelCatalogService {
+  if (processes === null) {
+    return UNAVAILABLE_CATALOG;
+  }
+  return createModelCatalog({
+    processes,
+    envFor: createEnvFor(deps),
+    resolveExecutable: async () =>
+      deps.resolveExecutable(
+        ProviderId.opencode,
+        (await store.readSettings()).opencodeExecutable,
+      ),
+    directory: join(deps.args.userData, CATALOG_DIR_NAME),
+    platform: deps.platform,
+    ...comSpecOf(deps),
+    fetchImpl: fetch,
+    freePort: findFreePort,
+    newPassword: newServerPassword,
+    newRunId: () => `${CATALOG_RUN_ID_PREFIX}${randomUUID()}`,
+    stopGraceMs: AGENT_STOP_GRACE_MS,
+    ...(deps.catalogProbeTimeoutMs === undefined
+      ? {}
+      : { probeTimeoutMs: deps.catalogProbeTimeoutMs }),
   });
 }
 
@@ -217,6 +327,10 @@ const EXECUTABLE_SPECS: Readonly<Partial<Record<ProviderId, ExecutableSpec>>> =
     [ProviderId.codex]: {
       binary: CODEX_BINARY,
       notFoundMessage: "The Codex executable was not found",
+    },
+    [ProviderId.opencode]: {
+      binary: OPENCODE_BINARY,
+      notFoundMessage: "The OpenCode executable was not found",
     },
   };
 
@@ -249,6 +363,13 @@ export function createExecutableResolver(
 export async function startBackend(deps: BackendDeps): Promise<Backend> {
   const { userData } = deps.args;
   const store = createJsonStore(userData);
+  const keyStore = createKeyStore({
+    path: join(userData, API_KEYS_FILE),
+    vault: deps.vault,
+  });
+  await keyStore.ready().catch((error: unknown) => {
+    console.error("the API key store could not be loaded", error);
+  });
   const instance = await recordInstance(userData);
   const { container, status } = await openContainer(
     deps,
@@ -258,8 +379,9 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
   const probes = createProbes(deps, container, store, (accountId) =>
     sessions.isInUse(accountId),
   );
+  const processes = container === null ? null : createProcesses(container);
   const sessions: SessionService = createSessionService({
-    adapter: createAdapter(deps, container),
+    adapter: createAdapter(deps, processes, keyStore),
     store,
     broadcast: deps.broadcast,
     now: deps.now,
@@ -272,13 +394,18 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     externalRuntime: (accountId) => probes.runtimeOf(accountId),
     beforeLaunch: (accountId) => probes.release(accountId),
     isBlocked: (accountId) => probes.isBlocked(accountId),
+    hasKey: (accountId) => keyStore.hint(accountId) !== null,
+    secrets: createSecretSource(keyStore),
   });
   const handlers = createHandlers({
     store,
+    keyStore,
+    vault: deps.vault,
     userData,
     broadcast: deps.broadcast,
     sessions,
     probes,
+    catalog: createCatalog(deps, processes, store),
     containerStatus: status,
   });
   probes.start();

@@ -7,6 +7,7 @@ import {
   dialog,
   ipcMain,
   MessageChannelMain,
+  safeStorage,
   utilityProcess,
   type IpcMainInvokeEvent,
   type OpenDialogOptions,
@@ -21,9 +22,11 @@ import {
 } from "../shared/constants";
 import { RUN_ID_ENV } from "../backend/constants";
 import type { ConnectMessage } from "../shared/protocol";
+import { VaultRequestSchema } from "../shared/vault";
 
 import { isAppUrl } from "./appUrl";
 import { buildBackendArgs, TEST_AGENT_ENV_VAR } from "./backendArgs";
+import { createSecretVault, handleVaultRequest } from "./secretVault";
 import {
   createBackendShutdownPort,
   createQuitGuard,
@@ -72,6 +75,13 @@ function startBackend(): UtilityProcess {
       testAgentEnv: process.env[TEST_AGENT_ENV_VAR],
     }),
   );
+  const vault = createSecretVault(safeStorage, process.platform);
+  backend.on("message", (message: unknown) => {
+    const request = VaultRequestSchema.safeParse(message);
+    if (request.success) {
+      backend.postMessage(handleVaultRequest(vault, request.data));
+    }
+  });
   const port = createBackendShutdownPort(backend);
   app.on(
     "before-quit",

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { MIN_SECRET_LENGTH } from "../domain/constants";
 import { EffectLevel, PermissionProfile, ProviderId } from "../domain/types";
 
 import {
@@ -7,10 +8,13 @@ import {
   SHUTDOWN_DONE_MESSAGE_TYPE,
   SHUTDOWN_MESSAGE_TYPE,
 } from "./constants";
+import { VaultStatusSchema } from "./vault";
 import {
   AccountViewSchema,
+  ApiAccountSchema,
   FlowRefSchema,
   FlowsListSchema,
+  ModelCatalogSchema,
   SessionViewSchema,
   SettingsViewSchema,
   SnapshotSchema,
@@ -43,6 +47,7 @@ export class IpcError extends Error {
 const NonEmptyString = z.string().min(1);
 const NonBlankString = z.string().refine((text) => text.trim().length > 0);
 const EmptyParamsSchema = z.strictObject({});
+const ApiKeySchema = z.string().min(MIN_SECRET_LENGTH);
 
 const SettingsPatchSchema = z
   .strictObject({
@@ -50,6 +55,7 @@ const SettingsPatchSchema = z
     effectLevel: z.enum(EffectLevel).optional(),
     claudeExecutable: z.string().nullable().optional(),
     codexExecutable: z.string().nullable().optional(),
+    opencodeExecutable: z.string().nullable().optional(),
   })
   .refine((patch) => Object.values(patch).some((value) => value !== undefined));
 
@@ -70,11 +76,26 @@ export const ParamsSchemas = {
   }),
   "accounts/list": EmptyParamsSchema,
   "accounts/suggest": EmptyParamsSchema,
-  "accounts/add": z.strictObject({
-    label: NonBlankString,
-    configDir: NonEmptyString,
-    provider: z.enum([ProviderId.claude, ProviderId.codex]).optional(),
+  "accounts/add": z.discriminatedUnion("provider", [
+    z.strictObject({
+      label: NonBlankString,
+      configDir: NonEmptyString,
+      provider: z.enum([ProviderId.claude, ProviderId.codex]).optional(),
+    }),
+    z.strictObject({
+      label: NonBlankString,
+      configDir: NonEmptyString,
+      provider: z.literal(ProviderId.opencode),
+      api: ApiAccountSchema,
+      apiKey: ApiKeySchema,
+    }),
+  ]),
+  "accounts/setKey": z.strictObject({
+    id: NonEmptyString,
+    apiKey: ApiKeySchema,
   }),
+  "vault/status": EmptyParamsSchema,
+  "models/catalog": EmptyParamsSchema,
   "accounts/remove": z.strictObject({ id: z.string() }),
   "accounts/move": z.strictObject({
     id: z.string(),
@@ -117,12 +138,15 @@ export const RequestSchema = z.discriminatedUnion("method", [
   requestSchema("accounts/list"),
   requestSchema("accounts/suggest"),
   requestSchema("accounts/add"),
+  requestSchema("accounts/setKey"),
   requestSchema("accounts/remove"),
   requestSchema("accounts/move"),
   requestSchema("settings/get"),
   requestSchema("settings/set"),
   requestSchema("switchLog/list"),
   requestSchema("flows/list"),
+  requestSchema("vault/status"),
+  requestSchema("models/catalog"),
 ]);
 export type IpcRequest = z.infer<typeof RequestSchema>;
 
@@ -146,6 +170,7 @@ const resultSchemaDefinitions = {
   "accounts/list": AccountsResultSchema,
   "accounts/suggest": z.strictObject({ configDir: z.string() }),
   "accounts/add": z.strictObject({ account: AccountViewSchema }),
+  "accounts/setKey": AccountViewSchema,
   "accounts/remove": AccountsResultSchema,
   "accounts/move": AccountsResultSchema,
   "settings/get": SettingsViewSchema,
@@ -154,6 +179,8 @@ const resultSchemaDefinitions = {
     entries: z.array(SwitchLogEntryViewSchema),
   }),
   "flows/list": FlowsListSchema,
+  "vault/status": VaultStatusSchema,
+  "models/catalog": ModelCatalogSchema,
 } as const;
 
 export type ResultMap = {

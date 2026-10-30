@@ -29,3 +29,6 @@ export const SIDE_EFFECT_PATTERNS: readonly RegExp[] = [
 export const OLD_PROCESS_STILL_RUNNING = "old process still running";
 export const PORT_CALL_FAILED = "port call failed";
 export const UNKNOWN_ERROR = "unknown error";
+export const MIN_SECRET_LENGTH = 8;
+export const SECRET_HINT_LENGTH = 4;
+export const NO_MESSAGE_KEY = "";

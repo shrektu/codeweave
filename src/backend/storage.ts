@@ -19,6 +19,7 @@ import {
   type Account,
   type SwitchLogEntry,
 } from "../domain/types";
+import { ApiAccountSchema } from "../shared/views";
 
 import {
   ACCOUNTS_FILE,
@@ -28,13 +29,21 @@ import {
   TEMP_FILE_SUFFIX,
 } from "./constants";
 
-const AccountSchema = z.object({
-  id: z.string(),
-  provider: z.enum(ProviderId),
-  label: z.string(),
-  configDir: z.string(),
-  order: z.number().int(),
-});
+const AccountSchema = z
+  .object({
+    id: z.string(),
+    provider: z.enum(ProviderId),
+    label: z.string(),
+    configDir: z.string(),
+    order: z.number().int(),
+    api: ApiAccountSchema.optional(),
+  })
+  .refine(
+    (account) =>
+      (account.provider === ProviderId.opencode) ===
+      (account.api !== undefined),
+    { message: "Only opencode accounts carry api data, and they require it" },
+  );
 
 export const AccountsFileSchema = z.object({
   version: z.literal(STORAGE_VERSION),
@@ -47,6 +56,7 @@ export const SettingsFileSchema = z.object({
   effectLevel: z.enum(EffectLevel),
   claudeExecutable: z.string().nullable(),
   codexExecutable: z.string().nullable().default(null),
+  opencodeExecutable: z.string().nullable().default(null),
 });
 
 const SwitchLogEntrySchema = z.object({
@@ -88,6 +98,7 @@ const DEFAULT_SETTINGS: SettingsFile = {
   effectLevel: EffectLevel.auto,
   claudeExecutable: null,
   codexExecutable: null,
+  opencodeExecutable: null,
 };
 
 export class StorageCorruptError extends Error {
@@ -151,10 +162,11 @@ export async function readValidated<T>(
 export async function writeAtomic(
   file: string,
   content: string,
+  options?: { readonly mode: number },
 ): Promise<void> {
   const temp = `${file}.${randomUUID()}${TEMP_FILE_SUFFIX}`;
   try {
-    await writeFile(temp, content);
+    await writeFile(temp, content, options);
     await rename(temp, file);
   } catch (error) {
     await rm(temp, { force: true });

@@ -168,6 +168,14 @@ function SettingsForm({ settings }: { settings: SettingsView }): JSX.Element {
           onPatch({ codexExecutable });
         }}
       />
+      <ExecutableField
+        id="opencode-executable"
+        label="OpenCode executable"
+        current={settings.opencodeExecutable}
+        onSave={(opencodeExecutable) => {
+          onPatch({ opencodeExecutable });
+        }}
+      />
       {save.error !== null && <p className="error">{save.error}</p>}
     </>
   );

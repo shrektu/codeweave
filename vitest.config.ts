@@ -44,6 +44,7 @@ export default defineConfig({
                 include: [
                   "tests/e2e/rotation.node.test.ts",
                   "tests/e2e/codexRotation.node.test.ts",
+                  "tests/e2e/opencodeRotation.node.test.ts",
                 ],
               },
             },

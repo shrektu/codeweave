@@ -93,6 +93,29 @@ describe("buildAgentEnv", () => {
     expect(env.ANTHROPIC_BASE_URL).toBe("http://f");
   });
 
+  it.each([
+    "GROQ_API_KEY",
+    "CEREBRAS_API_KEY",
+    "OPENROUTER_API_KEY",
+    "GOOGLE_GENERATIVE_AI_API_KEY",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "MISTRAL_API_KEY",
+    "ZHIPU_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "MOONSHOT_API_KEY",
+    "OPENCODE_CONFIG",
+    "OPENCODE_CONFIG_CONTENT",
+    "opencode_permission",
+  ])("parent_%s_never_reaches_an_agent", (name) => {
+    const env = buildAgentEnv(
+      input({ parent: { PATH: "/usr/bin", [name]: "secret-value" } }),
+    );
+
+    expect(env).not.toHaveProperty(name);
+    expect(env.PATH).toBe("/usr/bin");
+  });
+
   it("env_sets_bash_maintain_project_dir", () => {
     const env = buildAgentEnv(
       input({

@@ -34,7 +34,21 @@ it("settings_without_codex_executable_loads", async () => {
     effectLevel: "low",
     claudeExecutable: "/usr/bin/claude",
     codexExecutable: "/opt/codex",
+    opencodeExecutable: null,
   });
+});
+
+it("settings_without_opencode_executable_loads", async () => {
+  const dir = await makeTempDir();
+  await writeFile(
+    join(dir, "settings.json"),
+    '{"version":1,"permissionProfile":"plan","effectLevel":"low","claudeExecutable":null,"codexExecutable":"/usr/bin/codex"}',
+  );
+
+  const settings = await createJsonStore(dir).readSettings();
+
+  expect(settings.opencodeExecutable).toBeNull();
+  expect(settings.codexExecutable).toBe("/usr/bin/codex");
 });
 
 it("storage_refuses_to_overwrite_corrupt_file", async () => {
@@ -50,6 +64,7 @@ it("storage_refuses_to_overwrite_corrupt_file", async () => {
       effectLevel: "auto",
       claudeExecutable: null,
       codexExecutable: null,
+      opencodeExecutable: null,
     }),
   ).rejects.toBeInstanceOf(StorageCorruptError);
 

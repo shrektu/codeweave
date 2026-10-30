@@ -25,6 +25,7 @@ import {
   SwitchReason,
 } from "../../src/domain/types";
 import type { SessionView } from "../../src/shared/views";
+import { createFakeVault } from "../fakes/fakeVault";
 import {
   startResponsesMock,
   type RecordedRequest,
@@ -129,6 +130,7 @@ async function openRig(profile: PermissionProfile): Promise<Rig> {
     runAGoneAtSecondSpawn: null,
   };
   const backend = await startBackend({
+    vault: createFakeVault(),
     args: { userData: workspace.userData, testAgentEnv: {} },
     broadcast: () => undefined,
     createContainer: async (instanceId) =>

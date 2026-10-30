@@ -5,16 +5,22 @@ import type { ConnectionRegistry } from "./connections";
 import { listFlows } from "./flows";
 import type { IpcHandlers } from "./ipcServer";
 import type { LimitProbeService } from "./limitProbe";
+import type { ModelCatalogService } from "./opencode/catalog";
+import type { KeyStore } from "./secrets/keyStore";
+import type { SecretVault } from "./secrets/vault";
 import type { ContainerStatus, SessionService } from "./session";
 import { createSettingsService } from "./settingsService";
 import type { JsonStore } from "./storage";
 
 export interface HandlerDeps {
   store: JsonStore;
+  keyStore: KeyStore;
+  vault: SecretVault;
   userData: string;
   broadcast: ConnectionRegistry["broadcast"];
   sessions: SessionService;
   probes: LimitProbeService;
+  catalog: ModelCatalogService;
   containerStatus: ContainerStatus;
 }
 
@@ -26,14 +32,18 @@ function publishAccounts(accounts: AccountsService): void {
 
 export function createHandlers({
   store,
+  keyStore,
+  vault,
   userData,
   broadcast,
   sessions,
   probes,
+  catalog,
   containerStatus,
 }: HandlerDeps): IpcHandlers {
   const accounts = createAccountsService({
     store,
+    keyStore,
     userData,
     broadcast,
     runtimeOf: (id) => sessions.runtimeOf(id),
@@ -83,6 +93,9 @@ export function createHandlers({
     "accounts/list": () => accounts.list(),
     "accounts/suggest": () => accounts.suggest(),
     "accounts/add": (params) => probed(accounts.add(params)),
+    "accounts/setKey": (params) => accounts.setKey(params),
+    "vault/status": () => vault.status(),
+    "models/catalog": () => catalog.load(),
     "accounts/remove": ({ id }) => probed(accounts.remove(id)),
     "accounts/move": ({ id, direction }) =>
       synced(accounts.move(id, direction)),

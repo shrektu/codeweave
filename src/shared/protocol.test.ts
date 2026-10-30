@@ -9,7 +9,7 @@ import {
 } from "./protocol";
 
 function request(method: string, params: unknown): unknown {
-  return { v: 3, id: "a", method, params };
+  return { v: 4, id: "a", method, params };
 }
 
 const VALID_REQUESTS: [string, unknown][] = [
@@ -32,7 +32,43 @@ const VALID_REQUESTS: [string, unknown][] = [
   ["accounts/suggest", {}],
   ["accounts/add", { label: "Work", configDir: "/x" }],
   ["accounts/add", { label: "Work", configDir: "/x", provider: "codex" }],
+  ["accounts/add", { label: "Work", configDir: "/x", provider: "claude" }],
+  [
+    "accounts/add",
+    {
+      label: "Groq",
+      configDir: "/x",
+      provider: "opencode",
+      api: {
+        provider: "groq",
+        model: "llama-3.3-70b-versatile",
+        baseUrl: null,
+        rotation: true,
+      },
+      apiKey: "sk-test-groq-0001",
+    },
+  ],
+  [
+    "accounts/add",
+    {
+      label: "Local",
+      configDir: "/x",
+      provider: "opencode",
+      api: {
+        provider: "custom",
+        model: "qwen",
+        baseUrl: "http://localhost:11434/v1",
+        rotation: false,
+      },
+      apiKey: "sk-test-local-01",
+    },
+  ],
+  ["accounts/setKey", { id: "acc", apiKey: "sk-test-groq-0002" }],
+  ["vault/status", {}],
+  ["models/catalog", {}],
   ["settings/set", { codexExecutable: "/opt/codex" }],
+  ["settings/set", { opencodeExecutable: "/opt/opencode" }],
+  ["settings/set", { opencodeExecutable: null }],
   ["accounts/remove", { id: "acc" }],
   ["accounts/move", { id: "acc", direction: "up" }],
   ["settings/get", {}],
@@ -44,7 +80,7 @@ const VALID_REQUESTS: [string, unknown][] = [
 
 const INVALID_REQUESTS: [string, unknown][] = [
   ["ping with a param", request("ping", { extra: 1 })],
-  ["ping without params", { v: 3, id: "a", method: "ping" }],
+  ["ping without params", { v: 4, id: "a", method: "ping" }],
   ["session/start without cwd", request("session/start", {})],
   ["session/start with empty cwd", request("session/start", { cwd: "" })],
   [
@@ -69,6 +105,77 @@ const INVALID_REQUESTS: [string, unknown][] = [
       configDir: "/x",
       provider: "gemini",
     }),
+  ],
+  [
+    "accounts/add for opencode without api data",
+    request("accounts/add", {
+      label: "G",
+      configDir: "/x",
+      provider: "opencode",
+      apiKey: "sk-test-groq-0001",
+    }),
+  ],
+  [
+    "accounts/add for opencode without a key",
+    request("accounts/add", {
+      label: "G",
+      configDir: "/x",
+      provider: "opencode",
+      api: { provider: "groq", model: "m", baseUrl: null, rotation: true },
+    }),
+  ],
+  [
+    "accounts/add for opencode with a key shorter than 8 characters",
+    request("accounts/add", {
+      label: "G",
+      configDir: "/x",
+      provider: "opencode",
+      api: { provider: "groq", model: "m", baseUrl: null, rotation: true },
+      apiKey: "sk-1234",
+    }),
+  ],
+  [
+    "accounts/add for opencode with an unknown api provider",
+    request("accounts/add", {
+      label: "G",
+      configDir: "/x",
+      provider: "opencode",
+      api: { provider: "cohere", model: "m", baseUrl: null, rotation: true },
+      apiKey: "sk-test-groq-0001",
+    }),
+  ],
+  [
+    "accounts/add for opencode with an invalid base url",
+    request("accounts/add", {
+      label: "G",
+      configDir: "/x",
+      provider: "opencode",
+      api: { provider: "custom", model: "m", baseUrl: "nope", rotation: true },
+      apiKey: "sk-test-groq-0001",
+    }),
+  ],
+  [
+    "accounts/add for claude carrying a key",
+    request("accounts/add", {
+      label: "G",
+      configDir: "/x",
+      provider: "claude",
+      apiKey: "sk-test-groq-0001",
+    }),
+  ],
+  [
+    "accounts/setKey with a short key",
+    request("accounts/setKey", { id: "acc", apiKey: "short" }),
+  ],
+  [
+    "accounts/setKey without an id",
+    request("accounts/setKey", { apiKey: "sk-test-groq-0001" }),
+  ],
+  ["vault/status with a param", request("vault/status", { verbose: true })],
+  ["models/catalog with a param", request("models/catalog", { force: true })],
+  [
+    "settings/set with a numeric opencode executable",
+    request("settings/set", { opencodeExecutable: 7 }),
   ],
   ["session/prompt without text", request("session/prompt", {})],
   [
@@ -130,13 +237,13 @@ describe("RequestSchema", () => {
   });
 
   it.each([
-    ["an empty id", { v: 3, id: "", method: "ping", params: {} }],
-    ["an extra key", { v: 3, id: "a", method: "ping", params: {}, extra: 1 }],
-    ["an unknown method", { v: 3, id: "a", method: "pong", params: {} }],
+    ["an empty id", { v: 4, id: "", method: "ping", params: {} }],
+    ["an extra key", { v: 4, id: "a", method: "ping", params: {}, extra: 1 }],
+    ["an unknown method", { v: 4, id: "a", method: "pong", params: {} }],
     ["a missing version", { id: "a", method: "ping", params: {} }],
     ["a non-numeric version", { v: "2", id: "a", method: "ping", params: {} }],
     ["a fractional version", { v: 1.5, id: "a", method: "ping", params: {} }],
-    ["a missing id", { v: 3, method: "ping", params: {} }],
+    ["a missing id", { v: 4, method: "ping", params: {} }],
   ])("rejects_%s", (_label, payload) => {
     expect(RequestSchema.safeParse(payload).success).toBe(false);
   });
@@ -145,7 +252,7 @@ describe("RequestSchema", () => {
 describe("ResponseSchema", () => {
   it("accepts_a_ping_result", () => {
     const parsed = ResponseSchema.safeParse({
-      v: 3,
+      v: 4,
       id: "a",
       ok: true,
       result: { pong: true, backendPid: 42 },
@@ -163,7 +270,7 @@ describe("ResponseSchema", () => {
     "EXPIRED",
   ])("accepts_the_error_code_%s", (code) => {
     const parsed = ResponseSchema.safeParse({
-      v: 3,
+      v: 4,
       id: null,
       ok: false,
       error: { code, message: "bad" },
@@ -175,11 +282,11 @@ describe("ResponseSchema", () => {
   it.each([
     [
       "an unknown error code",
-      { v: 3, id: "a", ok: false, error: { code: "NOPE", message: "x" } },
+      { v: 4, id: "a", ok: false, error: { code: "NOPE", message: "x" } },
     ],
     [
       "a success without a request id",
-      { v: 3, id: null, ok: true, result: { pong: true, backendPid: 1 } },
+      { v: 4, id: null, ok: true, result: { pong: true, backendPid: 1 } },
     ],
   ])("rejects_%s", (_label, payload) => {
     expect(ResponseSchema.safeParse(payload).success).toBe(false);
@@ -192,6 +299,7 @@ describe("EventSchema", () => {
     effectLevel: "full",
     claudeExecutable: "/usr/bin/claude",
     codexExecutable: null,
+    opencodeExecutable: null,
   };
   const logEntry = {
     at: 1,
@@ -209,24 +317,24 @@ describe("EventSchema", () => {
     ["settings/changed", settings],
     ["switchLog/appended", logEntry],
   ])("accepts_%s", (event, payload) => {
-    expect(EventSchema.safeParse({ v: 3, event, payload }).success).toBe(true);
+    expect(EventSchema.safeParse({ v: 4, event, payload }).success).toBe(true);
   });
 
   it.each([
-    ["an unknown event", { v: 3, event: "nope", payload: null }],
+    ["an unknown event", { v: 4, event: "nope", payload: null }],
     [
       "a settings event with a session payload",
-      { v: 3, event: "settings/changed", payload: null },
+      { v: 4, event: "settings/changed", payload: null },
     ],
     [
       "a log entry with an unknown reason",
       {
-        v: 3,
+        v: 4,
         event: "switchLog/appended",
         payload: { ...logEntry, reason: "whim" },
       },
     ],
-    ["an event without payload", { v: 3, event: "accounts/changed" }],
+    ["an event without payload", { v: 4, event: "accounts/changed" }],
   ])("rejects_%s", (_label, payload) => {
     expect(EventSchema.safeParse(payload).success).toBe(false);
   });

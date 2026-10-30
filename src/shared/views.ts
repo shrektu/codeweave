@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { ApiProviderId, TRAINING_UNKNOWN } from "../domain/apiProviders";
 import {
   EdgeKind,
   EffectLevel,
@@ -29,12 +30,22 @@ export const LimitViewSchema = z.strictObject({
 });
 export type LimitView = z.infer<typeof LimitViewSchema>;
 
+export const ApiAccountSchema = z.strictObject({
+  provider: z.enum(ApiProviderId),
+  model: NonEmptyString,
+  baseUrl: z.url().nullable(),
+  rotation: z.boolean(),
+});
+
 export const AccountViewSchema = z.strictObject({
   id: z.string(),
   provider: z.enum(ProviderId),
   label: z.string(),
   configDir: z.string(),
   order: z.int(),
+  api: ApiAccountSchema.nullable(),
+  hasKey: z.boolean(),
+  keyHint: z.string().nullable(),
   runtime: AccountRuntimeViewSchema,
   limit: LimitViewSchema.nullable(),
 });
@@ -116,6 +127,7 @@ export const SessionViewSchema = z.strictObject({
   profile: z.enum(PermissionProfile),
   phase: RotationPhaseViewSchema,
   activeAccountId: z.string().nullable(),
+  activeProvider: z.enum(ProviderId),
   messages: z.array(MessageViewSchema),
   toolCalls: z.array(ToolCallViewSchema),
   permissions: z.array(PermissionViewSchema),
@@ -166,8 +178,27 @@ export const SettingsViewSchema = z.strictObject({
   effectLevel: z.enum(EffectLevel),
   claudeExecutable: z.string().nullable(),
   codexExecutable: z.string().nullable(),
+  opencodeExecutable: z.string().nullable(),
 });
 export type SettingsView = z.infer<typeof SettingsViewSchema>;
+
+export const CatalogModelSchema = z.strictObject({
+  providerId: z.enum(ApiProviderId),
+  modelId: NonEmptyString,
+  name: z.string(),
+  contextWindow: z.number().nullable(),
+  costIn: z.number().nullable(),
+  costOut: z.number().nullable(),
+  free: z.boolean(),
+  trainsOnData: z.union([z.boolean(), z.literal(TRAINING_UNKNOWN)]),
+});
+export type CatalogModel = z.infer<typeof CatalogModelSchema>;
+
+export const ModelCatalogSchema = z.strictObject({
+  models: z.array(CatalogModelSchema),
+  error: z.string().nullable(),
+});
+export type ModelCatalog = z.infer<typeof ModelCatalogSchema>;
 
 export const SwitchLogEntryViewSchema = z.strictObject({
   at: z.number(),

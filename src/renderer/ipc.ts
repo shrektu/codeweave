@@ -1,4 +1,9 @@
-import { PORT_CHANNEL, PROTOCOL_VERSION } from "../shared/constants";
+import {
+  CATALOG_PROBE_TIMEOUT_MS,
+  CATALOG_STOP_MARGIN_MS,
+  PORT_CHANNEL,
+  PROTOCOL_VERSION,
+} from "../shared/constants";
 import type { PortLike } from "../shared/port";
 import {
   EventSchema,
@@ -13,6 +18,15 @@ import {
 } from "../shared/protocol";
 
 export const REQUEST_TIMEOUT_MS = 5000;
+export const VAULT_REQUEST_TIMEOUT_MS = 130_000;
+export const CATALOG_REQUEST_TIMEOUT_MS =
+  CATALOG_PROBE_TIMEOUT_MS + CATALOG_STOP_MARGIN_MS;
+
+const METHOD_TIMEOUTS_MS: Readonly<Partial<Record<RequestMethod, number>>> = {
+  "accounts/add": VAULT_REQUEST_TIMEOUT_MS,
+  "accounts/setKey": VAULT_REQUEST_TIMEOUT_MS,
+  "models/catalog": CATALOG_REQUEST_TIMEOUT_MS,
+};
 
 export class IpcRemoteError extends Error {
   readonly code: IpcErrorCode;
@@ -98,7 +112,7 @@ export function createIpcClient(port: PortLike): IpcClient {
         Promise.withResolvers<ResultMap[M]>();
       const timer = window.setTimeout(() => {
         reject(new Error(`IPC request "${method}" timed out`));
-      }, REQUEST_TIMEOUT_MS);
+      }, METHOD_TIMEOUTS_MS[method] ?? REQUEST_TIMEOUT_MS);
 
       pending.set(id, (response) => {
         if (!response.ok) {

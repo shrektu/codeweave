@@ -50,8 +50,12 @@ function settingsClient(): FakeIpcClient {
         patch.codexExecutable === undefined
           ? current.codexExecutable
           : patch.codexExecutable,
+      opencodeExecutable:
+        patch.opencodeExecutable === undefined
+          ? current.opencodeExecutable
+          : patch.opencodeExecutable,
     };
-    client.emit({ v: 3, event: "settings/changed", payload: current });
+    client.emit({ v: 4, event: "settings/changed", payload: current });
     return current;
   });
   return client;
@@ -252,7 +256,7 @@ it("accounts_dialog_adds_codex_account_with_provider", async () => {
     within(agent)
       .getAllByRole("option")
       .map((option) => option.textContent),
-  ).toEqual(["Claude", "Codex"]);
+  ).toEqual(["Claude", "Codex", "OpenCode (API key)"]);
   expect(agent.value).toBe("claude");
   fireEvent.change(agent, { target: { value: "codex" } });
   fireEvent.change(screen.getByLabelText("Label"), {
