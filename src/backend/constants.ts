@@ -51,9 +51,14 @@ export const ENV_DENY_PREFIXES: readonly string[] = [
   "GEMINI_",
   "ELECTRON_",
   "OPENCODE_",
+  "AGY_",
+  "ANTIGRAVITY_",
 ];
 export const ENV_DENY_EXACT: readonly string[] = [
   "NODE_OPTIONS",
+  "GOOGLE_GEMINI_BASE_URL",
+  "GOOGLE_GENAI_USE_VERTEXAI",
+  "GOOGLE_GENAI_USE_ENTERPRISE",
   ...PROVIDER_KEY_ENV_NAMES,
 ];
 
