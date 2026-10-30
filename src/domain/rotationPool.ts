@@ -9,16 +9,30 @@ function isRotatingApiOfTier(account: Account, tier: ApiTier): boolean {
   );
 }
 
+const SUBSCRIPTION_PROVIDERS: ReadonlySet<ProviderId> = new Set([
+  ProviderId.claude,
+  ProviderId.codex,
+  ProviderId.gemini,
+]);
+
 export function rotationPool(
   provider: ProviderId,
   registered: readonly Account[],
 ): Account[] {
-  const own =
-    provider === ProviderId.opencode
-      ? []
-      : registered.filter((account) => account.provider === provider);
+  const isSubscriptionSession = SUBSCRIPTION_PROVIDERS.has(provider);
+  const own = isSubscriptionSession
+    ? registered.filter((account) => account.provider === provider)
+    : [];
+  const otherSubscriptions = isSubscriptionSession
+    ? registered.filter(
+        (account) =>
+          account.provider !== provider &&
+          SUBSCRIPTION_PROVIDERS.has(account.provider),
+      )
+    : [];
   return [
     ...own,
+    ...otherSubscriptions,
     ...registered.filter((account) =>
       isRotatingApiOfTier(account, ApiTier.free),
     ),
