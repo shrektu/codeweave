@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-  _electron as electron,
   expect,
   test,
   type ElectronApplication,
@@ -19,17 +18,20 @@ import {
 import { ChatScenario, startOpenaiChatMock } from "../fakes/openaiChatMock";
 
 import {
-  AGY_ACCOUNT_LABEL,
+  addGeminiAccount,
   agyBinaryOnPath,
   agyConfigDir,
-  assertAgyIsolated,
+  chooseProfile,
   createAgyIsolation,
+  launchApp,
   startChatProxy,
+  stubFolderDialog,
+  submitAccount,
   writeAgySettings,
   type AgyIsolation,
   type ChatProxy,
 } from "./agyRotationFixture";
-import { OPENCODE_KEY_B, writeKeyringPreload } from "./opencodeRotationFixture";
+import { OPENCODE_KEY_B } from "./opencodeRotationFixture";
 import {
   ROTATION_COMMAND,
   ROTATION_PROMPT,
@@ -40,23 +42,15 @@ import {
   type CleanupStack,
 } from "./rotationFixture";
 
-const ROOT_DIR = join(import.meta.dirname, "..", "..");
-const USER_DATA_DIR_ENV = "CODEWEAVE_USER_DATA_DIR";
-const TEST_AGENT_ENV_VAR = "CODEWEAVE_TEST_AGENT_ENV";
 const STEP_TIMEOUT_MS = 120_000;
-const ADD_TIMEOUT_MS = 30_000;
 const SWITCH_ENTRY_PATTERN = /A → B · rate limit/;
-const GEMINI_OPTION = "Gemini";
 const OPENCODE_OPTION = "OpenCode (API key)";
 const OPENCODE_LABEL = "B";
 const MOCK_MODEL = "mock-model";
 const EXPECTED_MAIN_REQUESTS = 2;
+const UNATTENDED_PROFILE = "Unattended";
 const CONTEXT_INTRO =
   "You are taking over a coding session from another account that hit its usage limit.";
-const SANDBOX_FLAGS =
-  process.env.CI !== undefined && process.platform === "linux"
-    ? ["--no-sandbox"]
-    : [];
 
 interface Setup {
   readonly userData: string;
@@ -65,41 +59,6 @@ interface Setup {
   readonly proxy: ChatProxy;
   readonly isolation: AgyIsolation;
   readonly app: ElectronApplication;
-}
-
-async function launchApp(
-  root: string,
-  userData: string,
-  isolation: AgyIsolation,
-): Promise<ElectronApplication> {
-  assertAgyIsolated(isolation);
-  const keyringArgs =
-    process.platform === "linux" ? ["-r", await writeKeyringPreload(root)] : [];
-  return electron.launch({
-    args: [...keyringArgs, ".", ...SANDBOX_FLAGS],
-    cwd: ROOT_DIR,
-    env: {
-      ...process.env,
-      [USER_DATA_DIR_ENV]: userData,
-      [TEST_AGENT_ENV_VAR]: JSON.stringify(isolation.agentEnv),
-    },
-  });
-}
-
-async function submitAccount(page: Page, label: string): Promise<void> {
-  const dialog = page.getByRole("dialog", { name: "Accounts" });
-  await dialog.getByRole("button", { name: "Add account" }).click();
-  await expect(
-    dialog.getByRole("listitem").filter({ hasText: new RegExp(`^${label}`) }),
-  ).toBeVisible({ timeout: ADD_TIMEOUT_MS });
-}
-
-async function addGeminiAccount(page: Page, configDir: string): Promise<void> {
-  const dialog = page.getByRole("dialog", { name: "Accounts" });
-  await dialog.getByLabel("Agent").selectOption({ label: GEMINI_OPTION });
-  await dialog.getByLabel("Label", { exact: true }).fill(AGY_ACCOUNT_LABEL);
-  await dialog.getByLabel("Config directory").fill(configDir);
-  await submitAccount(page, AGY_ACCOUNT_LABEL);
 }
 
 async function addOpencodeAccount(
@@ -116,17 +75,6 @@ async function addOpencodeAccount(
   await dialog.getByLabel("Base URL").fill(baseUrl);
   await dialog.getByLabel("API key").fill(OPENCODE_KEY_B);
   await submitAccount(page, OPENCODE_LABEL);
-}
-
-async function chooseUnattendedProfile(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const unattended = page.getByRole("radio", {
-    name: "Unattended",
-    exact: true,
-  });
-  await unattended.click();
-  await expect(unattended).toBeChecked();
-  await page.getByRole("button", { name: "Close" }).click();
 }
 
 async function prepare(cleanup: CleanupStack): Promise<Setup> {
@@ -155,10 +103,7 @@ async function prepare(cleanup: CleanupStack): Promise<Setup> {
   await writeAgySettings(isolation);
   const app = await launchApp(root, userData, isolation);
   cleanup.add(() => app.close());
-  await app.evaluate(({ dialog }, folder) => {
-    dialog.showOpenDialog = () =>
-      Promise.resolve({ canceled: false, filePaths: [folder] });
-  }, repo);
+  await stubFolderDialog(app, repo);
   return { userData, repo, gemini, proxy, isolation, app };
 }
 
@@ -185,7 +130,7 @@ test("agy_ui_rotates_gemini_to_opencode_after_quota", async () => {
     );
 
     await addAccounts(page, setup);
-    await chooseUnattendedProfile(page);
+    await chooseProfile(page, UNATTENDED_PROFILE);
 
     await page.getByRole("button", { name: "Choose folder…" }).click();
     await page.getByPlaceholder("Describe the task").fill(ROTATION_PROMPT);

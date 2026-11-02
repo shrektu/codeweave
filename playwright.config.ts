@@ -10,6 +10,7 @@ export default defineConfig({
     "codexRotation.spec.ts",
     "opencodeRotation.spec.ts",
     "agyRotation.spec.ts",
+    "agyEditDiff.spec.ts",
   ],
   timeout: TEST_TIMEOUT_MS,
   workers: 1,

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  HookPayloadSchema,
   parseAgyErrorLine,
   parseAgyEvent,
   UsageOutputSchema,
@@ -55,6 +56,29 @@ describe("agy protocol parsing", () => {
 
     expect(parseAgyErrorLine(" {oops")).toBeNull();
     expect(parseAgyErrorLine(" 12")).toBeNull();
+  });
+
+  it("hook_payload_parses_step_ids", () => {
+    const parsed = HookPayloadSchema.parse({
+      conversationId: "conv-1",
+      stepIdx: 4,
+      toolCall: { name: "edit_file", args: {} },
+    });
+
+    expect(parsed).toMatchObject({ conversationId: "conv-1", stepIdx: 4 });
+  });
+
+  it("hook_payload_without_or_with_bad_step_ids_still_parses", () => {
+    const toolCall = { name: "edit_file", args: {} };
+
+    expect(HookPayloadSchema.parse({ toolCall })).toMatchObject({ toolCall });
+    expect(
+      HookPayloadSchema.parse({ conversationId: 7, stepIdx: -1.5, toolCall }),
+    ).toMatchObject({
+      conversationId: undefined,
+      stepIdx: undefined,
+      toolCall,
+    });
   });
 
   it("usage_output_without_command_data_still_parses", () => {

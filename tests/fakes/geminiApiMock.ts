@@ -8,6 +8,7 @@ import {
 export const GeminiScenario = {
   toolThen429: "tool-then-429",
   sudoThenDone: "sudo-then-done",
+  editFile: "edit-file",
   ok: "ok",
 } as const;
 export type GeminiScenario =
@@ -28,9 +29,17 @@ export interface GeminiRecordedRequest {
   readonly body: unknown;
 }
 
+export interface GeminiEditFiles {
+  readonly createPath: string;
+  readonly editPath: string;
+  readonly editTarget: string;
+  readonly editReplacement: string;
+}
+
 export interface GeminiMockOptions {
   readonly scenario: GeminiScenario;
   readonly toolCommand?: string;
+  readonly editFiles?: GeminiEditFiles;
 }
 
 export interface GeminiApiMock {
@@ -50,6 +59,9 @@ const SSE_TERMINATOR = "\r\n\r\n";
 const JSON_HEADERS = { "content-type": "application/json" } as const;
 const SSE_HEADERS = { "content-type": "text/event-stream" } as const;
 const RUN_COMMAND_TOOL = "run_command";
+const WRITE_FILE_TOOL = "write_file";
+const EDIT_FILE_TOOL = "edit_file";
+const CREATED_FILE_CONTENT = "first line\nsecond line\n";
 const WAIT_MS_BEFORE_ASYNC = 5000;
 const DEFAULT_TOOL_COMMAND = "echo side-effect | tee -a effects.log";
 const DEFAULT_TOOL_SUMMARY = "Record the effect";
@@ -66,13 +78,23 @@ const QUOTA_ID = "GenerateRequestsPerDayPerProjectPerModel-FreeTier";
 const QUOTA_VALUE = "50";
 const RETRY_DELAY = "43200s";
 
-const ReplyKind = { tool: "tool", text: "text", quota: "quota" } as const;
+const ReplyKind = {
+  tool: "tool",
+  call: "call",
+  text: "text",
+  quota: "quota",
+} as const;
 
 type Reply =
   | {
       readonly kind: typeof ReplyKind.tool;
       readonly command: string;
       readonly summary: string;
+    }
+  | {
+      readonly kind: typeof ReplyKind.call;
+      readonly name: string;
+      readonly args: Readonly<Record<string, string>>;
     }
   | { readonly kind: typeof ReplyKind.text; readonly text: string }
   | { readonly kind: typeof ReplyKind.quota };
@@ -81,6 +103,29 @@ const QUOTA_REPLY: Reply = { kind: ReplyKind.quota };
 
 function textReply(text: string): Reply {
   return { kind: ReplyKind.text, text };
+}
+
+function editFileSteps(files: GeminiEditFiles | undefined): readonly Reply[] {
+  if (files === undefined) {
+    throw new Error("the edit-file scenario needs editFiles");
+  }
+  return [
+    {
+      kind: ReplyKind.call,
+      name: WRITE_FILE_TOOL,
+      args: { Path: files.createPath, Content: CREATED_FILE_CONTENT },
+    },
+    {
+      kind: ReplyKind.call,
+      name: EDIT_FILE_TOOL,
+      args: {
+        Path: files.editPath,
+        Target: files.editTarget,
+        Replacement: files.editReplacement,
+      },
+    },
+    textReply(DONE_TEXT),
+  ];
 }
 
 function stepsOf(options: GeminiMockOptions): readonly Reply[] {
@@ -99,6 +144,8 @@ function stepsOf(options: GeminiMockOptions): readonly Reply[] {
         { kind: ReplyKind.tool, command: SUDO_COMMAND, summary: SUDO_SUMMARY },
         textReply(DONE_TEXT),
       ];
+    case GeminiScenario.editFile:
+      return editFileSteps(options.editFiles);
     case GeminiScenario.ok:
       return [textReply(OK_TEXT)];
   }
@@ -110,6 +157,14 @@ function sendParts(res: ServerResponse, parts: readonly object[]): void {
   };
   res.writeHead(HTTP_OK, SSE_HEADERS);
   res.end(`data: ${JSON.stringify(chunk)}${SSE_TERMINATOR}`);
+}
+
+function sendFunctionCall(
+  res: ServerResponse,
+  name: string,
+  args: Readonly<Record<string, unknown>>,
+): void {
+  sendParts(res, [{ functionCall: { name, args } }]);
 }
 
 function sendQuotaExceeded(res: ServerResponse): void {
@@ -153,19 +208,15 @@ function sendNotFound(res: ServerResponse): void {
 function sendReply(res: ServerResponse, reply: Reply): void {
   switch (reply.kind) {
     case ReplyKind.tool:
-      sendParts(res, [
-        {
-          functionCall: {
-            name: RUN_COMMAND_TOOL,
-            args: {
-              CommandLine: reply.command,
-              IsDaemon: false,
-              WaitMsBeforeAsync: WAIT_MS_BEFORE_ASYNC,
-              toolSummary: reply.summary,
-            },
-          },
-        },
-      ]);
+      sendFunctionCall(res, RUN_COMMAND_TOOL, {
+        CommandLine: reply.command,
+        IsDaemon: false,
+        WaitMsBeforeAsync: WAIT_MS_BEFORE_ASYNC,
+        toolSummary: reply.summary,
+      });
+      return;
+    case ReplyKind.call:
+      sendFunctionCall(res, reply.name, reply.args);
       return;
     case ReplyKind.text:
       sendParts(res, [{ text: reply.text }]);

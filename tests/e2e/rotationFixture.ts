@@ -20,7 +20,7 @@ export const WORKSPACE_PREFIX = "codeweave-rotation-";
 const API_KEY_HELPER_KEY = "apiKeyHelper";
 const SETTINGS_FILE = "settings.json";
 const EFFECTS_FILE = "effects.log";
-const REPO_SEED_FILE = "README.md";
+export const REPO_SEED_FILE = "README.md";
 const GIT_IDENTITY_ARGS = [
   "-c",
   "user.name=Rotation Test",

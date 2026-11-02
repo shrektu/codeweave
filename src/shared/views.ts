@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { ApiProviderId, TRAINING_UNKNOWN } from "../domain/apiProviders";
+import { DiffOmission, FileChange } from "../domain/events";
 import {
   EdgeKind,
   EffectLevel,
@@ -51,6 +52,20 @@ export const AccountViewSchema = z.strictObject({
 });
 export type AccountView = z.infer<typeof AccountViewSchema>;
 
+export const FileDiffViewSchema = z.union([
+  z.strictObject({
+    path: z.string(),
+    change: z.enum(FileChange),
+    patch: z.string(),
+  }),
+  z.strictObject({
+    path: z.string(),
+    change: z.enum(FileChange),
+    omitted: z.enum(DiffOmission),
+  }),
+]);
+export type FileDiffView = z.infer<typeof FileDiffViewSchema>;
+
 export const ToolCallViewSchema = z.strictObject({
   toolCallId: z.string(),
   title: z.string(),
@@ -58,6 +73,7 @@ export const ToolCallViewSchema = z.strictObject({
   status: z.enum(["pending", "in_progress", "completed", "failed"]),
   command: z.string().optional(),
   output: z.string().optional(),
+  diffs: z.array(FileDiffViewSchema).optional(),
   seq: z.number().int(),
 });
 export type ToolCallView = z.infer<typeof ToolCallViewSchema>;

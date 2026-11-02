@@ -338,7 +338,7 @@ function unwrap(words: readonly string[]): Unwrapped {
   }
 }
 
-function isInsideWorktree(
+export function isInsideWorktree(
   target: string,
   worktreeRoot: string,
   cwdUnresolved: boolean,

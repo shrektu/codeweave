@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { vi } from "vitest";
 import { z } from "zod";
@@ -14,6 +14,7 @@ import type {
 import { createAgentProcesses } from "../../src/backend/agentProcesses";
 import { createAgyAdapter } from "../../src/backend/agy/adapter";
 import { writeAgyHookConfig } from "../../src/backend/agy/hookConfig";
+import { runHook } from "../../src/backend/agy/hookRun";
 import { fingerprintAgentsDir } from "../../src/backend/agy/workspaceGuard";
 import { buildAgentEnv } from "../../src/backend/env";
 import { WorktreeLocks } from "../../src/backend/locks";
@@ -42,7 +43,16 @@ export type AgyStep =
   | { readonly type: "await_signal" }
   | { readonly type: "delay"; readonly ms: number }
   | { readonly type: "hang" }
-  | { readonly type: "exit"; readonly code: number };
+  | { readonly type: "hook"; readonly payload: Json }
+  | {
+      readonly type: "write_file";
+      readonly path: string;
+      readonly content: string;
+    }
+  | { readonly type: "exit"; readonly code: number }
+  | { readonly type: "exit_notice"; readonly code: number }
+  | { readonly type: "close_streams" }
+  | { readonly type: "await_release" };
 
 export type UsageScript =
   | { readonly kind: "ok"; readonly groups: readonly Json[] }
@@ -108,7 +118,10 @@ function tick(): Promise<void> {
 
 export class FakeAgyContained extends FakeContained {
   readonly signalled = Promise.withResolvers<undefined>();
+  readonly released = Promise.withResolvers<undefined>();
+  readonly hookOutputs: string[] = [];
   hasExited = false;
+  private exitNotified = false;
   private readonly exitGate: Promise<undefined> | undefined;
 
   constructor(
@@ -126,7 +139,9 @@ export class FakeAgyContained extends FakeContained {
     if (result.ok) {
       await this.exitGate;
       await tick();
-      this.exit(null);
+      if (!this.exitNotified) {
+        this.exit(null);
+      }
     }
     return result;
   }
@@ -138,7 +153,21 @@ export class FakeAgyContained extends FakeContained {
     this.hasExited = true;
     this.stdout.end();
     this.stderr.end();
+    this.notifyExit(code);
+  }
+
+  notifyExit(code: number | null): void {
+    if (this.exitNotified) {
+      return;
+    }
+    this.exitNotified = true;
     this.emitExit(code);
+  }
+
+  closeStreams(): void {
+    this.hasExited = true;
+    this.stdout.end();
+    this.stderr.end();
   }
 }
 
@@ -162,12 +191,39 @@ export function delayFor(ms: number): AgyStep {
   return { type: "delay", ms };
 }
 
+export function hookStep(
+  ref: StepRef,
+  tool: ToolRef,
+  workspace: string,
+): AgyStep {
+  return {
+    type: "hook",
+    payload: {
+      conversationId: ref.conversationId,
+      stepIdx: ref.index,
+      toolCall: { name: tool.name, args: tool.parameters },
+      workspacePaths: [workspace],
+    },
+  };
+}
+
+export function writeFileStep(path: string, content: string): AgyStep {
+  return { type: "write_file", path, content };
+}
+
 export const AWAIT_SIGNAL: AgyStep = { type: "await_signal" };
 export const HANG: AgyStep = { type: "hang" };
 
 export function exitWith(code: number): AgyStep {
   return { type: "exit", code };
 }
+
+export function exitNotice(code: number): AgyStep {
+  return { type: "exit_notice", code };
+}
+
+export const AWAIT_RELEASE: AgyStep = { type: "await_release" };
+export const CLOSE_STREAMS: AgyStep = { type: "close_streams" };
 
 export function initStep(conversationId: string): AgyStep {
   return out({
@@ -419,6 +475,7 @@ function settingsOf(args: readonly string[]): Json | null {
 async function runSteps(
   contained: FakeAgyContained,
   steps: readonly AgyStep[],
+  env: Readonly<Record<string, string>> = {},
 ): Promise<void> {
   for (const step of steps) {
     if (contained.hasExited) {
@@ -445,8 +502,30 @@ async function runSteps(
       case "hang":
         await new Promise<never>(() => undefined);
         break;
+      case "hook":
+        await runHook({
+          readInput: () => Promise.resolve(JSON.stringify(step.payload)),
+          env,
+          write: (line) => {
+            contained.hookOutputs.push(line);
+          },
+        });
+        break;
+      case "write_file":
+        await mkdir(dirname(step.path), { recursive: true });
+        await writeFile(step.path, step.content);
+        break;
       case "exit":
         contained.exit(step.code);
+        return;
+      case "exit_notice":
+        contained.notifyExit(step.code);
+        break;
+      case "await_release":
+        await contained.released.promise;
+        break;
+      case "close_streams":
+        contained.closeStreams();
         return;
     }
   }
@@ -597,7 +676,9 @@ export class ScriptedAgyContainer implements ProcessContainer {
       if (steps === undefined) {
         throw new Error(`no script for the turn: ${line}`);
       }
-      chain = chain.then(() => runSteps(spawned.contained, steps));
+      chain = chain.then(() =>
+        runSteps(spawned.contained, steps, spawned.spec.env),
+      );
     });
   }
 }
