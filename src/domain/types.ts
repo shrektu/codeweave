@@ -25,6 +25,13 @@ export const EffectLevel = {
 } as const;
 export type EffectLevel = (typeof EffectLevel)[keyof typeof EffectLevel];
 
+export const TerminalStatus = {
+  running: "running",
+  exited: "exited",
+} as const;
+export type TerminalStatus =
+  (typeof TerminalStatus)[keyof typeof TerminalStatus];
+
 export const EdgeKind = {
   waitsFor: "waits_for",
   handsOffTo: "hands_off_to",

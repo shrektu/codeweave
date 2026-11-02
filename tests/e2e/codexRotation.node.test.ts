@@ -101,6 +101,7 @@ function recordingContainer(
 ): ProcessContainer {
   return {
     kind: inner.kind,
+    launch: (spec, launcher) => inner.launch(spec, launcher),
     async spawn(spec: SpawnSpec): Promise<Contained> {
       if (spec.runId.startsWith(PROBE_RUN_ID_PREFIX)) {
         return inner.spawn(spec);

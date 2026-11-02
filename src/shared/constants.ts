@@ -1,4 +1,14 @@
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
+
+export const TERMINAL_MIN_COLS = 2;
+
+export const TERMINAL_MAX_COLS = 1000;
+
+export const TERMINAL_MIN_ROWS = 1;
+
+export const TERMINAL_MAX_ROWS = 500;
+
+export const TERMINAL_INPUT_MAX_CHARS = 65_536;
 
 export const PORT_CHANNEL = "codeweave:port";
 

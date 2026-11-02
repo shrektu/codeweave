@@ -7,6 +7,11 @@ import {
   CONNECT_MESSAGE_TYPE,
   SHUTDOWN_DONE_MESSAGE_TYPE,
   SHUTDOWN_MESSAGE_TYPE,
+  TERMINAL_INPUT_MAX_CHARS,
+  TERMINAL_MAX_COLS,
+  TERMINAL_MAX_ROWS,
+  TERMINAL_MIN_COLS,
+  TERMINAL_MIN_ROWS,
 } from "./constants";
 import { VaultStatusSchema } from "./vault";
 import {
@@ -19,6 +24,7 @@ import {
   SettingsViewSchema,
   SnapshotSchema,
   SwitchLogEntryViewSchema,
+  TerminalViewSchema,
 } from "./views";
 
 export const IpcErrorCode = {
@@ -48,6 +54,16 @@ const NonEmptyString = z.string().min(1);
 const NonBlankString = z.string().refine((text) => text.trim().length > 0);
 const EmptyParamsSchema = z.strictObject({});
 const ApiKeySchema = z.string().min(MIN_SECRET_LENGTH);
+const TerminalColsSchema = z
+  .int()
+  .min(TERMINAL_MIN_COLS)
+  .max(TERMINAL_MAX_COLS);
+const TerminalRowsSchema = z
+  .int()
+  .min(TERMINAL_MIN_ROWS)
+  .max(TERMINAL_MAX_ROWS);
+const TerminalIdParamsSchema = z.strictObject({ id: NonEmptyString });
+const OkResultSchema = z.strictObject({ ok: z.literal(true) });
 
 const SettingsPatchSchema = z
   .strictObject({
@@ -57,6 +73,7 @@ const SettingsPatchSchema = z
     codexExecutable: z.string().nullable().optional(),
     agyExecutable: z.string().nullable().optional(),
     opencodeExecutable: z.string().nullable().optional(),
+    terminalShell: z.string().nullable().optional(),
   })
   .refine((patch) => Object.values(patch).some((value) => value !== undefined));
 
@@ -108,6 +125,26 @@ export const ParamsSchemas = {
   "settings/set": SettingsPatchSchema,
   "switchLog/list": EmptyParamsSchema,
   "flows/list": z.strictObject({ cwd: NonEmptyString }),
+  "terminal/open": z.strictObject({
+    cwd: NonEmptyString,
+    cols: TerminalColsSchema,
+    rows: TerminalRowsSchema,
+  }),
+  "terminal/input": z.strictObject({
+    id: NonEmptyString,
+    data: z.string().min(1).max(TERMINAL_INPUT_MAX_CHARS),
+  }),
+  "terminal/resize": z.strictObject({
+    id: NonEmptyString,
+    cols: TerminalColsSchema,
+    rows: TerminalRowsSchema,
+  }),
+  "terminal/ack": z.strictObject({
+    id: NonEmptyString,
+    chars: z.int().min(1),
+  }),
+  "terminal/detach": TerminalIdParamsSchema,
+  "terminal/close": TerminalIdParamsSchema,
 } as const;
 
 export type RequestMethod = keyof typeof ParamsSchemas;
@@ -150,6 +187,12 @@ export const RequestSchema = z.discriminatedUnion("method", [
   requestSchema("flows/list"),
   requestSchema("vault/status"),
   requestSchema("models/catalog"),
+  requestSchema("terminal/open"),
+  requestSchema("terminal/input"),
+  requestSchema("terminal/resize"),
+  requestSchema("terminal/ack"),
+  requestSchema("terminal/detach"),
+  requestSchema("terminal/close"),
 ]);
 export type IpcRequest = z.infer<typeof RequestSchema>;
 
@@ -184,6 +227,15 @@ const resultSchemaDefinitions = {
   "flows/list": FlowsListSchema,
   "vault/status": VaultStatusSchema,
   "models/catalog": ModelCatalogSchema,
+  "terminal/open": z.strictObject({
+    terminal: TerminalViewSchema,
+    replay: z.string(),
+  }),
+  "terminal/input": OkResultSchema,
+  "terminal/resize": OkResultSchema,
+  "terminal/ack": OkResultSchema,
+  "terminal/detach": OkResultSchema,
+  "terminal/close": z.strictObject({ closed: z.boolean() }),
 } as const;
 
 export type ResultMap = {
@@ -237,6 +289,16 @@ export const EventSchema = z.discriminatedUnion("event", [
     v: z.int(),
     event: z.literal("switchLog/appended"),
     payload: SwitchLogEntryViewSchema,
+  }),
+  z.strictObject({
+    v: z.int(),
+    event: z.literal("terminal/data"),
+    payload: z.strictObject({ id: NonEmptyString, data: z.string() }),
+  }),
+  z.strictObject({
+    v: z.int(),
+    event: z.literal("terminal/changed"),
+    payload: TerminalViewSchema.nullable(),
   }),
 ]);
 export type IpcEvent = z.infer<typeof EventSchema>;

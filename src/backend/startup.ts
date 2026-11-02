@@ -27,7 +27,10 @@ import type { BackendArgs } from "./args";
 import { createClaudeAcpAdapter } from "./claude/acpAdapter";
 import { createCodexAdapter } from "./codex/adapter";
 import { createCodexLimitProbe } from "./codex/probe";
-import type { ConnectionRegistry } from "./connections";
+import {
+  createConnectionRegistry,
+  type ConnectionRegistry,
+} from "./connections";
 import {
   AGENT_STOP_GRACE_MS,
   AGY_BINARY,
@@ -71,6 +74,12 @@ import {
   type SessionService,
 } from "./session";
 import { createJsonStore, type JsonStore } from "./storage";
+import { createPtyLauncher, type PtyLauncherFactory } from "./terminal/pty";
+import {
+  createTerminalService,
+  type TerminalService,
+} from "./terminal/service";
+import { createShellDetector } from "./terminal/shell";
 
 export interface BackendDeps {
   readonly args: BackendArgs;
@@ -91,10 +100,12 @@ export interface BackendDeps {
   ) => string;
   readonly inspectWorktree: (cwd: string) => Promise<WorktreeState>;
   readonly catalogProbeTimeoutMs?: number;
+  readonly ptyLauncher?: PtyLauncherFactory;
 }
 
 export interface Backend {
   readonly handlers: IpcHandlers;
+  readonly onConnectionClosed: () => void;
   shutdown(): Promise<void>;
 }
 
@@ -367,6 +378,29 @@ function createCatalog(
   });
 }
 
+function createTerminals(
+  deps: BackendDeps,
+  container: ProcessContainer | null,
+  store: JsonStore,
+): TerminalService {
+  return createTerminalService({
+    container,
+    launcher: deps.ptyLauncher ?? createPtyLauncher,
+    broadcast: deps.broadcast,
+    readShellSetting: async () => (await store.readSettings()).terminalShell,
+    detectShell: createShellDetector(deps.platform, deps.parentEnv),
+    platform: deps.platform,
+    parentEnv: deps.parentEnv,
+    newRunId: deps.newRunId,
+    schedule: (run, delayMs) => {
+      const timer = setTimeout(run, delayMs);
+      return () => {
+        clearTimeout(timer);
+      };
+    },
+  });
+}
+
 interface ExecutableSpec {
   readonly binary: string;
   readonly notFoundMessage: string;
@@ -418,6 +452,10 @@ export function createExecutableResolver(
   };
 }
 
+export function createBackendRegistry(backend: Backend): ConnectionRegistry {
+  return createConnectionRegistry(backend.handlers, backend.onConnectionClosed);
+}
+
 export async function startBackend(deps: BackendDeps): Promise<Backend> {
   const { userData } = deps.args;
   const store = createJsonStore(userData);
@@ -455,6 +493,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     hasKey: (accountId) => keyStore.hint(accountId) !== null,
     secrets: createSecretSource(keyStore),
   });
+  const terminals = createTerminals(deps, container, store);
   const handlers = createHandlers({
     store,
     keyStore,
@@ -465,11 +504,16 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     probes,
     catalog: createCatalog(deps, processes, store),
     containerStatus: status,
+    terminals,
   });
   probes.start();
   return {
     handlers,
+    onConnectionClosed: () => {
+      terminals.detachAll();
+    },
     shutdown: async () => {
+      await terminals.shutdown();
       await probes.dispose();
       await sessions.shutdown();
     },

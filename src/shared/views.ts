@@ -8,6 +8,7 @@ import {
   PermissionProfile,
   ProviderId,
   SwitchReason,
+  TerminalStatus,
 } from "../domain/types";
 
 import { SWITCH_LOG_SNAPSHOT_LIMIT } from "./constants";
@@ -196,8 +197,18 @@ export const SettingsViewSchema = z.strictObject({
   codexExecutable: z.string().nullable(),
   agyExecutable: z.string().nullable(),
   opencodeExecutable: z.string().nullable(),
+  terminalShell: z.string().nullable(),
 });
 export type SettingsView = z.infer<typeof SettingsViewSchema>;
+
+export const TerminalViewSchema = z.strictObject({
+  id: NonEmptyString,
+  cwd: NonEmptyString,
+  shell: NonEmptyString,
+  status: z.enum(TerminalStatus),
+  exitCode: z.int().nullable(),
+});
+export type TerminalView = z.infer<typeof TerminalViewSchema>;
 
 export const CatalogModelSchema = z.strictObject({
   providerId: z.enum(ApiProviderId),
@@ -237,5 +248,6 @@ export const SnapshotSchema = z.strictObject({
     available: z.boolean(),
     message: z.string().nullable(),
   }),
+  terminal: TerminalViewSchema.nullable(),
 });
 export type Snapshot = z.infer<typeof SnapshotSchema>;

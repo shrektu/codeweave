@@ -10,7 +10,12 @@ import { EMPTY_POLL_INTERVAL_MS, STOP_CONFIRM_TIMEOUT_MS } from "../constants";
 import {
   StopFailureReason,
   type Contained,
+  type ContainerOps,
   type ExitListener,
+  type Launcher,
+  type LaunchedProcess,
+  type ProcessContainer,
+  type SpawnSpec,
   type StopResult,
 } from "./container";
 
@@ -20,9 +25,8 @@ export type SpawnChild = (
   options: SpawnOptionsWithoutStdio,
 ) => Promise<ChildProcessWithoutNullStreams>;
 
-export interface ContainerOps {
-  members(): Promise<readonly number[]>;
-  killMembers(): Promise<void>;
+export interface ChildHandle extends LaunchedProcess {
+  readonly child: ChildProcessWithoutNullStreams;
 }
 
 export const spawnChild: SpawnChild = (command, args, options) =>
@@ -47,7 +51,29 @@ function notEmpty(survivors: readonly number[]): StopResult {
   };
 }
 
-async function killQuietly(ops: ContainerOps): Promise<void> {
+export function childLauncher(spawn: SpawnChild): Launcher<ChildHandle> {
+  return async (command, args, options) => {
+    const child = await spawn(command, args, {
+      ...options,
+      env: { ...options.env },
+    });
+    return { child, pid: child.pid ?? 0, hasExited: () => hasExited(child) };
+  };
+}
+
+export async function spawnContained(
+  container: ProcessContainer,
+  spec: SpawnSpec,
+  spawn: SpawnChild,
+): Promise<Contained> {
+  const { process: handle, ops } = await container.launch(
+    spec,
+    childLauncher(spawn),
+  );
+  return createContained(handle.child, spec.runId, ops);
+}
+
+export async function killQuietly(ops: ContainerOps): Promise<void> {
   try {
     await ops.killMembers();
   } catch (error) {
@@ -55,7 +81,7 @@ async function killQuietly(ops: ContainerOps): Promise<void> {
   }
 }
 
-async function confirmEmpty(ops: ContainerOps): Promise<StopResult> {
+export async function confirmEmpty(ops: ContainerOps): Promise<StopResult> {
   const deadline = Date.now() + STOP_CONFIRM_TIMEOUT_MS;
   try {
     let survivors = await ops.members();

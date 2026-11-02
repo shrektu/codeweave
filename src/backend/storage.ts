@@ -58,6 +58,7 @@ export const SettingsFileSchema = z.object({
   codexExecutable: z.string().nullable().default(null),
   agyExecutable: z.string().nullable().default(null),
   opencodeExecutable: z.string().nullable().default(null),
+  terminalShell: z.string().nullable().default(null),
 });
 
 const SwitchLogEntrySchema = z.object({
@@ -101,6 +102,7 @@ const DEFAULT_SETTINGS: SettingsFile = {
   codexExecutable: null,
   agyExecutable: null,
   opencodeExecutable: null,
+  terminalShell: null,
 };
 
 export class StorageCorruptError extends Error {

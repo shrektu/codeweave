@@ -58,8 +58,12 @@ function settingsClient(): FakeIpcClient {
         patch.agyExecutable === undefined
           ? current.agyExecutable
           : patch.agyExecutable,
+      terminalShell:
+        patch.terminalShell === undefined
+          ? current.terminalShell
+          : patch.terminalShell,
     };
-    client.emit({ v: 5, event: "settings/changed", payload: current });
+    client.emit({ v: 6, event: "settings/changed", payload: current });
     return current;
   });
   return client;

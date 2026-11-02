@@ -49,6 +49,7 @@ function toView(settings: SettingsFile): SettingsView {
     codexExecutable: settings.codexExecutable,
     agyExecutable: settings.agyExecutable,
     opencodeExecutable: settings.opencodeExecutable,
+    terminalShell: settings.terminalShell,
   };
 }
 
@@ -85,6 +86,10 @@ export function createSettingsService({
             patch.opencodeExecutable === undefined
               ? current.opencodeExecutable
               : patch.opencodeExecutable,
+          terminalShell:
+            patch.terminalShell === undefined
+              ? current.terminalShell
+              : patch.terminalShell,
         };
         await store.writeSettings(next);
         const view = toView(next);

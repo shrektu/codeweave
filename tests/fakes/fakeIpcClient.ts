@@ -211,6 +211,7 @@ export function makeSettings(
     codexExecutable: null,
     agyExecutable: null,
     opencodeExecutable: null,
+    terminalShell: null,
     ...overrides,
   };
 }
@@ -297,6 +298,7 @@ export function makeSnapshot(overrides: Partial<Snapshot> = {}): Snapshot {
     settings: makeSettings(),
     switchLog: [],
     container: { available: true, message: null },
+    terminal: null,
     ...overrides,
   };
 }

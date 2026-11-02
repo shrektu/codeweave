@@ -23,15 +23,14 @@ import { newInstanceId } from "../instance";
 import {
   ContainerKind,
   type Contained,
+  type ContainerOps,
+  type Launched,
+  type LaunchedProcess,
+  type Launcher,
   type ProcessContainer,
   type SpawnSpec,
 } from "./container";
-import {
-  createContained,
-  spawnChild,
-  type ContainerOps,
-  type SpawnChild,
-} from "./contained";
+import { spawnChild, spawnContained, type SpawnChild } from "./contained";
 
 export interface SystemdScopeDeps {
   readonly exec: ExecText;
@@ -100,20 +99,26 @@ class SystemdScopeContainer implements ProcessContainer {
     this.deps = deps;
   }
 
-  async spawn(spec: SpawnSpec): Promise<Contained> {
+  spawn(spec: SpawnSpec): Promise<Contained> {
+    return spawnContained(this, spec, this.deps.spawnChild);
+  }
+
+  async launch<T extends LaunchedProcess>(
+    spec: SpawnSpec,
+    launcher: Launcher<T>,
+  ): Promise<Launched<T>> {
     if (!RUN_ID_PATTERN.test(spec.runId)) {
       throw new RangeError(`Invalid run id: ${spec.runId}`);
     }
-    const child = await this.deps.spawnChild(
+    const launched = await launcher(
       SYSTEMD_RUN_BINARY,
       buildSystemdRunArgs(spec, this.deps.instanceId),
-      { env: { ...spec.env }, cwd: spec.cwd },
+      { env: spec.env, cwd: spec.cwd },
     );
-    return createContained(
-      child,
-      spec.runId,
-      this.opsFor(unitFor(this.deps.instanceId, spec.runId)),
-    );
+    return {
+      process: launched,
+      ops: this.opsFor(unitFor(this.deps.instanceId, spec.runId)),
+    };
   }
 
   async sweepOrphans(staleInstanceIds: readonly string[]): Promise<number> {

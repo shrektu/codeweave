@@ -230,6 +230,7 @@ describe("codex limit probe launch failures", () => {
     Object.assign(inner.config, OK_CONFIG);
     const container: ProcessContainer = {
       kind: inner.kind,
+      launch: inner.launch,
       spawn: async (spec) => ({
         ...(await inner.spawn(spec)),
         stop: () => Promise.reject(new Error("kill failed")),

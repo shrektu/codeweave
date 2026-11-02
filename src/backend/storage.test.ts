@@ -34,6 +34,7 @@ describe("json store", () => {
       codexExecutable: null,
       agyExecutable: null,
       opencodeExecutable: null,
+      terminalShell: null,
     });
   });
 
@@ -48,6 +49,7 @@ describe("json store", () => {
       codexExecutable: "/usr/bin/codex",
       agyExecutable: "/usr/bin/agy",
       opencodeExecutable: "/usr/bin/opencode",
+      terminalShell: "/bin/zsh",
     } as const;
 
     await store.writeAccounts([account]);
@@ -212,6 +214,7 @@ describe("json store writes", () => {
         codexExecutable: null,
         agyExecutable: null,
         opencodeExecutable: null,
+        terminalShell: null,
       }),
     ).rejects.toBeInstanceOf(StorageCorruptError);
 

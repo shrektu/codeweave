@@ -63,16 +63,23 @@ function claudeVariables(input: AgentEnvInput): Record<string, string> {
   };
 }
 
-export function buildAgentEnv(input: AgentEnvInput): Record<string, string> {
-  if (input.overrides !== undefined && !input.testMode) {
-    throw new AgentEnvOverridesRejectedError();
-  }
+export function inheritedEnv(
+  parent: NodeJS.ProcessEnv,
+): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(input.parent)) {
+  for (const [key, value] of Object.entries(parent)) {
     if (value !== undefined && !isDenied(key)) {
       env[key] = value;
     }
   }
+  return env;
+}
+
+export function buildAgentEnv(input: AgentEnvInput): Record<string, string> {
+  if (input.overrides !== undefined && !input.testMode) {
+    throw new AgentEnvOverridesRejectedError();
+  }
+  const env = inheritedEnv(input.parent);
   if (input.account.provider === ProviderId.claude) {
     Object.assign(env, claudeVariables(input));
   }

@@ -1,5 +1,6 @@
 import type { LimitProbeService } from "../../src/backend/limitProbe";
 import type { SessionService } from "../../src/backend/session";
+import type { TerminalService } from "../../src/backend/terminal/service";
 
 export function fakeSessions(
   overrides: Partial<SessionService> = {},
@@ -14,6 +15,24 @@ export function fakeSessions(
     runtimeOf: () => ({ status: "ready" }),
     onRuntimeChanged: () => () => undefined,
     setAccounts: () => undefined,
+    shutdown: () => Promise.resolve(),
+    ...overrides,
+  };
+}
+
+export function fakeTerminals(
+  overrides: Partial<TerminalService> = {},
+): TerminalService {
+  return {
+    view: () => null,
+    open: () => Promise.reject(new Error("not available in this test")),
+    input: () => undefined,
+    resize: () => undefined,
+    ack: () => undefined,
+    detach: () => undefined,
+    close: () => Promise.resolve({ closed: false }),
+    retarget: () => Promise.resolve(),
+    detachAll: () => undefined,
     shutdown: () => Promise.resolve(),
     ...overrides,
   };

@@ -11,6 +11,7 @@ import type { SecretVault } from "./secrets/vault";
 import type { ContainerStatus, SessionService } from "./session";
 import { createSettingsService } from "./settingsService";
 import type { JsonStore } from "./storage";
+import type { TerminalService } from "./terminal/service";
 
 export interface HandlerDeps {
   store: JsonStore;
@@ -22,6 +23,7 @@ export interface HandlerDeps {
   probes: LimitProbeService;
   catalog: ModelCatalogService;
   containerStatus: ContainerStatus;
+  terminals: TerminalService;
 }
 
 function publishAccounts(accounts: AccountsService): void {
@@ -40,6 +42,7 @@ export function createHandlers({
   probes,
   catalog,
   containerStatus,
+  terminals,
 }: HandlerDeps): IpcHandlers {
   const accounts = createAccountsService({
     store,
@@ -75,8 +78,15 @@ export function createHandlers({
       settings: await settings.get(),
       switchLog: await store.readSwitchLog(SWITCH_LOG_SNAPSHOT_LIMIT),
       container: { ...containerStatus },
+      terminal: terminals.view(),
     }),
-    "session/start": (params) => sessions.start(params),
+    "session/start": async (params) => {
+      const view = await sessions.start(params);
+      await terminals.retarget(view.cwd).catch((error: unknown) => {
+        console.error("terminal retarget failed", error);
+      });
+      return view;
+    },
     "session/prompt": async ({ text }) => {
       await sessions.prompt(text);
       return { accepted: true };
@@ -105,5 +115,23 @@ export function createHandlers({
       entries: await store.readSwitchLog(SWITCH_LOG_SNAPSHOT_LIMIT),
     }),
     "flows/list": ({ cwd }) => listFlows(cwd),
+    "terminal/open": (params) => terminals.open(params),
+    "terminal/input": ({ id, data }) => {
+      terminals.input(id, data);
+      return { ok: true };
+    },
+    "terminal/resize": ({ id, cols, rows }) => {
+      terminals.resize(id, cols, rows);
+      return { ok: true };
+    },
+    "terminal/ack": ({ id, chars }) => {
+      terminals.ack(id, chars);
+      return { ok: true };
+    },
+    "terminal/detach": ({ id }) => {
+      terminals.detach(id);
+      return { ok: true };
+    },
+    "terminal/close": ({ id }) => terminals.close(id),
   };
 }

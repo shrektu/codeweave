@@ -77,6 +77,14 @@ it("agy_hook_entry_is_a_main_bundle_input_and_asar_unpacked", () => {
   );
 });
 
+it("node_pty_native_module_is_asar_unpacked", () => {
+  const config = parse(
+    readFileSync(join(REPO_ROOT, "electron-builder.yml"), "utf8"),
+  ) as BuilderConfig;
+
+  expect(config.asarUnpack).toContain("node_modules/node-pty/**");
+});
+
 it("adapter_runtime_closure_is_asar_unpacked", () => {
   const config = parse(
     readFileSync(join(REPO_ROOT, "electron-builder.yml"), "utf8"),

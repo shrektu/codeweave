@@ -72,8 +72,13 @@ export class FakeContained implements Contained {
   }
 }
 
+export function unsupportedLaunch(): Promise<never> {
+  return Promise.reject(new Error("launch is not scripted in this fake"));
+}
+
 export class FakeContainer implements ProcessContainer {
   readonly kind = "env-marker";
+  readonly launch = unsupportedLaunch;
   readonly spawned: FakeContained[] = [];
 
   private readonly stopResults: readonly StopResult[];

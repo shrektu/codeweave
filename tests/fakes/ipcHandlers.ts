@@ -27,6 +27,12 @@ export function fakeHandlers(
     "settings/set": unavailable,
     "switchLog/list": unavailable,
     "flows/list": unavailable,
+    "terminal/open": unavailable,
+    "terminal/input": unavailable,
+    "terminal/resize": unavailable,
+    "terminal/ack": unavailable,
+    "terminal/detach": unavailable,
+    "terminal/close": unavailable,
     ...overrides,
   };
 }

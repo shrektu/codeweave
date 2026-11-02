@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 
 import { PROCESS_TEST_TIMEOUT_MS } from "../../../tests/fakes/processHelpers";
 
-import { createContained, spawnChild, type ContainerOps } from "./contained";
+import { createContained, spawnChild } from "./contained";
+import type { ContainerOps } from "./container";
 
 const LATE_PID = 4_000_000;
 const GRACE_MS = 100;

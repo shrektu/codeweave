@@ -27,7 +27,11 @@ import {
   type Account,
 } from "../../src/domain/types";
 
-import { FakeContainer, type FakeContained } from "./fakeContainer";
+import {
+  FakeContainer,
+  unsupportedLaunch,
+  type FakeContained,
+} from "./fakeContainer";
 
 export type Json = Readonly<Record<string, unknown>>;
 
@@ -514,6 +518,7 @@ export class FakeCodexAppServer {
 
 export class ScriptedCodexContainer implements ProcessContainer {
   readonly kind = ContainerKind.envMarker;
+  readonly launch = unsupportedLaunch;
   readonly specs: SpawnSpec[] = [];
   readonly servers: FakeCodexAppServer[] = [];
   readonly contained: FakeContained[] = [];
