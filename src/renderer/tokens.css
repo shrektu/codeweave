@@ -16,6 +16,10 @@
   --bad: #ff5c7a;
   --diff-add: rgba(61, 224, 176, 0.14);
   --diff-del: rgba(255, 92, 122, 0.14);
+  --terminal-bg: var(--panel-solid);
+  --terminal-fg: var(--text);
+  --terminal-cursor: var(--accent);
+  --terminal-selection: rgba(92, 225, 255, 0.28);
   --mono: "JetBrains Mono", ui-monospace, monospace;
   --sans: "Inter", system-ui, sans-serif;
   --grid-size: 48px;

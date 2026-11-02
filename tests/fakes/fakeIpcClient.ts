@@ -8,6 +8,7 @@ import {
   PermissionProfile,
   ProviderId,
   SwitchReason,
+  TerminalStatus,
 } from "../../src/domain/types";
 import type { IpcClient } from "../../src/renderer/ipc";
 import { ServicesContext } from "../../src/renderer/services";
@@ -37,6 +38,7 @@ import type {
   SettingsView,
   Snapshot,
   SwitchLogEntryView,
+  TerminalView,
   ToolCallView,
 } from "../../src/shared/views";
 import type { VaultStatus } from "../../src/shared/vault";
@@ -212,6 +214,19 @@ export function makeSettings(
     agyExecutable: null,
     opencodeExecutable: null,
     terminalShell: null,
+    ...overrides,
+  };
+}
+
+export function makeTerminal(
+  overrides: Partial<TerminalView> = {},
+): TerminalView {
+  return {
+    id: "term-1",
+    cwd: "/home/user/project",
+    shell: "/bin/bash",
+    status: TerminalStatus.running,
+    exitCode: null,
     ...overrides,
   };
 }

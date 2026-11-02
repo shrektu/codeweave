@@ -37,6 +37,23 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       - run: pnpm run pack
+      - name: Packed app terminal test (Linux)
+        if: runner.os == 'Linux'
+        env:
+          CODEWEAVE_E2E_EXECUTABLE: ${{ github.workspace }}/release/linux-unpacked/codeweave
+        run: xvfb-run --auto-servernum pnpm exec playwright test tests/e2e/terminal.spec.ts
+      - name: Packed app terminal test (Windows)
+        if: runner.os == 'Windows'
+        env:
+          CODEWEAVE_E2E_EXECUTABLE: ${{ github.workspace }}\release\win-unpacked\Codeweave.exe
+        run: pnpm exec playwright test tests/e2e/terminal.spec.ts
+      - name: Packed app terminal test (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app_dir="$(ls -d release/mac*/Codeweave.app | head -n 1)"
+          CODEWEAVE_E2E_EXECUTABLE="$PWD/$app_dir/Contents/MacOS/Codeweave" \
+            pnpm exec playwright test tests/e2e/terminal.spec.ts
       - name: End-to-end tests (Linux)
         if: runner.os == 'Linux'
         run: xvfb-run --auto-servernum pnpm e2e

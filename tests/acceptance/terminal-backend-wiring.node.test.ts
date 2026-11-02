@@ -1,6 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
 
-import { TERMINAL_HIGH_WATERMARK_CHARS } from "../../src/backend/constants";
+import {
+  TERMINAL_HIGH_WATERMARK_CHARS,
+  TERMINAL_STOP_SIGNAL,
+} from "../../src/backend/constants";
 import {
   createBackendTerminalRig,
   type BackendTerminalRig,
@@ -10,6 +13,8 @@ import {
 
 const COLS = 100;
 const ROWS = 30;
+const EXPECTED_STOP_SIGNAL =
+  process.platform === "win32" ? undefined : TERMINAL_STOP_SIGNAL;
 const rigs: BackendTerminalRig[] = [];
 
 afterEach(async () => {
@@ -31,7 +36,7 @@ async function openTerminal(
     cols: COLS,
     rows: ROWS,
   });
-  expect(response.ok).toBe(true);
+  expect(response).toMatchObject({ ok: true });
   const spawn = rig.spawns[0];
   if (spawn === undefined) {
     throw new Error("the terminal did not spawn a shell");
@@ -92,7 +97,7 @@ it("backend_shutdown_stops_terminal", async () => {
 
   await rig.backend.shutdown();
 
-  expect(pty.kills).toEqual(["SIGHUP"]);
+  expect(pty.kills).toEqual([EXPECTED_STOP_SIGNAL]);
   expect(pty.hasExited()).toBe(true);
   await vi.waitFor(() => {
     expect(client.events.at(-1)).toMatchObject({

@@ -333,6 +333,19 @@ export interface BackendTerminalRig {
 }
 
 const BACKEND_RIG_SHELL = "/bin/sh";
+const WINDOWS_SHELL_ENV_KEYS = ["SystemRoot", "ComSpec"] as const;
+
+function rigParentEnv(platform: NodeJS.Platform): NodeJS.ProcessEnv {
+  if (platform !== "win32") {
+    return { PATH: "/usr/bin", SHELL: BACKEND_RIG_SHELL };
+  }
+  return Object.fromEntries(
+    WINDOWS_SHELL_ENV_KEYS.flatMap((key) => {
+      const value = process.env[key];
+      return value === undefined ? [] : [[key, value]];
+    }),
+  );
+}
 
 function connectClient(
   registry: ConnectionRegistry,
@@ -387,9 +400,9 @@ export async function createBackendTerminalRig(): Promise<BackendTerminalRig> {
     createContainer: () => Promise.resolve(container),
     execPath: "/usr/bin/node",
     adapterEntry: "/opt/adapter/entry.js",
-    parentEnv: { PATH: "/usr/bin", SHELL: BACKEND_RIG_SHELL },
+    parentEnv: rigParentEnv(process.platform),
     homeDir: "/home/jane",
-    platform: "linux",
+    platform: process.platform,
     now: () => 0,
     schedule: () => () => undefined,
     newRunId: () => `run-${String(spawns.length + 1)}`,

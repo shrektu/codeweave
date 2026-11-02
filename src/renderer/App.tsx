@@ -10,6 +10,7 @@ import { SessionStream } from "./components/SessionStream";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar } from "./components/Sidebar";
 import { SwitchLog } from "./components/SwitchLog";
+import { TerminalDock } from "./components/TerminalDock";
 import {
   FPS_MEASURE_DURATION_MS,
   chooseEffectLevel,
@@ -17,7 +18,9 @@ import {
 } from "./effects";
 import { errorMessage } from "./errorMessage";
 import { useApp } from "./services";
+import { useTerminalDock } from "./terminal/useTerminalDock";
 import { useBackendStatus, type BackendStatus } from "./useBackendStatus";
+import { useElementSize } from "./useElementSize";
 
 type OpenDialog = "accounts" | "settings" | null;
 type CentreTab = "session" | "flow";
@@ -193,6 +196,8 @@ export function App(): JSX.Element {
   const [openDialog, setOpenDialog] = useState<OpenDialog>(null);
   const [centreTab, setCentreTab] = useState<CentreTab>("session");
   const backend = useBackendStatus(client);
+  const dock = useTerminalDock();
+  const [columnRef, columnSize] = useElementSize<HTMLDivElement>();
   const effectSetting =
     state.snapshot?.settings.effectLevel ?? EffectSetting.auto;
 
@@ -244,6 +249,15 @@ export function App(): JSX.Element {
         <button
           type="button"
           className="pill"
+          aria-pressed={dock.open}
+          title="Toggle terminal (Ctrl+`)"
+          onClick={dock.toggle}
+        >
+          Terminal
+        </button>
+        <button
+          type="button"
+          className="pill"
           onClick={() => {
             setOpenDialog("accounts");
           }}
@@ -265,7 +279,7 @@ export function App(): JSX.Element {
           setOpenDialog("accounts");
         }}
       />
-      <div className="centre-column">
+      <div className="centre-column" ref={columnRef}>
         <div role="tablist" aria-label="Views" className="tabs">
           {CENTRE_TABS.map((tab) => (
             <button
@@ -296,6 +310,13 @@ export function App(): JSX.Element {
             <FlowTab onOpenSession={openSessionTab} />
           )}
         </div>
+        {dock.open && (
+          <TerminalDock
+            level={level}
+            columnHeight={columnSize.height}
+            onHide={dock.hide}
+          />
+        )}
       </div>
       <div className="side-column">
         <LimitsPanel />
