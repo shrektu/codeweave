@@ -56,7 +56,7 @@ interface AbortWatch {
   readonly release: () => void;
 }
 
-function watchAbort(signal: AbortSignal): AbortWatch {
+export function watchAbort(signal: AbortSignal): AbortWatch {
   const aborted = Promise.withResolvers<never>();
   const onAbort = (): void => {
     aborted.reject(new ProbeAbortedError());

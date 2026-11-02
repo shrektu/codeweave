@@ -236,6 +236,7 @@ it("legacy_storage_files_load_unchanged", async () => {
     effectLevel: "low",
     claudeExecutable: null,
     codexExecutable: null,
+    agyExecutable: null,
     opencodeExecutable: null,
   });
 });

@@ -5,16 +5,19 @@ import type { AccountView, LimitView } from "../shared/views";
 export type SelectableProvider =
   | typeof ProviderId.claude
   | typeof ProviderId.codex
+  | typeof ProviderId.gemini
   | typeof ProviderId.opencode;
 
 export const PROVIDER_LABELS: Readonly<Record<SelectableProvider, string>> = {
   [ProviderId.claude]: "Claude",
   [ProviderId.codex]: "Codex",
+  [ProviderId.gemini]: "Gemini",
   [ProviderId.opencode]: "OpenCode (API key)",
 };
 export const PROVIDER_IDS: readonly SelectableProvider[] = [
   ProviderId.claude,
   ProviderId.codex,
+  ProviderId.gemini,
   ProviderId.opencode,
 ];
 

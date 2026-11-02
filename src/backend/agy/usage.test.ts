@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -24,6 +26,7 @@ const FIVE_HOUR_RESET = 1_793_364_876;
 const WEEKLY_RESET = 1_793_614_882;
 const TIMEOUT_MS = 60;
 const GRACE_MS = 5;
+const CONFIG_DIR = "/home/jane/accounts/gemini-1";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -190,7 +193,7 @@ function depsFor(
   return {
     container,
     executable: "/opt/agy",
-    configDir: "/home/jane/accounts/gemini-1",
+    configDir: CONFIG_DIR,
     cwd: "/work/repo",
     env: { PATH: "/usr/bin" },
     runId: "probe-1",
@@ -214,7 +217,7 @@ describe("agy usage probe", () => {
         "/usage",
         "--output-format",
         "json",
-        "--gemini_dir=/home/jane/accounts/gemini-1",
+        `--gemini_dir=${resolve(CONFIG_DIR)}`,
       ],
       cwd: "/work/repo",
       runId: "probe-1",
@@ -281,6 +284,36 @@ describe("agy usage probe failures", () => {
     expect(await probeAgyUsage(depsFor(container))).toEqual({
       kind: "unstopped",
     });
+  });
+
+  it("probe_aborts_on_signal", async () => {
+    const container = new ScriptedAgyContainer();
+    container.scriptUsage({ kind: "hang" });
+    const controller = new AbortController();
+    const probing = probeAgyUsage(
+      depsFor(container, { timeoutMs: 10_000, signal: controller.signal }),
+    );
+    await vi.waitFor(() => {
+      expect(container.spawns).toHaveLength(1);
+    });
+
+    controller.abort();
+
+    expect(await settlesWithin(probing, 2000)).toBe(true);
+    expect(await probing).toEqual({ kind: "failed" });
+    expect(container.runningCount()).toBe(0);
+    expect(container.spawns[0]?.contained.stopCalls).toEqual([GRACE_MS]);
+  });
+
+  it("probe_skips_spawn_when_aborted", async () => {
+    const container = new ScriptedAgyContainer();
+
+    const result = await probeAgyUsage(
+      depsFor(container, { signal: AbortSignal.abort() }),
+    );
+
+    expect(result).toEqual({ kind: "failed" });
+    expect(container.spawns).toHaveLength(0);
   });
 
   it("a_spawn_failure_is_failed", async () => {

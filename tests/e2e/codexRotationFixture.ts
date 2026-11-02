@@ -141,6 +141,7 @@ export async function createCodexRotationWorkspace(
       effectLevel: EffectLevel.auto,
       claudeExecutable: null,
       codexExecutable: null,
+      agyExecutable: null,
       opencodeExecutable: null,
     });
     return { root, userData, repo, accountA, accountB, dispose };

@@ -95,14 +95,38 @@ describe("createExecutableResolver", () => {
     );
   });
 
-  it("unsupported_provider_is_unavailable", async () => {
-    const dir = await binDirWith("gemini");
+  it("resolves_agy_binary_from_path_for_gemini", async () => {
+    const dir = await binDirWith("agy");
+    const resolve = createExecutableResolver(
+      hostResolverEnv(dir),
+      process.platform,
+    );
+
+    expect(resolve(ProviderId.gemini, null)).toBe(hostExecutable(dir, "agy"));
+  });
+
+  it("agy_executable_null_falls_back_to_agy", async () => {
+    const dir = await binDirWith("agy");
+    const configured = await binDirWith("custom-agy");
+    const resolve = createExecutableResolver(
+      hostResolverEnv(dir),
+      process.platform,
+    );
+
+    expect(
+      resolve(ProviderId.gemini, hostExecutable(configured, "custom-agy")),
+    ).toBe(hostExecutable(configured, "custom-agy"));
+    expect(resolve(ProviderId.gemini, null)).toBe(hostExecutable(dir, "agy"));
+  });
+
+  it("missing_agy_binary_is_unavailable", async () => {
+    const dir = await binDirWith("unrelated");
     const resolve = createExecutableResolver({ PATH: dir }, "linux");
 
     expect(() => resolve(ProviderId.gemini, null)).toThrow(
       expect.objectContaining({
         code: IpcErrorCode.UNAVAILABLE,
-        message: "Provider gemini is not supported",
+        message: "The agy executable was not found",
       }),
     );
   });

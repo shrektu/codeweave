@@ -36,6 +36,11 @@ import {
   type FakeAcpAgent,
 } from "./fakeAcpAgent";
 import {
+  AGY_RIG_EXECUTABLE,
+  ScriptedAgyContainer,
+  type UsageScript,
+} from "./fakeAgy";
+import {
   CODEX_RIG_EXECUTABLE,
   ScriptedCodexContainer,
   type FakeCodexConfig,
@@ -53,6 +58,7 @@ export const RIG_NOW_MS = 1_700_000_000_000;
 export const RIG_NOW_SECONDS = 1_700_000_000;
 export const RIG_CLAUDE_PATH = "/usr/bin/claude";
 export const RIG_CODEX_PATH = CODEX_RIG_EXECUTABLE;
+export const RIG_AGY_PATH = AGY_RIG_EXECUTABLE;
 export const RIG_OPENCODE_PATH = OPENCODE_RIG_EXECUTABLE;
 export const RIG_OPENCODE_ALT_PATH = "/opt/other/opencode";
 
@@ -105,6 +111,8 @@ export interface BackendRigOptions {
   readonly platform?: NodeJS.Platform;
   readonly worktreeGate?: Promise<void>;
   readonly resolveExecutable?: BackendDeps["resolveExecutable"];
+  readonly agyUsage?: readonly UsageScript[];
+  readonly agyExecutables?: readonly string[];
   readonly probeConfig?: FakeCodexConfig;
   readonly probeConfigByHome?: Readonly<Record<string, FakeCodexConfig>>;
   readonly now?: () => number;
@@ -133,6 +141,7 @@ export interface BackendRig {
   readonly container: ScriptedAcpContainer;
   readonly codexContainer: ScriptedCodexContainer;
   readonly opencodeContainer: ScriptedOpencodeContainer;
+  readonly agyContainer: ScriptedAgyContainer;
   readonly probeContainer: ScriptedCodexContainer;
   readonly probeTasks: ScheduledTask[];
   readonly probeStats: ProbeStats;
@@ -195,10 +204,21 @@ async function spawnProbe(
   };
 }
 
+function isAgyCommand(
+  spec: SpawnSpec,
+  agyCommands: readonly string[],
+): boolean {
+  return spec.command === RIG_AGY_PATH || agyCommands.includes(spec.command);
+}
+
 function targetOf(
   spec: SpawnSpec,
-  containers: Pick<AgentContainers, "claude" | "codex" | "opencode">,
+  containers: Pick<AgentContainers, "claude" | "codex" | "opencode" | "agy">,
+  agyCommands: readonly string[],
 ): ProcessContainer {
+  if (isAgyCommand(spec, agyCommands)) {
+    return containers.agy;
+  }
   switch (spec.command) {
     case RIG_CODEX_PATH:
       return containers.codex;
@@ -212,18 +232,21 @@ function targetOf(
 
 function recordingContainer(
   claude: ScriptedAcpContainer,
-  others: Pick<AgentContainers, "codex" | "opencode">,
+  others: Pick<AgentContainers, "codex" | "opencode" | "agy">,
   probe: { container: ScriptedCodexContainer; stats: ProbeStats },
   rig: Pick<BackendRig, "order" | "sweeps" | "contained">,
+  agyCommands: readonly string[],
 ): ProcessContainer {
   return {
     kind: claude.kind,
     async spawn(spec: SpawnSpec): Promise<Contained> {
       if (spec.runId.startsWith(PROBE_RUN_ID_PREFIX)) {
-        return spawnProbe(probe.container, probe.stats, spec);
+        return isAgyCommand(spec, agyCommands)
+          ? others.agy.spawn(spec)
+          : spawnProbe(probe.container, probe.stats, spec);
       }
       rig.order.push(`spawn:${spec.runId}`);
-      const target = targetOf(spec, { claude, ...others });
+      const target = targetOf(spec, { claude, ...others }, agyCommands);
       const contained = await target.spawn(spec);
       rig.contained.push(contained);
       return {
@@ -286,6 +309,7 @@ interface AgentContainers {
   readonly claude: ScriptedAcpContainer;
   readonly codex: ScriptedCodexContainer;
   readonly opencode: ScriptedOpencodeContainer;
+  readonly agy: ScriptedAgyContainer;
   readonly probe: ScriptedCodexContainer;
 }
 
@@ -311,6 +335,7 @@ function rigDeps(
               containers,
               { container: containers.probe, stats: log.probeStats },
               log,
+              options.agyExecutables ?? [],
             ),
           )
         : Promise.reject(options.containerError);
@@ -334,6 +359,8 @@ function rigDeps(
             return RIG_CODEX_PATH;
           case ProviderId.opencode:
             return RIG_OPENCODE_PATH;
+          case ProviderId.gemini:
+            return RIG_AGY_PATH;
           default:
             return RIG_CLAUDE_PATH;
         }
@@ -359,6 +386,10 @@ export async function createBackendRig(
   const codexContainer = new ScriptedCodexContainer();
   const opencodeContainer = new ScriptedOpencodeContainer([]);
   Object.assign(opencodeContainer.config, options.opencodeConfig);
+  const agyContainer = new ScriptedAgyContainer();
+  for (const script of options.agyUsage ?? []) {
+    agyContainer.scriptUsage(script);
+  }
   const probeContainer = new ScriptedCodexContainer(options.probeStopResults);
   for (const [home, results] of Object.entries(
     options.probeStopResultsByHome ?? {},
@@ -396,6 +427,7 @@ export async function createBackendRig(
         claude: container,
         codex: codexContainer,
         opencode: opencodeContainer,
+        agy: agyContainer,
         probe: probeContainer,
       },
       {
@@ -417,6 +449,7 @@ export async function createBackendRig(
     container,
     codexContainer,
     opencodeContainer,
+    agyContainer,
     probeContainer,
     probeStats,
     probeTasks,

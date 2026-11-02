@@ -1,4 +1,5 @@
 import { RATE_LIMIT_STATUS_REJECTED } from "../domain/constants";
+import type { AgentEvent } from "../domain/events";
 import {
   createRateLimitDetector,
   type LimitSnapshot,
@@ -7,9 +8,12 @@ import type { AccountRuntime, RotationPorts } from "../domain/rotation";
 import { ProviderId, type Account, type EpochMillis } from "../domain/types";
 import type { LimitView } from "../shared/views";
 
+import { toAgyRateLimitEvent, type AgyProbeResult } from "./agy/usage";
 import { PROBE_INTERVAL_MS } from "./constants";
-import { toRateLimitEvent, type RateLimitState } from "./codex/events";
+import { toRateLimitEvent } from "./codex/events";
 import type { ProbeResult } from "./codex/probe";
+
+type RateLimitEvent = Extract<AgentEvent, { type: "rate_limit" }>;
 
 export interface LimitProbeDeps {
   readonly readAccounts: () => Promise<readonly Account[]>;
@@ -17,6 +21,10 @@ export interface LimitProbeDeps {
     account: Account,
     signal: AbortSignal,
   ) => Promise<ProbeResult>;
+  readonly agyProbe: (
+    account: Account,
+    signal: AbortSignal,
+  ) => Promise<AgyProbeResult>;
   readonly isInUse: (accountId: string) => boolean;
   readonly now: () => EpochMillis;
   readonly schedule: RotationPorts["schedule"];
@@ -51,12 +59,21 @@ interface InFlightProbe {
   readonly settled: Promise<void>;
 }
 
+const PROBED_PROVIDERS: readonly ProviderId[] = [
+  ProviderId.codex,
+  ProviderId.gemini,
+];
 const EMPTY_ENTRY: ProbeEntry = { limit: null, runtime: null };
 const NEEDS_LOGIN_ENTRY: ProbeEntry = {
   limit: null,
   runtime: { status: "needs_login" },
 };
-const FAILED_RESULT: ProbeResult = { kind: "failed" };
+
+type ProbeOutcome<Limits> =
+  | { readonly kind: "limits"; readonly limits: Limits }
+  | {
+      readonly kind: "needs_login" | "no_limits" | "failed" | "unstopped";
+    };
 
 function byOrderThenId(left: Account, right: Account): number {
   return left.order - right.order || left.id.localeCompare(right.id);
@@ -70,11 +87,10 @@ function exhaustedRuntime(snapshot: LimitSnapshot): AccountRuntime | null {
 }
 
 function limitsEntry(
-  limits: RateLimitState,
+  event: RateLimitEvent | null,
   accountId: string,
   now: () => EpochMillis,
 ): ProbeEntry {
-  const event = toRateLimitEvent(limits);
   if (event === null) {
     return EMPTY_ENTRY;
   }
@@ -90,14 +106,15 @@ function limitsEntry(
   };
 }
 
-function entryFor(
-  result: ProbeResult,
+function entryFor<Limits>(
+  result: ProbeOutcome<Limits>,
   accountId: string,
   now: () => EpochMillis,
+  eventOf: (limits: Limits) => RateLimitEvent | null,
 ): ProbeEntry | null {
   switch (result.kind) {
     case "limits":
-      return limitsEntry(result.limits, accountId, now);
+      return limitsEntry(eventOf(result.limits), accountId, now);
     case "needs_login":
       return NEEDS_LOGIN_ENTRY;
     case "no_limits":
@@ -215,7 +232,7 @@ class LimitProbeEngine implements LimitProbeService {
 
   private async pass(): Promise<void> {
     const accounts = (await this.deps.readAccounts())
-      .filter((account) => account.provider === ProviderId.codex)
+      .filter((account) => PROBED_PROVIDERS.includes(account.provider))
       .toSorted(byOrderThenId);
     let changed = this.dropRemoved(accounts);
     for (const account of accounts) {
@@ -248,17 +265,34 @@ class LimitProbeEngine implements LimitProbeService {
   private async runProbe(
     account: Account,
     signal: AbortSignal,
-  ): Promise<ProbeResult> {
+  ): Promise<ProbeEntry | null> {
     try {
-      const result = await this.deps.probe(account, signal);
-      if (result.kind === "unstopped") {
-        this.unstopped.add(account.id);
-      }
-      return result;
+      return account.provider === ProviderId.gemini
+        ? this.entryOf(
+            account,
+            await this.deps.agyProbe(account, signal),
+            toAgyRateLimitEvent,
+          )
+        : this.entryOf(
+            account,
+            await this.deps.probe(account, signal),
+            toRateLimitEvent,
+          );
     } catch (error) {
       console.warn(`limit probe failed: ${account.id}`, error);
-      return FAILED_RESULT;
+      return null;
     }
+  }
+
+  private entryOf<Limits>(
+    account: Account,
+    result: ProbeOutcome<Limits>,
+    eventOf: (limits: Limits) => RateLimitEvent | null,
+  ): ProbeEntry | null {
+    if (result.kind === "unstopped") {
+      this.unstopped.add(account.id);
+    }
+    return entryFor(result, account.id, this.deps.now, eventOf);
   }
 
   private async probeOne(account: Account): Promise<boolean> {
@@ -269,9 +303,8 @@ class LimitProbeEngine implements LimitProbeService {
       controller,
       settled: running.then(() => undefined),
     };
-    const result = await running;
+    const next = await running;
     this.inFlight = null;
-    const next = entryFor(result, account.id, this.deps.now);
     if (next === null) {
       return false;
     }

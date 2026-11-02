@@ -18,8 +18,19 @@ it("codex_login_command_wraps_plain_path", () => {
   });
 });
 
+it("gemini_login_command_is_plain_agy_for_any_path", () => {
+  const expected = {
+    bash: "agy",
+    powershell: "agy",
+    hint: "Run this in a terminal, then sign in with Google:",
+  };
+
+  expect(loginCommands("gemini", "/home/user/accounts/g1")).toEqual(expected);
+  expect(loginCommands("gemini", "/home/us er/it's")).toEqual(expected);
+});
+
 it("login_command_is_absent_for_unsupported_provider", () => {
-  expect(loginCommands("gemini", "/home/user/.gemini")).toBeNull();
+  expect(loginCommands("opencode", "/home/user/.opencode")).toBeNull();
 });
 
 it("login_command_quotes_special_paths", () => {

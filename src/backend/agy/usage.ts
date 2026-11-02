@@ -11,6 +11,7 @@ import {
   RATE_LIMIT_TYPE_SEVEN_DAY,
 } from "../codex/constants";
 import { withTimeout } from "../codex/handshake";
+import { watchAbort } from "../codex/probe";
 import type {
   Contained,
   ProcessContainer,
@@ -60,9 +61,12 @@ export interface AgyProbeDeps {
   readonly runId: string;
   readonly timeoutMs: number;
   readonly stopGraceMs: number;
+  readonly signal?: AbortSignal;
 }
 
 type RateLimitEvent = Extract<AgentEvent, { type: "rate_limit" }>;
+
+const NEVER_ABORTED = new AbortController();
 
 const FAILED: AgyProbeResult = { kind: "failed" };
 const NEEDS_LOGIN: AgyProbeResult = { kind: "needs_login" };
@@ -247,12 +251,19 @@ async function awaitUsage(
   contained: Contained,
 ): Promise<AgyProbeResult> {
   const reader = readUsage(contained);
+  const abort = watchAbort(deps.signal ?? NEVER_ABORTED.signal);
   try {
-    return await withTimeout(reader.result, deps.timeoutMs);
+    return await withTimeout(
+      Promise.race([reader.result, abort.promise]),
+      deps.timeoutMs,
+    );
   } catch (error) {
-    console.warn(`agy usage probe failed: ${deps.runId}`, error);
+    if (deps.signal?.aborted !== true) {
+      console.warn(`agy usage probe failed: ${deps.runId}`, error);
+    }
     return FAILED;
   } finally {
+    abort.release();
     reader.close();
   }
 }
@@ -260,6 +271,9 @@ async function awaitUsage(
 export async function probeAgyUsage(
   deps: AgyProbeDeps,
 ): Promise<AgyProbeResult> {
+  if (deps.signal?.aborted === true) {
+    return FAILED;
+  }
   let contained: Contained;
   try {
     contained = await deps.container.spawn(spawnSpecOf(deps));
