@@ -162,6 +162,11 @@ export class TurnTracker {
   private failed = false;
   private sawResponse = false;
   private readonly errorLines: AgyErrorLine[] = [];
+  private errorLineArrival = Promise.withResolvers<undefined>();
+
+  get errorLineSeen(): Promise<undefined> {
+    return this.errorLineArrival.promise;
+  }
 
   observeStep(step: StepUpdate, conversationId: string): AgentEvent[] {
     const events: AgentEvent[] = [];
@@ -172,7 +177,7 @@ export class TurnTracker {
       this.sawResponse = true;
       if (this.failed) {
         this.failed = false;
-        this.errorLines.length = 0;
+        this.clearErrorLines();
         events.push({ type: "api_retry" });
       }
     }
@@ -182,6 +187,14 @@ export class TurnTracker {
   observeErrorLine(line: AgyErrorLine): void {
     this.failed = true;
     this.errorLines.push(line);
+    this.errorLineArrival.resolve(undefined);
+  }
+
+  private clearErrorLines(): void {
+    if (this.errorLines.length > 0) {
+      this.errorLineArrival = Promise.withResolvers<undefined>();
+    }
+    this.errorLines.length = 0;
   }
 
   awaitsErrorLine(result: AgyResult): boolean {

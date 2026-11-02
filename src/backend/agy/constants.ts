@@ -39,7 +39,23 @@ export const AgyToolName = {
   findByName: "find_by_name",
   readUrlContent: "read_url_content",
   searchWeb: "search_web",
+  invokeSubagent: "invoke_subagent",
+  defineSubagent: "define_subagent",
+  manageSubagents: "manage_subagents",
+  schedule: "schedule",
+  browserSubagent: "browser_subagent",
+  notebookExecution: "notebook_execution",
+  sendCommandInput: "send_command_input",
+  runWorkflow: "run_workflow",
 } as const;
+
+export const SUBAGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
+  AgyToolName.invokeSubagent,
+  AgyToolName.defineSubagent,
+  AgyToolName.manageSubagents,
+  AgyToolName.schedule,
+  AgyToolName.browserSubagent,
+]);
 
 export const AgyToolKind = {
   execute: "execute",
@@ -51,6 +67,9 @@ export type AgyToolKind = (typeof AgyToolKind)[keyof typeof AgyToolKind];
 
 export const TOOL_KIND_BY_NAME: ReadonlyMap<string, AgyToolKind> = new Map([
   [AgyToolName.runCommand, AgyToolKind.execute],
+  [AgyToolName.notebookExecution, AgyToolKind.execute],
+  [AgyToolName.sendCommandInput, AgyToolKind.execute],
+  [AgyToolName.runWorkflow, AgyToolKind.execute],
   [AgyToolName.writeFile, AgyToolKind.edit],
   [AgyToolName.editFile, AgyToolKind.edit],
   [AgyToolName.writeToFile, AgyToolKind.edit],
@@ -69,41 +88,31 @@ export const TOOL_KIND_BY_NAME: ReadonlyMap<string, AgyToolKind> = new Map([
 
 export const TOOL_PARAM_COMMAND_LINE = "CommandLine";
 export const TOOL_PARAM_PATH = "Path";
+export const TOOL_PARAM_PATH_KEYS: readonly string[] = [
+  TOOL_PARAM_PATH,
+  "TargetFile",
+  "AbsolutePath",
+];
+export const TOOL_PARAM_CWD_KEYS: readonly string[] = [
+  "Cwd",
+  "WorkingDirectory",
+];
+export const AGENTS_DIR_NAME = ".agents";
+export const AGENTS_DIR_TEAMWORK_SUBDIR = "teamwork";
+export const AGENTS_DIR_COMMAND_PATTERN = /(?<![\w.-])\.agents(?![\w.-])/i;
+export const AGENTS_DIR_COMMAND_MAX_NESTING = 4;
 export const MESSAGE_ID_SEPARATOR = ":";
 
 export const AgyMode = {
   plan: "plan",
-  acceptEdits: "accept-edits",
 } as const;
 export type AgyMode = (typeof AgyMode)[keyof typeof AgyMode];
 
 export const AgyToolPermission = {
   alwaysProceed: "always-proceed",
-  requestReview: "request-review",
 } as const;
 export type AgyToolPermission =
   (typeof AgyToolPermission)[keyof typeof AgyToolPermission];
-
-export const RM_COMMAND = "rm";
-export const RM_DANGER_FLAGS: readonly string[] = [
-  "-r",
-  "-R",
-  "-f",
-  "-rf",
-  "-fr",
-  "-Rf",
-  "-fR",
-  "--recursive",
-  "--force",
-];
-export const GIT_PUSH_TOKENS: readonly string[] = ["git", "push"];
-export const GIT_PUSH_FORCE_FLAGS: readonly string[] = [
-  "--force",
-  "-f",
-  "--force-with-lease",
-];
-export const GIT_REMOTE_ORIGIN = "origin";
-export const WRITE_FILE_DENY_RULE = "write_file(*)";
 
 export const AgyFlag = {
   inputFormat: "--input-format",
@@ -113,13 +122,54 @@ export const AgyFlag = {
   conversation: "--conversation",
   prompt: "-p",
 } as const;
+export const GEMINI_DIR_FLAG_PREFIX = "--gemini_dir=";
+export const AGY_PROFILE_ENV = "CODEWEAVE_AGY_PROFILE";
+export const AGY_WORKTREE_ENV = "CODEWEAVE_AGY_WORKTREE";
+
+export const HOOK_CONFIG_DIR_NAME = "config";
+export const HOOKS_JSON_FILE = "hooks.json";
+export const HOOK_WRAPPER_BASENAME = "codeweave-agy-hook";
+export const HOOK_WRAPPER_POSIX_EXTENSION = ".sh";
+export const HOOK_WRAPPER_WINDOWS_EXTENSION = ".cmd";
+export const HOOK_ENTRY_FILE = "agyHook.js";
+export const HOOK_GROUP_NAME = "codeweave";
+export const HOOK_EVENT_PRE_TOOL_USE = "PreToolUse";
+export const HOOK_MATCHER_ALL = ".*";
+export const HOOK_COMMAND_TYPE = "command";
+export const HOOK_TIMEOUT_SECONDS = 10;
+
+export const AgyHookDecisionKind = {
+  allow: "allow",
+  deny: "deny",
+} as const;
+export type AgyHookDecisionKind =
+  (typeof AgyHookDecisionKind)[keyof typeof AgyHookDecisionKind];
+
+export const HOOK_NEEDS_APPROVAL_REASON =
+  "needs approval; Codeweave cannot ask in agy headless mode";
+export const HOOK_SUBAGENT_DENIED_REASON =
+  "subagent and scheduling tools are not allowed under this profile";
+export const HOOK_AGENTS_DIR_REASON =
+  "agy workspace config (.agents) is protected";
+export const WORKSPACE_CONFIG_CHANGED_MESSAGE =
+  "Gemini workspace config (.agents) changed during this session; review it and start a new session";
+export const WORKSPACE_WALK_LIMIT_MESSAGE =
+  "Gemini workspace config (.agents) is too large to verify; reduce it or its linked directories";
+export const WORKSPACE_WALK_MAX_ENTRIES = 10_000;
+export const WORKSPACE_WALK_MAX_BYTES = 16 * 1024 * 1024;
+export const WORKSPACE_WALK_MAX_DEPTH = 64;
+export const HOOK_INVALID_INPUT_REASON =
+  "Codeweave could not read the tool call; denied";
+export const HOOK_INVALID_PROFILE_REASON =
+  "Codeweave permission profile is missing or unknown; denied";
+export const HOOK_INTERNAL_ERROR_REASON =
+  "Codeweave policy hook failed; denied";
 export const OUTPUT_FORMAT_STREAM_JSON = "stream-json";
 export const OUTPUT_FORMAT_JSON = "json";
 export const EMPTY_PROMPT_ARG = "-p=";
 export const USAGE_COMMAND = "/usage";
 export const STDIN_USER_EVENT = "user";
 export const STDIN_USER_ROLE = "user";
-export const AGY_DISABLE_AUTO_UPDATE_ENV = "AGY_CLI_DISABLE_AUTO_UPDATE";
 
 export const GEMINI_USAGE_GROUP = "Gemini Models";
 export const USAGE_WINDOW_FIVE_HOUR = "5h";

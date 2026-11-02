@@ -1,3 +1,5 @@
+import { isAbsolute } from "node:path";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -58,103 +60,20 @@ const AGY_ERROR_LINE = `AGY_ERROR: ${JSON.stringify({
   error_id: "d439d991-1",
 })}`;
 
-const DANGER_DENY: readonly string[] = [
-  "command(sudo)",
-  "command(sudoedit)",
-  "command(doas)",
-  "command(su)",
-  "command(pkexec)",
-  "command(run0)",
-  "command(liquibase update)",
-  "command(flyway migrate)",
-  "command(prisma migrate deploy)",
-  "command(alembic upgrade)",
-  "command(knex migrate:latest)",
-  "command(rm -r)",
-  "command(rm -R)",
-  "command(rm -f)",
-  "command(rm -rf)",
-  "command(rm -fr)",
-  "command(rm -Rf)",
-  "command(rm -fR)",
-  "command(rm --recursive)",
-  "command(rm --force)",
-  "command(git push --force)",
-  "command(git push -f)",
-  "command(git push --force-with-lease)",
-  "command(git push origin main)",
-  "command(git push origin master)",
-  "command(git push origin develop)",
-];
+const HOOKLESS_SETTINGS = {
+  toolPermission: "always-proceed",
+  useG1Credits: false,
+};
 
-const OPAQUE_DENY: readonly string[] = [
-  "command(eval)",
-  "command(source)",
-  "command(.)",
-  "command(builtin)",
-  "command(busybox)",
-  "command(watch)",
-  "command(flock)",
-  "command(unshare)",
-  "command(nsenter)",
-  "command(chroot)",
-  "command(setpriv)",
-  "command(strace)",
-  "command(ltrace)",
-  "command(parallel)",
-  "command(runuser)",
-  "command(script)",
-  "command(systemd-run)",
-];
-
-const WRITE_DENY = "write_file(*)";
-
-const SETTINGS_BY_PROFILE: readonly {
+const MODE_BY_PROFILE: readonly {
   readonly profile: PermissionProfile;
   readonly mode: string | null;
-  readonly settings: Readonly<Record<string, unknown>>;
 }[] = [
-  {
-    profile: PermissionProfile.bypass,
-    mode: null,
-    settings: { toolPermission: "always-proceed", useG1Credits: false },
-  },
-  {
-    profile: PermissionProfile.unattended,
-    mode: null,
-    settings: {
-      toolPermission: "always-proceed",
-      useG1Credits: false,
-      permissions: { deny: [...DANGER_DENY, ...OPAQUE_DENY] },
-    },
-  },
-  {
-    profile: PermissionProfile.acceptEdits,
-    mode: "accept-edits",
-    settings: {
-      toolPermission: "request-review",
-      useG1Credits: false,
-      permissions: { deny: DANGER_DENY },
-    },
-  },
-  {
-    profile: PermissionProfile.ask,
-    mode: null,
-    settings: {
-      toolPermission: "request-review",
-      useG1Credits: false,
-      permissions: { deny: [...DANGER_DENY, WRITE_DENY] },
-    },
-  },
-  {
-    profile: PermissionProfile.plan,
-    mode: "plan",
-    settings: {
-      toolPermission: "request-review",
-      useG1Credits: false,
-      permissions: { deny: [...DANGER_DENY, WRITE_DENY] },
-    },
-  },
+  { profile: PermissionProfile.bypass, mode: null },
+  { profile: PermissionProfile.unattended, mode: null },
+  { profile: PermissionProfile.acceptEdits, mode: null },
+  { profile: PermissionProfile.ask, mode: null },
+  { profile: PermissionProfile.plan, mode: "plan" },
 ];
 
 afterEach(async () => {
@@ -190,15 +109,11 @@ function agySpawnAt(
 }
 
 describe("agy adapter spawn arguments", () => {
-  it("spawn_argv_ends_with_empty_prompt_and_selects_mode", async () => {
-    const seen: Record<string, readonly string[]> = {};
-    for (const { profile } of SETTINGS_BY_PROFILE) {
+  it("spawn_argv_has_gemini_dir_then_empty_prompt_and_selects_mode", async () => {
+    for (const { profile, mode } of MODE_BY_PROFILE) {
       const { rig } = await readyHandle(profile);
-      seen[profile] = agySpawnAt(rig, 0).spec.args;
-    }
+      const args = agySpawnAt(rig, 0).spec.args;
 
-    for (const { profile, mode, settings } of SETTINGS_BY_PROFILE) {
-      const args = seen[profile] ?? [];
       expect(args.slice(0, 4)).toEqual([
         "--input-format",
         "stream-json",
@@ -206,64 +121,55 @@ describe("agy adapter spawn arguments", () => {
         "stream-json",
       ]);
       expect(args[4]).toBe("--settings");
-      expect(JSON.parse(args[5] ?? "null")).toEqual(settings);
-      expect(args.at(-1)).toBe("-p=");
-      expect(args.slice(6, -1)).toEqual(mode === null ? [] : ["--mode", mode]);
+      expect(args.slice(6)).toEqual([
+        ...(mode === null ? [] : ["--mode", mode]),
+        `--gemini_dir=${rig.configDir}`,
+        "-p=",
+      ]);
     }
   });
 
-  it("settings_json_per_profile_matches_the_table", async () => {
-    for (const { profile, settings } of SETTINGS_BY_PROFILE) {
+  it("usage_probe_argv_carries_the_absolute_gemini_dir", async () => {
+    const { rig } = await readyHandle();
+
+    const probe = rig.container.probeSpawns()[0];
+    expect(probe?.spec.args).toEqual([
+      "-p",
+      "/usage",
+      "--output-format",
+      "json",
+      `--gemini_dir=${rig.configDir}`,
+    ]);
+    expect(isAbsolute(rig.configDir)).toBe(true);
+  });
+
+  it("settings_json_for_every_profile_is_always_proceed_without_rules", async () => {
+    for (const { profile } of MODE_BY_PROFILE) {
       const { rig } = await readyHandle(profile);
 
-      expect(agySpawnAt(rig, 0).settings).toEqual(settings);
+      expect(agySpawnAt(rig, 0).settings).toEqual(HOOKLESS_SETTINGS);
     }
   });
 });
 
-describe("agy adapter permissions and environment", () => {
-  it("every_profile_blocks_g1_credits_and_non_bypass_profiles_deny_danger", async () => {
-    for (const { profile } of SETTINGS_BY_PROFILE) {
-      const { rig } = await readyHandle(profile);
-      const settings = agySpawnAt(rig, 0).settings ?? {};
-      const permissions = (settings.permissions ?? {}) as {
-        deny?: string[];
-        allow?: string[];
-      };
-
-      expect(settings.useG1Credits).toBe(false);
-      if (profile !== PermissionProfile.bypass) {
-        expect(permissions.deny).toEqual(
-          expect.arrayContaining([...DANGER_DENY]),
-        );
-      }
-      if (
-        profile === PermissionProfile.ask ||
-        profile === PermissionProfile.plan
-      ) {
-        expect(permissions.deny).toContain(WRITE_DENY);
-      }
-      if (
-        profile === PermissionProfile.acceptEdits ||
-        profile === PermissionProfile.ask ||
-        profile === PermissionProfile.plan
-      ) {
-        expect(permissions.allow).toBeUndefined();
-      }
-    }
-  });
-
-  it("child_env_disables_auto_update_and_drops_agy_variables", async () => {
+describe("agy adapter environment", () => {
+  it("child_env_drops_agy_variables", async () => {
     const { rig } = await readyHandle();
+    const base = {
+      PATH: "/usr/bin",
+      HTTPS_PROXY: "http://proxy.corp:3128",
+    };
 
-    for (const spawn of rig.container.spawns) {
-      expect(spawn.spec.env).toEqual({
-        PATH: "/usr/bin",
-        HTTPS_PROXY: "http://proxy.corp:3128",
-        CODEWEAVE_RUN_ID: spawn.spec.runId,
-        AGY_CLI_DISABLE_AUTO_UPDATE: "1",
-      });
-    }
+    expect(rig.container.probeSpawns()[0]?.spec.env).toEqual({
+      ...base,
+      CODEWEAVE_RUN_ID: rig.container.probeSpawns()[0]?.spec.runId,
+    });
+    expect(agySpawnAt(rig, 0).spec.env).toEqual({
+      ...base,
+      CODEWEAVE_RUN_ID: agySpawnAt(rig, 0).spec.runId,
+      CODEWEAVE_AGY_PROFILE: "ask",
+      CODEWEAVE_AGY_WORKTREE: rig.cwd,
+    });
     expect(rig.container.agySpawns()).toHaveLength(1);
     expect(rig.container.probeSpawns()).toHaveLength(1);
   });
@@ -570,9 +476,10 @@ describe("agy adapter cancel", () => {
     const resumed = agySpawnAt(rig, 1);
     expect(resumed.conversation).toBe(CONV);
     expect(resumed.agyRunningAtSpawn).toBe(0);
-    expect(resumed.spec.args.slice(-3)).toEqual([
+    expect(resumed.spec.args.slice(-4)).toEqual([
       "--conversation",
       CONV,
+      `--gemini_dir=${rig.configDir}`,
       "-p=",
     ]);
     expect(eventTypes(events)).not.toContain("process_exit");
@@ -663,17 +570,13 @@ describe("agy adapter lifecycle", () => {
     rig.container.scriptTurn(replyTurn(CONV, "two"));
     await handle.prompt("one");
 
-    await handle.setProfile(PermissionProfile.acceptEdits);
+    await handle.setProfile(PermissionProfile.plan);
 
     expect(rig.container.agySpawns()).toHaveLength(1);
     await handle.prompt("two");
     const respawned = agySpawnAt(rig, 1);
-    expect(respawned.settings).toEqual({
-      toolPermission: "request-review",
-      useG1Credits: false,
-      permissions: { deny: DANGER_DENY },
-    });
-    expect(respawned.mode).toBe("accept-edits");
+    expect(respawned.settings).toEqual(HOOKLESS_SETTINGS);
+    expect(respawned.mode).toBe("plan");
     expect(respawned.conversation).toBe(CONV);
     expect(agySpawnAt(rig, 0).contained.hasExited).toBe(true);
     expect(respawned.agyRunningAtSpawn).toBe(0);
@@ -806,9 +709,10 @@ describe("agy adapter prompt while a cancelled process is stopping", () => {
     expect(rig.container.agySpawns()).toHaveLength(2);
     expect(agySpawnAt(rig, 0).stdinLines).toHaveLength(1);
     const resumed = agySpawnAt(rig, 1);
-    expect(resumed.spec.args.slice(-3)).toEqual([
+    expect(resumed.spec.args.slice(-4)).toEqual([
       "--conversation",
       CONV,
+      `--gemini_dir=${rig.configDir}`,
       "-p=",
     ]);
     expect(resumed.agyRunningAtSpawn).toBe(0);

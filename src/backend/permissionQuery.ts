@@ -31,7 +31,7 @@ function fieldOf(source: unknown, key: string): unknown {
     : undefined;
 }
 
-function absolutePath(raw: string, cwd: string): string {
+export function absolutePath(raw: string, cwd: string): string {
   if (raw.startsWith(UNRESOLVED_PATH_PREFIX)) {
     return raw;
   }

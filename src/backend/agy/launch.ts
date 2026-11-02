@@ -1,9 +1,13 @@
-import { FLAG_ENABLED } from "../constants";
+import { resolve } from "node:path";
+
+import type { PermissionProfile } from "../../domain/types";
 
 import {
-  AGY_DISABLE_AUTO_UPDATE_ENV,
+  AGY_PROFILE_ENV,
+  AGY_WORKTREE_ENV,
   AgyFlag,
   EMPTY_PROMPT_ARG,
+  GEMINI_DIR_FLAG_PREFIX,
   OUTPUT_FORMAT_JSON,
   OUTPUT_FORMAT_STREAM_JSON,
   STDIN_USER_EVENT,
@@ -17,11 +21,15 @@ export interface AgyLaunchInput {
   readonly env: Readonly<Record<string, string>>;
   readonly permissions: AgyLaunchPermissions;
   readonly conversationId: string | null;
+  readonly configDir: string;
+  readonly profile: PermissionProfile;
+  readonly worktreeRoot: string;
 }
 
 export interface AgyUsageLaunchInput {
   readonly executable: string;
   readonly env: Readonly<Record<string, string>>;
+  readonly configDir: string;
 }
 
 export interface AgyLaunch {
@@ -30,10 +38,8 @@ export interface AgyLaunch {
   readonly env: Record<string, string>;
 }
 
-function launchEnv(
-  env: Readonly<Record<string, string>>,
-): Record<string, string> {
-  return { ...env, [AGY_DISABLE_AUTO_UPDATE_ENV]: FLAG_ENABLED };
+function geminiDirArg(configDir: string): string {
+  return `${GEMINI_DIR_FLAG_PREFIX}${resolve(configDir)}`;
 }
 
 export function buildAgyLaunch(input: AgyLaunchInput): AgyLaunch {
@@ -51,9 +57,14 @@ export function buildAgyLaunch(input: AgyLaunchInput): AgyLaunch {
       ...(input.conversationId === null
         ? []
         : [AgyFlag.conversation, input.conversationId]),
+      geminiDirArg(input.configDir),
       EMPTY_PROMPT_ARG,
     ],
-    env: launchEnv(input.env),
+    env: {
+      ...input.env,
+      [AGY_PROFILE_ENV]: input.profile,
+      [AGY_WORKTREE_ENV]: input.worktreeRoot,
+    },
   };
 }
 
@@ -65,8 +76,9 @@ export function buildAgyUsageLaunch(input: AgyUsageLaunchInput): AgyLaunch {
       USAGE_COMMAND,
       AgyFlag.outputFormat,
       OUTPUT_FORMAT_JSON,
+      geminiDirArg(input.configDir),
     ],
-    env: launchEnv(input.env),
+    env: { ...input.env },
   };
 }
 

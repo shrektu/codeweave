@@ -54,6 +54,7 @@ export type AgyProbeResult =
 export interface AgyProbeDeps {
   readonly container: ProcessContainer;
   readonly executable: string;
+  readonly configDir: string;
   readonly cwd: string;
   readonly env: Readonly<Record<string, string>>;
   readonly runId: string;
@@ -183,6 +184,7 @@ function spawnSpecOf(deps: AgyProbeDeps): SpawnSpec {
   const launch = buildAgyUsageLaunch({
     executable: deps.executable,
     env: deps.env,
+    configDir: deps.configDir,
   });
   return {
     command: launch.command,

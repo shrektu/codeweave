@@ -40,6 +40,7 @@ import {
   PROBE_NOT_STOPPED_MESSAGE,
   START_PROBE_TIMEOUT_MS,
   STOP_SETTLE_FACTOR,
+  WORKSPACE_CONFIG_CHANGED_MESSAGE,
 } from "./constants";
 import { TurnTracker, type TurnOutcome } from "./events";
 import { agyTurnLine, buildAgyLaunch } from "./launch";
@@ -62,12 +63,15 @@ import {
   type AgyLimits,
   type AgyProbeDeps,
 } from "./usage";
+import { WorkspaceConfigChangedError } from "./workspaceGuard";
 
 export interface AgyAdapterDeps {
   readonly processes: AgentProcesses;
   readonly container: ProcessContainer;
   readonly envFor: (spec: AgentStartSpec) => Record<string, string>;
   readonly executableFor: (spec: AgentStartSpec) => string;
+  readonly writeHookConfig: (configDir: string) => Promise<void>;
+  readonly fingerprintWorkspace: (worktreeRoot: string) => Promise<string>;
   readonly stopGraceMs?: number;
   readonly startProbeTimeoutMs?: number;
   readonly probeTimeoutMs?: number;
@@ -76,11 +80,15 @@ export interface AgyAdapterDeps {
 interface ActiveTurn {
   readonly tracker: TurnTracker;
   readonly finished: PromiseWithResolvers<AgentEvent[]>;
-  readonly errorLineSeen: PromiseWithResolvers<undefined>;
   process: LiveProcess | null;
   settling: boolean;
   resultPending: boolean;
   cancelRequested: boolean;
+}
+
+interface ConversationResultError {
+  readonly conversationId: string | null;
+  readonly text: string | undefined;
 }
 
 type Prepared =
@@ -102,7 +110,6 @@ function newTurn(): ActiveTurn {
   return {
     tracker: new TurnTracker(),
     finished: Promise.withResolvers<AgentEvent[]>(),
-    errorLineSeen: Promise.withResolvers<undefined>(),
     process: null,
     settling: false,
     resultPending: false,
@@ -123,6 +130,12 @@ class AgySession implements AgentHandle {
   private live: LiveProcess | null = null;
   private spawning: Promise<LiveProcess> | null = null;
   private conversationId: string | null = null;
+  private workspaceFingerprint: string | null = null;
+  private workspaceChanged = false;
+  private resultError: ConversationResultError = {
+    conversationId: null,
+    text: undefined,
+  };
   private limits: AgyLimits | null;
   private limitsAnnounced = false;
   private stderrText = "";
@@ -228,6 +241,9 @@ class AgySession implements AgentHandle {
       return prepared.events;
     }
     const { live } = prepared;
+    if (this.workspaceChanged && live.planned) {
+      return [turnError(null, WORKSPACE_CONFIG_CHANGED_MESSAGE)];
+    }
     if (live.exited) {
       return exitedEvents(PROCESS_EXITED_MESSAGE);
     }
@@ -257,9 +273,13 @@ class AgySession implements AgentHandle {
         };
       }
     }
+    if (this.mustDiscard(turn)) {
+      return { events: await this.abortedEvents(turn) };
+    }
     const live = await this.spawnProcess();
     if (this.mustDiscard(turn)) {
-      return { events: await this.discard(live, turn) };
+      await this.discard(live);
+      return { events: await this.abortedEvents(turn) };
     }
     return { live };
   }
@@ -268,17 +288,17 @@ class AgySession implements AgentHandle {
     return this.stopping || turn.cancelRequested;
   }
 
-  private async discard(
-    live: LiveProcess,
-    turn: ActiveTurn,
-  ): Promise<AgentEvent[]> {
+  private async discard(live: LiveProcess): Promise<void> {
     live.planned = true;
     await live.agentProcess.stop(this.graceMs).catch((error: unknown) => {
       console.error(`stopping a discarded agy failed: ${this.runId}`, error);
     });
+  }
+
+  private abortedEvents(turn: ActiveTurn): Promise<AgentEvent[]> {
     return turn.cancelRequested
       ? this.eventsFor({ kind: "cancelled" })
-      : exitedEvents(PROCESS_EXITED_MESSAGE);
+      : Promise.resolve(exitedEvents(PROCESS_EXITED_MESSAGE));
   }
 
   private async stoppedCleanly(previous: LiveProcess): Promise<boolean> {
@@ -305,13 +325,27 @@ class AgySession implements AgentHandle {
     return spawning;
   }
 
+  private async guardWorkspaceConfig(): Promise<void> {
+    const current = await this.deps.fingerprintWorkspace(this.spec.cwd);
+    this.workspaceFingerprint ??= current;
+    if (current !== this.workspaceFingerprint) {
+      throw new WorkspaceConfigChangedError();
+    }
+  }
+
   private async startProcess(): Promise<LiveProcess> {
+    const profile = this.profile;
+    await this.deps.writeHookConfig(this.spec.account.configDir);
     const launch = buildAgyLaunch({
       executable: this.deps.executableFor(this.spec),
       env: this.deps.envFor(this.spec),
-      permissions: agySettingsFor(this.profile),
+      permissions: agySettingsFor(profile),
       conversationId: this.conversationId,
+      configDir: this.spec.account.configDir,
+      profile,
+      worktreeRoot: this.spec.cwd,
     });
+    await this.guardWorkspaceConfig();
     const agentProcess = await this.deps.processes.start({
       command: launch.command,
       args: launch.args,
@@ -319,13 +353,30 @@ class AgySession implements AgentHandle {
       cwd: this.spec.cwd,
       runId: this.runId,
     });
-    this.live = attachProcess(
-      agentProcess,
-      this.profile,
-      this.runId,
-      this.handlers,
-    );
+    this.live = attachProcess(agentProcess, profile, this.runId, this.handlers);
     return this.live;
+  }
+
+  private async verifyWorkspaceAfterInit(live: LiveProcess): Promise<void> {
+    try {
+      await this.guardWorkspaceConfig();
+      return;
+    } catch (error) {
+      console.error(`agy workspace config check failed: ${this.runId}`, error);
+    }
+    this.workspaceChanged = true;
+    const turn = this.turnOf(live);
+    if (turn !== null) {
+      turn.settling = true;
+    }
+    live.planned = true;
+    await live.agentProcess.stop(this.graceMs).catch((error: unknown) => {
+      console.error(
+        `stopping agy after config change failed: ${this.runId}`,
+        error,
+      );
+    });
+    turn?.finished.resolve([turnError(null, WORKSPACE_CONFIG_CHANGED_MESSAGE)]);
   }
 
   private turnOf(live: LiveProcess): ActiveTurn | null {
@@ -346,6 +397,7 @@ class AgySession implements AgentHandle {
     switch (event?.event) {
       case AgyEventName.init:
         this.rememberConversation(event.conversation_id);
+        live.initCheck = this.verifyWorkspaceAfterInit(live);
         return;
       case AgyEventName.stepUpdate:
         this.onStep(live, event.step_update);
@@ -374,11 +426,30 @@ class AgySession implements AgentHandle {
   private onResult(live: LiveProcess, result: AgyResult): void {
     this.rememberConversation(result.conversation_id);
     const turn = this.turnOf(live);
-    const previousError = live.lastResultError;
-    live.lastResultError = result.error ?? previousError;
+    const previousError = this.swapResultError(result);
     if (turn !== null && !turn.resultPending) {
       void this.settleResult(turn, live, result, previousError);
     }
+  }
+
+  private swapResultError(result: AgyResult): string | undefined {
+    const previous =
+      this.resultError.conversationId === this.conversationId
+        ? this.resultError.text
+        : undefined;
+    this.resultError = {
+      conversationId: this.conversationId,
+      text: result.error ?? previous,
+    };
+    return previous;
+  }
+
+  private async turnOpenAfterInitCheck(
+    turn: ActiveTurn,
+    live: LiveProcess,
+  ): Promise<boolean> {
+    await live.initCheck;
+    return !turn.settling;
   }
 
   private async settleResult(
@@ -387,10 +458,13 @@ class AgySession implements AgentHandle {
     result: AgyResult,
     previousError: string | undefined,
   ): Promise<void> {
+    turn.resultPending = true;
+    if (!(await this.turnOpenAfterInitCheck(turn, live))) {
+      return;
+    }
     if (turn.tracker.awaitsErrorLine(result)) {
-      turn.resultPending = true;
       await withTimeout(
-        Promise.race([turn.errorLineSeen.promise, live.stderrClosed]),
+        Promise.race([turn.tracker.errorLineSeen, live.stderrClosed]),
         EXIT_DRAIN_MS,
       ).catch((error: unknown) => {
         console.warn(`agy error line did not follow: ${this.runId}`, error);
@@ -416,7 +490,6 @@ class AgySession implements AgentHandle {
       const parsed = parseAgyErrorLine(line.slice(AGY_ERROR_PREFIX.length));
       if (parsed !== null) {
         turn.tracker.observeErrorLine(parsed);
-        turn.errorLineSeen.resolve(undefined);
       }
     } else if (line.startsWith(AUTH_REQUIRED_STDERR_PREFIX)) {
       live.planned = true;
@@ -537,7 +610,8 @@ function probeDepsFor(
   return {
     container: deps.container,
     executable: deps.executableFor(probeSpec),
-    cwd: spec.cwd,
+    configDir: spec.account.configDir,
+    cwd: spec.account.configDir,
     env: deps.envFor(probeSpec),
     runId,
     timeoutMs,

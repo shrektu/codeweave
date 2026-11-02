@@ -10,7 +10,7 @@ export interface LiveProcess {
   readonly stderrClosed: Promise<void>;
   exited: boolean;
   planned: boolean;
-  lastResultError: string | undefined;
+  initCheck: Promise<void> | null;
 }
 
 export interface ProcessHandlers {
@@ -35,7 +35,7 @@ export function attachProcess(
     stderrClosed: stderrEnded.promise.then(() => undefined),
     exited: false,
     planned: false,
-    lastResultError: undefined,
+    initCheck: null,
   };
   contained.stdin.on("error", (error: Error) => {
     console.warn(`agy stdin error: ${runId}`, error);

@@ -6,6 +6,9 @@ files:
   - out/**
   - package.json
 asarUnpack:
+  - out/main/agyHook*.js
+  - out/main/chunks/**
+  - node_modules/shell-quote/**
   - node_modules/@agentclientprotocol/claude-agent-acp/**
   - node_modules/@agentclientprotocol/sdk/**
   - node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/**

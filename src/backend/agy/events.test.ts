@@ -337,3 +337,41 @@ describe("agy turn result error freshness", () => {
     expect(new TurnTracker().awaitsErrorLine(result())).toBe(false);
   });
 });
+
+describe("agy turn error line arrival", () => {
+  async function isPending(promise: Promise<undefined>): Promise<boolean> {
+    const marker = Symbol("pending");
+    return (await Promise.race([promise, Promise.resolve(marker)])) === marker;
+  }
+
+  it("an_error_line_resolves_the_arrival_promise", async () => {
+    const tracker = new TurnTracker();
+    const arrival = tracker.errorLineSeen;
+    expect(await isPending(arrival)).toBe(true);
+
+    tracker.observeErrorLine({ short_error: "boom" });
+
+    expect(await isPending(arrival)).toBe(false);
+  });
+
+  it("a_recovery_after_an_error_line_makes_the_next_wait_pending_again", async () => {
+    const tracker = new TurnTracker();
+    tracker.observeStep(step({ step_type: "error_message" }), CONV);
+    tracker.observeErrorLine({ short_error: "boom" });
+
+    const events = tracker.observeStep(step({ step_index: 2 }), CONV);
+
+    expect(events[0]).toEqual({ type: "api_retry" });
+    expect(await isPending(tracker.errorLineSeen)).toBe(true);
+  });
+
+  it("a_recovery_without_an_error_line_keeps_the_same_promise", () => {
+    const tracker = new TurnTracker();
+    const before = tracker.errorLineSeen;
+    tracker.observeStep(step({ step_type: "error_message" }), CONV);
+
+    tracker.observeStep(step({ step_index: 2 }), CONV);
+
+    expect(tracker.errorLineSeen).toBe(before);
+  });
+});

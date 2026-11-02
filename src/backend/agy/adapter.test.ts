@@ -5,6 +5,7 @@ import {
   AWAIT_SIGNAL,
   at,
   createAgyRig,
+  delayFor,
   err,
   eventTypes,
   exitWith,
@@ -290,5 +291,117 @@ describe("agy adapter exhaustion without a reset time", () => {
 
     expect(limits).toHaveLength(1);
     expect(limits[0]).toMatchObject({ status: "rejected", resetsAt: null });
+  });
+});
+
+describe("agy adapter usage probes run outside the workspace", () => {
+  it("usage_probe_does_not_run_in_worktree_start_probe", async () => {
+    const rig = await createAgyRig();
+
+    await startAgyHandle(rig);
+
+    expect(rig.container.probeSpawns().map((spawn) => spawn.spec.cwd)).toEqual([
+      rig.configDir,
+    ]);
+    expect(rig.container.agySpawns().map((spawn) => spawn.spec.cwd)).toEqual([
+      rig.cwd,
+    ]);
+  });
+
+  it("usage_probe_does_not_run_in_worktree_exhaustion_probe", async () => {
+    const rig = await createAgyRig();
+    const { handle } = await startAgyHandle(rig);
+    rig.container.scriptTurn(quotaFailureTurn(CONV));
+
+    await handle.prompt("work");
+
+    expect(rig.container.probeSpawns().map((spawn) => spawn.spec.cwd)).toEqual([
+      rig.configDir,
+      rig.configDir,
+    ]);
+  });
+});
+
+describe("agy adapter workspace fingerprint after init", () => {
+  it("workspace_fingerprint_failure_fails_closed_after_init", async () => {
+    let calls = 0;
+    const rig = await createAgyRig({
+      fingerprintWorkspace: () => {
+        calls += 1;
+        return calls === 1
+          ? Promise.resolve("same")
+          : Promise.reject(new Error("cannot read .agents"));
+      },
+    });
+    const { handle, events } = await startAgyHandle(rig);
+    rig.container.scriptTurn([
+      initStep(CONV),
+      delayFor(150),
+      ...replyTurn(CONV, "one").slice(1),
+    ]);
+
+    await handle.prompt("one");
+
+    expect(events.at(-1)).toMatchObject({
+      type: "turn_error",
+      message:
+        "Gemini workspace config (.agents) changed during this session; review it and start a new session",
+    });
+    expect(rig.container.agySpawns()[0]?.contained.hasExited).toBe(true);
+  });
+});
+
+describe("agy adapter fast result waits for the init workspace check", () => {
+  const PENDING_PROBE_MS = 150;
+
+  async function pendingInitCheck(): Promise<{
+    readonly check: PromiseWithResolvers<string>;
+    readonly prompt: Promise<void>;
+    readonly events: AgentEvent[];
+  }> {
+    const check = Promise.withResolvers<string>();
+    let calls = 0;
+    const rig = await createAgyRig({
+      fingerprintWorkspace: () => {
+        calls += 1;
+        return calls === 1 ? Promise.resolve("same") : check.promise;
+      },
+    });
+    const { handle, events } = await startAgyHandle(rig);
+    rig.container.scriptTurn(replyTurn(CONV, "one"));
+    return { check, prompt: handle.prompt("one"), events };
+  }
+
+  it("fast_result_waits_for_init_workspace_check_failing", async () => {
+    const { check, prompt, events } = await pendingInitCheck();
+
+    expect(await settlesWithin(prompt, PENDING_PROBE_MS)).toBe(false);
+    check.reject(new Error("cannot read .agents"));
+    await prompt;
+
+    expect(events.filter((event) => event.type === "turn_end")).toEqual([]);
+    expect(events.filter((event) => event.type === "turn_error")).toEqual([
+      {
+        type: "turn_error",
+        errorKind: null,
+        rpcCode: null,
+        message:
+          "Gemini workspace config (.agents) changed during this session; review it and start a new session",
+      },
+    ]);
+  });
+
+  it("fast_result_waits_for_init_workspace_check_passing", async () => {
+    const { check, prompt, events } = await pendingInitCheck();
+
+    expect(await settlesWithin(prompt, PENDING_PROBE_MS)).toBe(false);
+    check.resolve("same");
+    await prompt;
+
+    expect(events.filter((event) => event.type === "turn_error")).toEqual([]);
+    expect(events.at(-1)).toEqual({
+      type: "turn_end",
+      stopReason: "end_turn",
+    });
   });
 });

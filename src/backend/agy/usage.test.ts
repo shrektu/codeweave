@@ -190,6 +190,7 @@ function depsFor(
   return {
     container,
     executable: "/opt/agy",
+    configDir: "/home/jane/accounts/gemini-1",
     cwd: "/work/repo",
     env: { PATH: "/usr/bin" },
     runId: "probe-1",
@@ -208,10 +209,16 @@ describe("agy usage probe", () => {
     expect(result.kind).toBe("limits");
     expect(container.spawns[0]?.spec).toMatchObject({
       command: "/opt/agy",
-      args: ["-p", "/usage", "--output-format", "json"],
+      args: [
+        "-p",
+        "/usage",
+        "--output-format",
+        "json",
+        "--gemini_dir=/home/jane/accounts/gemini-1",
+      ],
       cwd: "/work/repo",
       runId: "probe-1",
-      env: { PATH: "/usr/bin", AGY_CLI_DISABLE_AUTO_UPDATE: "1" },
+      env: { PATH: "/usr/bin" },
     });
     expect(container.runningCount()).toBe(0);
   });

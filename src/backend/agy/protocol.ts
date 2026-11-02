@@ -80,6 +80,15 @@ export function parseAgyErrorLine(json: string): AgyErrorLine | null {
   return parsed.success ? parsed.data : null;
 }
 
+export const HookPayloadSchema = z.looseObject({
+  toolCall: z.looseObject({
+    name: z.string(),
+    args: z.record(z.string(), z.unknown()).default({}),
+  }),
+  workspacePaths: z.array(z.string()).default([]),
+});
+export type AgyHookPayload = z.infer<typeof HookPayloadSchema>;
+
 const UsageBucketSchema = z.looseObject({
   id: z.string(),
   name: z.string().optional(),

@@ -53,6 +53,30 @@ function runtimeClosure(): ReadonlySet<string> {
   return names;
 }
 
+it("agy_hook_entry_is_a_main_bundle_input_and_asar_unpacked", () => {
+  const config = parse(
+    readFileSync(join(REPO_ROOT, "electron-builder.yml"), "utf8"),
+  ) as BuilderConfig;
+  const viteConfig = readFileSync(
+    join(REPO_ROOT, "electron.vite.config.ts"),
+    "utf8",
+  );
+
+  expect(viteConfig).toMatch(
+    /agyHook:\s*srcPath\("backend",\s*"agy",\s*"hook\.ts"\)/,
+  );
+  expect(existsSync(join(REPO_ROOT, "src", "backend", "agy", "hook.ts"))).toBe(
+    true,
+  );
+  expect(config.asarUnpack).toEqual(
+    expect.arrayContaining([
+      "out/main/agyHook*.js",
+      "out/main/chunks/**",
+      "node_modules/shell-quote/**",
+    ]),
+  );
+});
+
 it("adapter_runtime_closure_is_asar_unpacked", () => {
   const config = parse(
     readFileSync(join(REPO_ROOT, "electron-builder.yml"), "utf8"),

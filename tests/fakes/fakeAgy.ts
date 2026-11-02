@@ -1,3 +1,4 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +13,8 @@ import type {
 } from "../../src/backend/agentAdapter";
 import { createAgentProcesses } from "../../src/backend/agentProcesses";
 import { createAgyAdapter } from "../../src/backend/agy/adapter";
+import { writeAgyHookConfig } from "../../src/backend/agy/hookConfig";
+import { fingerprintAgentsDir } from "../../src/backend/agy/workspaceGuard";
 import { buildAgentEnv } from "../../src/backend/env";
 import { WorktreeLocks } from "../../src/backend/locks";
 import {
@@ -62,6 +65,9 @@ export interface AgySpawn {
   readonly settings: Json | null;
   readonly mode: string | null;
   readonly conversation: string | null;
+  readonly geminiDir: string | null;
+  readonly configFilesAtSpawn: readonly string[];
+  readonly hooksJsonAtSpawn: string | null;
   readonly stdinLines: string[];
   readonly agyRunningAtSpawn: number;
 }
@@ -75,6 +81,9 @@ const FLAG_SETTINGS = "--settings";
 const FLAG_MODE = "--mode";
 const FLAG_CONVERSATION = "--conversation";
 const FLAG_PROMPT = "-p";
+const FLAG_GEMINI_DIR_PREFIX = "--gemini_dir=";
+const HOOK_CONFIG_DIR = "config";
+const HOOKS_JSON = "hooks.json";
 const USAGE_PROMPT = "/usage";
 const LOGGED_OUT_STDERR = [
   "Authentication required. Please visit the URL to log in:",
@@ -386,6 +395,22 @@ function valueAfter(args: readonly string[], flag: string): string | null {
   return index < 0 ? null : (args[index + 1] ?? null);
 }
 
+function geminiDirOf(args: readonly string[]): string | null {
+  const flag = args.find((arg) => arg.startsWith(FLAG_GEMINI_DIR_PREFIX));
+  return flag === undefined ? null : flag.slice(FLAG_GEMINI_DIR_PREFIX.length);
+}
+
+function configFilesIn(geminiDir: string | null): string[] {
+  const dir = geminiDir === null ? null : join(geminiDir, HOOK_CONFIG_DIR);
+  return dir !== null && existsSync(dir) ? readdirSync(dir).sort() : [];
+}
+
+function hooksJsonIn(geminiDir: string | null): string | null {
+  const file =
+    geminiDir === null ? null : join(geminiDir, HOOK_CONFIG_DIR, HOOKS_JSON);
+  return file !== null && existsSync(file) ? readFileSync(file, "utf8") : null;
+}
+
 function settingsOf(args: readonly string[]): Json | null {
   const raw = valueAfter(args, FLAG_SETTINGS);
   return raw === null ? null : SettingsArgSchema.parse(JSON.parse(raw));
@@ -533,6 +558,7 @@ export class ScriptedAgyContainer implements ProcessContainer {
     if (processScript?.holdStops === true) {
       contained.holdStops();
     }
+    const geminiDir = geminiDirOf(spec.args);
     const spawned: AgySpawn = {
       spec,
       contained,
@@ -540,6 +566,9 @@ export class ScriptedAgyContainer implements ProcessContainer {
       settings: settingsOf(spec.args),
       mode: valueAfter(spec.args, FLAG_MODE),
       conversation: valueAfter(spec.args, FLAG_CONVERSATION),
+      geminiDir,
+      configFilesAtSpawn: configFilesIn(geminiDir),
+      hooksJsonAtSpawn: hooksJsonIn(geminiDir),
       stdinLines: [],
       agyRunningAtSpawn: this.agySpawns().filter(
         (earlier) => !earlier.contained.hasExited,
@@ -587,7 +616,6 @@ export const AGY_RIG_PROBE_TIMEOUT_MS = 300;
 export const AGY_RIG_PARENT_ENV: NodeJS.ProcessEnv = {
   PATH: "/usr/bin",
   HTTPS_PROXY: "http://proxy.corp:3128",
-  AGY_CLI_DISABLE_AUTO_UPDATE: "0",
   AGY_TOKEN_FILE: "/tmp/token",
   ANTIGRAVITY_HOME: "/elsewhere",
   GOOGLE_GEMINI_BASE_URL: "http://127.0.0.1:9",
@@ -601,9 +629,20 @@ export async function removeAgyRigDirs(): Promise<void> {
   );
 }
 
+export const AGY_RIG_HOOK_EXEC_PATH = "/opt/Codeweave/codeweave";
+export const AGY_RIG_HOOK_ENTRY =
+  "/opt/Codeweave/resources/app.asar.unpacked/out/main/agyHook.js";
+
+export interface HookConfigWrite {
+  readonly configDir: string;
+  readonly spawnsBefore: number;
+}
+
 export interface AgyRig {
   readonly container: ScriptedAgyContainer;
   readonly cwd: string;
+  readonly configDir: string;
+  readonly hookWrites: HookConfigWrite[];
   start(profile?: PermissionProfile, runId?: string): Promise<AgentStartResult>;
 }
 
@@ -611,9 +650,10 @@ export function agySpecFor(
   cwd: string,
   profile: PermissionProfile,
   runId: string,
+  account: Account = AGY_RIG_ACCOUNT,
 ): AgentStartSpec {
   return {
-    account: AGY_RIG_ACCOUNT,
+    account,
     cwd,
     profile,
     runId,
@@ -621,11 +661,33 @@ export function agySpecFor(
   };
 }
 
-export async function createAgyRig(): Promise<AgyRig> {
+export interface AgyRigOptions {
+  readonly fingerprintWorkspace?: (worktreeRoot: string) => Promise<string>;
+}
+
+export async function createAgyRig(
+  options: AgyRigOptions = {},
+): Promise<AgyRig> {
   const cwd = await mkdtemp(join(tmpdir(), "codeweave-agy-"));
-  rigDirs.push(cwd);
+  const configDir = await mkdtemp(join(tmpdir(), "codeweave-agy-acct-"));
+  rigDirs.push(cwd, configDir);
+  const account: Account = { ...AGY_RIG_ACCOUNT, configDir };
   const container = new ScriptedAgyContainer();
+  const hookWrites: HookConfigWrite[] = [];
   const adapter = createAgyAdapter({
+    writeHookConfig: async (dir) => {
+      hookWrites.push({
+        configDir: dir,
+        spawnsBefore: container.agySpawns().length,
+      });
+      await writeAgyHookConfig({
+        configDir: dir,
+        execPath: AGY_RIG_HOOK_EXEC_PATH,
+        hookEntry: AGY_RIG_HOOK_ENTRY,
+        platform: "linux",
+      });
+    },
+    fingerprintWorkspace: options.fingerprintWorkspace ?? fingerprintAgentsDir,
     processes: createAgentProcesses({ container, locks: new WorktreeLocks() }),
     container,
     envFor: (spec) =>
@@ -646,8 +708,10 @@ export async function createAgyRig(): Promise<AgyRig> {
   return {
     container,
     cwd,
+    configDir,
+    hookWrites,
     start: (profile = PermissionProfile.ask, runId = "run-1") =>
-      adapter.start(agySpecFor(cwd, profile, runId)),
+      adapter.start(agySpecFor(cwd, profile, runId, account)),
   };
 }
 
