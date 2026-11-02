@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { AgentEvent } from "./events";
+import type { AgentEvent, FileDiff } from "./events";
 import {
   createPermissionRecord,
   type PermissionRecord,
@@ -302,5 +302,32 @@ describe("session reducer: permissions", () => {
     expect(state.permissions.map((p) => [p.requestId, p.state])).toEqual([
       ["r0", "resolved"],
     ]);
+  });
+});
+
+const EDIT_DIFFS: readonly FileDiff[] = [
+  { path: "src/app.ts", change: "modified", patch: "@@ -1,1 +1,1 @@\n-a\n+b" },
+];
+
+it("diffs_are_stored_on_tool_calls_only", () => {
+  const state = reduceAll([
+    BASH_CALL,
+    { type: "tool_call_update", toolCallId: "t1", diffs: EDIT_DIFFS },
+  ]);
+
+  expect(state.toolCalls[0]?.diffs).toEqual(EDIT_DIFFS);
+  expect(state.turnLog[0]).not.toHaveProperty("diffs");
+});
+
+it("update_without_diffs_keeps_diffs", () => {
+  const state = reduceAll([
+    BASH_CALL,
+    { type: "tool_call_update", toolCallId: "t1", diffs: EDIT_DIFFS },
+    { type: "tool_call_update", toolCallId: "t1", status: "completed" },
+  ]);
+
+  expect(state.toolCalls[0]).toMatchObject({
+    status: "completed",
+    diffs: EDIT_DIFFS,
   });
 });

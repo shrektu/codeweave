@@ -1,5 +1,30 @@
 export type ToolCallStatus = "pending" | "in_progress" | "completed" | "failed";
 
+export const FileChange = {
+  created: "created",
+  modified: "modified",
+  deleted: "deleted",
+} as const;
+export type FileChange = (typeof FileChange)[keyof typeof FileChange];
+
+export const DiffOmission = {
+  binary: "binary",
+  tooLarge: "too_large",
+} as const;
+export type DiffOmission = (typeof DiffOmission)[keyof typeof DiffOmission];
+
+export type FileDiff =
+  | {
+      readonly path: string;
+      readonly change: FileChange;
+      readonly patch: string;
+    }
+  | {
+      readonly path: string;
+      readonly change: FileChange;
+      readonly omitted: DiffOmission;
+    };
+
 export interface PermissionOption {
   readonly optionId: string;
   readonly name: string;
@@ -28,6 +53,7 @@ export type AgentEvent =
       readonly rawInput?: unknown;
       readonly status?: ToolCallStatus;
       readonly output?: string;
+      readonly diffs?: readonly FileDiff[];
     }
   | {
       readonly type: "permission_request";

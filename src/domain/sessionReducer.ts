@@ -1,4 +1,4 @@
-import type { AgentEvent, ToolCallStatus } from "./events";
+import type { AgentEvent, FileDiff, ToolCallStatus } from "./events";
 import {
   createPermissionRecord,
   expireAll,
@@ -16,6 +16,7 @@ export interface TurnLogEntry {
 export interface ToolCallEntry extends TurnLogEntry {
   readonly kind: string;
   readonly seq: number;
+  readonly diffs?: readonly FileDiff[];
 }
 
 export interface AssistantMessage {
@@ -202,6 +203,7 @@ export function reduceSession(
         toolCalls: applyUpdate(state.toolCalls, event.toolCallId, {
           ...patch,
           ...(event.kind === undefined ? {} : { kind: event.kind }),
+          ...(event.diffs === undefined ? {} : { diffs: event.diffs }),
         }),
         turnLog: applyUpdate(state.turnLog, event.toolCallId, patch),
       };

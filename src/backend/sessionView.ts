@@ -1,11 +1,12 @@
 import type { RotationPhase } from "../domain/rotation";
-import type { SessionState } from "../domain/sessionReducer";
+import type { SessionState, ToolCallEntry } from "../domain/sessionReducer";
 import type { Account, PermissionProfile, ProviderId } from "../domain/types";
 import type {
   FlowRef,
   LimitView,
   PermissionView,
   SessionView,
+  ToolCallView,
 } from "../shared/views";
 
 export interface SessionViewInput {
@@ -35,6 +36,16 @@ function activeAccountOf(phase: RotationPhase): string | null {
     case "stopped":
       return null;
   }
+}
+
+function toToolCallView(tool: ToolCallEntry): ToolCallView {
+  const { diffs, ...rest } = tool;
+  return {
+    ...rest,
+    ...(diffs === undefined
+      ? {}
+      : { diffs: diffs.map((diff) => ({ ...diff })) }),
+  };
 }
 
 function pendingPermissions(input: SessionViewInput): PermissionView[] {
@@ -70,7 +81,7 @@ export function toSessionView(input: SessionViewInput): SessionView {
       input.accounts.find((account) => account.id === activeAccountId)
         ?.provider ?? input.provider,
     messages: state.messages.map((message) => ({ ...message })),
-    toolCalls: state.toolCalls.map((tool) => ({ ...tool })),
+    toolCalls: state.toolCalls.map(toToolCallView),
     permissions: pendingPermissions(input),
     limits: [...input.limits],
     lastTurn: state.lastTurn,

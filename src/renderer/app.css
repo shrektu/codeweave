@@ -199,6 +199,39 @@ pre {
   color: #aeb9d8;
 }
 
+.diff-file {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+pre.diff {
+  white-space: pre;
+  overflow-x: auto;
+  overflow-wrap: normal;
+}
+
+.diff-line {
+  display: block;
+}
+
+.diff-line[data-kind="add"] {
+  background: var(--diff-add);
+}
+
+.diff-line[data-kind="del"] {
+  background: var(--diff-del);
+}
+
+.diff-line[data-kind="hunk"] {
+  color: var(--accent);
+}
+
+.diff-omitted {
+  color: var(--muted);
+  margin: 0;
+}
+
 .tool-status[data-status="in_progress"] {
   color: var(--warn);
 }
