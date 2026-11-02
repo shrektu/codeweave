@@ -79,6 +79,35 @@ describe("agent env", () => {
     expect(env.HTTPS_PROXY).toBe("http://proxy.corp:3128");
   });
 
+  it("gemini_env_strips_agy_and_google_endpoint_variables", () => {
+    const env = buildAgentEnv({
+      parent: {
+        PATH: "/usr/bin",
+        AGY_CLI_DISABLE_AUTO_UPDATE: "0",
+        agy_token: "t",
+        ANTIGRAVITY_HOME: "/elsewhere",
+        GOOGLE_GEMINI_BASE_URL: "http://127.0.0.1:9",
+        GOOGLE_GENAI_USE_VERTEXAI: "true",
+        GOOGLE_GENAI_USE_ENTERPRISE: "true",
+        GOOGLE_CLOUD_PROJECT: "keeps-project",
+        HTTPS_PROXY: "http://proxy.corp:3128",
+      },
+      platform: "linux",
+      homeDir: "/home/jane",
+      account: { ...codexAccount, provider: ProviderId.gemini },
+      executable: "/home/jane/.local/bin/agy",
+      runMarker: "run-8",
+      testMode: false,
+    });
+
+    expect(env).toEqual({
+      PATH: "/usr/bin",
+      GOOGLE_CLOUD_PROJECT: "keeps-project",
+      HTTPS_PROXY: "http://proxy.corp:3128",
+      CODEWEAVE_RUN_ID: "run-8",
+    });
+  });
+
   it("agent_env_overrides_rejected_outside_test_mode", () => {
     expect(() => build({ ANTHROPIC_BASE_URL: "http://fake" })).toThrow(
       AgentEnvOverridesRejectedError,

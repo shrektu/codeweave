@@ -9,7 +9,7 @@ import {
 } from "./protocol";
 
 function request(method: string, params: unknown): unknown {
-  return { v: 4, id: "a", method, params };
+  return { v: 5, id: "a", method, params };
 }
 
 const VALID_REQUESTS: [string, unknown][] = [
@@ -67,6 +67,12 @@ const VALID_REQUESTS: [string, unknown][] = [
   ["vault/status", {}],
   ["models/catalog", {}],
   ["settings/set", { codexExecutable: "/opt/codex" }],
+  ["settings/set", { agyExecutable: "/opt/agy" }],
+  ["settings/set", { agyExecutable: null }],
+  [
+    "accounts/add",
+    { label: "Gemini", configDir: "/data/accounts/g1", provider: "gemini" },
+  ],
   ["settings/set", { opencodeExecutable: "/opt/opencode" }],
   ["settings/set", { opencodeExecutable: null }],
   ["accounts/remove", { id: "acc" }],
@@ -80,7 +86,7 @@ const VALID_REQUESTS: [string, unknown][] = [
 
 const INVALID_REQUESTS: [string, unknown][] = [
   ["ping with a param", request("ping", { extra: 1 })],
-  ["ping without params", { v: 4, id: "a", method: "ping" }],
+  ["ping without params", { v: 5, id: "a", method: "ping" }],
   ["session/start without cwd", request("session/start", {})],
   ["session/start with empty cwd", request("session/start", { cwd: "" })],
   [
@@ -103,7 +109,7 @@ const INVALID_REQUESTS: [string, unknown][] = [
     request("accounts/add", {
       label: "G",
       configDir: "/x",
-      provider: "gemini",
+      provider: "cursor",
     }),
   ],
   [
@@ -237,13 +243,13 @@ describe("RequestSchema", () => {
   });
 
   it.each([
-    ["an empty id", { v: 4, id: "", method: "ping", params: {} }],
-    ["an extra key", { v: 4, id: "a", method: "ping", params: {}, extra: 1 }],
-    ["an unknown method", { v: 4, id: "a", method: "pong", params: {} }],
+    ["an empty id", { v: 5, id: "", method: "ping", params: {} }],
+    ["an extra key", { v: 5, id: "a", method: "ping", params: {}, extra: 1 }],
+    ["an unknown method", { v: 5, id: "a", method: "pong", params: {} }],
     ["a missing version", { id: "a", method: "ping", params: {} }],
     ["a non-numeric version", { v: "2", id: "a", method: "ping", params: {} }],
     ["a fractional version", { v: 1.5, id: "a", method: "ping", params: {} }],
-    ["a missing id", { v: 4, method: "ping", params: {} }],
+    ["a missing id", { v: 5, method: "ping", params: {} }],
   ])("rejects_%s", (_label, payload) => {
     expect(RequestSchema.safeParse(payload).success).toBe(false);
   });
@@ -252,7 +258,7 @@ describe("RequestSchema", () => {
 describe("ResponseSchema", () => {
   it("accepts_a_ping_result", () => {
     const parsed = ResponseSchema.safeParse({
-      v: 4,
+      v: 5,
       id: "a",
       ok: true,
       result: { pong: true, backendPid: 42 },
@@ -270,7 +276,7 @@ describe("ResponseSchema", () => {
     "EXPIRED",
   ])("accepts_the_error_code_%s", (code) => {
     const parsed = ResponseSchema.safeParse({
-      v: 4,
+      v: 5,
       id: null,
       ok: false,
       error: { code, message: "bad" },
@@ -282,11 +288,11 @@ describe("ResponseSchema", () => {
   it.each([
     [
       "an unknown error code",
-      { v: 4, id: "a", ok: false, error: { code: "NOPE", message: "x" } },
+      { v: 5, id: "a", ok: false, error: { code: "NOPE", message: "x" } },
     ],
     [
       "a success without a request id",
-      { v: 4, id: null, ok: true, result: { pong: true, backendPid: 1 } },
+      { v: 5, id: null, ok: true, result: { pong: true, backendPid: 1 } },
     ],
   ])("rejects_%s", (_label, payload) => {
     expect(ResponseSchema.safeParse(payload).success).toBe(false);
@@ -299,6 +305,7 @@ describe("EventSchema", () => {
     effectLevel: "full",
     claudeExecutable: "/usr/bin/claude",
     codexExecutable: null,
+    agyExecutable: null,
     opencodeExecutable: null,
   };
   const logEntry = {
@@ -317,24 +324,24 @@ describe("EventSchema", () => {
     ["settings/changed", settings],
     ["switchLog/appended", logEntry],
   ])("accepts_%s", (event, payload) => {
-    expect(EventSchema.safeParse({ v: 4, event, payload }).success).toBe(true);
+    expect(EventSchema.safeParse({ v: 5, event, payload }).success).toBe(true);
   });
 
   it.each([
-    ["an unknown event", { v: 4, event: "nope", payload: null }],
+    ["an unknown event", { v: 5, event: "nope", payload: null }],
     [
       "a settings event with a session payload",
-      { v: 4, event: "settings/changed", payload: null },
+      { v: 5, event: "settings/changed", payload: null },
     ],
     [
       "a log entry with an unknown reason",
       {
-        v: 4,
+        v: 5,
         event: "switchLog/appended",
         payload: { ...logEntry, reason: "whim" },
       },
     ],
-    ["an event without payload", { v: 4, event: "accounts/changed" }],
+    ["an event without payload", { v: 5, event: "accounts/changed" }],
   ])("rejects_%s", (_label, payload) => {
     expect(EventSchema.safeParse(payload).success).toBe(false);
   });

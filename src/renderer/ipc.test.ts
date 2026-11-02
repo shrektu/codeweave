@@ -43,13 +43,14 @@ function fakePort(): FakePort {
 }
 
 const SETTINGS_EVENT = {
-  v: 4,
+  v: 5,
   event: "settings/changed",
   payload: {
     permissionProfile: "plan",
     effectLevel: "low",
     claudeExecutable: null,
     codexExecutable: null,
+    agyExecutable: null,
     opencodeExecutable: null,
   },
 };
@@ -63,7 +64,7 @@ describe("ipc client events", () => {
     client.subscribe(listener);
 
     emit({
-      v: 4,
+      v: 5,
       event: "settings/changed",
       payload: { permissionProfile: "nope" },
     });
@@ -96,7 +97,7 @@ describe("ipc client requests", () => {
     const pending = client.request("ping", {});
     const [sent] = posted as [{ id: string }];
     emit({
-      v: 4,
+      v: 5,
       id: sent.id,
       ok: true,
       result: { pong: true, backendPid: 7 },
@@ -113,14 +114,14 @@ describe("ipc client requests", () => {
     const pending = client.request("accounts/remove", { id: "acc-1" });
     const [sent] = posted as [{ id: string }];
     emit({
-      v: 4,
+      v: 5,
       id: sent.id,
       ok: false,
       error: { code: "CONFLICT", message: "in use" },
     });
 
     expect(sent).toEqual({
-      v: 4,
+      v: 5,
       id: expect.any(String) as string,
       method: "accounts/remove",
       params: { id: "acc-1" },

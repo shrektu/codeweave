@@ -32,6 +32,7 @@ describe("json store", () => {
       effectLevel: "auto",
       claudeExecutable: null,
       codexExecutable: null,
+      agyExecutable: null,
       opencodeExecutable: null,
     });
   });
@@ -45,6 +46,7 @@ describe("json store", () => {
       effectLevel: "low",
       claudeExecutable: "/usr/bin/claude",
       codexExecutable: "/usr/bin/codex",
+      agyExecutable: "/usr/bin/agy",
       opencodeExecutable: "/usr/bin/opencode",
     } as const;
 
@@ -208,6 +210,7 @@ describe("json store writes", () => {
         effectLevel: "low",
         claudeExecutable: null,
         codexExecutable: null,
+        agyExecutable: null,
         opencodeExecutable: null,
       }),
     ).rejects.toBeInstanceOf(StorageCorruptError);

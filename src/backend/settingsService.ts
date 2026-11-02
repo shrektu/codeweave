@@ -18,7 +18,10 @@ export interface SettingsService {
 
 type ExecutableSetting = keyof Pick<
   SettingsFile,
-  "claudeExecutable" | "codexExecutable" | "opencodeExecutable"
+  | "claudeExecutable"
+  | "codexExecutable"
+  | "agyExecutable"
+  | "opencodeExecutable"
 >;
 
 const EXECUTABLE_SETTINGS: Readonly<
@@ -26,6 +29,7 @@ const EXECUTABLE_SETTINGS: Readonly<
 > = {
   [ProviderId.claude]: "claudeExecutable",
   [ProviderId.codex]: "codexExecutable",
+  [ProviderId.gemini]: "agyExecutable",
   [ProviderId.opencode]: "opencodeExecutable",
 };
 
@@ -43,6 +47,7 @@ function toView(settings: SettingsFile): SettingsView {
     effectLevel: settings.effectLevel,
     claudeExecutable: settings.claudeExecutable,
     codexExecutable: settings.codexExecutable,
+    agyExecutable: settings.agyExecutable,
     opencodeExecutable: settings.opencodeExecutable,
   };
 }
@@ -72,6 +77,10 @@ export function createSettingsService({
             patch.codexExecutable === undefined
               ? current.codexExecutable
               : patch.codexExecutable,
+          agyExecutable:
+            patch.agyExecutable === undefined
+              ? current.agyExecutable
+              : patch.agyExecutable,
           opencodeExecutable:
             patch.opencodeExecutable === undefined
               ? current.opencodeExecutable

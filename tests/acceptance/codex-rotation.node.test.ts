@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
@@ -141,8 +143,38 @@ describe("codex rotation through the backend", () => {
 });
 
 describe("session provider selection", () => {
-  it("session_pool_is_limited_to_provider", async () => {
+  it("codex_session_without_codex_accounts_starts_on_shared_subscription", async () => {
     const rig = await openRig({ accounts: [ACCOUNT_A, ACCOUNT_B] });
+
+    const codexView = await rig.call("session/start", {
+      cwd: rig.cwd,
+      provider: "codex",
+    });
+    expect(codexView.provider).toBe("codex");
+    expect(codexView.activeAccountId).toBe(ACCOUNT_A.id);
+    expect(rig.codexContainer.servers).toHaveLength(0);
+    await rig.call("session/stop", {});
+
+    const view = await rig.call("session/start", { cwd: rig.cwd });
+    expect(view.provider).toBe("claude");
+    expect(view.activeAccountId).toBe(ACCOUNT_A.id);
+    expect(rig.codexContainer.servers).toHaveLength(0);
+  });
+
+  it("session_without_any_usable_account_is_rejected", async () => {
+    const rig = await openRig({ accounts: [] });
+    await rig.call("accounts/add", {
+      label: "Groq Off",
+      configDir: join(rig.userData, "accounts", "Groq-Off"),
+      provider: "opencode",
+      api: {
+        provider: "groq",
+        model: "llama-3.3-70b-versatile",
+        baseUrl: null,
+        rotation: false,
+      },
+      apiKey: "sk-test-groq-off-0001",
+    });
 
     await expect(
       rig.call("session/start", { cwd: rig.cwd, provider: "codex" }),
@@ -150,11 +182,6 @@ describe("session provider selection", () => {
       code: IpcErrorCode.CONFLICT,
       message: "No usable account",
     });
-
-    const view = await rig.call("session/start", { cwd: rig.cwd });
-    expect(view.provider).toBe("claude");
-    expect(view.activeAccountId).toBe(ACCOUNT_A.id);
-    expect(rig.codexContainer.servers).toHaveLength(0);
   });
 
   it("session_without_provider_uses_first_accounts_provider", async () => {

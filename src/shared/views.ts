@@ -178,6 +178,7 @@ export const SettingsViewSchema = z.strictObject({
   effectLevel: z.enum(EffectLevel),
   claudeExecutable: z.string().nullable(),
   codexExecutable: z.string().nullable(),
+  agyExecutable: z.string().nullable(),
   opencodeExecutable: z.string().nullable(),
 });
 export type SettingsView = z.infer<typeof SettingsViewSchema>;

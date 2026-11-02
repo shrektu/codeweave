@@ -236,7 +236,7 @@ it("ui_reconnect_restores_pending_permission", async () => {
     second.port2.once("message", resolve);
   });
   second.port2.postMessage({
-    v: 4,
+    v: 5,
     id: "snap",
     method: "sessions/snapshot",
     params: {},

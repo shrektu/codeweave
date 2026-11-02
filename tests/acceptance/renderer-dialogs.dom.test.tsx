@@ -54,8 +54,12 @@ function settingsClient(): FakeIpcClient {
         patch.opencodeExecutable === undefined
           ? current.opencodeExecutable
           : patch.opencodeExecutable,
+      agyExecutable:
+        patch.agyExecutable === undefined
+          ? current.agyExecutable
+          : patch.agyExecutable,
     };
-    client.emit({ v: 4, event: "settings/changed", payload: current });
+    client.emit({ v: 5, event: "settings/changed", payload: current });
     return current;
   });
   return client;
@@ -82,6 +86,7 @@ function configDirInput(): HTMLInputElement {
 
 const CLAUDE_SAVE_INDEX = 0;
 const CODEX_SAVE_INDEX = 1;
+const AGY_SAVE_INDEX = 3;
 
 function saveButton(index: number): HTMLElement {
   const button = screen.getAllByRole("button", { name: "Save" })[index];
@@ -175,6 +180,30 @@ it("settings_dialog_saves_codex_executable", async () => {
   });
 });
 
+it("settings_dialog_saves_agy_executable", async () => {
+  const client = settingsClient();
+  renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
+  const input = await screen.findByLabelText("Gemini executable (agy)");
+
+  fireEvent.change(input, { target: { value: "/opt/agy/bin/agy" } });
+  fireEvent.click(saveButton(AGY_SAVE_INDEX));
+  await waitFor(() => {
+    expect(client.requests).toContainEqual({
+      method: "settings/set",
+      params: { agyExecutable: "/opt/agy/bin/agy" },
+    });
+  });
+
+  fireEvent.change(input, { target: { value: "" } });
+  fireEvent.click(saveButton(AGY_SAVE_INDEX));
+  await waitFor(() => {
+    expect(client.requests).toContainEqual({
+      method: "settings/set",
+      params: { agyExecutable: null },
+    });
+  });
+});
+
 it("bypass_texts_do_not_name_claude", async () => {
   renderWithServices(
     <SettingsDialog onClose={vi.fn<() => void>()} />,
@@ -256,7 +285,7 @@ it("accounts_dialog_adds_codex_account_with_provider", async () => {
     within(agent)
       .getAllByRole("option")
       .map((option) => option.textContent),
-  ).toEqual(["Claude", "Codex", "OpenCode (API key)"]);
+  ).toEqual(["Claude", "Codex", "Gemini", "OpenCode (API key)"]);
   expect(agent.value).toBe("claude");
   fireEvent.change(agent, { target: { value: "codex" } });
   fireEvent.change(screen.getByLabelText("Label"), {
@@ -302,6 +331,61 @@ it("accounts_dialog_shows_codex_login_command", async () => {
     screen.getByText("$env:CODEX_HOME='/home/us er/it''s'; codex login"),
   ).toBeTruthy();
   expect(screen.queryByText(/CLAUDE_CONFIG_DIR/)).toBeNull();
+});
+
+it("accounts_dialog_adds_gemini_account_with_provider", async () => {
+  const client = accountsClient();
+  client.respond("accounts/add", {
+    account: makeAccount({ label: "Gemini main", provider: "gemini" }),
+  });
+  renderWithServices(<AccountsDialog onClose={vi.fn<() => void>()} />, client);
+  await waitFor(() => {
+    expect(configDirInput().value).toBe(SUGGESTED_DIR);
+  });
+
+  fireEvent.change(screen.getByLabelText("Agent"), {
+    target: { value: "gemini" },
+  });
+  fireEvent.change(screen.getByLabelText("Label"), {
+    target: { value: "Gemini main" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Add account" }));
+
+  await waitFor(() => {
+    expect(client.requests).toContainEqual({
+      method: "accounts/add",
+      params: {
+        label: "Gemini main",
+        configDir: SUGGESTED_DIR,
+        provider: "gemini",
+      },
+    });
+  });
+});
+
+it("accounts_dialog_shows_gemini_login_command", async () => {
+  const client = accountsClient();
+  client.respond(
+    "sessions/snapshot",
+    makeSnapshot({
+      accounts: [
+        makeAccount({
+          id: "acc-gemini",
+          provider: "gemini",
+          label: "Gemini main",
+          configDir: "/home/us er/it's",
+        }),
+      ],
+    }),
+  );
+  renderWithServices(<AccountsDialog onClose={vi.fn<() => void>()} />, client);
+
+  expect(await screen.findByText("Sign in")).toBeTruthy();
+  expect(
+    screen.getByText("Run this in a terminal, then sign in with Google:"),
+  ).toBeTruthy();
+  expect(screen.getAllByText("agy")).toHaveLength(2);
+  expect(screen.queryByText(/CLAUDE_CONFIG_DIR|CODEX_HOME/)).toBeNull();
 });
 
 it("accounts_dialog_rejects_empty_label", async () => {

@@ -176,6 +176,14 @@ function SettingsForm({ settings }: { settings: SettingsView }): JSX.Element {
           onPatch({ opencodeExecutable });
         }}
       />
+      <ExecutableField
+        id="agy-executable"
+        label="Gemini executable (agy)"
+        current={settings.agyExecutable}
+        onSave={(agyExecutable) => {
+          onPatch({ agyExecutable });
+        }}
+      />
       {save.error !== null && <p className="error">{save.error}</p>}
     </>
   );

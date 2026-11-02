@@ -56,6 +56,7 @@ export const SettingsFileSchema = z.object({
   effectLevel: z.enum(EffectLevel),
   claudeExecutable: z.string().nullable(),
   codexExecutable: z.string().nullable().default(null),
+  agyExecutable: z.string().nullable().default(null),
   opencodeExecutable: z.string().nullable().default(null),
 });
 
@@ -98,6 +99,7 @@ const DEFAULT_SETTINGS: SettingsFile = {
   effectLevel: EffectLevel.auto,
   claudeExecutable: null,
   codexExecutable: null,
+  agyExecutable: null,
   opencodeExecutable: null,
 };
 

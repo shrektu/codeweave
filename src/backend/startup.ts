@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { API_PROVIDERS } from "../domain/apiProviders";
 import type { RotationPorts } from "../domain/rotation";
 import {
+  PermissionProfile,
   ProviderId,
   type Account,
   type EpochMillis,
@@ -18,6 +19,10 @@ import {
   type AgentStartSpec,
 } from "./agentAdapter";
 import { createAgentProcesses, type AgentProcesses } from "./agentProcesses";
+import { createAgyAdapter } from "./agy/adapter";
+import { locateAgyHookEntry, writeAgyHookConfig } from "./agy/hookConfig";
+import { probeAgyUsage, type AgyProbeResult } from "./agy/usage";
+import { fingerprintAgentsDir } from "./agy/workspaceGuard";
 import type { BackendArgs } from "./args";
 import { createClaudeAcpAdapter } from "./claude/acpAdapter";
 import { createCodexAdapter } from "./codex/adapter";
@@ -25,6 +30,7 @@ import { createCodexLimitProbe } from "./codex/probe";
 import type { ConnectionRegistry } from "./connections";
 import {
   AGENT_STOP_GRACE_MS,
+  AGY_BINARY,
   API_KEYS_FILE,
   CLAUDE_BINARY,
   CODEX_BINARY,
@@ -169,6 +175,38 @@ function createEnvFor(
     });
 }
 
+function createAgyLimitProbe(
+  deps: BackendDeps,
+  container: ProcessContainer,
+  store: JsonStore,
+): (account: Account, signal: AbortSignal) => Promise<AgyProbeResult> {
+  const envFor = createEnvFor(deps);
+  return async (account, signal) => {
+    const executable = deps.resolveExecutable(
+      ProviderId.gemini,
+      (await store.readSettings()).agyExecutable,
+    );
+    const runId = `${PROBE_RUN_ID_PREFIX}${randomUUID()}`;
+    return probeAgyUsage({
+      container,
+      executable,
+      configDir: account.configDir,
+      cwd: account.configDir,
+      env: envFor({
+        account,
+        cwd: account.configDir,
+        profile: PermissionProfile.plan,
+        runId,
+        executable,
+      }),
+      runId,
+      timeoutMs: PROBE_TIMEOUT_MS,
+      stopGraceMs: AGENT_STOP_GRACE_MS,
+      signal,
+    });
+  };
+}
+
 function createProbes(
   deps: BackendDeps,
   container: ProcessContainer | null,
@@ -194,6 +232,7 @@ function createProbes(
       stopGraceMs: AGENT_STOP_GRACE_MS,
       newRunId: () => `${PROBE_RUN_ID_PREFIX}${randomUUID()}`,
     }),
+    agyProbe: createAgyLimitProbe(deps, container, store),
     isInUse,
     now: deps.now,
     schedule: deps.schedule,
@@ -246,10 +285,11 @@ export function createCredentialsFor(
 
 function createAdapter(
   deps: BackendDeps,
+  container: ProcessContainer | null,
   processes: AgentProcesses | null,
   keyStore: KeyStore,
 ): AgentAdapter {
-  if (processes === null) {
+  if (processes === null || container === null) {
     return UNAVAILABLE_ADAPTER;
   }
   const envFor = createEnvFor(deps);
@@ -266,6 +306,20 @@ function createAdapter(
       executableFor: (spec) => spec.executable,
       platform: deps.platform,
       ...comSpecOf(deps),
+    }),
+    [ProviderId.gemini]: createAgyAdapter({
+      processes,
+      container,
+      envFor,
+      executableFor: (spec) => spec.executable,
+      writeHookConfig: (configDir) =>
+        writeAgyHookConfig({
+          configDir,
+          execPath: deps.execPath,
+          hookEntry: locateAgyHookEntry(),
+          platform: deps.platform,
+        }),
+      fingerprintWorkspace: fingerprintAgentsDir,
     }),
     [ProviderId.opencode]: createOpencodeAdapter({
       processes,
@@ -328,6 +382,10 @@ const EXECUTABLE_SPECS: Readonly<Partial<Record<ProviderId, ExecutableSpec>>> =
       binary: CODEX_BINARY,
       notFoundMessage: "The Codex executable was not found",
     },
+    [ProviderId.gemini]: {
+      binary: AGY_BINARY,
+      notFoundMessage: "The agy executable was not found",
+    },
     [ProviderId.opencode]: {
       binary: OPENCODE_BINARY,
       notFoundMessage: "The OpenCode executable was not found",
@@ -381,7 +439,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
   );
   const processes = container === null ? null : createProcesses(container);
   const sessions: SessionService = createSessionService({
-    adapter: createAdapter(deps, processes, keyStore),
+    adapter: createAdapter(deps, container, processes, keyStore),
     store,
     broadcast: deps.broadcast,
     now: deps.now,

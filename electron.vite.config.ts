@@ -13,6 +13,7 @@ export default defineConfig({
         input: {
           index: srcPath("main", "index.ts"),
           backend: srcPath("backend", "index.ts"),
+          agyHook: srcPath("backend", "agy", "hook.ts"),
         },
       },
     },

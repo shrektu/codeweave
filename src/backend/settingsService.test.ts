@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { makeTempDir } from "../../tests/fakes/processHelpers";
 
-import { createSettingsService } from "./settingsService";
+import { configuredExecutable, createSettingsService } from "./settingsService";
 import { createJsonStore } from "./storage";
 
 async function setup(): Promise<{
@@ -28,6 +28,7 @@ describe("settings service", () => {
       effectLevel: "auto",
       claudeExecutable: null,
       codexExecutable: null,
+      agyExecutable: null,
       opencodeExecutable: null,
     });
   });
@@ -42,6 +43,7 @@ describe("settings service", () => {
       effectLevel: "auto",
       claudeExecutable: null,
       codexExecutable: null,
+      agyExecutable: null,
       opencodeExecutable: null,
     };
     expect(view).toEqual(expected);
@@ -85,6 +87,7 @@ describe("settings service", () => {
       effectLevel: "low",
       claudeExecutable: "/opt/claude",
       codexExecutable: null,
+      agyExecutable: null,
       opencodeExecutable: null,
     });
   });
@@ -110,6 +113,35 @@ describe("settings service", () => {
     expect((await store.readSettings()).opencodeExecutable).toBeNull();
   });
 
+  it("set_agy_executable_is_persisted_and_independent_of_the_others", async () => {
+    const { service, store } = await setup();
+    await service.set({ codexExecutable: "/opt/codex" });
+
+    const set = await service.set({ agyExecutable: "/opt/agy" });
+    const kept = await service.set({ effectLevel: "low" });
+    const stored = (await store.readSettings()).agyExecutable;
+    const cleared = await service.set({ agyExecutable: null });
+
+    expect(set).toMatchObject({
+      codexExecutable: "/opt/codex",
+      agyExecutable: "/opt/agy",
+    });
+    expect(kept.agyExecutable).toBe("/opt/agy");
+    expect(stored).toBe("/opt/agy");
+    expect(cleared.agyExecutable).toBeNull();
+    expect(cleared.codexExecutable).toBe("/opt/codex");
+  });
+
+  it("agy_executable_belongs_to_the_gemini_provider", async () => {
+    const { store, service } = await setup();
+    await service.set({ agyExecutable: "/opt/agy" });
+
+    const settings = await store.readSettings();
+
+    expect(configuredExecutable(settings, "gemini")).toBe("/opt/agy");
+    expect(configuredExecutable(settings, "codex")).toBeNull();
+  });
+
   it("concurrent_sets_do_not_lose_updates", async () => {
     const { service } = await setup();
 
@@ -123,6 +155,7 @@ describe("settings service", () => {
       effectLevel: "full",
       claudeExecutable: null,
       codexExecutable: null,
+      agyExecutable: null,
       opencodeExecutable: null,
     });
   });

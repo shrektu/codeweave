@@ -11,7 +11,7 @@ export interface LoginCommands {
 }
 
 interface LoginSpec {
-  readonly variable: string;
+  readonly variable: string | null;
   readonly command: string;
   readonly hint: string;
 }
@@ -27,6 +27,11 @@ const LOGIN_SPECS: Readonly<Partial<Record<ProviderId, LoginSpec>>> = {
     command: "codex login",
     hint: "Run this in a terminal:",
   },
+  [ProviderId.gemini]: {
+    variable: null,
+    command: "agy",
+    hint: "Run this in a terminal, then sign in with Google:",
+  },
 };
 
 export function loginCommands(
@@ -38,6 +43,9 @@ export function loginCommands(
     return null;
   }
   const { variable, command, hint } = spec;
+  if (variable === null) {
+    return { bash: command, powershell: command, hint };
+  }
   const bashDir = configDir.replaceAll(SINGLE_QUOTE, BASH_ESCAPED_QUOTE);
   const powershellDir = configDir.replace(
     POWERSHELL_SINGLE_QUOTES,

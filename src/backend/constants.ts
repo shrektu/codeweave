@@ -51,9 +51,14 @@ export const ENV_DENY_PREFIXES: readonly string[] = [
   "GEMINI_",
   "ELECTRON_",
   "OPENCODE_",
+  "AGY_",
+  "ANTIGRAVITY_",
 ];
 export const ENV_DENY_EXACT: readonly string[] = [
   "NODE_OPTIONS",
+  "GOOGLE_GEMINI_BASE_URL",
+  "GOOGLE_GENAI_USE_VERTEXAI",
+  "GOOGLE_GENAI_USE_ENTERPRISE",
   ...PROVIDER_KEY_ENV_NAMES,
 ];
 
@@ -95,6 +100,7 @@ export const CONTAINER_UNAVAILABLE_MESSAGE =
   "Process container is not available";
 export const CLAUDE_BINARY = "claude";
 export const CODEX_BINARY = "codex";
+export const AGY_BINARY = "agy";
 export const CODEX_CONFIG_FILE_NAME = "config.toml";
 export const CODEX_FILE_CREDENTIAL_STORE_CONFIG =
   'cli_auth_credentials_store = "file"\n';

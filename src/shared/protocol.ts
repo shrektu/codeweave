@@ -55,6 +55,7 @@ const SettingsPatchSchema = z
     effectLevel: z.enum(EffectLevel).optional(),
     claudeExecutable: z.string().nullable().optional(),
     codexExecutable: z.string().nullable().optional(),
+    agyExecutable: z.string().nullable().optional(),
     opencodeExecutable: z.string().nullable().optional(),
   })
   .refine((patch) => Object.values(patch).some((value) => value !== undefined));
@@ -80,7 +81,9 @@ export const ParamsSchemas = {
     z.strictObject({
       label: NonBlankString,
       configDir: NonEmptyString,
-      provider: z.enum([ProviderId.claude, ProviderId.codex]).optional(),
+      provider: z
+        .enum([ProviderId.claude, ProviderId.codex, ProviderId.gemini])
+        .optional(),
     }),
     z.strictObject({
       label: NonBlankString,

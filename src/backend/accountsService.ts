@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
+import { mkdir, realpath, writeFile } from "node:fs/promises";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 
 import { ProviderId, type Account } from "../domain/types";
 import { IpcError, IpcErrorCode, type ParamsMap } from "../shared/protocol";
@@ -57,7 +65,14 @@ interface Repository {
 interface AccountsServiceParts {
   readonly repository: Repository;
   readonly keyStore: KeyStore;
+  readonly userData: string;
 }
+
+const PARENT_SEGMENT = "..";
+const SECOND_GEMINI_MESSAGE =
+  "Only one Gemini account is supported: agy keeps a single Google login per user";
+const UNMANAGED_GEMINI_DIR_MESSAGE =
+  "A Gemini account directory must be inside the Codeweave accounts directory";
 
 function byOrder(left: Account, right: Account): number {
   return left.order - right.order || left.id.localeCompare(right.id);
@@ -75,6 +90,54 @@ function absoluteConfigDir(configDir: string): string {
     );
   }
   return resolve(configDir);
+}
+
+function isStrictlyInside(parent: string, child: string): boolean {
+  const path = relative(parent, child);
+  return (
+    path !== "" && !isAbsolute(path) && path.split(sep)[0] !== PARENT_SEGMENT
+  );
+}
+
+function assertGeminiAllowed(
+  accounts: readonly Account[],
+  directory: string,
+  userData: string,
+): void {
+  if (!isStrictlyInside(resolve(userData, ACCOUNTS_DIR_NAME), directory)) {
+    throw new IpcError(IpcErrorCode.VALIDATION, UNMANAGED_GEMINI_DIR_MESSAGE);
+  }
+  if (accounts.some((account) => account.provider === ProviderId.gemini)) {
+    throw new IpcError(IpcErrorCode.VALIDATION, SECOND_GEMINI_MESSAGE);
+  }
+}
+
+async function realpathOfNearestExisting(path: string): Promise<string> {
+  try {
+    return await realpath(path);
+  } catch (error) {
+    const parent = dirname(path);
+    if (
+      !(error instanceof Error && "code" in error && error.code === "ENOENT") ||
+      parent === path
+    ) {
+      throw error;
+    }
+    return join(await realpathOfNearestExisting(parent), basename(path));
+  }
+}
+
+async function assertGeminiDirResolvesInside(
+  directory: string,
+  userData: string,
+): Promise<void> {
+  const [realDirectory, realRoot] = await Promise.all([
+    realpathOfNearestExisting(directory),
+    realpath(resolve(userData, ACCOUNTS_DIR_NAME)),
+  ]);
+  if (!isStrictlyInside(realRoot, realDirectory)) {
+    throw new IpcError(IpcErrorCode.VALIDATION, UNMANAGED_GEMINI_DIR_MESSAGE);
+  }
 }
 
 function createRepository(deps: AccountsServiceDeps): Repository {
@@ -154,6 +217,9 @@ async function addAccount(
   const { repository } = parts;
   const directory = absoluteConfigDir(params.configDir);
   const accounts = await repository.readSorted();
+  if (params.provider === ProviderId.gemini) {
+    assertGeminiAllowed(accounts, directory, parts.userData);
+  }
   const account: Account = {
     id: randomUUID(),
     provider: params.provider ?? ProviderId.claude,
@@ -162,7 +228,16 @@ async function addAccount(
     order: accounts.length,
     ...(params.provider === ProviderId.opencode ? { api: params.api } : {}),
   };
+  if (params.provider === ProviderId.gemini) {
+    await mkdir(resolve(parts.userData, ACCOUNTS_DIR_NAME), {
+      recursive: true,
+    });
+    await assertGeminiDirResolvesInside(directory, parts.userData);
+  }
   await mkdir(directory, { recursive: true });
+  if (params.provider === ProviderId.gemini) {
+    await assertGeminiDirResolvesInside(directory, parts.userData);
+  }
   if (params.provider === ProviderId.codex) {
     await writeCodexConfig(directory);
   }
@@ -242,7 +317,11 @@ export function createAccountsService(
   deps: AccountsServiceDeps,
 ): AccountsService {
   const repository = createRepository(deps);
-  const parts: AccountsServiceParts = { repository, keyStore: deps.keyStore };
+  const parts: AccountsServiceParts = {
+    repository,
+    keyStore: deps.keyStore,
+    userData: deps.userData,
+  };
   const serialized = createSerializer();
   return {
     async list(): Promise<AccountsResult> {

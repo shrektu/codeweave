@@ -5,6 +5,7 @@ import { expect, it, vi } from "vitest";
 import type { ScheduledTask } from "../../tests/fakes/rotationHarness";
 import type { Account } from "../domain/types";
 
+import type { AgyLimits, AgyProbeResult } from "./agy/usage";
 import type { RateLimitState } from "./codex/events";
 import type { ProbeResult } from "./codex/probe";
 import { createLimitProbeService, type LimitProbeService } from "./limitProbe";
@@ -17,6 +18,34 @@ const TICK_MS = 5;
 const CODEX_A: Account = account("codex-a", "codex", 0);
 const CODEX_B: Account = account("codex-b", "codex", 1);
 const CLAUDE_C: Account = account("claude-c", "claude", 2);
+const GEMINI_G: Account = account("gemini-g", "gemini", 3);
+
+const AGY_FIVE_HOUR_RESET = 1_700_007_200;
+const AGY_ALLOWED: AgyLimits = {
+  buckets: [
+    {
+      id: "gemini-5h",
+      window: "5h",
+      remainingFraction: 0.25,
+      resetsAt: AGY_FIVE_HOUR_RESET,
+    },
+  ],
+};
+const AGY_EXHAUSTED: AgyLimits = {
+  buckets: [
+    {
+      id: "gemini-5h",
+      window: "5h",
+      remainingFraction: 0,
+      resetsAt: AGY_FIVE_HOUR_RESET,
+    },
+  ],
+};
+const AGY_EXHAUSTED_WITHOUT_RESET: AgyLimits = {
+  buckets: [
+    { id: "gemini-5h", window: "5h", remainingFraction: 0, resetsAt: null },
+  ],
+};
 
 const ALLOWED: RateLimitState = {
   primary: { usedPercent: 50, windowDurationMins: 300, resetsAt: RESET_AT },
@@ -61,6 +90,10 @@ interface RigState {
   readonly inUse: Set<string>;
   readonly changes: { count: number };
   readonly aborted: string[];
+  readonly agyProbed: string[];
+  readonly agySignals: AbortSignal[];
+  agyHold: boolean;
+  readonly agyResults: Map<string, AgyProbeResult[]>;
   hold: PromiseWithResolvers<undefined> | null;
   stopHold: PromiseWithResolvers<undefined> | null;
   abortResult: ProbeResult;
@@ -75,6 +108,10 @@ function setup(accounts: Account[]): Rig {
     inUse: new Set(),
     changes: { count: 0 },
     aborted: [],
+    agyProbed: [],
+    agySignals: [],
+    agyHold: false,
+    agyResults: new Map(),
     hold: null,
     stopHold: null,
     abortResult: { kind: "failed" },
@@ -96,6 +133,21 @@ function setup(accounts: Account[]): Rig {
         }
       }
       return rig.results.get(target.id)?.shift() ?? { kind: "failed" };
+    },
+    agyProbe: async (target, signal) => {
+      rig.agyProbed.push(target.id);
+      rig.agySignals.push(signal);
+      if (rig.agyHold) {
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => {
+            resolve();
+          });
+        });
+        return { kind: "failed" };
+      }
+      return Promise.resolve(
+        rig.agyResults.get(target.id)?.shift() ?? { kind: "failed" },
+      );
     },
     isInUse: (id) => rig.inUse.has(id),
     now: () => NOW_MS,
@@ -336,4 +388,107 @@ it("is_blocked_reports_unstopped_account", async () => {
   expect(rig.service.isBlocked(CODEX_A.id)).toBe(true);
   expect(rig.service.isBlocked(CODEX_B.id)).toBe(false);
   expect(rig.service.isBlocked("unknown")).toBe(false);
+});
+
+it("gemini_accounts_use_the_agy_probe_and_codex_the_codex_probe", async () => {
+  const rig = setup([CODEX_A, GEMINI_G, CLAUDE_C]);
+  rig.results.set(CODEX_A.id, [limits(ALLOWED)]);
+  rig.agyResults.set(GEMINI_G.id, [{ kind: "limits", limits: AGY_ALLOWED }]);
+
+  rig.service.start();
+  await passes(rig, 1);
+
+  expect(rig.probed).toEqual([CODEX_A.id]);
+  expect(rig.agyProbed).toEqual([GEMINI_G.id]);
+  expect(rig.service.limitOf(GEMINI_G.id)).toEqual({
+    accountId: GEMINI_G.id,
+    status: "allowed",
+    resetsAt: AGY_FIVE_HOUR_RESET,
+    rateLimitType: "five_hour",
+    utilization: 0.75,
+    observedAt: NOW_MS,
+  });
+  expect(rig.service.runtimeOf(GEMINI_G.id)).toBeNull();
+});
+
+it("gemini_exhausted_probe_sets_runtime_only_with_a_reset", async () => {
+  const withReset = setup([GEMINI_G]);
+  withReset.agyResults.set(GEMINI_G.id, [
+    { kind: "limits", limits: AGY_EXHAUSTED },
+  ]);
+  const withoutReset = setup([GEMINI_G]);
+  withoutReset.agyResults.set(GEMINI_G.id, [
+    { kind: "limits", limits: AGY_EXHAUSTED_WITHOUT_RESET },
+  ]);
+
+  withReset.service.start();
+  withoutReset.service.start();
+  await passes(withReset, 1);
+  await passes(withoutReset, 1);
+
+  expect(withReset.service.runtimeOf(GEMINI_G.id)).toEqual({
+    status: "exhausted",
+    resetsAt: AGY_FIVE_HOUR_RESET,
+  });
+  expect(withReset.service.limitOf(GEMINI_G.id)).toMatchObject({
+    status: "rejected",
+    utilization: 1,
+  });
+  expect(withoutReset.service.runtimeOf(GEMINI_G.id)).toBeNull();
+  expect(withoutReset.service.limitOf(GEMINI_G.id)).toMatchObject({
+    status: "rejected",
+    resetsAt: null,
+  });
+});
+
+it("gemini_needs_login_and_no_limits_and_failure_follow_codex_semantics", async () => {
+  const rig = setup([GEMINI_G]);
+  rig.agyResults.set(GEMINI_G.id, [
+    { kind: "needs_login" },
+    { kind: "failed" },
+    { kind: "limits", limits: AGY_ALLOWED },
+    { kind: "no_limits" },
+  ]);
+  rig.service.start();
+  await passes(rig, 1);
+  const loggedOut = rig.service.runtimeOf(GEMINI_G.id);
+
+  rig.tasks[0]?.run();
+  await passes(rig, 2);
+  const afterFailure = rig.service.runtimeOf(GEMINI_G.id);
+  rig.tasks[1]?.run();
+  await passes(rig, 3);
+  rig.tasks[2]?.run();
+  await passes(rig, 4);
+
+  expect(loggedOut).toEqual({ status: "needs_login" });
+  expect(afterFailure).toEqual({ status: "needs_login" });
+  expect(rig.service.limitOf(GEMINI_G.id)).toBeNull();
+  expect(rig.service.runtimeOf(GEMINI_G.id)).toBeNull();
+});
+
+it("gemini_unstopped_probe_blocks_the_account", async () => {
+  const rig = setup([GEMINI_G]);
+  rig.agyResults.set(GEMINI_G.id, [{ kind: "unstopped" }]);
+
+  rig.service.start();
+  await passes(rig, 1);
+
+  expect(rig.service.isBlocked(GEMINI_G.id)).toBe(true);
+  await expect(rig.service.release(GEMINI_G.id)).rejects.toThrow(
+    "The limit probe for this account is still running",
+  );
+});
+
+it("gemini_probe_receives_abort_signal", async () => {
+  const rig = setup([GEMINI_G]);
+  rig.agyHold = true;
+  rig.service.start();
+  await vi.waitFor(() => {
+    expect(rig.agyProbed).toEqual([GEMINI_G.id]);
+  });
+
+  await expect(rig.service.release(GEMINI_G.id)).resolves.toBeUndefined();
+
+  expect(rig.agySignals[0]?.aborted).toBe(true);
 });

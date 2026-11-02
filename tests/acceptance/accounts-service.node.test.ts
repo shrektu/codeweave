@@ -1,5 +1,12 @@
 import { statSync } from "node:fs";
-import { chmod, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  readdir,
+  readFile,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { join, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -292,6 +299,178 @@ it("api_key_account_add_removes_the_stored_key_when_persisting_fails", async () 
     JSON.parse(await readFile(join(harness.userData, "api-keys.json"), "utf8")),
   ).toEqual({ version: 1, keys: {} });
   expect(harness.broadcast).not.toHaveBeenCalled();
+});
+
+const OUTSIDE_MANAGED_DIR_MESSAGE =
+  "A Gemini account directory must be inside the Codeweave accounts directory";
+const SECOND_GEMINI_MESSAGE =
+  "Only one Gemini account is supported: agy keeps a single Google login per user";
+
+function geminiParams(
+  configDir: string,
+  label = "Gemini",
+): Parameters<AccountsService["add"]>[0] {
+  return { label, configDir, provider: "gemini" };
+}
+
+function exists(path: string): boolean {
+  return statSync(path, { throwIfNoEntry: false }) !== undefined;
+}
+
+it("first_gemini_account_is_added_and_its_dir_created", async () => {
+  const harness = await setup();
+  const configDir = join(harness.userData, "accounts", "g1");
+
+  const { account } = await harness.service.add(geminiParams(configDir));
+
+  expect(account).toMatchObject({
+    provider: "gemini",
+    label: "Gemini",
+    configDir,
+    order: 0,
+  });
+  expect(exists(configDir)).toBe(true);
+  expect((await harness.store.readAccounts()).map((item) => item.id)).toEqual([
+    account.id,
+  ]);
+});
+
+it("second_gemini_account_rejected", async () => {
+  const harness = await setup();
+  await harness.service.add(
+    geminiParams(join(harness.userData, "accounts", "g1")),
+  );
+  const secondDir = join(harness.userData, "accounts", "g2");
+  harness.broadcast.mockClear();
+
+  await expect(
+    harness.service.add(geminiParams(secondDir, "Second")),
+  ).rejects.toMatchObject({
+    code: "VALIDATION",
+    message: SECOND_GEMINI_MESSAGE,
+  });
+
+  expect(await harness.store.readAccounts()).toHaveLength(1);
+  expect(exists(secondDir)).toBe(false);
+  expect(harness.broadcast).not.toHaveBeenCalled();
+});
+
+it("gemini_account_is_allowed_next_to_other_providers", async () => {
+  const harness = await setup();
+  await harness.service.add({
+    label: "Codex",
+    configDir: join(harness.userData, "dirs", "codex"),
+    provider: "codex",
+  });
+
+  const { account } = await harness.service.add(
+    geminiParams(join(harness.userData, "accounts", "g1")),
+  );
+
+  expect(account.order).toBe(1);
+  expect(await harness.store.readAccounts()).toHaveLength(2);
+});
+
+it("gemini_account_config_dir_is_managed", async () => {
+  const harness = await setup();
+  const outside = [
+    join(harness.userData, "dirs", "g"),
+    join(harness.userData, "accounts"),
+    join(harness.userData, "accounts-evil", "g"),
+    join(harness.userData, "accounts", "..", "..", "evil"),
+    join(harness.userData, "accounts", "..", "g"),
+  ];
+
+  for (const configDir of outside) {
+    await expect(
+      harness.service.add(geminiParams(configDir)),
+    ).rejects.toMatchObject({
+      code: "VALIDATION",
+      message: OUTSIDE_MANAGED_DIR_MESSAGE,
+    });
+  }
+
+  expect(await harness.store.readAccounts()).toEqual([]);
+  expect(exists(join(harness.userData, "dirs"))).toBe(false);
+  expect(exists(join(harness.userData, "accounts-evil"))).toBe(false);
+});
+
+it.skipIf(process.platform === "win32")(
+  "gemini_symlinked_dir_outside_accounts_rejected",
+  async () => {
+    const harness = await setup();
+    const outside = join(harness.userData, "outside");
+    const link = join(harness.userData, "accounts", "link");
+    await mkdir(outside, { recursive: true });
+    await mkdir(join(harness.userData, "accounts"), { recursive: true });
+    await symlink(outside, link, "dir");
+
+    await expect(harness.service.add(geminiParams(link))).rejects.toMatchObject(
+      {
+        code: "VALIDATION",
+        message: OUTSIDE_MANAGED_DIR_MESSAGE,
+      },
+    );
+
+    expect(await harness.store.readAccounts()).toEqual([]);
+    expect((await harness.service.list()).accounts).toEqual([]);
+  },
+);
+
+it.skipIf(process.platform === "win32")(
+  "gemini_symlinked_nested_new_dir_rejected_without_creating_it",
+  async () => {
+    const harness = await setup();
+    const outside = join(harness.userData, "outside");
+    const link = join(harness.userData, "accounts", "link");
+    await mkdir(outside, { recursive: true });
+    await mkdir(join(harness.userData, "accounts"), { recursive: true });
+    await symlink(outside, link, "dir");
+
+    await expect(
+      harness.service.add(geminiParams(join(link, "new"))),
+    ).rejects.toMatchObject({
+      code: "VALIDATION",
+      message: OUTSIDE_MANAGED_DIR_MESSAGE,
+    });
+
+    expect(exists(join(outside, "new"))).toBe(false);
+    expect(await harness.store.readAccounts()).toEqual([]);
+  },
+);
+
+it("gemini_new_dir_inside_accounts_accepted", async () => {
+  const harness = await setup();
+  const configDir = join(harness.userData, "accounts", "fresh");
+
+  const { account } = await harness.service.add(geminiParams(configDir));
+
+  expect(account.configDir).toBe(configDir);
+  expect(exists(configDir)).toBe(true);
+  expect(await harness.store.readAccounts()).toHaveLength(1);
+});
+
+it("gemini_account_dir_with_trailing_slash_or_dotdot_normalised", async () => {
+  const harness = await setup();
+  const normalised = join(harness.userData, "accounts", "g1");
+
+  const { account } = await harness.service.add(
+    geminiParams(
+      `${join(harness.userData, "accounts", "tmp", "..", "g1")}${sep}`,
+    ),
+  );
+
+  expect(account.configDir).toBe(normalised);
+  expect((await harness.store.readAccounts())[0]?.configDir).toBe(normalised);
+  expect(exists(normalised)).toBe(true);
+});
+
+it("relative_gemini_config_dir_rejected", async () => {
+  const harness = await setup();
+
+  await expect(
+    harness.service.add(geminiParams(join("accounts", "g1"))),
+  ).rejects.toMatchObject({ code: "VALIDATION" });
 });
 
 it("accounts_move_unknown_rejected_with_not_found", async () => {
