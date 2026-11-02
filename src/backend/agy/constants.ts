@@ -125,6 +125,12 @@ export const AgyFlag = {
 export const GEMINI_DIR_FLAG_PREFIX = "--gemini_dir=";
 export const AGY_PROFILE_ENV = "CODEWEAVE_AGY_PROFILE";
 export const AGY_WORKTREE_ENV = "CODEWEAVE_AGY_WORKTREE";
+export const AGY_SNAPSHOT_DIR_ENV = "CODEWEAVE_AGY_SNAPSHOT_DIR";
+export const AGY_SNAPSHOT_DIR_PREFIX = "codeweave-agy-snap-";
+export const SNAPSHOT_RECORD_SEPARATOR = "~";
+export const SNAPSHOT_RECORD_EXTENSION = ".json";
+export const SNAPSHOT_CONVERSATION_ID_PATTERN = /^[\w-]+$/;
+export const SNAPSHOT_STEP_INDEX_PATTERN = /^\d+$/;
 
 export const HOOK_CONFIG_DIR_NAME = "config";
 export const HOOKS_JSON_FILE = "hooks.json";

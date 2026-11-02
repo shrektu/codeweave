@@ -39,7 +39,7 @@ export function denyWith(reason: string): AgyHookDecision {
   return { decision: AgyHookDecisionKind.deny, reason };
 }
 
-function pathsOf(
+export function pathsOf(
   args: Readonly<Record<string, unknown>>,
   worktreeRoot: string,
 ): string[] {

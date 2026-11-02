@@ -81,6 +81,8 @@ export function parseAgyErrorLine(json: string): AgyErrorLine | null {
 }
 
 export const HookPayloadSchema = z.looseObject({
+  conversationId: z.string().optional().catch(undefined),
+  stepIdx: z.number().int().nonnegative().optional().catch(undefined),
   toolCall: z.looseObject({
     name: z.string(),
     args: z.record(z.string(), z.unknown()).default({}),

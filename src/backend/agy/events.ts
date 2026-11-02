@@ -7,6 +7,7 @@ import {
   AgyResultStatus,
   AgyStepState,
   AgyStepType,
+  AgyToolKind,
   AgyToolName,
   FINISHED_REASON_INTERRUPTED,
   MESSAGE_ID_SEPARATOR,
@@ -31,8 +32,15 @@ type FailureOutcome = Extract<
   { kind: "quota" | "auth" | "failed" }
 >;
 
-function stepId(step: StepUpdate, conversationId: string): string {
+export function stepId(step: StepUpdate, conversationId: string): string {
   return `${step.conversation_id ?? conversationId}${MESSAGE_ID_SEPARATOR}${String(step.step_index)}`;
+}
+
+export function isEditStep(step: StepUpdate): boolean {
+  return (
+    step.step_type === AgyStepType.tool &&
+    TOOL_KIND_BY_NAME.get(toolName(step)) === AgyToolKind.edit
+  );
 }
 
 function parameterOf(step: StepUpdate, key: string): string | null {

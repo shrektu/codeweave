@@ -1,15 +1,26 @@
+import { existsSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   AGY_RIG_GRACE_MS,
+  AWAIT_RELEASE,
   AWAIT_SIGNAL,
+  CLOSE_STREAMS,
   at,
   createAgyRig,
   delayFor,
   err,
   eventTypes,
+  exitNotice,
   exitWith,
+  hookStep,
   initStep,
+  toolStep,
+  writeFileStep,
   quotaFailureTurn,
   rawOut,
   removeAgyRigDirs,
@@ -27,11 +38,13 @@ import {
 } from "../../../tests/fakes/fakeAgy";
 import { settlesWithin } from "../../../tests/fakes/fakeCodexAppServer";
 import type { AgentEvent } from "../../domain/events";
+import { AGY_SNAPSHOT_DIR_ENV, AgyToolName } from "./constants";
 import { PermissionProfile } from "../../domain/types";
 import { StopFailureReason, type StopResult } from "../process/container";
 
 const CONV = "conv-1";
 const SETTLE_BOUND_MS = 2000;
+const DRAIN_PROBE_MS = 50;
 const FAILED_STOP: StopResult = {
   ok: false,
   reason: StopFailureReason.notEmptyAfterTimeout,
@@ -348,6 +361,54 @@ describe("agy adapter workspace fingerprint after init", () => {
         "Gemini workspace config (.agents) changed during this session; review it and start a new session",
     });
     expect(rig.container.agySpawns()[0]?.contained.hasExited).toBe(true);
+  });
+});
+
+function isDiffUpdate(event: AgentEvent): boolean {
+  return event.type === "tool_call_update" && event.diffs !== undefined;
+}
+
+describe("agy adapter snapshot dir lifetime", () => {
+  it("snapshot_dir_kept_until_exit_drain_finishes", async () => {
+    const rig = await createAgyRig();
+    await writeFile(join(rig.cwd, "a.txt"), "one\ntwo\nthree\n");
+    const target = join(rig.cwd, "a.txt");
+    const tool = {
+      name: AgyToolName.editFile,
+      parameters: { Path: target, Target: "two", Replacement: "2" },
+    };
+    const ref = at(CONV, 1);
+    rig.container.scriptTurn([
+      initStep(CONV),
+      userInputStep(at(CONV, 0)),
+      toolStep(ref, "ACTIVE", tool),
+      hookStep(ref, tool, rig.cwd),
+      writeFileStep(target, "one\n2\nthree\n"),
+      exitNotice(0),
+      AWAIT_RELEASE,
+      toolStep(ref, "DONE", tool),
+      CLOSE_STREAMS,
+    ]);
+    const { handle, events } = await startAgyHandle(
+      rig,
+      PermissionProfile.acceptEdits,
+    );
+    const spawn = rig.container.agySpawns()[0];
+    const dir = spawn?.spec.env[AGY_SNAPSHOT_DIR_ENV] ?? "";
+
+    const prompt = handle.prompt("go");
+    await vi.waitFor(() => {
+      expect(spawn?.contained.hookOutputs).toHaveLength(1);
+    });
+    await delay(DRAIN_PROBE_MS);
+    expect(existsSync(dir)).toBe(true);
+    spawn?.contained.released.resolve(undefined);
+    await prompt;
+
+    await vi.waitFor(() => {
+      expect(existsSync(dir)).toBe(false);
+      expect(events.some(isDiffUpdate)).toBe(true);
+    });
   });
 });
 

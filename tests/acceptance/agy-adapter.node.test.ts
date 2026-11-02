@@ -164,7 +164,12 @@ describe("agy adapter environment", () => {
       ...base,
       CODEWEAVE_RUN_ID: rig.container.probeSpawns()[0]?.spec.runId,
     });
-    expect(agySpawnAt(rig, 0).spec.env).toEqual({
+    const { CODEWEAVE_AGY_SNAPSHOT_DIR: snapshotDir, ...env } = agySpawnAt(
+      rig,
+      0,
+    ).spec.env;
+    expect(snapshotDir).toContain("codeweave-agy-snap-");
+    expect(env).toEqual({
       ...base,
       CODEWEAVE_RUN_ID: agySpawnAt(rig, 0).spec.runId,
       CODEWEAVE_AGY_PROFILE: "ask",

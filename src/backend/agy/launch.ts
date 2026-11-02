@@ -4,6 +4,7 @@ import type { PermissionProfile } from "../../domain/types";
 
 import {
   AGY_PROFILE_ENV,
+  AGY_SNAPSHOT_DIR_ENV,
   AGY_WORKTREE_ENV,
   AgyFlag,
   EMPTY_PROMPT_ARG,
@@ -24,6 +25,7 @@ export interface AgyLaunchInput {
   readonly configDir: string;
   readonly profile: PermissionProfile;
   readonly worktreeRoot: string;
+  readonly snapshotDir: string;
 }
 
 export interface AgyUsageLaunchInput {
@@ -64,6 +66,7 @@ export function buildAgyLaunch(input: AgyLaunchInput): AgyLaunch {
       ...input.env,
       [AGY_PROFILE_ENV]: input.profile,
       [AGY_WORKTREE_ENV]: input.worktreeRoot,
+      [AGY_SNAPSHOT_DIR_ENV]: input.snapshotDir,
     },
   };
 }

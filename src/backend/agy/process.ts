@@ -8,6 +8,8 @@ export interface LiveProcess {
   readonly profile: PermissionProfile;
   readonly stdoutClosed: Promise<void>;
   readonly stderrClosed: Promise<void>;
+  readonly snapshotDir: string;
+  diffWork: Promise<void>;
   exited: boolean;
   planned: boolean;
   initCheck: Promise<void> | null;
@@ -23,6 +25,7 @@ export function attachProcess(
   agentProcess: AgentProcess,
   profile: PermissionProfile,
   runId: string,
+  snapshotDir: string,
   handlers: ProcessHandlers,
 ): LiveProcess {
   const { contained } = agentProcess;
@@ -33,6 +36,8 @@ export function attachProcess(
     profile,
     stdoutClosed: closed.promise.then(() => undefined),
     stderrClosed: stderrEnded.promise.then(() => undefined),
+    snapshotDir,
+    diffWork: Promise.resolve(),
     exited: false,
     planned: false,
     initCheck: null,

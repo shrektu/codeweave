@@ -7,6 +7,12 @@ import {
 } from "node:http";
 import { delimiter, join } from "node:path";
 
+import {
+  _electron as electron,
+  expect,
+  type ElectronApplication,
+  type Page,
+} from "@playwright/test";
 import { z } from "zod";
 
 import { GEMINI_DIR_FLAG_PREFIX } from "../../src/backend/agy/constants";
@@ -17,6 +23,8 @@ import {
   assertIsolatedAgyEnv,
   ISOLATED_DBUS_ADDRESS,
 } from "../fakes/agyHomeGuard";
+
+import { writeKeyringPreload } from "./opencodeRotationFixture";
 
 export const AGY_ACCOUNT_LABEL = "A";
 export const AGY_PATH_ERROR =
@@ -39,6 +47,14 @@ const NUL = "\0";
 const EXECUTE_BITS = 0o111;
 const VANISHED_PROCESS_CODES: readonly string[] = ["ENOENT", "ESRCH"];
 const ROOT_DIR = join(import.meta.dirname, "..", "..");
+const USER_DATA_DIR_ENV = "CODEWEAVE_USER_DATA_DIR";
+const TEST_AGENT_ENV_VAR = "CODEWEAVE_TEST_AGENT_ENV";
+const ADD_TIMEOUT_MS = 30_000;
+const GEMINI_OPTION = "Gemini";
+const SANDBOX_FLAGS =
+  process.env.CI !== undefined && process.platform === "linux"
+    ? ["--no-sandbox"]
+    : [];
 
 export interface AgyXdgEnv {
   readonly XDG_CONFIG_HOME: string;
@@ -185,6 +201,65 @@ export async function agyProcessPids(geminiDir: string): Promise<string[]> {
     ),
   );
   return matches.flat();
+}
+
+export async function launchApp(
+  root: string,
+  userData: string,
+  isolation: AgyIsolation,
+): Promise<ElectronApplication> {
+  assertAgyIsolated(isolation);
+  const keyringArgs =
+    process.platform === "linux" ? ["-r", await writeKeyringPreload(root)] : [];
+  return electron.launch({
+    args: [...keyringArgs, ".", ...SANDBOX_FLAGS],
+    cwd: ROOT_DIR,
+    env: {
+      ...process.env,
+      [USER_DATA_DIR_ENV]: userData,
+      [TEST_AGENT_ENV_VAR]: JSON.stringify(isolation.agentEnv),
+    },
+  });
+}
+
+export async function submitAccount(page: Page, label: string): Promise<void> {
+  const dialog = page.getByRole("dialog", { name: "Accounts" });
+  await dialog.getByRole("button", { name: "Add account" }).click();
+  await expect(
+    dialog.getByRole("listitem").filter({ hasText: new RegExp(`^${label}`) }),
+  ).toBeVisible({ timeout: ADD_TIMEOUT_MS });
+}
+
+export async function addGeminiAccount(
+  page: Page,
+  configDir: string,
+): Promise<void> {
+  const dialog = page.getByRole("dialog", { name: "Accounts" });
+  await dialog.getByLabel("Agent").selectOption({ label: GEMINI_OPTION });
+  await dialog.getByLabel("Label", { exact: true }).fill(AGY_ACCOUNT_LABEL);
+  await dialog.getByLabel("Config directory").fill(configDir);
+  await submitAccount(page, AGY_ACCOUNT_LABEL);
+}
+
+export async function chooseProfile(
+  page: Page,
+  profileLabel: string,
+): Promise<void> {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const profile = page.getByRole("radio", { name: profileLabel, exact: true });
+  await profile.click();
+  await expect(profile).toBeChecked();
+  await page.getByRole("button", { name: "Close" }).click();
+}
+
+export async function stubFolderDialog(
+  app: ElectronApplication,
+  folder: string,
+): Promise<void> {
+  await app.evaluate(({ dialog }, chosen) => {
+    dialog.showOpenDialog = () =>
+      Promise.resolve({ canceled: false, filePaths: [chosen] });
+  }, folder);
 }
 
 const ChatBodySchema = z.looseObject({

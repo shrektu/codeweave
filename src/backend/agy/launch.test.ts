@@ -11,6 +11,7 @@ const EXECUTABLE = "/home/jane/.local/bin/agy";
 const ENV = { PATH: "/usr/bin" };
 const CONFIG_DIR = "/home/jane/accounts/gemini-1";
 const WORKTREE = "/work/repo";
+const SNAPSHOT_DIR = "/tmp/codeweave-agy-snap-abc";
 
 function launchFor(
   profile: PermissionProfile,
@@ -24,6 +25,7 @@ function launchFor(
     configDir: CONFIG_DIR,
     profile,
     worktreeRoot: WORKTREE,
+    snapshotDir: SNAPSHOT_DIR,
   });
 }
 
@@ -75,6 +77,7 @@ describe("agy launch arguments", () => {
       configDir: "accounts/one",
       profile: PermissionProfile.ask,
       worktreeRoot: WORKTREE,
+      snapshotDir: SNAPSHOT_DIR,
     });
 
     const flag = launch.args.find((arg) => arg.startsWith("--gemini_dir="));
@@ -91,8 +94,15 @@ describe("agy launch environment and turn lines", () => {
       PATH: "/usr/bin",
       CODEWEAVE_AGY_PROFILE: "ask",
       CODEWEAVE_AGY_WORKTREE: WORKTREE,
+      CODEWEAVE_AGY_SNAPSHOT_DIR: SNAPSHOT_DIR,
     });
     expect(launch.env).not.toBe(ENV);
+  });
+
+  it("launch_env_carries_snapshot_dir", () => {
+    const launch = launchFor(PermissionProfile.bypass, "conv-7");
+
+    expect(launch.env.CODEWEAVE_AGY_SNAPSHOT_DIR).toBe(SNAPSHOT_DIR);
   });
 
   it("usage_launch_asks_for_json_output_of_the_usage_command", () => {

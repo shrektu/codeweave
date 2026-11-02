@@ -159,6 +159,48 @@ describe("geminiApiMock other scenarios", () => {
     expect(second).toEqual([{ text: "DONE" }]);
   });
 
+  it("edit_file_answers_write_then_edit_then_done", async () => {
+    const mock = await startGeminiApiMock({
+      scenario: GeminiScenario.editFile,
+      editFiles: {
+        createPath: "/repo/notes.txt",
+        editPath: "/repo/README.md",
+        editTarget: "rotation test",
+        editReplacement: "diff test",
+      },
+    });
+    opened.push(mock);
+
+    const first = await partsOf(await generate(mock, MAIN_MODEL));
+    const second = await partsOf(await generate(mock, MAIN_MODEL));
+    const third = await partsOf(await generate(mock, MAIN_MODEL));
+
+    expect(first).toEqual([
+      {
+        functionCall: {
+          name: "write_file",
+          args: {
+            Path: "/repo/notes.txt",
+            Content: "first line\nsecond line\n",
+          },
+        },
+      },
+    ]);
+    expect(second).toEqual([
+      {
+        functionCall: {
+          name: "edit_file",
+          args: {
+            Path: "/repo/README.md",
+            Target: "rotation test",
+            Replacement: "diff test",
+          },
+        },
+      },
+    ]);
+    expect(third).toEqual([{ text: "DONE" }]);
+  });
+
   it("ok_answers_text_ok_every_time", async () => {
     const mock = await open(GeminiScenario.ok);
 

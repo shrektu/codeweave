@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   ERROR_KIND_AUTH_REQUIRED,
@@ -32,8 +35,10 @@ import type { ProcessContainer, StopResult } from "../process/container";
 
 import {
   AGY_ERROR_PREFIX,
+  AGY_SNAPSHOT_DIR_PREFIX,
   AUTH_REQUIRED_STDERR_PREFIX,
   AgyEventName,
+  AgyStepState,
   EXIT_DRAIN_MS,
   NEEDS_LOGIN_MESSAGE,
   PREVIOUS_PROCESS_NOT_STOPPED_MESSAGE,
@@ -42,7 +47,7 @@ import {
   STOP_SETTLE_FACTOR,
   WORKSPACE_CONFIG_CHANGED_MESSAGE,
 } from "./constants";
-import { TurnTracker, type TurnOutcome } from "./events";
+import { TurnTracker, isEditStep, stepId, type TurnOutcome } from "./events";
 import { agyTurnLine, buildAgyLaunch } from "./launch";
 import { ListenerSet, type Listener } from "./listeners";
 import { agySettingsFor } from "./permissions";
@@ -57,6 +62,8 @@ import {
   type AgyResult,
   type StepUpdate,
 } from "./protocol";
+import { clearSnapshots, discardStepSnapshot } from "./snapshots";
+import { stepDiffsOf } from "./stepDiffs";
 import {
   probeAgyUsage,
   toAgyRateLimitEvent,
@@ -336,6 +343,19 @@ class AgySession implements AgentHandle {
   private async startProcess(): Promise<LiveProcess> {
     const profile = this.profile;
     await this.deps.writeHookConfig(this.spec.account.configDir);
+    const snapshotDir = await mkdtemp(join(tmpdir(), AGY_SNAPSHOT_DIR_PREFIX));
+    try {
+      return await this.startInto(profile, snapshotDir);
+    } catch (error) {
+      await this.removeSnapshotDir(snapshotDir);
+      throw error;
+    }
+  }
+
+  private async startInto(
+    profile: PermissionProfile,
+    snapshotDir: string,
+  ): Promise<LiveProcess> {
     const launch = buildAgyLaunch({
       executable: this.deps.executableFor(this.spec),
       env: this.deps.envFor(this.spec),
@@ -344,6 +364,7 @@ class AgySession implements AgentHandle {
       configDir: this.spec.account.configDir,
       profile,
       worktreeRoot: this.spec.cwd,
+      snapshotDir,
     });
     await this.guardWorkspaceConfig();
     const agentProcess = await this.deps.processes.start({
@@ -353,8 +374,74 @@ class AgySession implements AgentHandle {
       cwd: this.spec.cwd,
       runId: this.runId,
     });
-    this.live = attachProcess(agentProcess, profile, this.runId, this.handlers);
+    this.live = attachProcess(
+      agentProcess,
+      profile,
+      this.runId,
+      snapshotDir,
+      this.handlers,
+    );
     return this.live;
+  }
+
+  private async removeSnapshotDir(snapshotDir: string): Promise<void> {
+    await rm(snapshotDir, { recursive: true, force: true }).catch(
+      (error: unknown) => {
+        console.error(
+          `removing the agy snapshot dir failed: ${this.runId}`,
+          error,
+        );
+      },
+    );
+  }
+
+  private chainDiffWork(live: LiveProcess, work: () => Promise<void>): void {
+    live.diffWork = live.diffWork.then(work).catch((error: unknown) => {
+      console.error(`agy diff work failed: ${this.runId}`, error);
+    });
+  }
+
+  private trackEdit(live: LiveProcess, step: StepUpdate): void {
+    const conversationId = step.conversation_id ?? this.conversationId ?? "";
+    if (step.state === AgyStepState.done) {
+      this.chainDiffWork(live, () =>
+        this.emitDiffs(live, step, conversationId),
+      );
+    } else if (step.state === AgyStepState.error) {
+      this.chainDiffWork(live, () =>
+        discardStepSnapshot(live.snapshotDir, conversationId, step.step_index),
+      );
+    }
+  }
+
+  private async emitDiffs(
+    live: LiveProcess,
+    step: StepUpdate,
+    conversationId: string,
+  ): Promise<void> {
+    const diffs = await stepDiffsOf({
+      dir: live.snapshotDir,
+      cwd: this.spec.cwd,
+      conversationId,
+      stepIdx: step.step_index,
+    });
+    if (diffs.length > 0) {
+      this.emit({
+        type: "tool_call_update",
+        toolCallId: stepId(step, conversationId),
+        diffs,
+      });
+    }
+  }
+
+  private async settleDiffs(live: LiveProcess | null): Promise<void> {
+    if (live === null) {
+      return;
+    }
+    await live.diffWork;
+    await clearSnapshots(live.snapshotDir).catch((error: unknown) => {
+      console.error(`clearing agy snapshots failed: ${this.runId}`, error);
+    });
   }
 
   private async verifyWorkspaceAfterInit(live: LiveProcess): Promise<void> {
@@ -421,6 +508,9 @@ class AgySession implements AgentHandle {
       .forEach((event) => {
         this.emit(event);
       });
+    if (isEditStep(step)) {
+      this.trackEdit(live, step);
+    }
   }
 
   private onResult(live: LiveProcess, result: AgyResult): void {
@@ -504,6 +594,7 @@ class AgySession implements AgentHandle {
   }
 
   private onExit(live: LiveProcess): void {
+    void this.removeSnapshotDirAfterDrain(live);
     const turn = this.turnOf(live);
     if (turn === null) {
       if (!live.planned) {
@@ -512,6 +603,19 @@ class AgySession implements AgentHandle {
       return;
     }
     void this.settleAfterExit(turn, live);
+  }
+
+  private async removeSnapshotDirAfterDrain(live: LiveProcess): Promise<void> {
+    await withTimeout(live.stdoutClosed, EXIT_DRAIN_MS).catch(
+      (error: unknown) => {
+        console.warn(
+          `agy output did not close before snapshot cleanup: ${this.runId}`,
+          error,
+        );
+      },
+    );
+    await live.diffWork;
+    await this.removeSnapshotDir(live.snapshotDir);
   }
 
   private async settleAfterExit(
@@ -547,6 +651,7 @@ class AgySession implements AgentHandle {
     outcome: TurnOutcome,
   ): Promise<void> {
     turn.settling = true;
+    await this.settleDiffs(turn.process);
     turn.finished.resolve(await this.eventsFor(outcome));
   }
 
