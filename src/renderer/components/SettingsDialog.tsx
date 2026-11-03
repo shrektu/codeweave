@@ -106,6 +106,8 @@ interface ExecutableFieldProps {
   id: string;
   label: string;
   current: string | null;
+  placeholder?: string;
+  help?: string;
   onSave: (value: string | null) => void;
 }
 
@@ -113,16 +115,19 @@ function ExecutableField({
   id,
   label,
   current,
+  placeholder = "Found on PATH",
+  help,
   onSave,
 }: ExecutableFieldProps): JSX.Element {
   const [executable, setExecutable] = useState(current ?? "");
   return (
     <div className="field">
       <label htmlFor={id}>{label}</label>
+      {help !== undefined && <p className="empty">{help}</p>}
       <input
         id={id}
         type="text"
-        placeholder="Found on PATH"
+        placeholder={placeholder}
         value={executable}
         onChange={(event) => {
           setExecutable(event.target.value);
@@ -182,6 +187,16 @@ function SettingsForm({ settings }: { settings: SettingsView }): JSX.Element {
         current={settings.agyExecutable}
         onSave={(agyExecutable) => {
           onPatch({ agyExecutable });
+        }}
+      />
+      <ExecutableField
+        id="terminal-shell"
+        label="Terminal shell"
+        current={settings.terminalShell}
+        placeholder="Detected automatically"
+        help="Leave empty to detect your shell automatically."
+        onSave={(terminalShell) => {
+          onPatch({ terminalShell });
         }}
       />
       {save.error !== null && <p className="error">{save.error}</p>}

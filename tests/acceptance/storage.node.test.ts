@@ -36,6 +36,7 @@ it("settings_without_codex_executable_loads", async () => {
     codexExecutable: "/opt/codex",
     agyExecutable: null,
     opencodeExecutable: null,
+    terminalShell: null,
   });
 });
 
@@ -57,6 +58,27 @@ it("settings_without_agy_executable_loads", async () => {
   expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({
     codexExecutable: "/usr/bin/codex",
     agyExecutable: "/opt/agy",
+  });
+});
+
+it("settings_without_terminal_shell_still_load", async () => {
+  const dir = await makeTempDir();
+  const file = join(dir, "settings.json");
+  await writeFile(
+    file,
+    '{"version":1,"permissionProfile":"plan","effectLevel":"low","claudeExecutable":null,"codexExecutable":null,"agyExecutable":null,"opencodeExecutable":null}',
+  );
+  const store = createJsonStore(dir);
+
+  const settings = await store.readSettings();
+  const service = createSettingsService({ store, broadcast: () => undefined });
+  const view = await service.set({ terminalShell: "/bin/zsh" });
+
+  expect(settings.terminalShell).toBeNull();
+  expect(view.terminalShell).toBe("/bin/zsh");
+  expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({
+    permissionProfile: "plan",
+    terminalShell: "/bin/zsh",
   });
 });
 
@@ -88,6 +110,7 @@ it("storage_refuses_to_overwrite_corrupt_file", async () => {
       codexExecutable: null,
       agyExecutable: null,
       opencodeExecutable: null,
+      terminalShell: null,
     }),
   ).rejects.toBeInstanceOf(StorageCorruptError);
 

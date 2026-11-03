@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -16,15 +15,14 @@ import {
 import {
   ContainerKind,
   type Contained,
+  type ContainerOps,
+  type Launched,
+  type LaunchedProcess,
+  type Launcher,
   type ProcessContainer,
   type SpawnSpec,
 } from "./container";
-import {
-  createContained,
-  spawnChild,
-  type ContainerOps,
-  type SpawnChild,
-} from "./contained";
+import { spawnChild, spawnContained, type SpawnChild } from "./contained";
 
 export interface ProcessEntry {
   readonly pid: number;
@@ -118,10 +116,6 @@ export function createProcProcessTable(
   };
 }
 
-function hasExited(child: ChildProcessWithoutNullStreams): boolean {
-  return child.exitCode !== null || child.signalCode !== null;
-}
-
 class EnvMarkerContainer implements ProcessContainer {
   readonly kind = ContainerKind.envMarker;
   private readonly liveMarkers = new Set<string>();
@@ -140,9 +134,16 @@ class EnvMarkerContainer implements ProcessContainer {
     this.parentPid = deps.parentPid ?? process.ppid;
   }
 
-  async spawn(spec: SpawnSpec): Promise<Contained> {
+  spawn(spec: SpawnSpec): Promise<Contained> {
+    return spawnContained(this, spec, this.spawnChild);
+  }
+
+  async launch<T extends LaunchedProcess>(
+    spec: SpawnSpec,
+    launcher: Launcher<T>,
+  ): Promise<Launched<T>> {
     const marker = `${this.instanceId}${RUN_MARKER_SEPARATOR}${spec.runId}`;
-    const child = await this.spawnChild(spec.command, spec.args, {
+    const launched = await launcher(spec.command, spec.args, {
       env: { ...spec.env, [RUN_ID_ENV]: marker },
       cwd: spec.cwd,
       ...(spec.windowsVerbatimArguments === undefined
@@ -150,7 +151,7 @@ class EnvMarkerContainer implements ProcessContainer {
         : { windowsVerbatimArguments: spec.windowsVerbatimArguments }),
     });
     this.liveMarkers.add(marker);
-    return createContained(child, spec.runId, this.opsFor(marker, child));
+    return { process: launched, ops: this.opsFor(marker, launched) };
   }
 
   async sweepOrphans(staleInstanceIds: readonly string[]): Promise<number> {
@@ -206,17 +207,14 @@ class EnvMarkerContainer implements ProcessContainer {
     return tree;
   }
 
-  private opsFor(
-    marker: string,
-    child: ChildProcessWithoutNullStreams,
-  ): ContainerOps {
+  private opsFor(marker: string, launched: LaunchedProcess): ContainerOps {
     const members = async (): Promise<readonly number[]> => {
       const table = await this.deps.processTable.list();
       const pids = new Set(
         table.filter((entry) => entry.marker === marker).map((e) => e.pid),
       );
-      if (child.pid !== undefined && !hasExited(child)) {
-        pids.add(child.pid);
+      if (launched.pid > 0 && !launched.hasExited()) {
+        pids.add(launched.pid);
       }
       return [...pids];
     };

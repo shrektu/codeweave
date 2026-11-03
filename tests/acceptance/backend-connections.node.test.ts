@@ -33,17 +33,55 @@ it("backend_drops_connection_after_reload", async () => {
   const reply = await new Promise((resolve) => {
     survivor?.port2.once("message", resolve);
     survivor?.port2.postMessage({
-      v: 5,
+      v: 6,
       id: "alive",
       method: "ping",
       params: {},
     });
   });
   expect(reply).toEqual({
-    v: 5,
+    v: 6,
     id: "alive",
     ok: true,
     result: { pong: true, backendPid: process.pid },
+  });
+});
+
+it("closing_one_of_two_connections_keeps_terminal_attached", async () => {
+  const onDisconnect = vi.fn();
+  const registry = createConnectionRegistry(fakeHandlers(), onDisconnect);
+  const channels = [0, 1].map(() => new MessageChannel());
+  for (const { port1, port2 } of channels) {
+    openPorts.push(port1, port2);
+    registry.connect(fromNodePort(port1));
+  }
+
+  channels[0]?.port2.close();
+
+  await vi.waitFor(() => {
+    expect(registry.size()).toBe(1);
+  });
+  expect(onDisconnect).not.toHaveBeenCalled();
+});
+
+it("closing_the_last_connection_notifies_the_disconnect_callback_once", async () => {
+  const onDisconnect = vi.fn();
+  const registry = createConnectionRegistry(fakeHandlers(), onDisconnect);
+  const channels = [0, 1].map(() => new MessageChannel());
+  for (const { port1, port2 } of channels) {
+    openPorts.push(port1, port2);
+    registry.connect(fromNodePort(port1));
+  }
+
+  channels[0]?.port2.close();
+  await vi.waitFor(() => {
+    expect(registry.size()).toBe(1);
+  });
+  channels[1]?.port2.close();
+
+  await vi.waitFor(() => {
+    expect(registry.size()).toBe(0);
+    expect(onDisconnect).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -66,7 +104,7 @@ it("push_reaches_all_clients_and_skips_closed_ports", async () => {
   registry.broadcast("accounts/changed", { accounts: [] });
 
   const expected = {
-    v: 5,
+    v: 6,
     event: "accounts/changed",
     payload: { accounts: [] },
   };

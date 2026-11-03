@@ -14,6 +14,9 @@ const AGY_AUTO_UPDATE_ENV = "AGY_CLI_DISABLE_AUTO_UPDATE";
 const AGY_BIN_DIR = "$RUNNER_TEMP/agy-bin";
 const ROTATION_CONFIG = "playwright.rotation.config.ts";
 const DEFAULT_CONFIG = "playwright.config.ts";
+const PACK_COMMAND = "pnpm run pack";
+const TERMINAL_SPEC = "tests/e2e/terminal.spec.ts";
+const EXECUTABLE_ENV = "CODEWEAVE_E2E_EXECUTABLE";
 const SPEC_NAME_PATTERN = /"([A-Za-z]+\.spec\.ts)"/g;
 const LIST_PATTERNS = {
   testMatch: /testMatch:\s*\[([^\]]*)\]/,
@@ -68,6 +71,39 @@ it("agy_ci_install_is_read_only", () => {
   expect(steps.flatMap((step) => Object.keys(step.env ?? {}))).not.toContain(
     AGY_AUTO_UPDATE_ENV,
   );
+});
+
+it("packed_app_terminal_spec_runs_on_every_os_after_pack", () => {
+  const steps = workflowSteps();
+  const packIndex = steps.findIndex((step) => step.run === PACK_COMMAND);
+  const terminalSteps = steps.filter((step) =>
+    step.run?.includes(TERMINAL_SPEC),
+  );
+  const byName = (name: string): WorkflowStep | undefined =>
+    terminalSteps.find((step) => step.name === name);
+
+  expect(packIndex).toBeGreaterThanOrEqual(0);
+  expect(terminalSteps).toHaveLength(3);
+  for (const step of terminalSteps) {
+    expect(steps.indexOf(step)).toBeGreaterThan(packIndex);
+  }
+  const linux = byName("Packed app terminal test (Linux)");
+  expect(linux?.run).toMatch(/^xvfb-run .*pnpm exec playwright test/);
+  expect(linux?.env?.[EXECUTABLE_ENV]).toMatch(
+    /\/release\/linux-unpacked\/codeweave$/,
+  );
+  const windows = byName("Packed app terminal test (Windows)");
+  expect(windows?.env?.[EXECUTABLE_ENV]).toMatch(
+    /\\release\\win-unpacked\\Codeweave\.exe$/,
+  );
+  const mac = byName("Packed app terminal test (macOS)");
+  expect(mac?.run).toContain(`${EXECUTABLE_ENV}=`);
+  expect(mac?.run).toContain("release/mac*/Codeweave.app");
+  expect(mac?.run).toContain("/Contents/MacOS/Codeweave");
+});
+
+it("terminal_spec_is_part_of_the_default_e2e", () => {
+  expect(specNames(DEFAULT_CONFIG, "testIgnore")).not.toContain(TERMINAL_SPEC);
 });
 
 it("rotation_specs_excluded_from_default_e2e", () => {

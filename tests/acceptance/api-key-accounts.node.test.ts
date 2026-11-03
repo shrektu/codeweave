@@ -238,6 +238,7 @@ it("legacy_storage_files_load_unchanged", async () => {
     codexExecutable: null,
     agyExecutable: null,
     opencodeExecutable: null,
+    terminalShell: null,
   });
 });
 

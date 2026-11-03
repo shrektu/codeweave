@@ -137,6 +137,7 @@ export async function createRotationWorkspace(
     codexExecutable: null,
     agyExecutable: null,
     opencodeExecutable: null,
+    terminalShell: null,
   });
   return {
     root,

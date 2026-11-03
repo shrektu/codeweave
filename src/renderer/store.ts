@@ -36,6 +36,10 @@ function applyEvent(snapshot: Snapshot, event: IpcEvent): Snapshot {
       return { ...snapshot, accounts: event.payload.accounts };
     case "settings/changed":
       return { ...snapshot, settings: event.payload };
+    case "terminal/changed":
+      return { ...snapshot, terminal: event.payload };
+    case "terminal/data":
+      return snapshot;
     case "switchLog/appended":
       return snapshot.switchLog.some(isSameSwitchEntry(event.payload))
         ? snapshot

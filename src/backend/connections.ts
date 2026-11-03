@@ -12,6 +12,7 @@ export interface ConnectionRegistry {
 
 export function createConnectionRegistry(
   handlers: IpcHandlers,
+  onDisconnect: () => void = () => undefined,
 ): ConnectionRegistry {
   const live = new Set<IpcServer>();
   return {
@@ -20,6 +21,9 @@ export function createConnectionRegistry(
       live.add(server);
       port.onClose(() => {
         live.delete(server);
+        if (live.size === 0) {
+          onDisconnect();
+        }
       });
     },
     size(): number {

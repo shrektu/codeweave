@@ -21,6 +21,7 @@ asarUnpack:
   - node_modules/@anthropic-ai/claude-agent-sdk-win32-x64/**
   - node_modules/@anthropic-ai/claude-agent-sdk/**
   - node_modules/diff/**
+  - node_modules/node-pty/**
   - node_modules/zod/**
 linux:
   target: AppImage

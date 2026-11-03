@@ -30,6 +30,7 @@ describe("settings service", () => {
       codexExecutable: null,
       agyExecutable: null,
       opencodeExecutable: null,
+      terminalShell: null,
     });
   });
 
@@ -45,6 +46,7 @@ describe("settings service", () => {
       codexExecutable: null,
       agyExecutable: null,
       opencodeExecutable: null,
+      terminalShell: null,
     };
     expect(view).toEqual(expected);
     expect(await store.readSettings()).toEqual({ version: 1, ...expected });
@@ -89,6 +91,7 @@ describe("settings service", () => {
       codexExecutable: null,
       agyExecutable: null,
       opencodeExecutable: null,
+      terminalShell: null,
     });
   });
 
@@ -111,6 +114,26 @@ describe("settings service", () => {
     expect(kept.opencodeExecutable).toBe("/opt/opencode");
     expect(cleared.opencodeExecutable).toBeNull();
     expect((await store.readSettings()).opencodeExecutable).toBeNull();
+  });
+
+  it("set_terminal_shell_is_persisted_cleared_and_independent", async () => {
+    const { service, store, broadcast } = await setup();
+    await service.set({ opencodeExecutable: "/opt/opencode" });
+
+    const set = await service.set({ terminalShell: "/opt/fish" });
+    const kept = await service.set({ effectLevel: "low" });
+    const stored = (await store.readSettings()).terminalShell;
+    const cleared = await service.set({ terminalShell: null });
+
+    expect(set.terminalShell).toBe("/opt/fish");
+    expect(set.opencodeExecutable).toBe("/opt/opencode");
+    expect(kept.terminalShell).toBe("/opt/fish");
+    expect(stored).toBe("/opt/fish");
+    expect(cleared.terminalShell).toBeNull();
+    expect(broadcast).toHaveBeenLastCalledWith(
+      "settings/changed",
+      expect.objectContaining({ terminalShell: null }),
+    );
   });
 
   it("set_agy_executable_is_persisted_and_independent_of_the_others", async () => {
@@ -157,6 +180,7 @@ describe("settings service", () => {
       codexExecutable: null,
       agyExecutable: null,
       opencodeExecutable: null,
+      terminalShell: null,
     });
   });
 });

@@ -50,6 +50,7 @@ import {
   ScriptedOpencodeContainer,
   type FakeOpencodeConfig,
 } from "./fakeOpencodeServer";
+import { unsupportedLaunch } from "./fakeContainer";
 import { createFakeVault, type FakeVault } from "./fakeVault";
 import type { ScheduledTask } from "./rotationHarness";
 
@@ -239,6 +240,7 @@ function recordingContainer(
 ): ProcessContainer {
   return {
     kind: claude.kind,
+    launch: unsupportedLaunch,
     async spawn(spec: SpawnSpec): Promise<Contained> {
       if (spec.runId.startsWith(PROBE_RUN_ID_PREFIX)) {
         return isAgyCommand(spec, agyCommands)

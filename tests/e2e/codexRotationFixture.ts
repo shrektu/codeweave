@@ -143,6 +143,7 @@ export async function createCodexRotationWorkspace(
       codexExecutable: null,
       agyExecutable: null,
       opencodeExecutable: null,
+      terminalShell: null,
     });
     return { root, userData, repo, accountA, accountB, dispose };
   } catch (error) {

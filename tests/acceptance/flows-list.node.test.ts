@@ -6,7 +6,7 @@ import { expect, it, vi } from "vitest";
 import { listFlows } from "../../src/backend/flows";
 import { createHandlers } from "../../src/backend/handlers";
 import { createJsonStore } from "../../src/backend/storage";
-import { fakeProbes, fakeSessions } from "../fakes/fakeSessions";
+import { fakeProbes, fakeSessions, fakeTerminals } from "../fakes/fakeSessions";
 import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
 
@@ -231,6 +231,7 @@ it("flows_list_handler_delegates_to_listFlows", async () => {
     probes: fakeProbes(),
     catalog: { load: () => Promise.resolve({ models: [], error: null }) },
     containerStatus: { available: true, message: null },
+    terminals: fakeTerminals(),
   });
 
   const result = await handlers["flows/list"]({ cwd });

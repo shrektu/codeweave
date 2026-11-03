@@ -74,6 +74,7 @@ function recordingContainer(
 ): ProcessContainer {
   return {
     kind: inner.kind,
+    launch: (spec, launcher) => inner.launch(spec, launcher),
     async spawn(spec: SpawnSpec): Promise<Contained> {
       const [runA] = spawned;
       if (runA !== undefined && observation.runAGoneAtSecondSpawn === null) {

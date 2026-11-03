@@ -11,13 +11,14 @@ import {
 
 import { parseBackendArgs } from "./args";
 import { locateClaudeAcpEntry } from "./claude/launch";
-import {
-  createConnectionRegistry,
-  type ConnectionRegistry,
-} from "./connections";
+import type { ConnectionRegistry } from "./connections";
 import { createProcessContainer } from "./process/select";
 import { createParentPortVault } from "./secrets/vault";
-import { createExecutableResolver, startBackend } from "./startup";
+import {
+  createBackendRegistry,
+  createExecutableResolver,
+  startBackend,
+} from "./startup";
 import { inspectWorktree } from "./worktree";
 
 let connections: ConnectionRegistry | null = null;
@@ -46,7 +47,7 @@ const ready = startBackend({
   resolveExecutable: createExecutableResolver(process.env, process.platform),
   inspectWorktree,
 }).then((backend) => {
-  connections = createConnectionRegistry(backend.handlers);
+  connections = createBackendRegistry(backend);
   return { backend, registry: connections };
 });
 

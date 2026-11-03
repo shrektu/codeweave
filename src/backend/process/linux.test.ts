@@ -289,3 +289,102 @@ describe("systemd scope membership", () => {
     ).rejects.toThrow(RangeError);
   });
 });
+
+const SPEC = {
+  command: "/bin/sh",
+  args: ["-l"],
+  env: { TERM: "xterm-256color" },
+  cwd: "/work",
+  runId: "run-1",
+};
+const LAUNCHED = { pid: 77, hasExited: () => false };
+
+describe("systemd scope container launch", () => {
+  it("launch_wraps_the_command_in_a_scope_and_exposes_its_members", async () => {
+    const launches: {
+      command: string;
+      args: readonly string[];
+      cwd: string;
+    }[] = [];
+    const showCalls: (readonly string[])[] = [];
+    const readPaths: string[] = [];
+    const container = createSystemdScopeContainer({
+      instanceId: "inst1",
+      exec: (_file, args) => {
+        showCalls.push(args);
+        return Promise.resolve("/user.slice/codeweave-inst1-run-1.scope\n");
+      },
+      readFile: (path) => {
+        readPaths.push(path);
+        return Promise.resolve("77\n88\n");
+      },
+      spawnChild: () => spawnIdleChild(),
+    });
+
+    const { process: launched, ops } = await container.launch(
+      SPEC,
+      (command, args, options) => {
+        launches.push({ command, args, cwd: options.cwd });
+        return Promise.resolve(LAUNCHED);
+      },
+    );
+
+    expect(launches).toEqual([
+      {
+        command: "systemd-run",
+        args: [
+          "--user",
+          "--scope",
+          "--collect",
+          "--quiet",
+          "-p",
+          "KillMode=control-group",
+          "--unit=codeweave-inst1-run-1",
+          "--",
+          "/bin/sh",
+          "-l",
+        ],
+        cwd: "/work",
+      },
+    ]);
+    expect(launched).toBe(LAUNCHED);
+    expect(await ops.members()).toEqual([77, 88]);
+    expect(showCalls[0]?.at(-1)).toBe("codeweave-inst1-run-1.scope");
+    expect(readPaths).toEqual([
+      "/sys/fs/cgroup/user.slice/codeweave-inst1-run-1.scope/cgroup.procs",
+    ]);
+  });
+});
+
+describe("systemd scope container launch inputs", () => {
+  it("launch_passes_the_environment_to_the_launcher_unchanged", async () => {
+    const container = createSystemdScopeContainer({
+      instanceId: "inst1",
+      spawnChild: () => spawnIdleChild(),
+    });
+    let received: Readonly<Record<string, string>> = {};
+
+    await container.launch(SPEC, (_command, _args, options) => {
+      received = options.env;
+      return Promise.resolve(LAUNCHED);
+    });
+
+    expect(received).toEqual({ TERM: "xterm-256color" });
+  });
+
+  it("launch_rejects_an_unsafe_run_id_without_launching", async () => {
+    const container = createSystemdScopeContainer({
+      spawnChild: () => spawnIdleChild(),
+    });
+    let launched = false;
+
+    await expect(
+      container.launch({ ...SPEC, runId: "../evil run" }, () => {
+        launched = true;
+        return Promise.resolve(LAUNCHED);
+      }),
+    ).rejects.toThrow(RangeError);
+
+    expect(launched).toBe(false);
+  });
+});

@@ -35,7 +35,7 @@ import {
   type Account,
 } from "../../src/domain/types";
 
-import { FakeContained } from "./fakeContainer";
+import { FakeContained, unsupportedLaunch } from "./fakeContainer";
 
 export type Json = Readonly<Record<string, unknown>>;
 
@@ -686,6 +686,7 @@ async function readStartup(
 
 export class ScriptedOpencodeContainer implements ProcessContainer {
   readonly kind = ContainerKind.envMarker;
+  readonly launch = unsupportedLaunch;
   readonly specs: SpawnSpec[] = [];
   readonly servers: FakeOpencodeServer[] = [];
   readonly contained: FakeContained[] = [];

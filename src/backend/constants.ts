@@ -113,6 +113,30 @@ export const OPTION_KIND_ALLOW_ONCE = "allow_once";
 export const OPTION_KIND_REJECT_ONCE = "reject_once";
 export const OPTION_KIND_ALLOW_ALWAYS = "allow_always";
 export const CODEX_HOME_ENV = "CODEX_HOME";
+export const TERMINAL_REPLAY_MAX_CHARS = 262_144;
+export const TERMINAL_HIGH_WATERMARK_CHARS = 524_288;
+export const TERMINAL_LOW_WATERMARK_CHARS = 131_072;
+export const TERMINAL_FLUSH_MS = 16;
+export const TERMINAL_FLUSH_MAX_CHARS = 65_536;
+export const TERMINAL_STOP_GRACE_MS = 1000;
+export const TERMINAL_TYPE = "xterm-256color";
+export const TERMINAL_COLOR_TERM = "truecolor";
+export const TERMINAL_PROGRAM = "Codeweave";
+export const TERMINAL_STOP_SIGNAL = "SIGHUP";
+export const TERMINAL_KILL_SIGNAL = "SIGKILL";
+export const POSIX_SHELL_FALLBACKS: readonly string[] = [
+  "/bin/bash",
+  "/bin/zsh",
+  "/bin/sh",
+];
+export const POWERSHELL_CORE_BINARY = "pwsh.exe";
+export const WINDOWS_POWERSHELL_RELATIVE_PATH =
+  "System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+export const WINDOWS_DEFAULT_SYSTEM_ROOT = "C:\\Windows";
+export const WINDOWS_COMMAND_INTERPRETER = "cmd.exe";
+export const POWERSHELL_NAME_PATTERN = /^(pwsh|powershell)(\.exe)?$/i;
+export const POWERSHELL_ARGS: readonly string[] = ["-NoLogo"];
+export const LOGIN_SHELL_ARGS: readonly string[] = ["-l"];
 export const DIFF_MAX_FILE_BYTES = 1024 * 1024;
 export const DIFF_MAX_PATCH_CHARS = 64_000;
 export const DIFF_CONTEXT_LINES = 3;

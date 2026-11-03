@@ -9,7 +9,7 @@ import {
 } from "./protocol";
 
 function request(method: string, params: unknown): unknown {
-  return { v: 5, id: "a", method, params };
+  return { v: 6, id: "a", method, params };
 }
 
 const VALID_REQUESTS: [string, unknown][] = [
@@ -82,11 +82,95 @@ const VALID_REQUESTS: [string, unknown][] = [
   ["settings/set", { claudeExecutable: null }],
   ["switchLog/list", {}],
   ["flows/list", { cwd: "/work" }],
+  ["settings/set", { terminalShell: "/bin/zsh" }],
+  ["settings/set", { terminalShell: null }],
+  ["terminal/open", { cwd: "/work", cols: 2, rows: 1 }],
+  ["terminal/open", { cwd: "/work", cols: 1000, rows: 500 }],
+  ["terminal/input", { id: "t", data: "x" }],
+  ["terminal/input", { id: "t", data: "y".repeat(65_536) }],
+  ["terminal/resize", { id: "t", cols: 120, rows: 40 }],
+  ["terminal/ack", { id: "t", chars: 1 }],
+  ["terminal/detach", { id: "t" }],
+  ["terminal/close", { id: "t" }],
+];
+
+const TERMINAL_INVALID_REQUESTS: [string, unknown][] = [
+  [
+    "terminal/open without cwd",
+    request("terminal/open", { cols: 80, rows: 24 }),
+  ],
+  [
+    "terminal/open with empty cwd",
+    request("terminal/open", { cwd: "", cols: 80, rows: 24 }),
+  ],
+  [
+    "terminal/open with zero columns",
+    request("terminal/open", { cwd: "/w", cols: 0, rows: 24 }),
+  ],
+  [
+    "terminal/open with one column",
+    request("terminal/open", { cwd: "/w", cols: 1, rows: 24 }),
+  ],
+  [
+    "terminal/open with too many columns",
+    request("terminal/open", { cwd: "/w", cols: 1001, rows: 24 }),
+  ],
+  [
+    "terminal/open with zero rows",
+    request("terminal/open", { cwd: "/w", cols: 80, rows: 0 }),
+  ],
+  [
+    "terminal/open with too many rows",
+    request("terminal/open", { cwd: "/w", cols: 80, rows: 501 }),
+  ],
+  [
+    "terminal/open with negative columns",
+    request("terminal/open", { cwd: "/w", cols: -1, rows: 24 }),
+  ],
+  [
+    "terminal/open with NaN rows",
+    request("terminal/open", { cwd: "/w", cols: 80, rows: Number.NaN }),
+  ],
+  [
+    "terminal/open with fractional columns",
+    request("terminal/open", { cwd: "/w", cols: 80.5, rows: 24 }),
+  ],
+  [
+    "terminal/resize with too many rows",
+    request("terminal/resize", { id: "t", cols: 80, rows: 501 }),
+  ],
+  [
+    "terminal/resize without an id",
+    request("terminal/resize", { cols: 80, rows: 24 }),
+  ],
+  [
+    "terminal/input with empty data",
+    request("terminal/input", { id: "t", data: "" }),
+  ],
+  [
+    "terminal/input over the limit",
+    request("terminal/input", { id: "t", data: "y".repeat(65_537) }),
+  ],
+  [
+    "terminal/input with an empty id",
+    request("terminal/input", { id: "", data: "x" }),
+  ],
+  ["terminal/ack with zero", request("terminal/ack", { id: "t", chars: 0 })],
+  [
+    "terminal/ack with a fraction",
+    request("terminal/ack", { id: "t", chars: 1.5 }),
+  ],
+  [
+    "terminal/detach with an extra key",
+    request("terminal/detach", { id: "t", x: 1 }),
+  ],
+  ["terminal/close without an id", request("terminal/close", {})],
 ];
 
 const INVALID_REQUESTS: [string, unknown][] = [
+  ...TERMINAL_INVALID_REQUESTS,
   ["ping with a param", request("ping", { extra: 1 })],
-  ["ping without params", { v: 5, id: "a", method: "ping" }],
+  ["ping without params", { v: 6, id: "a", method: "ping" }],
   ["session/start without cwd", request("session/start", {})],
   ["session/start with empty cwd", request("session/start", { cwd: "" })],
   [
@@ -243,13 +327,13 @@ describe("RequestSchema", () => {
   });
 
   it.each([
-    ["an empty id", { v: 5, id: "", method: "ping", params: {} }],
-    ["an extra key", { v: 5, id: "a", method: "ping", params: {}, extra: 1 }],
-    ["an unknown method", { v: 5, id: "a", method: "pong", params: {} }],
+    ["an empty id", { v: 6, id: "", method: "ping", params: {} }],
+    ["an extra key", { v: 6, id: "a", method: "ping", params: {}, extra: 1 }],
+    ["an unknown method", { v: 6, id: "a", method: "pong", params: {} }],
     ["a missing version", { id: "a", method: "ping", params: {} }],
     ["a non-numeric version", { v: "2", id: "a", method: "ping", params: {} }],
     ["a fractional version", { v: 1.5, id: "a", method: "ping", params: {} }],
-    ["a missing id", { v: 5, method: "ping", params: {} }],
+    ["a missing id", { v: 6, method: "ping", params: {} }],
   ])("rejects_%s", (_label, payload) => {
     expect(RequestSchema.safeParse(payload).success).toBe(false);
   });
@@ -258,7 +342,7 @@ describe("RequestSchema", () => {
 describe("ResponseSchema", () => {
   it("accepts_a_ping_result", () => {
     const parsed = ResponseSchema.safeParse({
-      v: 5,
+      v: 6,
       id: "a",
       ok: true,
       result: { pong: true, backendPid: 42 },
@@ -276,7 +360,7 @@ describe("ResponseSchema", () => {
     "EXPIRED",
   ])("accepts_the_error_code_%s", (code) => {
     const parsed = ResponseSchema.safeParse({
-      v: 5,
+      v: 6,
       id: null,
       ok: false,
       error: { code, message: "bad" },
@@ -288,11 +372,11 @@ describe("ResponseSchema", () => {
   it.each([
     [
       "an unknown error code",
-      { v: 5, id: "a", ok: false, error: { code: "NOPE", message: "x" } },
+      { v: 6, id: "a", ok: false, error: { code: "NOPE", message: "x" } },
     ],
     [
       "a success without a request id",
-      { v: 5, id: null, ok: true, result: { pong: true, backendPid: 1 } },
+      { v: 6, id: null, ok: true, result: { pong: true, backendPid: 1 } },
     ],
   ])("rejects_%s", (_label, payload) => {
     expect(ResponseSchema.safeParse(payload).success).toBe(false);
@@ -307,6 +391,7 @@ describe("EventSchema", () => {
     codexExecutable: null,
     agyExecutable: null,
     opencodeExecutable: null,
+    terminalShell: null,
   };
   const logEntry = {
     at: 1,
@@ -318,30 +403,65 @@ describe("EventSchema", () => {
     contextPackageChars: 0,
   };
 
+  const terminal = {
+    id: "t-1",
+    cwd: "/work",
+    shell: "/bin/bash",
+    status: "exited",
+    exitCode: 0,
+  };
+
   it.each([
     ["session/changed", null],
     ["accounts/changed", { accounts: [] }],
     ["settings/changed", settings],
     ["switchLog/appended", logEntry],
+    ["terminal/data", { id: "t-1", data: "hello\u001b[0m" }],
+    ["terminal/changed", terminal],
+    ["terminal/changed", null],
   ])("accepts_%s", (event, payload) => {
-    expect(EventSchema.safeParse({ v: 5, event, payload }).success).toBe(true);
+    expect(EventSchema.safeParse({ v: 6, event, payload }).success).toBe(true);
   });
 
   it.each([
-    ["an unknown event", { v: 5, event: "nope", payload: null }],
+    ["an unknown event", { v: 6, event: "nope", payload: null }],
     [
       "a settings event with a session payload",
-      { v: 5, event: "settings/changed", payload: null },
+      { v: 6, event: "settings/changed", payload: null },
     ],
     [
       "a log entry with an unknown reason",
       {
-        v: 5,
+        v: 6,
         event: "switchLog/appended",
         payload: { ...logEntry, reason: "whim" },
       },
     ],
-    ["an event without payload", { v: 5, event: "accounts/changed" }],
+    ["an event without payload", { v: 6, event: "accounts/changed" }],
+    [
+      "terminal data without an id",
+      { v: 6, event: "terminal/data", payload: { data: "x" } },
+    ],
+    [
+      "terminal data with an extra key",
+      { v: 6, event: "terminal/data", payload: { id: "t", data: "x", seq: 1 } },
+    ],
+    [
+      "a terminal with an unknown status",
+      {
+        v: 6,
+        event: "terminal/changed",
+        payload: { ...terminal, status: "zombie" },
+      },
+    ],
+    [
+      "a terminal with a fractional exit code",
+      {
+        v: 6,
+        event: "terminal/changed",
+        payload: { ...terminal, exitCode: 1.5 },
+      },
+    ],
   ])("rejects_%s", (_label, payload) => {
     expect(EventSchema.safeParse(payload).success).toBe(false);
   });

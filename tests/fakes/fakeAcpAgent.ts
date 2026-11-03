@@ -49,7 +49,11 @@ import {
   type Account,
 } from "../../src/domain/types";
 
-import { FakeContainer, type FakeContained } from "./fakeContainer";
+import {
+  FakeContainer,
+  unsupportedLaunch,
+  type FakeContained,
+} from "./fakeContainer";
 
 export const AUTH_REQUIRED_CODE = -32000;
 export const SESSION_ID = "fake-session-1";
@@ -292,6 +296,7 @@ export class FakeAcpAgent {
 
 export class ScriptedAcpContainer implements ProcessContainer {
   readonly kind = ContainerKind.envMarker;
+  readonly launch = unsupportedLaunch;
   readonly specs: SpawnSpec[] = [];
   readonly agents: FakeAcpAgent[] = [];
   readonly contained: FakeContained[] = [];

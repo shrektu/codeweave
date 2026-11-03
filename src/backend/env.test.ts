@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ProviderId, type Account } from "../domain/types";
 
-import { buildAgentEnv, type AgentEnvInput } from "./env";
+import { buildAgentEnv, inheritedEnv, type AgentEnvInput } from "./env";
 
 const account: Account = {
   id: "acc-1",
@@ -24,6 +24,28 @@ function input(overrides: Partial<AgentEnvInput> = {}): AgentEnvInput {
     ...overrides,
   };
 }
+
+describe("inheritedEnv", () => {
+  it("drops_provider_keys_and_agent_variables_but_keeps_the_rest", () => {
+    const env = inheritedEnv({
+      PATH: "/usr/bin",
+      HOME: "/home/jane",
+      ANTHROPIC_API_KEY: "sk-test-fake",
+      claude_config_dir: "/home/jane/.claude",
+      CODEX_HOME: "/home/jane/.codex",
+      ELECTRON_RUN_AS_NODE: "1",
+      NODE_OPTIONS: "--inspect",
+      EMPTY_BUT_DEFINED: "",
+      UNSET: undefined,
+    });
+
+    expect(env).toEqual({
+      PATH: "/usr/bin",
+      HOME: "/home/jane",
+      EMPTY_BUT_DEFINED: "",
+    });
+  });
+});
 
 describe("buildAgentEnv", () => {
   it("default_claude_dir_leaves_config_dir_unset", () => {
