@@ -515,6 +515,104 @@ html[data-fx="low"] .flow-graph .react-flow__edge.animated path {
   gap: 4px;
 }
 
+.flow-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.flow-editor {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  gap: 10px;
+}
+
+.flow-editor .flow-graph {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.flow-inspector {
+  flex: 0 0 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: auto;
+}
+
+.flow-inspector-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.inspector-section {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.flow-inspector select,
+.flow-inspector input[type="text"],
+.flow-inspector input[type="number"] {
+  width: 100%;
+  background: var(--panel-solid);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--text);
+  font: 12px var(--mono);
+  padding: 6px 10px;
+}
+
+.flow-node-provider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 10px var(--mono);
+  color: var(--muted);
+}
+
+.flow-custom {
+  padding: 1px 6px;
+  border: 1px solid var(--warn);
+  border-radius: 999px;
+  color: var(--warn);
+}
+
+.flow-graph.editing .flow-node-role {
+  -webkit-line-clamp: 2;
+}
+
+.flow-graph.editing .react-flow__node {
+  cursor: pointer;
+}
+
+.flow-graph.editing .react-flow__handle {
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--accent);
+  background: var(--panel-solid);
+  cursor: crosshair;
+}
+
+.flow-graph.editing .react-flow__node.selected .flow-node {
+  border-color: var(--accent);
+}
+
+.flow-graph.editing .react-flow__edge.selected .flow-edge {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
 .flow-node {
   width: 220px;
   height: 96px;
