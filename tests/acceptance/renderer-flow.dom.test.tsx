@@ -312,7 +312,7 @@ it("app_flow_tab_opens_session_tab_on_session_node_click", async () => {
   expect(screen.getByRole("region", { name: "Session" })).toBeTruthy();
 });
 
-it("flow_tab_without_session_asks_to_start_one", async () => {
+it("flow_tab_without_session_asks_to_choose_a_folder", async () => {
   const client = appClient(null);
   client.respond("sessions/snapshot", makeSnapshot());
 
@@ -320,7 +320,7 @@ it("flow_tab_without_session_asks_to_start_one", async () => {
   fireEvent.click(await screen.findByRole("tab", { name: "Flow" }));
 
   expect(
-    await screen.findByText("Start a session to see its flows."),
+    await screen.findByRole("button", { name: "Choose folder…" }),
   ).toBeTruthy();
   expect(
     client.requests.some((request) => request.method === "flows/list"),

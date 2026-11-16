@@ -13,11 +13,21 @@ import {
   type ReactFlowProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { memo, useEffect, useState, type JSX } from "react";
+import { memo, useEffect, useMemo, useState, type JSX } from "react";
 
-import { FlowNodeState, flowNodeStates } from "../../domain/flowState";
+import {
+  FlowNodeState,
+  flowNodeStates,
+  isRunOpen,
+  runNodeStates,
+} from "../../domain/flowState";
 import { EdgeKind, type ProviderId } from "../../domain/types";
-import type { AgentView, FlowView, SessionView } from "../../shared/views";
+import type {
+  AgentView,
+  FlowRunView,
+  FlowView,
+  SessionView,
+} from "../../shared/views";
 import { errorMessage } from "../errorMessage";
 import {
   addEdge,
@@ -45,6 +55,7 @@ interface FlowGraphBaseProps {
   flow: FlowView;
   agents: readonly AgentView[];
   session: SessionView | null;
+  run?: FlowRunView | null;
   onOpenSession: () => void;
 }
 
@@ -195,18 +206,62 @@ function sessionNodeOf(
   return session?.flowRef?.flowId === flow.id ? session.flowRef.nodeId : null;
 }
 
+type NodeStates = ReadonlyMap<string, FlowNodeState>;
+
 function statesOf(
   flow: FlowView,
   session: SessionView | null,
-): ReadonlyMap<string, FlowNodeState> {
-  return flowNodeStates({
-    nodeIds: flow.nodes.map((node) => node.id),
-    sessionNodeId: sessionNodeOf(flow, session),
+  run: FlowRunView | null,
+): NodeStates {
+  const nodeIds = flow.nodes.map((node) => node.id);
+  const sessionInput = {
     phase: session?.phase.phase ?? null,
     pendingPermissions: session?.permissions.length ?? 0,
     turnInFlight: session?.turnInFlight ?? false,
     lastTurn: session?.lastTurn?.kind ?? null,
-  });
+  };
+  return run === null
+    ? flowNodeStates({
+        ...sessionInput,
+        nodeIds,
+        sessionNodeId: sessionNodeOf(flow, session),
+      })
+    : runNodeStates({
+        nodeIds,
+        flowId: run.flowId,
+        currentNodeId: run.currentNodeId,
+        runNodes: run.nodes,
+        session:
+          session === null
+            ? null
+            : { ...sessionInput, flowRef: session.flowRef },
+      });
+}
+
+function activeNodeOf(
+  flow: FlowView,
+  session: SessionView | null,
+  run: FlowRunView | null,
+): string | null {
+  if (run === null) {
+    return sessionNodeOf(flow, session);
+  }
+  return isRunOpen(run.status) ? run.currentNodeId : null;
+}
+
+function sameStates(a: NodeStates, b: NodeStates): boolean {
+  return (
+    a.size === b.size && [...a].every(([id, state]) => b.get(id) === state)
+  );
+}
+
+function useStableStates(next: NodeStates): NodeStates {
+  const [stable, setStable] = useState(next);
+  if (sameStates(stable, next)) {
+    return stable;
+  }
+  setStable(next);
+  return next;
 }
 
 interface GraphSource {
@@ -214,7 +269,8 @@ interface GraphSource {
   direction: FlowDirection;
   flow: FlowView;
   agents: readonly AgentView[];
-  session: SessionView | null;
+  states: NodeStates;
+  activeNodeId: string | null;
   editable: boolean;
   selection: FlowSelection;
 }
@@ -230,12 +286,11 @@ function buildGraph({
   direction,
   flow,
   agents,
-  session,
+  states,
+  activeNodeId,
   editable,
   selection,
 }: GraphSource): { nodes: FlowGraphNode[]; edges: FlowLayoutEdge[] } {
-  const activeNodeId = sessionNodeOf(flow, session);
-  const states = statesOf(flow, session);
   const flowNodes = new Map(flow.nodes.map((node) => [node.id, node]));
   return {
     nodes: layout.nodes.map((node) => {
@@ -376,10 +431,13 @@ function useFitOnChange(layout: FlowLayout | null, size: FlowSize): void {
 }
 
 function FlowCanvas(props: FlowGraphProps): JSX.Element {
-  const { flow, agents, session, onOpenSession } = props;
+  const { flow, agents, session, run = null, onOpenSession } = props;
   const editable = props.editable === true;
-  const shown: FlowView =
-    props.editable === true ? { ...flow, ...props.draft } : flow;
+  const draft = props.editable === true ? props.draft : null;
+  const shown = useMemo<FlowView>(
+    () => (draft === null ? flow : { ...flow, ...draft }),
+    [flow, draft],
+  );
   const selection = props.editable === true ? props.selection : null;
   const { layouts, error } = useFlowLayouts(shown);
   const [containerRef, size] = useElementSize<HTMLDivElement>();
@@ -387,21 +445,37 @@ function FlowCanvas(props: FlowGraphProps): JSX.Element {
     layouts === null ? FlowDirection.RIGHT : chooseDirection(layouts, size);
   const layout = layouts?.[direction] ?? null;
   useFitOnChange(layout, size);
+  const states = useStableStates(statesOf(shown, session, run));
+  const activeNodeId = activeNodeOf(shown, session, run);
+  const graph = useMemo(
+    () =>
+      layout
+        ? buildGraph({
+            layout,
+            direction,
+            flow: shown,
+            agents,
+            states,
+            activeNodeId,
+            editable,
+            selection,
+          })
+        : { nodes: [], edges: [] },
+    [
+      layout,
+      direction,
+      shown,
+      agents,
+      states,
+      activeNodeId,
+      editable,
+      selection,
+    ],
+  );
 
   if (error !== null) {
     return <p className="error">{error}</p>;
   }
-  const graph = layout
-    ? buildGraph({
-        layout,
-        direction,
-        flow: shown,
-        agents,
-        session,
-        editable,
-        selection,
-      })
-    : { nodes: [], edges: [] };
   const handlers =
     props.editable === true
       ? editHandlers(props)

@@ -521,6 +521,95 @@ html[data-fx="low"] .flow-graph .react-flow__edge.animated path {
   gap: 8px;
 }
 
+.flow-run {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.flow-run-form,
+.flow-run-open {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.flow-run-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.flow-run-label textarea {
+  resize: vertical;
+  background: var(--panel-solid);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--text);
+  font: 13px var(--sans);
+  padding: 6px 10px;
+}
+
+.flow-run-head,
+.flow-run-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.flow-run-task {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.flow-run-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+}
+
+.flow-run-banner p {
+  margin: 0;
+}
+
+.flow-run-outcome {
+  margin: 0;
+  font-size: 13px;
+}
+
+.flow-run-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.flow-run-results summary {
+  cursor: pointer;
+}
+
+.flow-run-results pre {
+  margin: 4px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font: 12px var(--mono);
+}
+
 .flow-editor {
   flex: 1 1 0;
   min-height: 0;

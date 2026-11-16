@@ -1,12 +1,40 @@
 import { expect, it } from "vitest";
 
+import { makeSession } from "../../tests/fakes/fakeIpcClient";
+
 import {
   accountLabel,
   compactPath,
   formatCountdown,
   formatLocalTime,
+  isSessionLive,
   isStale,
 } from "./format";
+
+it("session_live_excludes_stopped_failed_halted", () => {
+  const live = [
+    { phase: "running", accountId: "acc-1" },
+    { phase: "switching", from: "acc-1", to: "acc-2" },
+    { phase: "waiting", accountId: "acc-1", until: 1_900_000_000 },
+  ] as const;
+  const ended = [
+    { phase: "stopped" },
+    { phase: "failed", reason: "boom", runningAccountId: null },
+    { phase: "halted" },
+  ] as const;
+
+  expect(live.map((phase) => isSessionLive(makeSession({ phase })))).toEqual([
+    true,
+    true,
+    true,
+  ]);
+  expect(ended.map((phase) => isSessionLive(makeSession({ phase })))).toEqual([
+    false,
+    false,
+    false,
+  ]);
+  expect(isSessionLive(null)).toBe(false);
+});
 
 it("compact_path_keeps_last_two_segments", () => {
   expect(compactPath("/home/user/.config/codeweave/work")).toBe(

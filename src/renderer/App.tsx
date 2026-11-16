@@ -6,18 +6,22 @@ import {
   type SetStateAction,
 } from "react";
 
+import { isRunOpen } from "../domain/flowState";
 import { EffectLevel as EffectSetting } from "../domain/types";
 import { IpcErrorCode } from "../shared/protocol";
 import type {
   FlowFileError,
+  FlowRunView,
   FlowsList,
   FlowView,
   SessionView,
+  Snapshot,
 } from "../shared/views";
 
 import { AccountsDialog } from "./components/AccountsDialog";
 import { FlowGraph } from "./components/FlowGraph";
 import { FlowInspector } from "./components/FlowInspector";
+import { FlowRunPanel } from "./components/FlowRunPanel";
 import { LimitsPanel } from "./components/LimitsPanel";
 import { SessionStream } from "./components/SessionStream";
 import { SettingsDialog } from "./components/SettingsDialog";
@@ -41,6 +45,7 @@ import {
   type FlowDraft,
   type FlowSelection,
 } from "./flowDraft";
+import { isSessionLive } from "./format";
 import { IpcRemoteError, type IpcClient } from "./ipc";
 import { useApp } from "./services";
 import { useTerminalDock } from "./terminal/useTerminalDock";
@@ -59,6 +64,7 @@ const CENTRE_TABS: readonly { id: CentreTab; label: string }[] = [
 const FLOW_CONFLICT_MESSAGE =
   "This flow changed on disk. Reload to edit the latest version.";
 const FLOW_MISSING_MESSAGE = "This flow is no longer on disk.";
+const RUN_LOCK_MESSAGE = "Stop the flow to edit it.";
 
 type FlowsLoad =
   | { status: "loading" }
@@ -145,6 +151,7 @@ interface EditSession {
 }
 
 interface FlowEditor {
+  cwd: string | null;
   session: EditSession | null;
   saving: boolean;
   saveError: string | null;
@@ -188,14 +195,11 @@ async function requestSave(
   }
 }
 
-function useFlowEditor(cwd: string | null): FlowEditor {
+function useFlowEditor(autoCwd: string | null): FlowEditor {
   const { client } = useApp();
-  const [stored, setStored] = useState<EditSession | null>(null);
+  const [session, setStored] = useState<EditSession | null>(null);
   const saving = useAsyncAction();
-  if (stored !== null && stored.cwd !== cwd) {
-    setStored(null);
-  }
-  const session = stored?.cwd === cwd ? stored : null;
+  const cwd = session?.cwd ?? autoCwd;
 
   const patch = (change: Partial<EditSession>): void => {
     setStored((current) =>
@@ -204,6 +208,7 @@ function useFlowEditor(cwd: string | null): FlowEditor {
   };
 
   return {
+    cwd,
     session,
     saving: saving.pending,
     saveError: saving.error,
@@ -251,6 +256,7 @@ function FlowToolbar({
   editing,
   saving,
   canEdit,
+  editHint,
   canSave,
   onEdit,
   onSave,
@@ -259,6 +265,7 @@ function FlowToolbar({
   editing: boolean;
   saving: boolean;
   canEdit: boolean;
+  editHint: string | undefined;
   canSave: boolean;
   onEdit: () => void;
   onSave: () => void;
@@ -270,6 +277,7 @@ function FlowToolbar({
         type="button"
         className="btn"
         disabled={!canEdit}
+        title={editHint}
         onClick={onEdit}
       >
         Edit
@@ -282,6 +290,7 @@ function FlowToolbar({
         type="button"
         className="btn pri"
         disabled={!canSave}
+        title={editHint}
         onClick={onSave}
       >
         Save
@@ -332,16 +341,22 @@ function FlowEditFeedback({
 }
 
 function FlowPicker({
+  cwd,
   list,
   session,
+  sessionLive,
+  flowRun,
   editor,
   reloading,
   onOpenSession,
   onSaved,
   onReload,
 }: {
+  cwd: string;
   list: FlowsList;
   session: SessionView | null;
+  sessionLive: boolean;
+  flowRun: FlowRunView | null;
   editor: FlowEditor;
   reloading: boolean;
   onOpenSession: () => void;
@@ -351,15 +366,24 @@ function FlowPicker({
   const [selectedId, setSelectedId] = useState<string | null>(
     session?.flowRef?.flowId ?? null,
   );
-  const editedId = editor.session?.base.flowId ?? selectedId;
+  const locked = flowRun !== null && isRunOpen(flowRun.status);
+  const editedId =
+    editor.session?.base.flowId ?? (locked ? flowRun.flowId : selectedId);
   const found = list.flows.find((candidate) => candidate.id === editedId);
-  const flow = editor.session === null ? (found ?? list.flows[0]) : found;
+  const fallback =
+    editor.session === null && !locked ? list.flows[0] : undefined;
+  const flow = found ?? fallback;
+  const runOfFlow =
+    flow !== undefined && flowRun?.flowId === flow.id ? flowRun : null;
+  const shownRun = locked ? flowRun : runOfFlow;
   const draft = editor.session?.draft ?? null;
   const missing = editor.session !== null && flow === undefined;
+  const runFlowMissing = locked && flow === undefined;
   const errors = draft === null ? [] : draftErrors(draft, list.agents);
   const canSave =
     draft !== null &&
     flow !== undefined &&
+    !locked &&
     !editor.saving &&
     errors.length === 0 &&
     editor.session?.roundsText === null &&
@@ -372,12 +396,12 @@ function FlowPicker({
   return (
     <>
       <div className="flow-toolbar">
-        {list.flows.length > 1 && !missing && (
+        {list.flows.length > 1 && !missing && !runFlowMissing && (
           <select
             aria-label="Flow"
             className="flow-picker"
             value={flow?.id}
-            disabled={draft !== null}
+            disabled={draft !== null || locked}
             onChange={(event) => {
               setSelectedId(event.target.value);
             }}
@@ -396,8 +420,10 @@ function FlowPicker({
             canEdit={
               flow !== undefined &&
               !reloading &&
+              !locked &&
               !list.errors.some((error) => error.file === flow.file)
             }
+            editHint={locked ? RUN_LOCK_MESSAGE : undefined}
             canSave={canSave}
             onEdit={() => {
               if (flow !== undefined) {
@@ -411,15 +437,25 @@ function FlowPicker({
           />
         )}
       </div>
-      {missing ? (
+      {(flow !== undefined || shownRun !== null) && (
+        <FlowRunPanel
+          cwd={cwd}
+          flow={flow}
+          run={shownRun}
+          sessionLive={sessionLive}
+          editing={draft !== null}
+        />
+      )}
+      {missing || runFlowMissing ? (
         <p className="error">{FLOW_MISSING_MESSAGE}</p>
       ) : flow === undefined ? (
         <p className="empty">No flows found in this folder.</p>
-      ) : editor.session === null ? (
+      ) : editor.session === null || locked ? (
         <FlowGraph
           flow={flow}
           agents={list.agents}
           session={session}
+          run={runOfFlow}
           onOpenSession={onOpenSession}
         />
       ) : (
@@ -461,20 +497,73 @@ function FlowPicker({
   );
 }
 
+function PickFolderButton({
+  label,
+  primary,
+  onPick,
+}: {
+  label: string;
+  primary: boolean;
+  onPick: (cwd: string) => void;
+}): JSX.Element {
+  const pick = useAsyncAction();
+  return (
+    <>
+      <button
+        type="button"
+        className={primary ? "btn pri" : "btn"}
+        disabled={pick.pending}
+        onClick={() => {
+          void pick.run(async () => {
+            const cwd = await window.codeweave.pickFolder();
+            if (cwd !== null) {
+              onPick(cwd);
+            }
+          });
+        }}
+      >
+        {label}
+      </button>
+      {pick.error !== null && <p className="error">{pick.error}</p>}
+    </>
+  );
+}
+
+function FolderPrompt({
+  onPick,
+}: {
+  onPick: (cwd: string) => void;
+}): JSX.Element {
+  return (
+    <div className="empty-state">
+      <p className="empty">Choose a project folder to see its flows.</p>
+      <PickFolderButton label="Choose folder…" primary onPick={onPick} />
+    </div>
+  );
+}
+
 function FlowTabBody({
+  cwd,
   session,
+  sessionLive,
+  flowRun,
   source,
   editor,
   onOpenSession,
+  onPickFolder,
 }: {
+  cwd: string | null;
   session: SessionView | null;
+  sessionLive: boolean;
+  flowRun: FlowRunView | null;
   source: FlowsSource;
   editor: FlowEditor;
   onOpenSession: () => void;
+  onPickFolder: (cwd: string) => void;
 }): JSX.Element {
   const { load } = source;
-  if (session === null) {
-    return <p className="empty">Start a session to see its flows.</p>;
+  if (cwd === null) {
+    return <FolderPrompt onPick={onPickFolder} />;
   }
   switch (load.status) {
     case "loading":
@@ -484,8 +573,11 @@ function FlowTabBody({
     case "ready":
       return (
         <FlowPicker
+          cwd={cwd}
           list={load.list}
           session={session}
+          sessionLive={sessionLive}
+          flowRun={flowRun?.cwd === cwd ? flowRun : null}
           editor={editor}
           reloading={source.reloading}
           onOpenSession={onOpenSession}
@@ -496,25 +588,74 @@ function FlowTabBody({
   }
 }
 
+function openRunCwdOf(snapshot: Snapshot | null): string | null {
+  const run = snapshot?.flowRun ?? null;
+  return run !== null && isRunOpen(run.status) ? run.cwd : null;
+}
+
+function liveSessionCwdOf(snapshot: Snapshot | null): string | null {
+  const session = snapshot?.session ?? null;
+  return isSessionLive(session) ? (session?.cwd ?? null) : null;
+}
+
+function flowCwdOf(
+  snapshot: Snapshot | null,
+  picked: string | null,
+): string | null {
+  return (
+    openRunCwdOf(snapshot) ??
+    liveSessionCwdOf(snapshot) ??
+    picked ??
+    snapshot?.session?.cwd ??
+    null
+  );
+}
+
+function pinnedCwdOf(snapshot: Snapshot | null): string | null {
+  return openRunCwdOf(snapshot) ?? liveSessionCwdOf(snapshot);
+}
+
+function isFolderPinned(
+  snapshot: Snapshot | null,
+  editor: FlowEditor,
+): boolean {
+  return pinnedCwdOf(snapshot) !== null || editor.session !== null;
+}
+
 function FlowTab({
+  cwd,
   editor,
   onOpenSession,
+  onPickFolder,
 }: {
+  cwd: string | null;
   editor: FlowEditor;
   onOpenSession: () => void;
+  onPickFolder: (cwd: string) => void;
 }): JSX.Element {
   const { state } = useApp();
+  const source = useFlowsLoad(cwd);
   const session = state.snapshot?.session ?? null;
-  const source = useFlowsLoad(session?.cwd ?? null);
 
   return (
     <section className="glass panel flow-tab" aria-label="Flow">
       <h2 className="sec">Flow</h2>
+      {cwd !== null && !isFolderPinned(state.snapshot, editor) && (
+        <PickFolderButton
+          label="Change folder…"
+          primary={false}
+          onPick={onPickFolder}
+        />
+      )}
       <FlowTabBody
-        session={session}
+        cwd={cwd}
+        session={session?.cwd === cwd ? session : null}
+        sessionLive={isSessionLive(session)}
+        flowRun={state.snapshot?.flowRun ?? null}
         source={source}
         editor={editor}
         onOpenSession={onOpenSession}
+        onPickFolder={onPickFolder}
       />
     </section>
   );
@@ -536,7 +677,12 @@ export function App(): JSX.Element {
   const [measuredFps, setMeasuredFps] = useState<number | undefined>(undefined);
   const [openDialog, setOpenDialog] = useState<OpenDialog>(null);
   const [centreTab, setCentreTab] = useState<CentreTab>("session");
-  const flowEditor = useFlowEditor(state.snapshot?.session?.cwd ?? null);
+  const [pickedFolder, setPickedFolder] = useState<string | null>(null);
+  const pinnedCwd = pinnedCwdOf(state.snapshot);
+  if (pinnedCwd !== null && pinnedCwd !== pickedFolder) {
+    setPickedFolder(pinnedCwd);
+  }
+  const flowEditor = useFlowEditor(flowCwdOf(state.snapshot, pickedFolder));
   const backend = useBackendStatus(client);
   const dock = useTerminalDock();
   const [columnRef, columnSize] = useElementSize<HTMLDivElement>();
@@ -650,7 +796,12 @@ export function App(): JSX.Element {
           {centreTab === "session" ? (
             <SessionStream />
           ) : (
-            <FlowTab editor={flowEditor} onOpenSession={openSessionTab} />
+            <FlowTab
+              cwd={flowEditor.cwd}
+              editor={flowEditor}
+              onOpenSession={openSessionTab}
+              onPickFolder={setPickedFolder}
+            />
           )}
         </div>
         {dock.open && (
