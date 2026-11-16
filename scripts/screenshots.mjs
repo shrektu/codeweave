@@ -179,6 +179,17 @@ async function driveRotation(page, shot) {
   await page.waitForTimeout(FLOW_SETTLE_MS);
   await page.screenshot({ path: shot("flow-tab") });
 
+  await page.getByRole("tab", { name: "Agents" }).click();
+  await page
+    .getByRole("list", { name: "Agents" })
+    .getByRole("button", { name: /backend-dev/ })
+    .click();
+  const usedBy = page.getByRole("region", { name: "Used by" });
+  await expect(usedBy).toBeVisible();
+  await page.getByRole("textbox", { name: "Id" }).scrollIntoViewIfNeeded();
+  await page.waitForTimeout(SETTLE_MS);
+  await page.screenshot({ path: shot("agent-editor") });
+
   await page.getByRole("tab", { name: "Session" }).click();
   await page.getByRole("button", { name: "Manage accounts" }).click();
   await expect(page.getByRole("dialog", { name: "Accounts" })).toBeVisible();

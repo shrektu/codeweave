@@ -31,6 +31,41 @@ pnpm install
 pnpm dev
 ```
 
+## Agents
+
+Flow nodes run agents. An agent is defined in a Markdown file directly in the
+`agents/` folder of your repository. Each definition is a YAML front-matter
+block followed by the instructions the agent gets as its prompt; one file may
+hold several agents, each starting with its own `---` block.
+
+```md
+---
+id: docs-writer
+role: Writes the docs
+provider: claude
+model: sonnet
+permissionProfile: accept-edits
+taskClass: M
+---
+
+Write the docs for the change.
+```
+
+- `id`, `role`, `provider` (`claude`, `codex`, `gemini` or `opencode`) and
+  `permissionProfile` (`bypass`, `unattended`, `accept-edits`, `ask` or `plan`)
+  are required.
+- `model` and `taskClass` are optional. The editor suggests models from the
+  OpenCode catalog for OpenCode agents only; for other providers `model` is
+  free text. Codeweave does not pass `model` to the agent CLI yet.
+- The text after the front matter is the agent's instructions.
+
+The **Agents** tab creates, edits, renames and deletes these files after you
+pick the repository folder. Renaming or deleting an agent is refused while a
+flow uses it; the tab lists the flows that do. Saved changes apply to the next
+flow run without restarting the app.
+
+![The Agents tab with an agent open](docs/screenshots/agent-editor.png)
+
 ## Terminal
 
 A terminal docks at the bottom of the centre column. Toggle it with the
