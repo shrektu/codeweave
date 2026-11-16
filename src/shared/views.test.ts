@@ -116,15 +116,49 @@ it("flow_view_schema_requires_resolved_defaults", () => {
 it("agent_view_schema_requires_body", () => {
   const agent = {
     id: "coder",
+    file: "agents/coder.md",
+    revision: "abc",
     role: "Codes",
     provider: "claude",
+    model: null,
     permissionProfile: "plan",
+    taskClass: null,
+    usedBy: [],
   };
 
   expect(AgentViewSchema.safeParse(agent).success).toBe(false);
   expect(AgentViewSchema.safeParse({ ...agent, body: "Prose" }).success).toBe(
     true,
   );
+});
+
+it("agent_view_schema_requires_file_revision_model_task_class_and_used_by", () => {
+  const agent = {
+    id: "coder",
+    file: "agents/coder.md",
+    revision: "abc",
+    role: "Codes",
+    provider: "claude",
+    model: "opus",
+    permissionProfile: "plan",
+    taskClass: "impl",
+    body: "Prose",
+    usedBy: [{ file: "flows/ship.md", title: "Ship" }],
+  };
+
+  expect(AgentViewSchema.safeParse(agent).success).toBe(true);
+  for (const key of Object.keys(agent)) {
+    const rest = Object.fromEntries(
+      Object.entries(agent).filter(([name]) => name !== key),
+    );
+    expect(AgentViewSchema.safeParse(rest).success).toBe(false);
+  }
+  expect(
+    AgentViewSchema.safeParse({
+      ...agent,
+      usedBy: [{ file: "flows/ship.md", title: "Ship", extra: 1 }],
+    }).success,
+  ).toBe(false);
 });
 
 const FLOW_RUN_VIEW = {

@@ -115,10 +115,18 @@ it("flows_list_reports_broken_file_beside_valid_flow", async () => {
     agents: [
       {
         id: "coder",
+        file: "agents/coder.md",
+        revision: sha256(CODER_AGENT),
         role: "Writes code",
         provider: "claude",
+        model: null,
         permissionProfile: "plan",
+        taskClass: null,
         body: "Prompt",
+        usedBy: [
+          { file: "flows/a-ship.md", title: "Ship it" },
+          { file: "flows/b-broken.md", title: "Broken" },
+        ],
       },
     ],
     errors: [

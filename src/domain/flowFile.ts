@@ -21,11 +21,15 @@ const CRLF = "\r\n";
 const LF = "\n";
 const FENCE = "---";
 const MISSING_FRONTMATTER = "Missing YAML frontmatter";
-const RECURSIVE_ALIASES =
-  "Recursive YAML aliases in the flow front matter are not supported";
-const REUSED_ANCHORS =
-  "Reused YAML anchor names in the flow front matter are not supported";
 const MANAGED_KEYS = ["title", "nodes", "edges", "maxRounds"] as const;
+
+function recursiveAliases(subject: string): string {
+  return `Recursive YAML aliases in the ${subject} front matter are not supported`;
+}
+
+function reusedAnchors(subject: string): string {
+  return `Reused YAML anchor names in the ${subject} front matter are not supported`;
+}
 
 type Entry = Record<string, string | boolean>;
 
@@ -99,14 +103,17 @@ function collectNodes(root: unknown, inside: Set<unknown>): void {
   }
 }
 
-function managedNodes(document: Document): Set<unknown> {
+function managedNodes(
+  document: Document,
+  managedKeys: readonly string[],
+): Set<unknown> {
   const inside = new Set<unknown>();
   if (!isMap(document.contents)) {
     return inside;
   }
   for (const pair of document.contents.items) {
     const { key } = pair;
-    if (isScalar(key) && MANAGED_KEYS.some((name) => name === key.value)) {
+    if (isScalar(key) && managedKeys.some((name) => name === key.value)) {
       collectNodes(key, inside);
       collectNodes(pair.value, inside);
     }
@@ -144,8 +151,12 @@ function unanchoredCopy(source: Node): Node | undefined {
   return copy;
 }
 
-function inlineManagedAliases(document: Document): void {
-  const inside = managedNodes(document);
+function inlineManagedAliases(
+  document: Document,
+  managedKeys: readonly string[],
+  subject: string,
+): void {
+  const inside = managedNodes(document, managedKeys);
   const reused = hasReusedAnchorNames(document);
   visit(document, {
     Alias: (_key, alias, path) => {
@@ -154,10 +165,10 @@ function inlineManagedAliases(document: Document): void {
         return undefined;
       }
       if (reused) {
-        throw new UnsupportedAliasError(REUSED_ANCHORS);
+        throw new UnsupportedAliasError(reusedAnchors(subject));
       }
       if (path.includes(source)) {
-        throw new UnsupportedAliasError(RECURSIVE_ALIASES);
+        throw new UnsupportedAliasError(recursiveAliases(subject));
       }
       return unanchoredCopy(source);
     },
@@ -186,15 +197,20 @@ function mergeEntries(
   });
 }
 
-export function serializeFlowFile(
-  original: string,
-  flow: FlowDefinition,
-): ParseResult<string> {
-  const match = FRONTMATTER_PATTERN.exec(original);
-  if (match?.[1] === undefined) {
-    return { ok: false, errors: [MISSING_FRONTMATTER] };
-  }
-  const document = parseDocument(match[1]);
+export interface FrontmatterRewrite {
+  readonly yaml: string;
+  readonly managedKeys: readonly string[];
+  readonly subject: string;
+  readonly apply: (document: Document) => void;
+}
+
+export function rewriteFrontmatterYaml({
+  yaml,
+  managedKeys,
+  subject,
+  apply,
+}: FrontmatterRewrite): ParseResult<string> {
+  const document = parseDocument(yaml);
   const [firstError] = document.errors;
   if (firstError !== undefined) {
     return {
@@ -203,23 +219,11 @@ export function serializeFlowFile(
     };
   }
   try {
-    inlineManagedAliases(document);
-    document.set("title", flow.title);
-    mergeEntries(document, NODES_SPEC, plainNodes(flow));
-    mergeEntries(document, EDGES_SPEC, plainEdges(flow));
-    if (flow.maxRounds === undefined) {
-      document.delete("maxRounds");
-    } else {
-      document.set("maxRounds", flow.maxRounds);
-    }
-    const eol = match[0].includes(CRLF) ? CRLF : LF;
-    const yaml = document
-      .toString({ lineWidth: 0 })
-      .trimEnd()
-      .replaceAll(LF, eol);
+    inlineManagedAliases(document, managedKeys, subject);
+    apply(document);
     return {
       ok: true,
-      value: `${FENCE}${eol}${yaml}${eol}${FENCE}${original.slice(match[0].length)}`,
+      value: document.toString({ lineWidth: 0 }).trimEnd(),
     };
   } catch (error) {
     if (error instanceof UnsupportedAliasError) {
@@ -228,4 +232,42 @@ export function serializeFlowFile(
     const message = error instanceof Error ? error.message : String(error);
     return { ok: false, errors: [`Cannot update frontmatter: ${message}`] };
   }
+}
+
+function applyFlow(document: Document, flow: FlowDefinition): void {
+  document.set("title", flow.title);
+  mergeEntries(document, NODES_SPEC, plainNodes(flow));
+  mergeEntries(document, EDGES_SPEC, plainEdges(flow));
+  if (flow.maxRounds === undefined) {
+    document.delete("maxRounds");
+  } else {
+    document.set("maxRounds", flow.maxRounds);
+  }
+}
+
+export function serializeFlowFile(
+  original: string,
+  flow: FlowDefinition,
+): ParseResult<string> {
+  const match = FRONTMATTER_PATTERN.exec(original);
+  if (match?.[1] === undefined) {
+    return { ok: false, errors: [MISSING_FRONTMATTER] };
+  }
+  const rewritten = rewriteFrontmatterYaml({
+    yaml: match[1],
+    managedKeys: MANAGED_KEYS,
+    subject: "flow",
+    apply: (document) => {
+      applyFlow(document, flow);
+    },
+  });
+  if (!rewritten.ok) {
+    return rewritten;
+  }
+  const eol = match[0].includes(CRLF) ? CRLF : LF;
+  const yaml = rewritten.value.replaceAll(LF, eol);
+  return {
+    ok: true,
+    value: `${FENCE}${eol}${yaml}${eol}${FENCE}${original.slice(match[0].length)}`,
+  };
 }

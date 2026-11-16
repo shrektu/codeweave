@@ -163,10 +163,15 @@ export type SessionView = z.infer<typeof SessionViewSchema>;
 
 export const AgentViewSchema = z.strictObject({
   id: z.string(),
+  file: z.string(),
+  revision: z.string(),
   role: z.string(),
   provider: z.enum(ProviderId),
+  model: z.string().nullable(),
   permissionProfile: z.enum(PermissionProfile),
+  taskClass: z.string().nullable(),
   body: z.string(),
+  usedBy: z.array(z.strictObject({ file: z.string(), title: z.string() })),
 });
 export type AgentView = z.infer<typeof AgentViewSchema>;
 

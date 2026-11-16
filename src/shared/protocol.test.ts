@@ -19,6 +19,13 @@ const SAVE_FLOW = {
   edges: [],
 };
 
+const SAVE_AGENT = {
+  id: "coder",
+  role: "Writes code",
+  provider: "claude",
+  permissionProfile: "plan",
+};
+
 const VALID_REQUESTS: [string, unknown][] = [
   ["ping", {}],
   ["sessions/snapshot", {}],
@@ -108,6 +115,22 @@ const VALID_REQUESTS: [string, unknown][] = [
         edges: [{ from: "a", to: "a", kind: "reviews", gate: true }],
       },
     },
+  ],
+  ["agents/create", { cwd: "/work", agent: SAVE_AGENT, body: "Instructions" }],
+  [
+    "agents/save",
+    {
+      cwd: "/work",
+      file: "agents/coder.md",
+      revision: "abc",
+      id: "coder",
+      agent: { ...SAVE_AGENT, model: "opus", taskClass: "impl" },
+      body: "",
+    },
+  ],
+  [
+    "agents/delete",
+    { cwd: "/work", file: "agents/coder.md", revision: "abc", id: "coder" },
   ],
   ["settings/set", { terminalShell: "/bin/zsh" }],
   ["settings/set", { terminalShell: null }],
@@ -396,6 +419,49 @@ const INVALID_REQUESTS: [string, unknown][] = [
       file: "flows/a.md",
       revision: "r",
       flow: SAVE_FLOW,
+      force: true,
+    }),
+  ],
+  [
+    "agents/create without body",
+    request("agents/create", { cwd: "/w", agent: SAVE_AGENT }),
+  ],
+  [
+    "agents/create with unknown provider",
+    request("agents/create", {
+      cwd: "/w",
+      agent: { ...SAVE_AGENT, provider: "x" },
+      body: "b",
+    }),
+  ],
+  [
+    "agents/save without revision",
+    request("agents/save", {
+      cwd: "/w",
+      file: "agents/a.md",
+      id: "a",
+      agent: SAVE_AGENT,
+      body: "b",
+    }),
+  ],
+  [
+    "agents/save with empty id",
+    request("agents/save", {
+      cwd: "/w",
+      file: "agents/a.md",
+      revision: "r",
+      id: "",
+      agent: SAVE_AGENT,
+      body: "b",
+    }),
+  ],
+  [
+    "agents/delete with extra param",
+    request("agents/delete", {
+      cwd: "/w",
+      file: "agents/a.md",
+      revision: "r",
+      id: "a",
       force: true,
     }),
   ],

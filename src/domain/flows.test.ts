@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  agentBlocks,
   parseAgentDocuments,
   parseAgentFile,
   parseFlowFile,
@@ -173,6 +174,33 @@ Second body
     );
 
     expect(!result.ok && result.errors.join()).toContain("edges.0.kind");
+  });
+});
+
+describe("flows: agentBlocks", () => {
+  const THREE_BLOCKS =
+    "---\nid: a\n---\n\nbody a\n\n---\nid: b\n---\nbody b\n\n---\nid: c\n---\nbody c\n";
+
+  it("locates the first, middle and last block", () => {
+    expect(agentBlocks(THREE_BLOCKS)).toEqual([
+      { yaml: "id: a", start: 0, bodyStart: 13, end: 23 },
+      { yaml: "id: b", start: 23, bodyStart: 36, end: 45 },
+      { yaml: "id: c", start: 45, bodyStart: 58, end: 66 },
+    ]);
+  });
+
+  it("locates CRLF blocks without the line ending in the yaml", () => {
+    const markdown =
+      "---\r\nid: a\r\n---\r\n\r\nbody a\r\n\r\n---\r\nid: b\r\n---\r\nbody b\r\n";
+
+    expect(agentBlocks(markdown)).toEqual([
+      { yaml: "id: a", start: 0, bodyStart: 15, end: 29 },
+      { yaml: "id: b", start: 29, bodyStart: 44, end: 54 },
+    ]);
+  });
+
+  it("finds no block without front matter", () => {
+    expect(agentBlocks("just prose\n")).toEqual([]);
   });
 });
 
