@@ -7,6 +7,7 @@ import {
 } from "../../domain/types";
 import type { ParamsMap } from "../../shared/protocol";
 import type { SettingsView } from "../../shared/views";
+import { PROFILE_OPTIONS } from "../profileOptions";
 import { useApp } from "../services";
 import { useAsyncAction } from "../useAsyncAction";
 
@@ -19,41 +20,6 @@ interface PatchProps {
   settings: SettingsView;
   onPatch: (patch: SettingsPatch) => void;
 }
-
-interface ProfileOption {
-  value: PermissionProfile;
-  label: string;
-  description: string;
-}
-
-const PROFILE_OPTIONS: readonly ProfileOption[] = [
-  {
-    value: PermissionProfile.bypass,
-    label: "Bypass",
-    description: "The agent runs every tool without asking.",
-  },
-  {
-    value: PermissionProfile.unattended,
-    label: "Unattended",
-    description:
-      "Allows reads, edits and commands inside the project; blocks dangerous commands.",
-  },
-  {
-    value: PermissionProfile.acceptEdits,
-    label: "Accept edits",
-    description: "Allows reads and edits; asks before running commands.",
-  },
-  {
-    value: PermissionProfile.ask,
-    label: "Ask",
-    description: "Asks before every edit and command.",
-  },
-  {
-    value: PermissionProfile.plan,
-    label: "Plan",
-    description: "Read-only: edits and commands are denied.",
-  },
-];
 
 const EFFECT_OPTIONS: readonly { value: EffectLevel; label: string }[] = [
   { value: EffectLevel.auto, label: "Auto" },

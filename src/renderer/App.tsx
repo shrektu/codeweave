@@ -8,9 +8,7 @@ import {
 
 import { isRunOpen } from "../domain/flowState";
 import { EffectLevel as EffectSetting } from "../domain/types";
-import { IpcErrorCode } from "../shared/protocol";
 import type {
-  FlowFileError,
   FlowRunView,
   FlowsList,
   FlowView,
@@ -19,9 +17,13 @@ import type {
 } from "../shared/views";
 
 import { AccountsDialog } from "./components/AccountsDialog";
+import { AgentsTab } from "./components/AgentsTab";
+import { EditFeedback } from "./components/EditFeedback";
+import { FlowErrors } from "./components/FlowErrors";
 import { FlowGraph } from "./components/FlowGraph";
 import { FlowInspector } from "./components/FlowInspector";
 import { FlowRunPanel } from "./components/FlowRunPanel";
+import { FolderPrompt, PickFolderButton } from "./components/FolderControls";
 import { LimitsPanel } from "./components/LimitsPanel";
 import { SessionStream } from "./components/SessionStream";
 import { SettingsDialog } from "./components/SettingsDialog";
@@ -34,7 +36,7 @@ import {
   chooseEffectLevel,
   measureFps,
 } from "./effects";
-import { errorMessage } from "./errorMessage";
+import { requestUnlessConflict } from "./conflictRequest";
 import {
   baseOf,
   draftErrors,
@@ -46,99 +48,32 @@ import {
   type FlowSelection,
 } from "./flowDraft";
 import { isSessionLive } from "./format";
-import { IpcRemoteError, type IpcClient } from "./ipc";
+import type { IpcClient } from "./ipc";
 import { useApp } from "./services";
 import { useTerminalDock } from "./terminal/useTerminalDock";
+import {
+  agentEditorPinsFolder,
+  useAgentEditor,
+  type AgentEditor,
+} from "./useAgentEditor";
 import { useAsyncAction } from "./useAsyncAction";
 import { useBackendStatus, type BackendStatus } from "./useBackendStatus";
 import { useElementSize } from "./useElementSize";
+import { useFlowsLoad, type FlowsSource } from "./useFlowsLoad";
 
 type OpenDialog = "accounts" | "settings" | null;
-type CentreTab = "session" | "flow";
+type CentreTab = "session" | "flow" | "agents";
 
 const CENTRE_TABS: readonly { id: CentreTab; label: string }[] = [
   { id: "session", label: "Session" },
   { id: "flow", label: "Flow" },
+  { id: "agents", label: "Agents" },
 ];
 
 const FLOW_CONFLICT_MESSAGE =
   "This flow changed on disk. Reload to edit the latest version.";
 const FLOW_MISSING_MESSAGE = "This flow is no longer on disk.";
 const RUN_LOCK_MESSAGE = "Stop the flow to edit it.";
-
-type FlowsLoad =
-  | { status: "loading" }
-  | { status: "failed"; message: string }
-  | { status: "ready"; list: FlowsList };
-
-interface FlowsSource {
-  load: FlowsLoad;
-  reloading: boolean;
-  replace: (list: FlowsList) => void;
-  reload: () => void;
-}
-
-interface LoadedFlows {
-  cwd: string;
-  load: FlowsLoad;
-  reloadCount: number;
-}
-
-function useFlowsLoad(cwd: string | null): FlowsSource {
-  const { client } = useApp();
-  const [loaded, setLoaded] = useState<LoadedFlows | null>(null);
-  const [reloadCount, setReloadCount] = useState(0);
-
-  useEffect(() => {
-    if (cwd === null) {
-      return undefined;
-    }
-    let active = true;
-    const run = async (): Promise<void> => {
-      let load: FlowsLoad;
-      try {
-        load = {
-          status: "ready",
-          list: await client.request("flows/list", { cwd }),
-        };
-      } catch (error: unknown) {
-        load = { status: "failed", message: errorMessage(error) };
-      }
-      if (active) {
-        setLoaded({ cwd, load, reloadCount });
-      }
-    };
-    void run();
-    return () => {
-      active = false;
-    };
-  }, [client, cwd, reloadCount]);
-
-  return {
-    load: loaded?.cwd === cwd ? loaded.load : { status: "loading" },
-    reloading: loaded?.reloadCount !== reloadCount,
-    replace: (list) => {
-      if (cwd !== null) {
-        setLoaded({ cwd, load: { status: "ready", list }, reloadCount });
-      }
-    },
-    reload: () => {
-      setReloadCount((count) => count + 1);
-    },
-  };
-}
-
-function FlowErrors({ errors }: { errors: FlowFileError[] }): JSX.Element {
-  return (
-    <ul className="flow-errors">
-      {errors.map((error) => (
-        <li key={error.file} className="error">
-          {`Could not read ${error.file}: ${error.messages.join("; ")}`}
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 interface EditSession {
   cwd: string;
@@ -172,27 +107,25 @@ async function requestSave(
   setStored: SetEditSession,
   onSaved: (list: FlowsList) => void,
 ): Promise<void> {
-  try {
-    const saved = await client.request(
-      "flows/save",
-      saveParamsOf(started.cwd, started.base, started.draft),
-    );
-    onSaved(saved);
-    setStored((current) => (current?.saveToken === token ? null : current));
-  } catch (error: unknown) {
-    if (
-      error instanceof IpcRemoteError &&
-      error.code === IpcErrorCode.CONFLICT
-    ) {
+  const saved = await requestUnlessConflict(
+    () =>
+      client.request(
+        "flows/save",
+        saveParamsOf(started.cwd, started.base, started.draft),
+      ),
+    () => {
       setStored((current) =>
         current?.saveToken === token
           ? { ...current, conflict: true, saveToken: null }
           : current,
       );
-      return;
-    }
-    throw error;
+    },
+  );
+  if (saved === null) {
+    return;
   }
+  onSaved(saved);
+  setStored((current) => (current?.saveToken === token ? null : current));
 }
 
 function useFlowEditor(autoCwd: string | null): FlowEditor {
@@ -303,39 +236,6 @@ function FlowToolbar({
       >
         Discard
       </button>
-    </>
-  );
-}
-
-function FlowEditFeedback({
-  errors,
-  conflict,
-  saveError,
-  onReload,
-}: {
-  errors: readonly string[];
-  conflict: boolean;
-  saveError: string | null;
-  onReload: () => void;
-}): JSX.Element {
-  return (
-    <>
-      <ul className="flow-errors">
-        {errors.map((message) => (
-          <li key={message} className="error">
-            {message}
-          </li>
-        ))}
-      </ul>
-      {conflict && (
-        <p className="error" role="alert">
-          {FLOW_CONFLICT_MESSAGE}{" "}
-          <button type="button" className="btn" onClick={onReload}>
-            Reload
-          </button>
-        </p>
-      )}
-      {saveError !== null && <p className="error">{saveError}</p>}
     </>
   );
 }
@@ -485,60 +385,16 @@ function FlowPicker({
         </div>
       )}
       {editor.session !== null && (
-        <FlowEditFeedback
+        <EditFeedback
           errors={errors}
           conflict={editor.session.conflict}
+          conflictMessage={FLOW_CONFLICT_MESSAGE}
           saveError={editor.saveError}
           onReload={reload}
         />
       )}
       <FlowErrors errors={list.errors} />
     </>
-  );
-}
-
-function PickFolderButton({
-  label,
-  primary,
-  onPick,
-}: {
-  label: string;
-  primary: boolean;
-  onPick: (cwd: string) => void;
-}): JSX.Element {
-  const pick = useAsyncAction();
-  return (
-    <>
-      <button
-        type="button"
-        className={primary ? "btn pri" : "btn"}
-        disabled={pick.pending}
-        onClick={() => {
-          void pick.run(async () => {
-            const cwd = await window.codeweave.pickFolder();
-            if (cwd !== null) {
-              onPick(cwd);
-            }
-          });
-        }}
-      >
-        {label}
-      </button>
-      {pick.error !== null && <p className="error">{pick.error}</p>}
-    </>
-  );
-}
-
-function FolderPrompt({
-  onPick,
-}: {
-  onPick: (cwd: string) => void;
-}): JSX.Element {
-  return (
-    <div className="empty-state">
-      <p className="empty">Choose a project folder to see its flows.</p>
-      <PickFolderButton label="Choose folder…" primary onPick={onPick} />
-    </div>
   );
 }
 
@@ -563,7 +419,7 @@ function FlowTabBody({
 }): JSX.Element {
   const { load } = source;
   if (cwd === null) {
-    return <FolderPrompt onPick={onPickFolder} />;
+    return <FolderPrompt subject="flows" onPick={onPickFolder} />;
   }
   switch (load.status) {
     case "loading":
@@ -617,19 +473,26 @@ function pinnedCwdOf(snapshot: Snapshot | null): string | null {
 
 function isFolderPinned(
   snapshot: Snapshot | null,
-  editor: FlowEditor,
+  flowEditor: FlowEditor,
+  agentEditor: AgentEditor,
 ): boolean {
-  return pinnedCwdOf(snapshot) !== null || editor.session !== null;
+  return (
+    pinnedCwdOf(snapshot) !== null ||
+    flowEditor.session !== null ||
+    agentEditorPinsFolder(agentEditor.session, agentEditor.saving)
+  );
 }
 
 function FlowTab({
   cwd,
   editor,
+  folderPinned,
   onOpenSession,
   onPickFolder,
 }: {
   cwd: string | null;
   editor: FlowEditor;
+  folderPinned: boolean;
   onOpenSession: () => void;
   onPickFolder: (cwd: string) => void;
 }): JSX.Element {
@@ -640,7 +503,7 @@ function FlowTab({
   return (
     <section className="glass panel flow-tab" aria-label="Flow">
       <h2 className="sec">Flow</h2>
-      {cwd !== null && !isFolderPinned(state.snapshot, editor) && (
+      {cwd !== null && !folderPinned && (
         <PickFolderButton
           label="Change folder…"
           primary={false}
@@ -682,7 +545,14 @@ export function App(): JSX.Element {
   if (pinnedCwd !== null && pinnedCwd !== pickedFolder) {
     setPickedFolder(pinnedCwd);
   }
-  const flowEditor = useFlowEditor(flowCwdOf(state.snapshot, pickedFolder));
+  const folderCwd = flowCwdOf(state.snapshot, pickedFolder);
+  const flowEditor = useFlowEditor(folderCwd);
+  const agentEditor = useAgentEditor(folderCwd);
+  const folderPinned = isFolderPinned(state.snapshot, flowEditor, agentEditor);
+  const pickFolder = (cwd: string): void => {
+    agentEditor.close();
+    setPickedFolder(cwd);
+  };
   const backend = useBackendStatus(client);
   const dock = useTerminalDock();
   const [columnRef, columnSize] = useElementSize<HTMLDivElement>();
@@ -793,14 +663,22 @@ export function App(): JSX.Element {
           aria-labelledby={`tab-${centreTab}`}
           className="tab-panel"
         >
-          {centreTab === "session" ? (
-            <SessionStream />
-          ) : (
+          {centreTab === "session" && <SessionStream />}
+          {centreTab === "flow" && (
             <FlowTab
               cwd={flowEditor.cwd}
               editor={flowEditor}
+              folderPinned={folderPinned}
               onOpenSession={openSessionTab}
-              onPickFolder={setPickedFolder}
+              onPickFolder={pickFolder}
+            />
+          )}
+          {centreTab === "agents" && (
+            <AgentsTab
+              cwd={agentEditor.cwd}
+              editor={agentEditor}
+              folderPinned={folderPinned}
+              onPickFolder={pickFolder}
             />
           )}
         </div>
