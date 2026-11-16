@@ -5,7 +5,12 @@ import { expect, it, vi } from "vitest";
 
 import { createHandlers } from "../../src/backend/handlers";
 import { createJsonStore } from "../../src/backend/storage";
-import { fakeProbes, fakeSessions, fakeTerminals } from "../fakes/fakeSessions";
+import {
+  fakeFlowRuns,
+  fakeProbes,
+  fakeSessions,
+  fakeTerminals,
+} from "../fakes/fakeSessions";
 import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
 
@@ -39,6 +44,7 @@ it("switch_log_list_skips_malformed_lines", async () => {
     userData,
     broadcast: vi.fn(),
     sessions: fakeSessions(),
+    flowRuns: fakeFlowRuns(),
     probes: fakeProbes(),
     catalog: { load: () => Promise.resolve({ models: [], error: null }) },
     containerStatus: { available: true, message: null },

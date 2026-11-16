@@ -15,7 +15,7 @@ const INTRO =
 const INSTRUCTION =
   "Inspect the current state of the working directory first, then continue the work from where it was interrupted.";
 
-function truncate(text: string, maxChars: number): string {
+export function truncate(text: string, maxChars: number): string {
   if (text.length <= maxChars) {
     return text;
   }
@@ -63,7 +63,7 @@ function turnSection(turn: readonly TurnLogEntry[], maxChars: number): string {
   return `## Interrupted turn\n${body}`;
 }
 
-function worktreeSection(worktree: WorktreeState): string {
+export function worktreeSection(worktree: WorktreeState): string {
   if (!worktree.isRepo) {
     return `## Working tree\nThe working directory ${worktree.cwd} is not a git repository.`;
   }

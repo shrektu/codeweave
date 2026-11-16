@@ -3,6 +3,11 @@ import { z } from "zod";
 import { ApiProviderId, TRAINING_UNKNOWN } from "../domain/apiProviders";
 import { DiffOmission, FileChange } from "../domain/events";
 import {
+  DecisionReason,
+  FlowNodeRunStatus,
+  FlowRunStatus,
+} from "../domain/flowRun";
+import {
   EdgeKind,
   EffectLevel,
   PermissionProfile,
@@ -202,6 +207,34 @@ export const FlowsListSchema = z.strictObject({
 });
 export type FlowsList = z.infer<typeof FlowsListSchema>;
 
+export const FlowRunViewSchema = z.strictObject({
+  runId: NonEmptyString,
+  flowId: NonEmptyString,
+  flowTitle: z.string(),
+  cwd: NonEmptyString,
+  task: z.string(),
+  status: z.enum(FlowRunStatus),
+  round: z.int(),
+  maxRounds: z.int(),
+  currentNodeId: z.string().nullable(),
+  nodes: z.array(
+    z.strictObject({
+      id: z.string(),
+      status: z.enum(FlowNodeRunStatus),
+      visits: z.int(),
+      result: z.string().nullable(),
+    }),
+  ),
+  decision: z
+    .strictObject({
+      reason: z.enum(DecisionReason),
+      nodeId: z.string(),
+    })
+    .nullable(),
+  failure: z.string().nullable(),
+});
+export type FlowRunView = z.infer<typeof FlowRunViewSchema>;
+
 export const SettingsViewSchema = z.strictObject({
   permissionProfile: z.enum(PermissionProfile),
   effectLevel: z.enum(EffectLevel),
@@ -263,5 +296,6 @@ export const SnapshotSchema = z.strictObject({
     message: z.string().nullable(),
   }),
   terminal: TerminalViewSchema.nullable(),
+  flowRun: FlowRunViewSchema.nullable(),
 });
 export type Snapshot = z.infer<typeof SnapshotSchema>;

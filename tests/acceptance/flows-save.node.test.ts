@@ -15,7 +15,12 @@ import { createHandlers } from "../../src/backend/handlers";
 import { createJsonStore } from "../../src/backend/storage";
 import type { FlowDefinition } from "../../src/domain/flows";
 import type { FlowsList } from "../../src/shared/views";
-import { fakeProbes, fakeSessions, fakeTerminals } from "../fakes/fakeSessions";
+import {
+  fakeFlowRuns,
+  fakeProbes,
+  fakeSessions,
+  fakeTerminals,
+} from "../fakes/fakeSessions";
 import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
 
@@ -93,6 +98,7 @@ function handlersFor(cwd: string): ReturnType<typeof createHandlers> {
     userData: cwd,
     broadcast: vi.fn(),
     sessions: fakeSessions(),
+    flowRuns: fakeFlowRuns(),
     probes: fakeProbes(),
     catalog: { load: () => Promise.resolve({ models: [], error: null }) },
     containerStatus: { available: true, message: null },

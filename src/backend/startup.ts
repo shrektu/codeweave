@@ -43,6 +43,8 @@ import {
 } from "./constants";
 import { buildAgentEnv } from "./env";
 import { resolveExecutable } from "./executable";
+import { listFlows } from "./flows";
+import { createFlowRunService } from "./flowRuns";
 import { createHandlers } from "./handlers";
 import { recordInstance } from "./instance";
 import type { IpcHandlers } from "./ipcServer";
@@ -513,6 +515,13 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     secrets: createSecretSource(keyStore),
   });
   const terminals = createTerminals(deps, container, store);
+  const flowRuns = createFlowRunService({
+    sessions,
+    listFlows,
+    inspectWorktree: deps.inspectWorktree,
+    broadcast: deps.broadcast,
+    newRunId: deps.newRunId,
+  });
   const handlers = createHandlers({
     store,
     keyStore,
@@ -520,6 +529,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     userData,
     broadcast: deps.broadcast,
     sessions,
+    flowRuns,
     probes,
     catalog: createCatalog(deps, processes, store),
     containerStatus: status,
@@ -536,6 +546,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     shutdown: async () => {
       await terminals.shutdown();
       await probes.dispose();
+      await flowRuns.shutdown();
       await sessions.shutdown();
     },
   };

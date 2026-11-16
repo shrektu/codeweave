@@ -6,6 +6,7 @@ import { INITIAL_SESSION_STATE, reduceSession } from "../domain/sessionReducer";
 
 import {
   AgentViewSchema,
+  FlowRunViewSchema,
   FlowViewSchema,
   SessionViewSchema,
   ToolCallViewSchema,
@@ -124,4 +125,40 @@ it("agent_view_schema_requires_body", () => {
   expect(AgentViewSchema.safeParse({ ...agent, body: "Prose" }).success).toBe(
     true,
   );
+});
+
+const FLOW_RUN_VIEW = {
+  runId: "run-1",
+  flowId: "ship",
+  flowTitle: "Ship",
+  cwd: "/work",
+  task: "Go",
+  status: "awaiting_decision",
+  round: 2,
+  maxRounds: 2,
+  currentNodeId: null,
+  nodes: [{ id: "a", status: "done", visits: 2, result: "ok" }],
+  decision: { reason: "rounds_exhausted", nodeId: "a" },
+  failure: null,
+};
+
+it("flow_run_view_schema_accepts_a_paused_run_and_rejects_unknowns", () => {
+  const unknownNodeStatus = {
+    ...FLOW_RUN_VIEW,
+    nodes: [{ id: "a", status: "sleeping", visits: 1, result: null }],
+  };
+  const extraDecisionField = {
+    ...FLOW_RUN_VIEW,
+    decision: { reason: "gate", nodeId: "a", reviewerId: "b" },
+  };
+
+  expect(FlowRunViewSchema.safeParse(FLOW_RUN_VIEW).success).toBe(true);
+  expect(
+    FlowRunViewSchema.safeParse({ ...FLOW_RUN_VIEW, decision: null }).success,
+  ).toBe(true);
+  expect(FlowRunViewSchema.safeParse(unknownNodeStatus).success).toBe(false);
+  expect(FlowRunViewSchema.safeParse(extraDecisionField).success).toBe(false);
+  expect(
+    FlowRunViewSchema.safeParse({ ...FLOW_RUN_VIEW, round: 1.5 }).success,
+  ).toBe(false);
 });

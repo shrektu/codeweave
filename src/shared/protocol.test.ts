@@ -89,6 +89,11 @@ const VALID_REQUESTS: [string, unknown][] = [
   ["settings/set", { claudeExecutable: null }],
   ["switchLog/list", {}],
   ["flows/list", { cwd: "/work" }],
+  ["flow/start", { cwd: "/work", flowId: "ship", task: "Add a login form" }],
+  ["flow/stop", {}],
+  ["flow/decide", { runId: "run-1", decision: "approve" }],
+  ["flow/decide", { runId: "run-1", decision: "another_round" }],
+  ["flow/decide", { runId: "run-1", decision: "stop" }],
   [
     "flows/save",
     {
@@ -189,8 +194,33 @@ const TERMINAL_INVALID_REQUESTS: [string, unknown][] = [
   ["terminal/close without an id", request("terminal/close", {})],
 ];
 
+const FLOW_INVALID_REQUESTS: [string, unknown][] = [
+  [
+    "flow/start with a blank task",
+    request("flow/start", { cwd: "/w", flowId: "ship", task: "  \n" }),
+  ],
+  [
+    "flow/start without a flow id",
+    request("flow/start", { cwd: "/w", task: "Go" }),
+  ],
+  [
+    "flow/start with an empty cwd",
+    request("flow/start", { cwd: "", flowId: "ship", task: "Go" }),
+  ],
+  ["flow/stop with a param", request("flow/stop", { runId: "run-1" })],
+  [
+    "flow/decide with an unknown decision",
+    request("flow/decide", { runId: "run-1", decision: "retry" }),
+  ],
+  [
+    "flow/decide without a run id",
+    request("flow/decide", { decision: "approve" }),
+  ],
+];
+
 const INVALID_REQUESTS: [string, unknown][] = [
   ...TERMINAL_INVALID_REQUESTS,
+  ...FLOW_INVALID_REQUESTS,
   ["ping with a param", request("ping", { extra: 1 })],
   ["ping without params", { v: 6, id: "a", method: "ping" }],
   ["session/start without cwd", request("session/start", {})],
@@ -467,7 +497,24 @@ describe("EventSchema", () => {
     exitCode: 0,
   };
 
+  const flowRun = {
+    runId: "run-1",
+    flowId: "ship",
+    flowTitle: "Ship",
+    cwd: "/work",
+    task: "Go",
+    status: "awaiting_decision",
+    round: 2,
+    maxRounds: 2,
+    currentNodeId: null,
+    nodes: [{ id: "a", status: "done", visits: 2, result: "ok" }],
+    decision: { reason: "rounds_exhausted", nodeId: "a" },
+    failure: null,
+  };
+
   it.each([
+    ["flow/changed", null],
+    ["flow/changed", flowRun],
     ["session/changed", null],
     ["accounts/changed", { accounts: [] }],
     ["settings/changed", settings],
@@ -516,6 +563,22 @@ describe("EventSchema", () => {
         v: 6,
         event: "terminal/changed",
         payload: { ...terminal, exitCode: 1.5 },
+      },
+    ],
+    [
+      "a flow run with an unknown status",
+      {
+        v: 6,
+        event: "flow/changed",
+        payload: { ...flowRun, status: "paused" },
+      },
+    ],
+    [
+      "a flow run with an unknown decision reason",
+      {
+        v: 6,
+        event: "flow/changed",
+        payload: { ...flowRun, decision: { reason: "tired", nodeId: "a" } },
       },
     ],
   ])("rejects_%s", (_label, payload) => {

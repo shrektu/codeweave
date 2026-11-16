@@ -9,6 +9,7 @@ import type { Snapshot } from "../shared/views";
 import {
   createFakeIpcClient,
   makeAccount,
+  makeFlowRun,
   makeSession,
   makeSettings,
   makeSnapshot,
@@ -188,6 +189,23 @@ it("store_applies_events_after_snapshot_and_notifies", async () => {
   expect(snapshot?.accounts.map((account) => account.label)).toEqual(["After"]);
   expect(snapshot?.settings.claudeExecutable).toBe("/bin/claude");
   expect(listener).toHaveBeenCalledTimes(2);
+});
+
+it("store_applies_flow_run_events_to_the_snapshot", async () => {
+  const client = createFakeIpcClient();
+  client.respond("sessions/snapshot", makeSnapshot());
+  const store = createAppStore(client);
+  store.start();
+  await vi.waitFor(() => {
+    expect(store.getState().connection).toBe("ready");
+  });
+  const run = makeFlowRun({ status: "awaiting_decision", round: 2 });
+
+  client.emit({ v: EVENT_VERSION, event: "flow/changed", payload: run });
+  expect(store.getState().snapshot?.flowRun).toEqual(run);
+
+  client.emit({ v: EVENT_VERSION, event: "flow/changed", payload: null });
+  expect(store.getState().snapshot?.flowRun).toBeNull();
 });
 
 it("store_keeps_only_the_newest_switch_log_entries", async () => {
