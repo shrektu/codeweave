@@ -7,7 +7,12 @@ import type { TerminalService } from "../../src/backend/terminal/service";
 import { IpcError } from "../../src/shared/protocol";
 import type { SessionView } from "../../src/shared/views";
 import { createTerminalRig, type TerminalRig } from "../fakes/fakeTerminal";
-import { fakeProbes, fakeSessions, fakeTerminals } from "../fakes/fakeSessions";
+import {
+  fakeFlowRuns,
+  fakeProbes,
+  fakeSessions,
+  fakeTerminals,
+} from "../fakes/fakeSessions";
 import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
 
@@ -49,6 +54,7 @@ async function handlersFor(
     ...fakeSecrets(userData),
     userData,
     broadcast: vi.fn(),
+    flowRuns: fakeFlowRuns(),
     sessions: fakeSessions({
       start: () => Promise.resolve(sessionIn(startedIn)),
     }),

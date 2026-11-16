@@ -4,7 +4,13 @@ import { toSessionView } from "../backend/sessionView";
 import type { FileDiff } from "../domain/events";
 import { INITIAL_SESSION_STATE, reduceSession } from "../domain/sessionReducer";
 
-import { SessionViewSchema, ToolCallViewSchema } from "./views";
+import {
+  AgentViewSchema,
+  FlowRunViewSchema,
+  FlowViewSchema,
+  SessionViewSchema,
+  ToolCallViewSchema,
+} from "./views";
 
 const BASE_TOOL = {
   toolCallId: "t1",
@@ -82,4 +88,77 @@ it("session_view_with_diffs_passes_session_view_schema", () => {
 
   const parsed = SessionViewSchema.parse(view);
   expect(parsed.toolCalls[0]?.diffs).toEqual([MODIFIED]);
+});
+
+const FLOW_VIEW = {
+  id: "ship",
+  file: "flows/ship.md",
+  revision: "abc",
+  title: "Ship",
+  maxRounds: 2,
+  nodes: [{ id: "a", agent: "coder", provider: null }],
+  edges: [{ from: "a", to: "a", kind: "reviews", gate: false }],
+};
+
+it("flow_view_schema_requires_resolved_defaults", () => {
+  const { maxRounds: omitted, ...withoutRounds } = FLOW_VIEW;
+  const withoutProvider = {
+    ...FLOW_VIEW,
+    nodes: [{ id: "a", agent: "coder" }],
+  };
+
+  expect(omitted).toBe(2);
+  expect(FlowViewSchema.safeParse(FLOW_VIEW).success).toBe(true);
+  expect(FlowViewSchema.safeParse(withoutRounds).success).toBe(false);
+  expect(FlowViewSchema.safeParse(withoutProvider).success).toBe(false);
+});
+
+it("agent_view_schema_requires_body", () => {
+  const agent = {
+    id: "coder",
+    role: "Codes",
+    provider: "claude",
+    permissionProfile: "plan",
+  };
+
+  expect(AgentViewSchema.safeParse(agent).success).toBe(false);
+  expect(AgentViewSchema.safeParse({ ...agent, body: "Prose" }).success).toBe(
+    true,
+  );
+});
+
+const FLOW_RUN_VIEW = {
+  runId: "run-1",
+  flowId: "ship",
+  flowTitle: "Ship",
+  cwd: "/work",
+  task: "Go",
+  status: "awaiting_decision",
+  round: 2,
+  maxRounds: 2,
+  currentNodeId: null,
+  nodes: [{ id: "a", status: "done", visits: 2, result: "ok" }],
+  decision: { reason: "rounds_exhausted", nodeId: "a" },
+  failure: null,
+};
+
+it("flow_run_view_schema_accepts_a_paused_run_and_rejects_unknowns", () => {
+  const unknownNodeStatus = {
+    ...FLOW_RUN_VIEW,
+    nodes: [{ id: "a", status: "sleeping", visits: 1, result: null }],
+  };
+  const extraDecisionField = {
+    ...FLOW_RUN_VIEW,
+    decision: { reason: "gate", nodeId: "a", reviewerId: "b" },
+  };
+
+  expect(FlowRunViewSchema.safeParse(FLOW_RUN_VIEW).success).toBe(true);
+  expect(
+    FlowRunViewSchema.safeParse({ ...FLOW_RUN_VIEW, decision: null }).success,
+  ).toBe(true);
+  expect(FlowRunViewSchema.safeParse(unknownNodeStatus).success).toBe(false);
+  expect(FlowRunViewSchema.safeParse(extraDecisionField).success).toBe(false);
+  expect(
+    FlowRunViewSchema.safeParse({ ...FLOW_RUN_VIEW, round: 1.5 }).success,
+  ).toBe(false);
 });

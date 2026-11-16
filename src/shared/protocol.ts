@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 import { MIN_SECRET_LENGTH } from "../domain/constants";
+import { FlowDecision } from "../domain/flowRun";
+import { FlowSchema } from "../domain/flows";
 import {
   EffectLevel,
   PermissionProfile,
@@ -23,6 +25,7 @@ import {
   AccountViewSchema,
   ApiAccountSchema,
   FlowRefSchema,
+  FlowRunViewSchema,
   FlowsListSchema,
   ModelCatalogSchema,
   SessionViewSchema,
@@ -132,6 +135,22 @@ export const ParamsSchemas = {
   "settings/set": SettingsPatchSchema,
   "switchLog/list": EmptyParamsSchema,
   "flows/list": z.strictObject({ cwd: NonEmptyString }),
+  "flows/save": z.strictObject({
+    cwd: NonEmptyString,
+    file: NonEmptyString,
+    revision: NonEmptyString,
+    flow: FlowSchema,
+  }),
+  "flow/start": z.strictObject({
+    cwd: NonEmptyString,
+    flowId: NonEmptyString,
+    task: NonBlankString,
+  }),
+  "flow/stop": EmptyParamsSchema,
+  "flow/decide": z.strictObject({
+    runId: NonEmptyString,
+    decision: z.enum(FlowDecision),
+  }),
   "terminal/open": z.strictObject({
     cwd: NonEmptyString,
     cols: TerminalColsSchema,
@@ -192,6 +211,10 @@ export const RequestSchema = z.discriminatedUnion("method", [
   requestSchema("settings/set"),
   requestSchema("switchLog/list"),
   requestSchema("flows/list"),
+  requestSchema("flows/save"),
+  requestSchema("flow/start"),
+  requestSchema("flow/stop"),
+  requestSchema("flow/decide"),
   requestSchema("vault/status"),
   requestSchema("models/catalog"),
   requestSchema("terminal/open"),
@@ -232,6 +255,10 @@ const resultSchemaDefinitions = {
     entries: z.array(SwitchLogEntryViewSchema),
   }),
   "flows/list": FlowsListSchema,
+  "flows/save": FlowsListSchema,
+  "flow/start": FlowRunViewSchema,
+  "flow/stop": z.strictObject({ stopped: z.boolean() }),
+  "flow/decide": FlowRunViewSchema,
   "vault/status": VaultStatusSchema,
   "models/catalog": ModelCatalogSchema,
   "terminal/open": z.strictObject({
@@ -296,6 +323,11 @@ export const EventSchema = z.discriminatedUnion("event", [
     v: z.int(),
     event: z.literal("switchLog/appended"),
     payload: SwitchLogEntryViewSchema,
+  }),
+  z.strictObject({
+    v: z.int(),
+    event: z.literal("flow/changed"),
+    payload: FlowRunViewSchema.nullable(),
   }),
   z.strictObject({
     v: z.int(),

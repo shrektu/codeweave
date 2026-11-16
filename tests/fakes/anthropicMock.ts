@@ -62,6 +62,7 @@ export interface AnthropicMockOptions {
   readonly scenarios: Readonly<Record<string, MockScenario>>;
   readonly toolCommand: string;
   readonly onMainRequest?: (key: string, body: MessagesBody) => Promise<void>;
+  readonly replyText?: (body: MessagesBody) => string;
 }
 
 export interface AnthropicMock {
@@ -243,10 +244,14 @@ function respondMain(
   res: ServerResponse,
   scenario: MockScenario,
   body: MessagesBody,
-  options: { toolCommand: string; resetAtSeconds: number },
+  options: {
+    toolCommand: string;
+    resetAtSeconds: number;
+    replyText: ((body: MessagesBody) => string) | undefined;
+  },
 ): void {
   if (scenario === MockScenario.ok) {
-    sendSse(res, textEvents(DONE_REPLY));
+    sendSse(res, textEvents(options.replyText?.(body) ?? DONE_REPLY));
   } else if (hasToolResult(body)) {
     sendRateLimit(res, options.resetAtSeconds);
   } else {
@@ -290,6 +295,7 @@ function createHandler(
     respondMain(res, scenario, body, {
       toolCommand: options.toolCommand,
       resetAtSeconds,
+      replyText: options.replyText,
     });
   };
 }

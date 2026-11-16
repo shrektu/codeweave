@@ -7,16 +7,36 @@ import {
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
+  type Connection,
   type Node,
   type NodeProps,
+  type ReactFlowProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useEffect, useState, type JSX } from "react";
+import { memo, useEffect, useMemo, useState, type JSX } from "react";
 
-import { FlowNodeState, flowNodeStates } from "../../domain/flowState";
-import type { ProviderId } from "../../domain/types";
-import type { AgentView, FlowView, SessionView } from "../../shared/views";
+import {
+  FlowNodeState,
+  flowNodeStates,
+  isRunOpen,
+  runNodeStates,
+} from "../../domain/flowState";
+import { EdgeKind, type ProviderId } from "../../domain/types";
+import type {
+  AgentView,
+  FlowRunView,
+  FlowView,
+  SessionView,
+} from "../../shared/views";
 import { errorMessage } from "../errorMessage";
+import {
+  addEdge,
+  edgeKey,
+  removeEdge,
+  removeNode,
+  type FlowDraft,
+  type FlowSelection,
+} from "../flowDraft";
 import {
   FLOW_EDGE_TYPE,
   FlowDirection,
@@ -24,17 +44,35 @@ import {
   layoutFlow,
   type FlowLayout,
   type FlowLayoutEdge,
+  type FlowSize,
 } from "../flowLayout";
+import { PROVIDER_LABELS } from "../format";
 import { useElementSize } from "../useElementSize";
 
 import { FlowEdge } from "./FlowEdge";
 
-export interface FlowGraphProps {
+interface FlowGraphBaseProps {
   flow: FlowView;
   agents: readonly AgentView[];
   session: SessionView | null;
+  run?: FlowRunView | null;
   onOpenSession: () => void;
 }
+
+interface FlowGraphReadOnlyProps extends FlowGraphBaseProps {
+  editable?: false;
+}
+
+interface FlowGraphEditProps extends FlowGraphBaseProps {
+  editable: true;
+  draft: FlowDraft;
+  selection: FlowSelection;
+  locked?: boolean;
+  onDraftChange: (draft: FlowDraft) => void;
+  onSelectionChange: (selection: FlowSelection) => void;
+}
+
+export type FlowGraphProps = FlowGraphReadOnlyProps | FlowGraphEditProps;
 
 type FlowNodeData = Record<string, unknown> & {
   role: string;
@@ -42,6 +80,8 @@ type FlowNodeData = Record<string, unknown> & {
   isSession: boolean;
   direction: FlowDirection;
   provider: ProviderId | null;
+  custom: boolean;
+  editable: boolean;
 };
 type FlowGraphNode = Node<FlowNodeData, "flowNode">;
 
@@ -56,6 +96,7 @@ export const FLOW_MIN_ZOOM = 0.2;
 const FIT_PADDING = 0.12;
 const BACKGROUND_GAP = 24;
 const BACKGROUND_DOT_SIZE = 1.5;
+const DELETE_KEYS = ["Delete", "Backspace"];
 
 const STATE_LABELS: Readonly<Record<FlowNodeState, string>> = {
   [FlowNodeState.idle]: "Idle",
@@ -73,7 +114,7 @@ const HANDLE_POSITIONS: Readonly<
   [FlowDirection.DOWN]: { target: Position.Top, source: Position.Bottom },
 };
 
-function FlowNodeCard({ id, data }: NodeProps<FlowGraphNode>): JSX.Element {
+function FlowNodeCardView({ id, data }: NodeProps<FlowGraphNode>): JSX.Element {
   const positions = HANDLE_POSITIONS[data.direction];
   return (
     <div
@@ -81,25 +122,53 @@ function FlowNodeCard({ id, data }: NodeProps<FlowGraphNode>): JSX.Element {
       data-state={data.state}
       data-provider={data.provider ?? undefined}
     >
-      <Handle type="target" position={positions.target} isConnectable={false} />
+      <Handle
+        type="target"
+        position={positions.target}
+        isConnectable={data.editable}
+      />
       <div className="flow-node-head">
         <span className="flow-node-id">{id}</span>
         <span className="pill flow-state">{STATE_LABELS[data.state]}</span>
       </div>
       <p className="flow-node-role">{data.role}</p>
-      <Handle type="source" position={positions.source} isConnectable={false} />
+      {data.editable && data.provider !== null && (
+        <p className="flow-node-provider">
+          {PROVIDER_LABELS[data.provider]}
+          {data.custom && <span className="flow-custom">custom</span>}
+        </p>
+      )}
+      <Handle
+        type="source"
+        position={positions.source}
+        isConnectable={data.editable}
+      />
     </div>
   );
 }
 
+const FlowNodeCard = memo(FlowNodeCardView);
+
 const NODE_TYPES = { flowNode: FlowNodeCard };
 const EDGE_TYPES = { [FLOW_EDGE_TYPE]: FlowEdge };
+
+function structureKey(flow: FlowView): string {
+  return JSON.stringify([
+    flow.nodes.map((node) => node.id),
+    flow.edges.map(edgeKey),
+  ]);
+}
 
 function useFlowLayouts(flow: FlowView): LayoutResult {
   const [result, setResult] = useState<LayoutResult>({
     layouts: null,
     error: null,
   });
+  const key = structureKey(flow);
+  const [stable, setStable] = useState({ key, flow });
+  if (stable.key !== key) {
+    setStable({ key, flow });
+  }
 
   useEffect(() => {
     let active = true;
@@ -107,8 +176,8 @@ function useFlowLayouts(flow: FlowView): LayoutResult {
       let next: LayoutResult;
       try {
         const [right, down] = await Promise.all([
-          layoutFlow(flow, FlowDirection.RIGHT),
-          layoutFlow(flow, FlowDirection.DOWN),
+          layoutFlow(stable.flow, FlowDirection.RIGHT),
+          layoutFlow(stable.flow, FlowDirection.DOWN),
         ]);
         next = {
           layouts: { [FlowDirection.RIGHT]: right, [FlowDirection.DOWN]: down },
@@ -125,7 +194,7 @@ function useFlowLayouts(flow: FlowView): LayoutResult {
     return () => {
       active = false;
     };
-  }, [flow]);
+  }, [stable]);
 
   return result;
 }
@@ -137,18 +206,62 @@ function sessionNodeOf(
   return session?.flowRef?.flowId === flow.id ? session.flowRef.nodeId : null;
 }
 
+type NodeStates = ReadonlyMap<string, FlowNodeState>;
+
 function statesOf(
   flow: FlowView,
   session: SessionView | null,
-): ReadonlyMap<string, FlowNodeState> {
-  return flowNodeStates({
-    nodeIds: flow.nodes.map((node) => node.id),
-    sessionNodeId: sessionNodeOf(flow, session),
+  run: FlowRunView | null,
+): NodeStates {
+  const nodeIds = flow.nodes.map((node) => node.id);
+  const sessionInput = {
     phase: session?.phase.phase ?? null,
     pendingPermissions: session?.permissions.length ?? 0,
     turnInFlight: session?.turnInFlight ?? false,
     lastTurn: session?.lastTurn?.kind ?? null,
-  });
+  };
+  return run === null
+    ? flowNodeStates({
+        ...sessionInput,
+        nodeIds,
+        sessionNodeId: sessionNodeOf(flow, session),
+      })
+    : runNodeStates({
+        nodeIds,
+        flowId: run.flowId,
+        currentNodeId: run.currentNodeId,
+        runNodes: run.nodes,
+        session:
+          session === null
+            ? null
+            : { ...sessionInput, flowRef: session.flowRef },
+      });
+}
+
+function activeNodeOf(
+  flow: FlowView,
+  session: SessionView | null,
+  run: FlowRunView | null,
+): string | null {
+  if (run === null) {
+    return sessionNodeOf(flow, session);
+  }
+  return isRunOpen(run.status) ? run.currentNodeId : null;
+}
+
+function sameStates(a: NodeStates, b: NodeStates): boolean {
+  return (
+    a.size === b.size && [...a].every(([id, state]) => b.get(id) === state)
+  );
+}
+
+function useStableStates(next: NodeStates): NodeStates {
+  const [stable, setStable] = useState(next);
+  if (sameStates(stable, next)) {
+    return stable;
+  }
+  setStable(next);
+  return next;
 }
 
 interface GraphSource {
@@ -156,7 +269,16 @@ interface GraphSource {
   direction: FlowDirection;
   flow: FlowView;
   agents: readonly AgentView[];
-  session: SessionView | null;
+  states: NodeStates;
+  activeNodeId: string | null;
+  editable: boolean;
+  selection: FlowSelection;
+}
+
+function layoutEdgeKey(edge: FlowLayoutEdge): string | null {
+  return edge.data === undefined
+    ? null
+    : edgeKey({ from: edge.source, to: edge.target, kind: edge.data.kind });
 }
 
 function buildGraph({
@@ -164,24 +286,31 @@ function buildGraph({
   direction,
   flow,
   agents,
-  session,
+  states,
+  activeNodeId,
+  editable,
+  selection,
 }: GraphSource): { nodes: FlowGraphNode[]; edges: FlowLayoutEdge[] } {
-  const activeNodeId = sessionNodeOf(flow, session);
-  const states = statesOf(flow, session);
-  const agentIds = new Map(flow.nodes.map((node) => [node.id, node.agent]));
+  const flowNodes = new Map(flow.nodes.map((node) => [node.id, node]));
   return {
     nodes: layout.nodes.map((node) => {
-      const agentId = agentIds.get(node.id) ?? node.id;
+      const flowNode = flowNodes.get(node.id);
+      const agentId = flowNode?.agent ?? node.id;
       const agent = agents.find((item) => item.id === agentId);
       return {
         ...node,
         type: "flowNode",
+        ...(editable
+          ? { selected: selection?.kind === "node" && selection.id === node.id }
+          : {}),
         data: {
           role: agent?.role ?? agentId,
           state: states.get(node.id) ?? FlowNodeState.idle,
           isSession: node.id === activeNodeId,
           direction,
-          provider: agent?.provider ?? null,
+          provider: flowNode?.provider ?? agent?.provider ?? null,
+          custom: (flowNode?.provider ?? null) !== null,
+          editable,
         },
       };
     }),
@@ -189,23 +318,109 @@ function buildGraph({
       ...edge,
       markerEnd: { type: MarkerType.ArrowClosed },
       animated: states.get(edge.source) === FlowNodeState.working,
+      ...(editable
+        ? {
+            selected:
+              selection?.kind === "edge" &&
+              selection.key === layoutEdgeKey(edge),
+          }
+        : {}),
     })),
   };
 }
 
-function FlowCanvas({
-  flow,
-  agents,
-  session,
-  onOpenSession,
-}: FlowGraphProps): JSX.Element {
-  const { layouts, error } = useFlowLayouts(flow);
-  const [containerRef, size] = useElementSize<HTMLDivElement>();
-  const { fitView } = useReactFlow();
-  const direction =
-    layouts === null ? FlowDirection.RIGHT : chooseDirection(layouts, size);
-  const layout = layouts?.[direction] ?? null;
+type CanvasHandlers = Pick<
+  ReactFlowProps<FlowGraphNode, FlowLayoutEdge>,
+  | "nodesConnectable"
+  | "edgesFocusable"
+  | "deleteKeyCode"
+  | "onNodeClick"
+  | "onEdgeClick"
+  | "onPaneClick"
+  | "onConnect"
+  | "onDelete"
+>;
 
+function layoutEdgeSelection(edge: FlowLayoutEdge): FlowSelection {
+  const key = layoutEdgeKey(edge);
+  return key === null ? null : { kind: "edge", key };
+}
+
+function connectHandler(
+  props: FlowGraphEditProps,
+): (connection: Connection) => void {
+  return (connection) => {
+    const edge = {
+      from: connection.source,
+      to: connection.target,
+      kind: EdgeKind.handsOffTo,
+      gate: false,
+    };
+    const result = addEdge(props.draft, edge);
+    if (result.ok) {
+      props.onDraftChange(result.draft);
+      props.onSelectionChange({ kind: "edge", key: edgeKey(edge) });
+    }
+  };
+}
+
+function deleteHandler(
+  props: FlowGraphEditProps,
+): NonNullable<CanvasHandlers["onDelete"]> {
+  return ({ nodes, edges }) => {
+    const withoutNodes = nodes.reduce(
+      (draft, node) => removeNode(draft, node.id),
+      props.draft,
+    );
+    const remaining = edges.reduce((draft, edge) => {
+      const key = layoutEdgeKey(edge);
+      return key === null ? draft : removeEdge(draft, key);
+    }, withoutNodes);
+    props.onDraftChange(remaining);
+    props.onSelectionChange(null);
+  };
+}
+
+function editHandlers(props: FlowGraphEditProps): CanvasHandlers {
+  const selecting: CanvasHandlers = {
+    edgesFocusable: true,
+    onNodeClick: (_event, node) => {
+      props.onSelectionChange({ kind: "node", id: node.id });
+    },
+    onEdgeClick: (_event, edge) => {
+      props.onSelectionChange(layoutEdgeSelection(edge));
+    },
+    onPaneClick: () => {
+      props.onSelectionChange(null);
+    },
+  };
+  if (props.locked === true) {
+    return { ...selecting, nodesConnectable: false, deleteKeyCode: null };
+  }
+  return {
+    ...selecting,
+    nodesConnectable: true,
+    deleteKeyCode: DELETE_KEYS,
+    onConnect: connectHandler(props),
+    onDelete: deleteHandler(props),
+  };
+}
+
+function readOnlyHandlers(onOpenSession: () => void): CanvasHandlers {
+  return {
+    nodesConnectable: false,
+    edgesFocusable: false,
+    deleteKeyCode: null,
+    onNodeClick: (_event, node) => {
+      if (node.data.isSession) {
+        onOpenSession();
+      }
+    },
+  };
+}
+
+function useFitOnChange(layout: FlowLayout | null, size: FlowSize): void {
+  const { fitView } = useReactFlow();
   useEffect(() => {
     void fitView({
       padding: FIT_PADDING,
@@ -213,16 +428,64 @@ function FlowCanvas({
       duration: 0,
     });
   }, [fitView, layout, size]);
+}
+
+function FlowCanvas(props: FlowGraphProps): JSX.Element {
+  const { flow, agents, session, run = null, onOpenSession } = props;
+  const editable = props.editable === true;
+  const draft = props.editable === true ? props.draft : null;
+  const shown = useMemo<FlowView>(
+    () => (draft === null ? flow : { ...flow, ...draft }),
+    [flow, draft],
+  );
+  const selection = props.editable === true ? props.selection : null;
+  const { layouts, error } = useFlowLayouts(shown);
+  const [containerRef, size] = useElementSize<HTMLDivElement>();
+  const direction =
+    layouts === null ? FlowDirection.RIGHT : chooseDirection(layouts, size);
+  const layout = layouts?.[direction] ?? null;
+  useFitOnChange(layout, size);
+  const states = useStableStates(statesOf(shown, session, run));
+  const activeNodeId = activeNodeOf(shown, session, run);
+  const graph = useMemo(
+    () =>
+      layout
+        ? buildGraph({
+            layout,
+            direction,
+            flow: shown,
+            agents,
+            states,
+            activeNodeId,
+            editable,
+            selection,
+          })
+        : { nodes: [], edges: [] },
+    [
+      layout,
+      direction,
+      shown,
+      agents,
+      states,
+      activeNodeId,
+      editable,
+      selection,
+    ],
+  );
 
   if (error !== null) {
     return <p className="error">{error}</p>;
   }
-  const graph = layout
-    ? buildGraph({ layout, direction, flow, agents, session })
-    : { nodes: [], edges: [] };
+  const handlers =
+    props.editable === true
+      ? editHandlers(props)
+      : readOnlyHandlers(onOpenSession);
 
   return (
-    <div className="flow-graph" ref={containerRef}>
+    <div
+      className={`flow-graph${editable ? " editing" : ""}`}
+      ref={containerRef}
+    >
       <ReactFlow
         nodes={graph.nodes}
         edges={graph.edges}
@@ -234,13 +497,7 @@ function FlowCanvas({
         colorMode="dark"
         proOptions={{ hideAttribution: true }}
         nodesDraggable={false}
-        nodesConnectable={false}
-        edgesFocusable={false}
-        onNodeClick={(_event, node) => {
-          if (node.data.isSession) {
-            onOpenSession();
-          }
-        }}
+        {...handlers}
       >
         <Background
           variant={BackgroundVariant.Dots}

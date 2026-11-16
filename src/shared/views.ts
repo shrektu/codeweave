@@ -3,6 +3,11 @@ import { z } from "zod";
 import { ApiProviderId, TRAINING_UNKNOWN } from "../domain/apiProviders";
 import { DiffOmission, FileChange } from "../domain/events";
 import {
+  DecisionReason,
+  FlowNodeRunStatus,
+  FlowRunStatus,
+} from "../domain/flowRun";
+import {
   EdgeKind,
   EffectLevel,
   PermissionProfile,
@@ -161,18 +166,29 @@ export const AgentViewSchema = z.strictObject({
   role: z.string(),
   provider: z.enum(ProviderId),
   permissionProfile: z.enum(PermissionProfile),
+  body: z.string(),
 });
 export type AgentView = z.infer<typeof AgentViewSchema>;
 
 export const FlowViewSchema = z.strictObject({
   id: z.string(),
+  file: z.string(),
+  revision: z.string(),
   title: z.string(),
-  nodes: z.array(z.strictObject({ id: z.string(), agent: z.string() })),
+  maxRounds: z.int(),
+  nodes: z.array(
+    z.strictObject({
+      id: z.string(),
+      agent: z.string(),
+      provider: z.enum(ProviderId).nullable(),
+    }),
+  ),
   edges: z.array(
     z.strictObject({
       from: z.string(),
       to: z.string(),
       kind: z.enum(EdgeKind),
+      gate: z.boolean(),
     }),
   ),
 });
@@ -190,6 +206,34 @@ export const FlowsListSchema = z.strictObject({
   errors: z.array(FlowFileErrorSchema),
 });
 export type FlowsList = z.infer<typeof FlowsListSchema>;
+
+export const FlowRunViewSchema = z.strictObject({
+  runId: NonEmptyString,
+  flowId: NonEmptyString,
+  flowTitle: z.string(),
+  cwd: NonEmptyString,
+  task: z.string(),
+  status: z.enum(FlowRunStatus),
+  round: z.int(),
+  maxRounds: z.int(),
+  currentNodeId: z.string().nullable(),
+  nodes: z.array(
+    z.strictObject({
+      id: z.string(),
+      status: z.enum(FlowNodeRunStatus),
+      visits: z.int(),
+      result: z.string().nullable(),
+    }),
+  ),
+  decision: z
+    .strictObject({
+      reason: z.enum(DecisionReason),
+      nodeId: z.string(),
+    })
+    .nullable(),
+  failure: z.string().nullable(),
+});
+export type FlowRunView = z.infer<typeof FlowRunViewSchema>;
 
 export const SettingsViewSchema = z.strictObject({
   permissionProfile: z.enum(PermissionProfile),
@@ -252,5 +296,6 @@ export const SnapshotSchema = z.strictObject({
     message: z.string().nullable(),
   }),
   terminal: TerminalViewSchema.nullable(),
+  flowRun: FlowRunViewSchema.nullable(),
 });
 export type Snapshot = z.infer<typeof SnapshotSchema>;

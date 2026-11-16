@@ -88,6 +88,85 @@ describe("flows: parsing", () => {
     ]);
   });
 
+  it("parse_agent_documents_returns_bodies", () => {
+    const result = parseAgentDocuments(`${AGENT_MARKDOWN}
+more
+
+---
+id: reviewer
+role: Reviews
+provider: codex
+permissionProfile: plan
+---
+
+Second body
+`);
+
+    expect(result).toEqual({
+      ok: true,
+      value: [
+        {
+          definition: {
+            id: "implementer",
+            role: "Builds things",
+            provider: "claude",
+            permissionProfile: "accept-edits",
+          },
+          body: "Body\nmore",
+        },
+        {
+          definition: {
+            id: "reviewer",
+            role: "Reviews",
+            provider: "codex",
+            permissionProfile: "plan",
+          },
+          body: "Second body",
+        },
+      ],
+    });
+  });
+
+  it("parses optional provider, gate and maxRounds", () => {
+    const result = parseFlowFile(
+      "---\nid: f\ntitle: F\nmaxRounds: 4\nnodes:\n  - id: a\n    agent: x\n    provider: codex\nedges:\n  - from: a\n    to: a\n    kind: reviews\n    gate: true\n---\n",
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        id: "f",
+        title: "F",
+        maxRounds: 4,
+        nodes: [{ id: "a", agent: "x", provider: "codex" }],
+        edges: [{ from: "a", to: "a", kind: "reviews", gate: true }],
+      },
+    });
+  });
+
+  it("rejects maxRounds outside 1..10 and unknown node provider", () => {
+    const header = "---\nid: f\ntitle: F\n";
+    const low = parseFlowFile(
+      `${header}maxRounds: 0\nnodes: []\nedges: []\n---\n`,
+    );
+    const high = parseFlowFile(
+      `${header}maxRounds: 11\nnodes: []\nedges: []\n---\n`,
+    );
+    const fractional = parseFlowFile(
+      `${header}maxRounds: 2.5\nnodes: []\nedges: []\n---\n`,
+    );
+    const provider = parseFlowFile(
+      `${header}nodes:\n  - id: a\n    agent: x\n    provider: cursor\nedges: []\n---\n`,
+    );
+
+    expect(!low.ok && low.errors.join()).toContain("maxRounds");
+    expect(!high.ok && high.errors.join()).toContain("maxRounds");
+    expect(!fractional.ok && fractional.errors.join()).toContain("maxRounds");
+    expect(!provider.ok && provider.errors.join()).toContain(
+      "nodes.0.provider",
+    );
+  });
+
   it("rejects an unknown edge kind", () => {
     const result = parseFlowFile(
       "---\nid: f\ntitle: F\nnodes: []\nedges:\n  - from: a\n    to: b\n    kind: blocks\n---\n",
@@ -135,10 +214,110 @@ describe("flows: validation", () => {
       AGENTS,
     );
 
-    expect(errors).toEqual(["Cycle in waits_for edges: a -> b -> a"]);
+    expect(errors).toEqual(["Cycle in flow order: a -> b -> a"]);
   });
 
-  it("allows a loop made of non waits_for edges", () => {
+  it("validate_rejects_duplicate_node_ids", () => {
+    const errors = validateFlow(
+      flow({
+        nodes: [
+          { id: "a", agent: "implementer" },
+          { id: "a", agent: "reviewer" },
+        ],
+      }),
+      AGENTS,
+    );
+
+    expect(errors).toEqual(['Duplicate node id "a"']);
+  });
+
+  it("validate_rejects_handoff_cycle", () => {
+    const errors = validateFlow(
+      flow({
+        edges: [
+          { from: "a", to: "b", kind: "hands_off_to" },
+          { from: "b", to: "a", kind: "hands_off_to" },
+        ],
+      }),
+      AGENTS,
+    );
+
+    expect(errors).toEqual(["Cycle in flow order: a -> b -> a"]);
+  });
+
+  it("validate_rejects_cycle_through_review_order", () => {
+    const errors = validateFlow(
+      flow({
+        edges: [
+          { from: "a", to: "b", kind: "hands_off_to" },
+          { from: "a", to: "b", kind: "reviews" },
+        ],
+      }),
+      AGENTS,
+    );
+
+    expect(errors).toEqual(["Cycle in flow order: a -> b -> a"]);
+  });
+
+  it("validate_rejects_self_review", () => {
+    const errors = validateFlow(
+      flow({ edges: [{ from: "a", to: "a", kind: "reviews" }] }),
+      AGENTS,
+    );
+
+    expect(errors).toEqual(['Node "a" cannot review itself']);
+  });
+
+  it("validate_rejects_duplicate_edge", () => {
+    const errors = validateFlow(
+      flow({
+        edges: [
+          { from: "a", to: "b", kind: "hands_off_to" },
+          { from: "a", to: "b", kind: "hands_off_to", gate: true },
+        ],
+      }),
+      AGENTS,
+    );
+
+    expect(errors).toEqual(['Duplicate edge "a" -> "b" (hands_off_to)']);
+  });
+
+  it("validate_allows_same_pair_with_different_kinds", () => {
+    const errors = validateFlow(
+      flow({
+        edges: [
+          { from: "a", to: "b", kind: "hands_off_to" },
+          { from: "b", to: "a", kind: "reviews" },
+          { from: "a", to: "b", kind: "waits_for" },
+        ],
+      }),
+      AGENTS,
+    );
+
+    expect(errors).toEqual([]);
+  });
+
+  it("validate_rejects_empty_flow", () => {
+    const errors = validateFlow(flow({ nodes: [], edges: [] }), AGENTS);
+
+    expect(errors).toEqual(["Flow has no nodes"]);
+  });
+
+  it("validate_accepts_review_back_edge", () => {
+    const errors = validateFlow(
+      flow({
+        edges: [
+          { from: "a", to: "b", kind: "hands_off_to" },
+          { from: "b", to: "a", kind: "reviews" },
+        ],
+      }),
+      AGENTS,
+    );
+
+    expect(errors).toEqual([]);
+  });
+
+  it("allows a review back edge over a hand-off", () => {
     const errors = validateFlow(
       flow({
         edges: [
@@ -162,14 +341,16 @@ describe("flows: example files", () => {
       readFileSync(join(REPO_ROOT, "flows", "example.md"), "utf8"),
     );
 
-    expect(agents.ok && agents.value.map((agent) => agent.id)).toEqual([
-      "implementer",
-      "reviewer",
-    ]);
+    expect(
+      agents.ok && agents.value.map(({ definition }) => definition.id),
+    ).toEqual(["implementer", "reviewer"]);
     expect(
       parsedFlow.ok &&
         agents.ok &&
-        validateFlow(parsedFlow.value, agents.value),
+        validateFlow(
+          parsedFlow.value,
+          agents.value.map(({ definition }) => definition),
+        ),
     ).toEqual([]);
     expect(
       parsedFlow.ok && parsedFlow.value.edges.map((edge) => edge.kind),

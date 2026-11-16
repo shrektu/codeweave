@@ -20,7 +20,11 @@ import type {
   SpawnSpec,
   StopResult,
 } from "../../src/backend/process/container";
-import { ProviderId, type Account } from "../../src/domain/types";
+import {
+  ProviderId,
+  type Account,
+  type WorktreeState,
+} from "../../src/domain/types";
 import { SessionViewSchema, type SessionView } from "../../src/shared/views";
 import type {
   EventName,
@@ -111,6 +115,7 @@ export interface BackendRigOptions {
   readonly stopResults?: ConstructorParameters<typeof ScriptedAcpContainer>[0];
   readonly platform?: NodeJS.Platform;
   readonly worktreeGate?: Promise<void>;
+  readonly worktree?: WorktreeState;
   readonly resolveExecutable?: BackendDeps["resolveExecutable"];
   readonly agyUsage?: readonly UsageScript[];
   readonly agyExecutables?: readonly string[];
@@ -373,7 +378,7 @@ function rigDeps(
       }),
     inspectWorktree: async (dir) => {
       await options.worktreeGate;
-      return { isRepo: false, cwd: dir };
+      return options.worktree ?? { isRepo: false, cwd: dir };
     },
   };
 }

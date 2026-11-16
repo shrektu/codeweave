@@ -1,6 +1,21 @@
 import { ApiProviderId } from "../domain/apiProviders";
 import { ProviderId } from "../domain/types";
-import type { AccountView, LimitView } from "../shared/views";
+import type {
+  AccountView,
+  LimitView,
+  RotationPhaseView,
+  SessionView,
+} from "../shared/views";
+
+const ENDED_PHASES: readonly RotationPhaseView["phase"][] = [
+  "stopped",
+  "failed",
+  "halted",
+];
+
+export function isSessionLive(session: SessionView | null): boolean {
+  return session !== null && !ENDED_PHASES.includes(session.phase.phase);
+}
 
 export type SelectableProvider =
   | typeof ProviderId.claude

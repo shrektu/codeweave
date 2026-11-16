@@ -1,8 +1,10 @@
 import { SWITCH_LOG_SNAPSHOT_LIMIT } from "../shared/constants";
+import { IpcError, IpcErrorCode } from "../shared/protocol";
 
 import { createAccountsService, type AccountsService } from "./accountsService";
 import type { ConnectionRegistry } from "./connections";
-import { listFlows } from "./flows";
+import { listFlows, saveFlow } from "./flows";
+import type { FlowRunService } from "./flowRuns";
 import type { IpcHandlers } from "./ipcServer";
 import type { LimitProbeService } from "./limitProbe";
 import type { ModelCatalogService } from "./opencode/catalog";
@@ -23,12 +25,15 @@ export interface HandlerDeps {
   userData: string;
   broadcast: ConnectionRegistry["broadcast"];
   sessions: SessionService;
+  flowRuns: FlowRunService;
   probes: LimitProbeService;
   catalog: ModelCatalogService;
   containerStatus: ContainerStatus;
   terminals: TerminalService;
   postUpdaterConfig: PostUpdaterConfig;
 }
+
+const FLOW_RUNNING_MESSAGE = "A flow is running";
 
 function publishAccounts(accounts: AccountsService): void {
   accounts.publish().catch((error: unknown) => {
@@ -43,6 +48,7 @@ export function createHandlers({
   userData,
   broadcast,
   sessions,
+  flowRuns,
   probes,
   catalog,
   containerStatus,
@@ -88,8 +94,12 @@ export function createHandlers({
       switchLog: await store.readSwitchLog(SWITCH_LOG_SNAPSHOT_LIMIT),
       container: { ...containerStatus },
       terminal: terminals.view(),
+      flowRun: flowRuns.view(),
     }),
     "session/start": async (params) => {
+      if (flowRuns.isActive()) {
+        throw new IpcError(IpcErrorCode.CONFLICT, FLOW_RUNNING_MESSAGE);
+      }
       const view = await sessions.start(params);
       await terminals.retarget(view.cwd).catch((error: unknown) => {
         console.error("terminal retarget failed", error);
@@ -101,6 +111,10 @@ export function createHandlers({
       return { accepted: true };
     },
     "session/stop": async () => {
+      if (flowRuns.isActive()) {
+        await flowRuns.stop();
+        return { stopped: true };
+      }
       const phase = sessions.view()?.phase.phase;
       await sessions.stop();
       return { stopped: phase !== undefined && phase !== "stopped" };
@@ -124,6 +138,14 @@ export function createHandlers({
       entries: await store.readSwitchLog(SWITCH_LOG_SNAPSHOT_LIMIT),
     }),
     "flows/list": ({ cwd }) => listFlows(cwd),
+    "flows/save": ({ cwd, ...params }) => saveFlow(cwd, params),
+    "flow/start": (params) => flowRuns.start(params),
+    "flow/stop": async () => {
+      const stopped = flowRuns.isActive();
+      await flowRuns.stop();
+      return { stopped };
+    },
+    "flow/decide": (params) => flowRuns.decide(params),
     "terminal/open": (params) => terminals.open(params),
     "terminal/input": ({ id, data }) => {
       terminals.input(id, data);

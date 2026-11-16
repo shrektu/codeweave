@@ -9,6 +9,10 @@ export const EPOCH_MILLIS_THRESHOLD = 100_000_000_000;
 
 export const DEFAULT_MAX_RESULT_CHARS = 2000;
 
+export const MIN_FLOW_ROUNDS = 1;
+export const MAX_FLOW_ROUNDS = 10;
+export const DEFAULT_FLOW_ROUNDS = 2;
+
 export const ERROR_KIND_RATE_LIMIT = "rate_limit";
 export const ERROR_KIND_AUTH_REQUIRED = "auth_required";
 export const RPC_CODE_AUTH_REJECTED = -32000;

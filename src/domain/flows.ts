@@ -1,11 +1,13 @@
 import { parse } from "yaml";
 import { z } from "zod";
 
+import { MAX_FLOW_ROUNDS, MIN_FLOW_ROUNDS } from "./constants";
 import { EdgeKind, PermissionProfile, ProviderId } from "./types";
 
-const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---/;
+export const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---/;
 const FRONTMATTER_BLOCKS_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---$/gm;
 const MISSING_FRONTMATTER = "Missing YAML frontmatter";
+const EMPTY_FLOW = "Flow has no nodes";
 
 const AgentSchema = z.object({
   id: z.string().min(1),
@@ -16,21 +18,39 @@ const AgentSchema = z.object({
   taskClass: z.string().min(1).optional(),
 });
 
-const FlowSchema = z.object({
+export const FlowSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
-  nodes: z.array(z.object({ id: z.string().min(1), agent: z.string().min(1) })),
+  maxRounds: z.int().min(MIN_FLOW_ROUNDS).max(MAX_FLOW_ROUNDS).optional(),
+  nodes: z.array(
+    z.object({
+      id: z.string().min(1),
+      agent: z.string().min(1),
+      provider: z.enum(ProviderId).optional(),
+    }),
+  ),
   edges: z.array(
     z.object({
       from: z.string().min(1),
       to: z.string().min(1),
       kind: z.enum(EdgeKind),
+      gate: z.boolean().optional(),
     }),
   ),
 });
 
 export type AgentDefinition = z.infer<typeof AgentSchema>;
 export type FlowDefinition = z.infer<typeof FlowSchema>;
+
+export interface AgentDocument {
+  readonly definition: AgentDefinition;
+  readonly body: string;
+}
+
+export interface OrderEdge {
+  readonly from: string;
+  readonly to: string;
+}
 
 export type ParseResult<T> =
   | { readonly ok: true; readonly value: T }
@@ -76,7 +96,7 @@ export function parseFlowFile(markdown: string): ParseResult<FlowDefinition> {
 
 export function parseAgentDocuments(
   markdown: string,
-): ParseResult<AgentDefinition[]> {
+): ParseResult<AgentDocument[]> {
   const blocks = [...markdown.matchAll(FRONTMATTER_BLOCKS_PATTERN)];
   if (blocks.length === 0) {
     return { ok: false, errors: [MISSING_FRONTMATTER] };
@@ -94,15 +114,34 @@ export function parseAgentDocuments(
   }
   return {
     ok: true,
-    value: results.flatMap((result) => (result.ok ? [result.value] : [])),
+    value: results.flatMap((result, index) => {
+      const block = blocks[index];
+      if (!result.ok || block === undefined) {
+        return [];
+      }
+      const bodyStart = block.index + block[0].length;
+      const bodyEnd = blocks[index + 1]?.index ?? markdown.length;
+      return [
+        {
+          definition: result.value,
+          body: markdown.slice(bodyStart, bodyEnd).trim(),
+        },
+      ];
+    }),
   };
 }
 
+export function orderingEdges(flow: FlowDefinition): OrderEdge[] {
+  return flow.edges.flatMap((edge): OrderEdge[] => {
+    if (edge.kind !== EdgeKind.reviews) {
+      return [{ from: edge.from, to: edge.to }];
+    }
+    return edge.from === edge.to ? [] : [{ from: edge.to, to: edge.from }];
+  });
+}
+
 function findCycle(flow: FlowDefinition): string[] | null {
-  const successors = Map.groupBy(
-    flow.edges.filter((edge) => edge.kind === EdgeKind.waitsFor),
-    (edge) => edge.from,
-  );
+  const successors = Map.groupBy(orderingEdges(flow), (edge) => edge.from);
   const finished = new Set<string>();
 
   function visit(node: string, path: readonly string[]): string[] | null {
@@ -132,6 +171,32 @@ function findCycle(flow: FlowDefinition): string[] | null {
   return null;
 }
 
+function duplicateNodeErrors(flow: FlowDefinition): string[] {
+  const groups = Map.groupBy(flow.nodes, (node) => node.id);
+  return [...groups]
+    .filter(([, nodes]) => nodes.length > 1)
+    .map(([id]) => `Duplicate node id "${id}"`);
+}
+
+function edgeShapeErrors(flow: FlowDefinition): string[] {
+  const groups = Map.groupBy(
+    flow.edges,
+    (edge) => `${edge.kind}\n${edge.from}\n${edge.to}`,
+  );
+  return [
+    ...flow.edges
+      .filter((edge) => edge.kind === EdgeKind.reviews && edge.from === edge.to)
+      .map((edge) => `Node "${edge.from}" cannot review itself`),
+    ...[...groups.values()]
+      .filter((edges) => edges.length > 1)
+      .flatMap(([edge]) =>
+        edge === undefined
+          ? []
+          : [`Duplicate edge "${edge.from}" -> "${edge.to}" (${edge.kind})`],
+      ),
+  ];
+}
+
 export function validateFlow(
   flow: FlowDefinition,
   agents: readonly AgentDefinition[],
@@ -139,6 +204,9 @@ export function validateFlow(
   const agentIds = new Set(agents.map((agent) => agent.id));
   const nodeIds = new Set(flow.nodes.map((node) => node.id));
   const errors = [
+    ...(flow.nodes.length === 0 ? [EMPTY_FLOW] : []),
+    ...duplicateNodeErrors(flow),
+    ...edgeShapeErrors(flow),
     ...flow.nodes
       .filter((node) => !agentIds.has(node.agent))
       .map((node) => `Node "${node.id}" uses unknown agent "${node.agent}"`),
@@ -153,6 +221,6 @@ export function validateFlow(
   ];
   const cycle = findCycle(flow);
   return cycle
-    ? [...errors, `Cycle in waits_for edges: ${cycle.join(" -> ")}`]
+    ? [...errors, `Cycle in flow order: ${cycle.join(" -> ")}`]
     : errors;
 }

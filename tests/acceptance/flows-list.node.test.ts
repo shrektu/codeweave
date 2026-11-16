@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -6,7 +7,12 @@ import { expect, it, vi } from "vitest";
 import { listFlows } from "../../src/backend/flows";
 import { createHandlers } from "../../src/backend/handlers";
 import { createJsonStore } from "../../src/backend/storage";
-import { fakeProbes, fakeSessions, fakeTerminals } from "../fakes/fakeSessions";
+import {
+  fakeFlowRuns,
+  fakeProbes,
+  fakeSessions,
+  fakeTerminals,
+} from "../fakes/fakeSessions";
 import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
 
@@ -47,8 +53,33 @@ permissionProfile: plan
 Prompt
 `;
 
+const CONFIGURED_FLOW = `---
+id: tuned
+title: Tuned
+maxRounds: 5
+nodes:
+  - id: build
+    agent: coder
+    provider: codex
+  - id: check
+    agent: coder
+edges:
+  - from: build
+    to: check
+    kind: hands_off_to
+  - from: check
+    to: build
+    kind: reviews
+    gate: true
+---
+`;
+
 const FLOWS_DIR = "flows";
 const CHMOD_DENIES = process.platform !== "win32" && process.getuid?.() !== 0;
+
+function sha256(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
 
 async function project(files: Record<string, string>): Promise<string> {
   const cwd = await makeTempDir();
@@ -73,8 +104,11 @@ it("flows_list_reports_broken_file_beside_valid_flow", async () => {
     flows: [
       {
         id: "ship",
+        file: "flows/a-ship.md",
+        revision: sha256(VALID_FLOW),
         title: "Ship it",
-        nodes: [{ id: "build", agent: "coder" }],
+        maxRounds: 2,
+        nodes: [{ id: "build", agent: "coder", provider: null }],
         edges: [],
       },
     ],
@@ -84,6 +118,7 @@ it("flows_list_reports_broken_file_beside_valid_flow", async () => {
         role: "Writes code",
         provider: "claude",
         permissionProfile: "plan",
+        body: "Prompt",
       },
     ],
     errors: [
@@ -95,6 +130,49 @@ it("flows_list_reports_broken_file_beside_valid_flow", async () => {
       },
     ],
   });
+});
+
+it("flows_list_reports_file_revision_and_agent_body", async () => {
+  const cwd = await project({
+    "flows/ship.md": VALID_FLOW,
+    "agents/coder.md": `${CODER_AGENT}---
+id: tester
+role: Tests code
+provider: codex
+permissionProfile: ask
+---
+
+Tester prose
+with two lines
+`,
+  });
+
+  const result = await listFlows(cwd);
+
+  expect(result.flows[0]?.file).toBe("flows/ship.md");
+  expect(result.flows[0]?.revision).toBe(sha256(VALID_FLOW));
+  expect(result.agents.map((agent) => agent.body)).toEqual([
+    "Prompt",
+    "Tester prose\nwith two lines",
+  ]);
+});
+
+it("flows_list_defaults_provider_gate_and_rounds", async () => {
+  const cwd = await project({
+    "flows/tuned.md": CONFIGURED_FLOW,
+    "flows/ship.md": VALID_FLOW,
+    "agents/coder.md": CODER_AGENT,
+  });
+
+  const result = await listFlows(cwd);
+
+  const defaults = result.flows.find((flow) => flow.id === "ship");
+  const tuned = result.flows.find((flow) => flow.id === "tuned");
+  expect(defaults?.maxRounds).toBe(2);
+  expect(defaults?.nodes[0]?.provider).toBeNull();
+  expect(tuned?.maxRounds).toBe(5);
+  expect(tuned?.nodes.map((node) => node.provider)).toEqual(["codex", null]);
+  expect(tuned?.edges.map((edge) => edge.gate)).toEqual([false, true]);
 });
 
 it("flows_list_without_dirs_returns_empty", async () => {
@@ -228,6 +306,7 @@ it("flows_list_handler_delegates_to_listFlows", async () => {
     userData: cwd,
     broadcast: vi.fn(),
     sessions: fakeSessions(),
+    flowRuns: fakeFlowRuns(),
     probes: fakeProbes(),
     catalog: { load: () => Promise.resolve({ models: [], error: null }) },
     containerStatus: { available: true, message: null },

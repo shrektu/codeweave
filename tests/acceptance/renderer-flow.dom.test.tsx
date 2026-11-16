@@ -46,9 +46,15 @@ function unwrap<T>(result: ParseResult<T>): T {
 }
 
 function exampleFlow(): FlowView {
-  return unwrap(
+  const { id, title, nodes, edges } = unwrap(
     parseFlowFile(readFileSync(join(ROOT_DIR, "flows", "example.md"), "utf8")),
   );
+  return makeFlow({
+    id,
+    title,
+    nodes: nodes.map((node) => ({ ...node, provider: null })),
+    edges: edges.map((edge) => ({ ...edge, gate: false })),
+  });
 }
 
 function exampleAgents(): AgentView[] {
@@ -56,11 +62,12 @@ function exampleAgents(): AgentView[] {
     parseAgentDocuments(
       readFileSync(join(ROOT_DIR, "agents", "example.md"), "utf8"),
     ),
-  ).map(({ id, role, provider, permissionProfile }) => ({
+  ).map(({ definition: { id, role, provider, permissionProfile }, body }) => ({
     id,
     role,
     provider,
     permissionProfile,
+    body,
   }));
 }
 
@@ -305,7 +312,7 @@ it("app_flow_tab_opens_session_tab_on_session_node_click", async () => {
   expect(screen.getByRole("region", { name: "Session" })).toBeTruthy();
 });
 
-it("flow_tab_without_session_asks_to_start_one", async () => {
+it("flow_tab_without_session_asks_to_choose_a_folder", async () => {
   const client = appClient(null);
   client.respond("sessions/snapshot", makeSnapshot());
 
@@ -313,7 +320,7 @@ it("flow_tab_without_session_asks_to_start_one", async () => {
   fireEvent.click(await screen.findByRole("tab", { name: "Flow" }));
 
   expect(
-    await screen.findByText("Start a session to see its flows."),
+    await screen.findByRole("button", { name: "Choose folder…" }),
   ).toBeTruthy();
   expect(
     client.requests.some((request) => request.method === "flows/list"),
@@ -360,7 +367,7 @@ it("flow_tab_switches_between_flows_with_picker", async () => {
         makeFlow({
           id: "solo",
           title: "Solo run",
-          nodes: [{ id: "alone", agent: "implementer" }],
+          nodes: [{ id: "alone", agent: "implementer", provider: null }],
           edges: [],
         }),
       ],

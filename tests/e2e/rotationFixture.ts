@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { STORAGE_VERSION } from "../../src/backend/constants";
-import { createJsonStore } from "../../src/backend/storage";
+import { createJsonStore, type SettingsFile } from "../../src/backend/storage";
 import {
   EffectLevel,
   ProviderId,
@@ -99,7 +99,25 @@ export async function createRepo(dir: string): Promise<void> {
   await git(dir, ["commit", "--quiet", "-m", "Initial commit"]);
 }
 
-async function createConfigDir(dir: string, apiKey: string): Promise<void> {
+export function rotationSettings(profile: PermissionProfile): SettingsFile {
+  return {
+    version: STORAGE_VERSION,
+    permissionProfile: profile,
+    effectLevel: EffectLevel.auto,
+    claudeExecutable: null,
+    codexExecutable: null,
+    agyExecutable: null,
+    opencodeExecutable: null,
+    terminalShell: null,
+    updateCheck: false,
+    updateChannel: "stable",
+  };
+}
+
+export async function createConfigDir(
+  dir: string,
+  apiKey: string,
+): Promise<void> {
   await mkdir(dir, { recursive: true });
   await writeFile(
     join(dir, SETTINGS_FILE),
@@ -107,7 +125,7 @@ async function createConfigDir(dir: string, apiKey: string): Promise<void> {
   );
 }
 
-function account(
+export function account(
   id: string,
   label: string,
   configDir: string,
@@ -129,18 +147,7 @@ export async function createRotationWorkspace(
   await createConfigDir(accountB.configDir, KEY_B);
   const store = createJsonStore(userData);
   await store.writeAccounts([accountA, accountB]);
-  await store.writeSettings({
-    version: STORAGE_VERSION,
-    permissionProfile: profile,
-    effectLevel: EffectLevel.auto,
-    claudeExecutable: null,
-    codexExecutable: null,
-    agyExecutable: null,
-    opencodeExecutable: null,
-    terminalShell: null,
-    updateCheck: false,
-    updateChannel: "stable",
-  });
+  await store.writeSettings(rotationSettings(profile));
   return {
     root,
     userData,

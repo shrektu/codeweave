@@ -71,6 +71,7 @@ import { ProbeStillRunningError } from "./limitProbe";
 import { pickOption, toPermissionQuery } from "./permissionQuery";
 import type { StopResult } from "./process/container";
 import { toSessionView } from "./sessionView";
+import { observeViews } from "./sessionViews";
 import { configuredExecutable } from "./settingsService";
 import type { JsonStore } from "./storage";
 
@@ -111,6 +112,9 @@ export interface SessionService {
   isInUse(accountId: string): boolean;
   runtimeOf(accountId: string): AccountRuntime;
   onRuntimeChanged(listener: () => void): () => void;
+  onViewChanged(listener: (view: SessionView | null) => void): () => void;
+  isLive(): boolean;
+  isSettled(): boolean;
   setAccounts(accounts: readonly Account[]): void;
   shutdown(): Promise<void>;
 }
@@ -316,6 +320,11 @@ class SessionRun {
 
   isLive(): boolean {
     return !INACTIVE_PHASES.includes(this.phase().phase);
+  }
+
+  isSettled(): boolean {
+    const idle = this.activeTurns === 0 && this.launching.size === 0;
+    return idle && this.phase().phase === "running" && !this.controller.busy();
   }
 
   hasAgents(): boolean {
@@ -812,6 +821,8 @@ async function createRun(
 }
 
 export function createSessionService(deps: SessionServiceDeps): SessionService {
+  const views = observeViews(deps.broadcast);
+  const observed: SessionServiceDeps = { ...deps, broadcast: views.broadcast };
   let run: SessionRun | null = null;
   let opening: SessionRun | null = null;
   let starting = false;
@@ -855,7 +866,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     loginFailures: ReadonlySet<string>,
   ): Promise<CreatedRun> => {
     opening = null;
-    const created = await createRun(deps, params, {
+    const created = await createRun(observed, params, {
       runtimeOf: startRuntimeOf,
       reserved,
       loginFailures,
@@ -947,7 +958,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
         starting = false;
       }
       const view = run.view();
-      deps.broadcast("session/changed", view);
+      observed.broadcast("session/changed", view);
       checkRuntime();
       return view;
     },
@@ -965,6 +976,9 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
         listeners.delete(listener);
       };
     },
+    onViewChanged: views.listen,
+    isLive: () => starting || (run?.isLive() ?? false),
+    isSettled: () => run?.isSettled() ?? false,
     answerPermission: (requestId, optionId) => {
       requireRun().answerPermission(requestId, optionId);
     },

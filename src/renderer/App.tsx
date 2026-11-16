@@ -1,10 +1,27 @@
-import { useEffect, useState, type JSX } from "react";
+import {
+  useEffect,
+  useState,
+  type Dispatch,
+  type JSX,
+  type SetStateAction,
+} from "react";
 
+import { isRunOpen } from "../domain/flowState";
 import { EffectLevel as EffectSetting } from "../domain/types";
-import type { FlowFileError, FlowsList, SessionView } from "../shared/views";
+import { IpcErrorCode } from "../shared/protocol";
+import type {
+  FlowFileError,
+  FlowRunView,
+  FlowsList,
+  FlowView,
+  SessionView,
+  Snapshot,
+} from "../shared/views";
 
 import { AccountsDialog } from "./components/AccountsDialog";
 import { FlowGraph } from "./components/FlowGraph";
+import { FlowInspector } from "./components/FlowInspector";
+import { FlowRunPanel } from "./components/FlowRunPanel";
 import { LimitsPanel } from "./components/LimitsPanel";
 import { SessionStream } from "./components/SessionStream";
 import { SettingsDialog } from "./components/SettingsDialog";
@@ -18,8 +35,21 @@ import {
   measureFps,
 } from "./effects";
 import { errorMessage } from "./errorMessage";
+import {
+  baseOf,
+  draftErrors,
+  draftOf,
+  isDraftChanged,
+  saveParamsOf,
+  type FlowBase,
+  type FlowDraft,
+  type FlowSelection,
+} from "./flowDraft";
+import { isSessionLive } from "./format";
+import { IpcRemoteError, type IpcClient } from "./ipc";
 import { useApp } from "./services";
 import { useTerminalDock } from "./terminal/useTerminalDock";
+import { useAsyncAction } from "./useAsyncAction";
 import { useBackendStatus, type BackendStatus } from "./useBackendStatus";
 import { useElementSize } from "./useElementSize";
 
@@ -31,16 +61,33 @@ const CENTRE_TABS: readonly { id: CentreTab; label: string }[] = [
   { id: "flow", label: "Flow" },
 ];
 
+const FLOW_CONFLICT_MESSAGE =
+  "This flow changed on disk. Reload to edit the latest version.";
+const FLOW_MISSING_MESSAGE = "This flow is no longer on disk.";
+const RUN_LOCK_MESSAGE = "Stop the flow to edit it.";
+
 type FlowsLoad =
   | { status: "loading" }
   | { status: "failed"; message: string }
   | { status: "ready"; list: FlowsList };
 
-function useFlowsLoad(cwd: string | null): FlowsLoad {
+interface FlowsSource {
+  load: FlowsLoad;
+  reloading: boolean;
+  replace: (list: FlowsList) => void;
+  reload: () => void;
+}
+
+interface LoadedFlows {
+  cwd: string;
+  load: FlowsLoad;
+  reloadCount: number;
+}
+
+function useFlowsLoad(cwd: string | null): FlowsSource {
   const { client } = useApp();
-  const [loaded, setLoaded] = useState<{ cwd: string; load: FlowsLoad } | null>(
-    null,
-  );
+  const [loaded, setLoaded] = useState<LoadedFlows | null>(null);
+  const [reloadCount, setReloadCount] = useState(0);
 
   useEffect(() => {
     if (cwd === null) {
@@ -58,16 +105,27 @@ function useFlowsLoad(cwd: string | null): FlowsLoad {
         load = { status: "failed", message: errorMessage(error) };
       }
       if (active) {
-        setLoaded({ cwd, load });
+        setLoaded({ cwd, load, reloadCount });
       }
     };
     void run();
     return () => {
       active = false;
     };
-  }, [client, cwd]);
+  }, [client, cwd, reloadCount]);
 
-  return loaded?.cwd === cwd ? loaded.load : { status: "loading" };
+  return {
+    load: loaded?.cwd === cwd ? loaded.load : { status: "loading" },
+    reloading: loaded?.reloadCount !== reloadCount,
+    replace: (list) => {
+      if (cwd !== null) {
+        setLoaded({ cwd, load: { status: "ready", list }, reloadCount });
+      }
+    },
+    reload: () => {
+      setReloadCount((count) => count + 1);
+    },
+  };
 }
 
 function FlowErrors({ errors }: { errors: FlowFileError[] }): JSX.Element {
@@ -82,48 +140,356 @@ function FlowErrors({ errors }: { errors: FlowFileError[] }): JSX.Element {
   );
 }
 
+interface EditSession {
+  cwd: string;
+  base: FlowBase;
+  draft: FlowDraft;
+  selection: FlowSelection;
+  roundsText: string | null;
+  conflict: boolean;
+  saveToken: symbol | null;
+}
+
+interface FlowEditor {
+  cwd: string | null;
+  session: EditSession | null;
+  saving: boolean;
+  saveError: string | null;
+  setDraft: (draft: FlowDraft) => void;
+  setSelection: (selection: FlowSelection) => void;
+  setRoundsText: (text: string | null) => void;
+  start: (flow: FlowView) => void;
+  discard: () => void;
+  save: (onSaved: (list: FlowsList) => void) => void;
+}
+
+type SetEditSession = Dispatch<SetStateAction<EditSession | null>>;
+
+async function requestSave(
+  client: IpcClient,
+  started: EditSession,
+  token: symbol,
+  setStored: SetEditSession,
+  onSaved: (list: FlowsList) => void,
+): Promise<void> {
+  try {
+    const saved = await client.request(
+      "flows/save",
+      saveParamsOf(started.cwd, started.base, started.draft),
+    );
+    onSaved(saved);
+    setStored((current) => (current?.saveToken === token ? null : current));
+  } catch (error: unknown) {
+    if (
+      error instanceof IpcRemoteError &&
+      error.code === IpcErrorCode.CONFLICT
+    ) {
+      setStored((current) =>
+        current?.saveToken === token
+          ? { ...current, conflict: true, saveToken: null }
+          : current,
+      );
+      return;
+    }
+    throw error;
+  }
+}
+
+function useFlowEditor(autoCwd: string | null): FlowEditor {
+  const { client } = useApp();
+  const [session, setStored] = useState<EditSession | null>(null);
+  const saving = useAsyncAction();
+  const cwd = session?.cwd ?? autoCwd;
+
+  const patch = (change: Partial<EditSession>): void => {
+    setStored((current) =>
+      current === null ? null : { ...current, ...change },
+    );
+  };
+
+  return {
+    cwd,
+    session,
+    saving: saving.pending,
+    saveError: saving.error,
+    setDraft: (draft) => {
+      patch({ draft });
+    },
+    setSelection: (selection) => {
+      patch({ selection });
+    },
+    setRoundsText: (roundsText) => {
+      patch({ roundsText });
+    },
+    start: (flow) => {
+      if (cwd !== null) {
+        setStored({
+          cwd,
+          base: baseOf(flow),
+          draft: draftOf(flow),
+          selection: null,
+          roundsText: null,
+          conflict: false,
+          saveToken: null,
+        });
+      }
+    },
+    discard: () => {
+      setStored(null);
+      saving.setError(null);
+    },
+    save: (onSaved) => {
+      if (session === null) {
+        return;
+      }
+      const token = Symbol("flow-save");
+      const started = { ...session, conflict: false, saveToken: token };
+      setStored(started);
+      void saving.run(() =>
+        requestSave(client, started, token, setStored, onSaved),
+      );
+    },
+  };
+}
+
+function FlowToolbar({
+  editing,
+  saving,
+  canEdit,
+  editHint,
+  canSave,
+  onEdit,
+  onSave,
+  onDiscard,
+}: {
+  editing: boolean;
+  saving: boolean;
+  canEdit: boolean;
+  editHint: string | undefined;
+  canSave: boolean;
+  onEdit: () => void;
+  onSave: () => void;
+  onDiscard: () => void;
+}): JSX.Element {
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className="btn"
+        disabled={!canEdit}
+        title={editHint}
+        onClick={onEdit}
+      >
+        Edit
+      </button>
+    );
+  }
+  return (
+    <>
+      <button
+        type="button"
+        className="btn pri"
+        disabled={!canSave}
+        title={editHint}
+        onClick={onSave}
+      >
+        Save
+      </button>
+      <button
+        type="button"
+        className="btn"
+        disabled={saving}
+        onClick={onDiscard}
+      >
+        Discard
+      </button>
+    </>
+  );
+}
+
+function FlowEditFeedback({
+  errors,
+  conflict,
+  saveError,
+  onReload,
+}: {
+  errors: readonly string[];
+  conflict: boolean;
+  saveError: string | null;
+  onReload: () => void;
+}): JSX.Element {
+  return (
+    <>
+      <ul className="flow-errors">
+        {errors.map((message) => (
+          <li key={message} className="error">
+            {message}
+          </li>
+        ))}
+      </ul>
+      {conflict && (
+        <p className="error" role="alert">
+          {FLOW_CONFLICT_MESSAGE}{" "}
+          <button type="button" className="btn" onClick={onReload}>
+            Reload
+          </button>
+        </p>
+      )}
+      {saveError !== null && <p className="error">{saveError}</p>}
+    </>
+  );
+}
+
 function FlowPicker({
+  cwd,
   list,
   session,
+  sessionLive,
+  flowRun,
+  editor,
+  reloading,
   onOpenSession,
+  onSaved,
+  onReload,
 }: {
+  cwd: string;
   list: FlowsList;
   session: SessionView | null;
+  sessionLive: boolean;
+  flowRun: FlowRunView | null;
+  editor: FlowEditor;
+  reloading: boolean;
   onOpenSession: () => void;
+  onSaved: (list: FlowsList) => void;
+  onReload: () => void;
 }): JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(
     session?.flowRef?.flowId ?? null,
   );
-  const flow =
-    list.flows.find((candidate) => candidate.id === selectedId) ??
-    list.flows[0];
+  const locked = flowRun !== null && isRunOpen(flowRun.status);
+  const editedId =
+    editor.session?.base.flowId ?? (locked ? flowRun.flowId : selectedId);
+  const found = list.flows.find((candidate) => candidate.id === editedId);
+  const fallback =
+    editor.session === null && !locked ? list.flows[0] : undefined;
+  const flow = found ?? fallback;
+  const runOfFlow =
+    flow !== undefined && flowRun?.flowId === flow.id ? flowRun : null;
+  const shownRun = locked ? flowRun : runOfFlow;
+  const draft = editor.session?.draft ?? null;
+  const missing = editor.session !== null && flow === undefined;
+  const runFlowMissing = locked && flow === undefined;
+  const errors = draft === null ? [] : draftErrors(draft, list.agents);
+  const canSave =
+    draft !== null &&
+    flow !== undefined &&
+    !locked &&
+    !editor.saving &&
+    errors.length === 0 &&
+    editor.session?.roundsText === null &&
+    isDraftChanged(draft, flow);
+  const reload = (): void => {
+    editor.discard();
+    onReload();
+  };
 
   return (
     <>
-      {list.flows.length > 1 && (
-        <select
-          aria-label="Flow"
-          className="flow-picker"
-          value={flow?.id}
-          onChange={(event) => {
-            setSelectedId(event.target.value);
-          }}
-        >
-          {list.flows.map((candidate) => (
-            <option key={candidate.id} value={candidate.id}>
-              {candidate.title}
-            </option>
-          ))}
-        </select>
+      <div className="flow-toolbar">
+        {list.flows.length > 1 && !missing && !runFlowMissing && (
+          <select
+            aria-label="Flow"
+            className="flow-picker"
+            value={flow?.id}
+            disabled={draft !== null || locked}
+            onChange={(event) => {
+              setSelectedId(event.target.value);
+            }}
+          >
+            {list.flows.map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>
+                {candidate.title}
+              </option>
+            ))}
+          </select>
+        )}
+        {(flow !== undefined || missing) && (
+          <FlowToolbar
+            editing={draft !== null}
+            saving={editor.saving}
+            canEdit={
+              flow !== undefined &&
+              !reloading &&
+              !locked &&
+              !list.errors.some((error) => error.file === flow.file)
+            }
+            editHint={locked ? RUN_LOCK_MESSAGE : undefined}
+            canSave={canSave}
+            onEdit={() => {
+              if (flow !== undefined) {
+                editor.start(flow);
+              }
+            }}
+            onSave={() => {
+              editor.save(onSaved);
+            }}
+            onDiscard={editor.discard}
+          />
+        )}
+      </div>
+      {(flow !== undefined || shownRun !== null) && (
+        <FlowRunPanel
+          cwd={cwd}
+          flow={flow}
+          run={shownRun}
+          sessionLive={sessionLive}
+          editing={draft !== null}
+        />
       )}
-      {flow === undefined ? (
+      {missing || runFlowMissing ? (
+        <p className="error">{FLOW_MISSING_MESSAGE}</p>
+      ) : flow === undefined ? (
         <p className="empty">No flows found in this folder.</p>
-      ) : (
+      ) : editor.session === null || locked ? (
         <FlowGraph
           flow={flow}
           agents={list.agents}
           session={session}
+          run={runOfFlow}
           onOpenSession={onOpenSession}
+        />
+      ) : (
+        <div className="flow-editor">
+          <FlowGraph
+            editable
+            flow={flow}
+            agents={list.agents}
+            session={session}
+            locked={editor.saving}
+            draft={editor.session.draft}
+            selection={editor.session.selection}
+            onDraftChange={editor.setDraft}
+            onSelectionChange={editor.setSelection}
+            onOpenSession={onOpenSession}
+          />
+          <FlowInspector
+            draft={editor.session.draft}
+            agents={list.agents}
+            selection={editor.session.selection}
+            roundsText={editor.session.roundsText}
+            disabled={editor.saving}
+            onDraftChange={editor.setDraft}
+            onSelectionChange={editor.setSelection}
+            onRoundsTextChange={editor.setRoundsText}
+          />
+        </div>
+      )}
+      {editor.session !== null && (
+        <FlowEditFeedback
+          errors={errors}
+          conflict={editor.session.conflict}
+          saveError={editor.saveError}
+          onReload={reload}
         />
       )}
       <FlowErrors errors={list.errors} />
@@ -131,17 +497,73 @@ function FlowPicker({
   );
 }
 
-function FlowTabBody({
-  session,
-  load,
-  onOpenSession,
+function PickFolderButton({
+  label,
+  primary,
+  onPick,
 }: {
-  session: SessionView | null;
-  load: FlowsLoad;
-  onOpenSession: () => void;
+  label: string;
+  primary: boolean;
+  onPick: (cwd: string) => void;
 }): JSX.Element {
-  if (session === null) {
-    return <p className="empty">Start a session to see its flows.</p>;
+  const pick = useAsyncAction();
+  return (
+    <>
+      <button
+        type="button"
+        className={primary ? "btn pri" : "btn"}
+        disabled={pick.pending}
+        onClick={() => {
+          void pick.run(async () => {
+            const cwd = await window.codeweave.pickFolder();
+            if (cwd !== null) {
+              onPick(cwd);
+            }
+          });
+        }}
+      >
+        {label}
+      </button>
+      {pick.error !== null && <p className="error">{pick.error}</p>}
+    </>
+  );
+}
+
+function FolderPrompt({
+  onPick,
+}: {
+  onPick: (cwd: string) => void;
+}): JSX.Element {
+  return (
+    <div className="empty-state">
+      <p className="empty">Choose a project folder to see its flows.</p>
+      <PickFolderButton label="Choose folder…" primary onPick={onPick} />
+    </div>
+  );
+}
+
+function FlowTabBody({
+  cwd,
+  session,
+  sessionLive,
+  flowRun,
+  source,
+  editor,
+  onOpenSession,
+  onPickFolder,
+}: {
+  cwd: string | null;
+  session: SessionView | null;
+  sessionLive: boolean;
+  flowRun: FlowRunView | null;
+  source: FlowsSource;
+  editor: FlowEditor;
+  onOpenSession: () => void;
+  onPickFolder: (cwd: string) => void;
+}): JSX.Element {
+  const { load } = source;
+  if (cwd === null) {
+    return <FolderPrompt onPick={onPickFolder} />;
   }
   switch (load.status) {
     case "loading":
@@ -151,30 +573,89 @@ function FlowTabBody({
     case "ready":
       return (
         <FlowPicker
+          cwd={cwd}
           list={load.list}
           session={session}
+          sessionLive={sessionLive}
+          flowRun={flowRun?.cwd === cwd ? flowRun : null}
+          editor={editor}
+          reloading={source.reloading}
           onOpenSession={onOpenSession}
+          onSaved={source.replace}
+          onReload={source.reload}
         />
       );
   }
 }
 
+function openRunCwdOf(snapshot: Snapshot | null): string | null {
+  const run = snapshot?.flowRun ?? null;
+  return run !== null && isRunOpen(run.status) ? run.cwd : null;
+}
+
+function liveSessionCwdOf(snapshot: Snapshot | null): string | null {
+  const session = snapshot?.session ?? null;
+  return isSessionLive(session) ? (session?.cwd ?? null) : null;
+}
+
+function flowCwdOf(
+  snapshot: Snapshot | null,
+  picked: string | null,
+): string | null {
+  return (
+    openRunCwdOf(snapshot) ??
+    liveSessionCwdOf(snapshot) ??
+    picked ??
+    snapshot?.session?.cwd ??
+    null
+  );
+}
+
+function pinnedCwdOf(snapshot: Snapshot | null): string | null {
+  return openRunCwdOf(snapshot) ?? liveSessionCwdOf(snapshot);
+}
+
+function isFolderPinned(
+  snapshot: Snapshot | null,
+  editor: FlowEditor,
+): boolean {
+  return pinnedCwdOf(snapshot) !== null || editor.session !== null;
+}
+
 function FlowTab({
+  cwd,
+  editor,
   onOpenSession,
+  onPickFolder,
 }: {
+  cwd: string | null;
+  editor: FlowEditor;
   onOpenSession: () => void;
+  onPickFolder: (cwd: string) => void;
 }): JSX.Element {
   const { state } = useApp();
+  const source = useFlowsLoad(cwd);
   const session = state.snapshot?.session ?? null;
-  const load = useFlowsLoad(session?.cwd ?? null);
 
   return (
     <section className="glass panel flow-tab" aria-label="Flow">
       <h2 className="sec">Flow</h2>
+      {cwd !== null && !isFolderPinned(state.snapshot, editor) && (
+        <PickFolderButton
+          label="Change folder…"
+          primary={false}
+          onPick={onPickFolder}
+        />
+      )}
       <FlowTabBody
-        session={session}
-        load={load}
+        cwd={cwd}
+        session={session?.cwd === cwd ? session : null}
+        sessionLive={isSessionLive(session)}
+        flowRun={state.snapshot?.flowRun ?? null}
+        source={source}
+        editor={editor}
         onOpenSession={onOpenSession}
+        onPickFolder={onPickFolder}
       />
     </section>
   );
@@ -196,6 +677,12 @@ export function App(): JSX.Element {
   const [measuredFps, setMeasuredFps] = useState<number | undefined>(undefined);
   const [openDialog, setOpenDialog] = useState<OpenDialog>(null);
   const [centreTab, setCentreTab] = useState<CentreTab>("session");
+  const [pickedFolder, setPickedFolder] = useState<string | null>(null);
+  const pinnedCwd = pinnedCwdOf(state.snapshot);
+  if (pinnedCwd !== null && pinnedCwd !== pickedFolder) {
+    setPickedFolder(pinnedCwd);
+  }
+  const flowEditor = useFlowEditor(flowCwdOf(state.snapshot, pickedFolder));
   const backend = useBackendStatus(client);
   const dock = useTerminalDock();
   const [columnRef, columnSize] = useElementSize<HTMLDivElement>();
@@ -309,7 +796,12 @@ export function App(): JSX.Element {
           {centreTab === "session" ? (
             <SessionStream />
           ) : (
-            <FlowTab onOpenSession={openSessionTab} />
+            <FlowTab
+              cwd={flowEditor.cwd}
+              editor={flowEditor}
+              onOpenSession={openSessionTab}
+              onPickFolder={setPickedFolder}
+            />
           )}
         </div>
         {dock.open && (

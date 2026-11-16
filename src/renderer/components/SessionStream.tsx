@@ -14,6 +14,7 @@ import {
   accountLabel,
   formatLocalTime,
   isSelectable,
+  isSessionLive,
   PROVIDER_LABELS,
   providerOf,
   type SelectableProvider,
@@ -29,12 +30,6 @@ interface SessionBodyProps {
   session: SessionView;
   accounts: readonly AccountView[];
 }
-
-const RESTARTABLE_PHASES: readonly RotationPhaseView["phase"][] = [
-  "stopped",
-  "failed",
-  "halted",
-];
 
 function phaseText(
   phase: RotationPhaseView,
@@ -285,7 +280,7 @@ function SessionBody({ session, accounts }: SessionBodyProps): JSX.Element {
           <StreamEntry key={item.key} item={item} />
         ))}
       </ul>
-      {RESTARTABLE_PHASES.includes(session.phase.phase) && <StartPrompt />}
+      {!isSessionLive(session) && <StartPrompt />}
       <Composer />
     </>
   );

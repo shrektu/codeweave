@@ -29,6 +29,7 @@ import type {
   AccountView,
   AgentView,
   CatalogModel,
+  FlowRunView,
   FlowsList,
   FlowView,
   LimitView,
@@ -221,6 +222,27 @@ export function makeSettings(
   };
 }
 
+export function makeFlowRun(overrides: Partial<FlowRunView> = {}): FlowRunView {
+  return {
+    runId: "run-1",
+    flowId: "implement-and-review",
+    flowTitle: "Implement and review",
+    cwd: "/home/user/project",
+    task: "Add a login form",
+    status: "running",
+    round: 0,
+    maxRounds: 2,
+    currentNodeId: "build",
+    nodes: [
+      { id: "build", status: "running", visits: 1, result: null },
+      { id: "review", status: "idle", visits: 0, result: null },
+    ],
+    decision: null,
+    failure: null,
+    ...overrides,
+  };
+}
+
 export function makeTerminal(
   overrides: Partial<TerminalView> = {},
 ): TerminalView {
@@ -255,6 +277,7 @@ export function makeAgent(overrides: Partial<AgentView> = {}): AgentView {
     role: "Implements the planned change",
     provider: ProviderId.claude,
     permissionProfile: PermissionProfile.plan,
+    body: "Implements the change.",
     ...overrides,
   };
 }
@@ -262,12 +285,17 @@ export function makeAgent(overrides: Partial<AgentView> = {}): AgentView {
 export function makeFlow(overrides: Partial<FlowView> = {}): FlowView {
   return {
     id: "ship",
+    file: "flows/ship.md",
+    revision: "rev-1",
     title: "Ship it",
+    maxRounds: 2,
     nodes: [
-      { id: "build", agent: "implementer" },
-      { id: "review", agent: "reviewer" },
+      { id: "build", agent: "implementer", provider: null },
+      { id: "review", agent: "reviewer", provider: null },
     ],
-    edges: [{ from: "build", to: "review", kind: EdgeKind.handsOffTo }],
+    edges: [
+      { from: "build", to: "review", kind: EdgeKind.handsOffTo, gate: false },
+    ],
     ...overrides,
   };
 }
@@ -317,6 +345,7 @@ export function makeSnapshot(overrides: Partial<Snapshot> = {}): Snapshot {
     switchLog: [],
     container: { available: true, message: null },
     terminal: null,
+    flowRun: null,
     ...overrides,
   };
 }

@@ -1,3 +1,4 @@
+import type { FlowRunService } from "../../src/backend/flowRuns";
 import type { LimitProbeService } from "../../src/backend/limitProbe";
 import type { SessionService } from "../../src/backend/session";
 import type { TerminalService } from "../../src/backend/terminal/service";
@@ -14,7 +15,24 @@ export function fakeSessions(
     isInUse: () => false,
     runtimeOf: () => ({ status: "ready" }),
     onRuntimeChanged: () => () => undefined,
+    onViewChanged: () => () => undefined,
+    isLive: () => false,
+    isSettled: () => false,
     setAccounts: () => undefined,
+    shutdown: () => Promise.resolve(),
+    ...overrides,
+  };
+}
+
+export function fakeFlowRuns(
+  overrides: Partial<FlowRunService> = {},
+): FlowRunService {
+  return {
+    view: () => null,
+    start: () => Promise.reject(new Error("not available in this test")),
+    stop: () => Promise.resolve(),
+    decide: () => Promise.reject(new Error("not available in this test")),
+    isActive: () => false,
     shutdown: () => Promise.resolve(),
     ...overrides,
   };

@@ -38,6 +38,8 @@ function applyEvent(snapshot: Snapshot, event: IpcEvent): Snapshot {
       return { ...snapshot, settings: event.payload };
     case "terminal/changed":
       return { ...snapshot, terminal: event.payload };
+    case "flow/changed":
+      return { ...snapshot, flowRun: event.payload };
     case "terminal/data":
       return snapshot;
     case "switchLog/appended":
