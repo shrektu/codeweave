@@ -4,10 +4,11 @@ import { join } from "node:path";
 import { vi } from "vitest";
 
 import {
-  AgentSideConnection,
   PROTOCOL_VERSION,
   RequestError,
-  type Agent,
+  agent,
+  methods,
+  type AgentContext,
   type InitializeResponse,
   type NewSessionResponse,
   type PermissionOption,
@@ -15,7 +16,6 @@ import {
   type RequestPermissionOutcome,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
-  type SessionNotification,
   type SessionUpdate,
   type StopReason,
   type ToolCallStatus,
@@ -103,6 +103,9 @@ export type NotificationStep =
 export type ScriptStep =
   | NotificationStep
   | PermissionStep
+  | { readonly type: "ext_notification"; readonly method: string }
+  | { readonly type: "unknown_update" }
+  | { readonly type: "client_request"; readonly method: string }
   | { readonly type: "end"; readonly stopReason: StopReason }
   | ({ readonly type: "fail" } & FakeRpcFailure)
   | { readonly type: "hang" };
@@ -113,12 +116,15 @@ export interface FakeAcpConfig {
   stderrText?: string;
 }
 
-interface AgentPeer {
-  sessionUpdate(params: SessionNotification): Promise<void>;
-  requestPermission(
-    params: RequestPermissionRequest,
-  ): Promise<RequestPermissionResponse>;
+interface RawSessionUpdateParams {
+  readonly sessionId: string;
+  readonly update: {
+    readonly sessionUpdate: string;
+    readonly detail: string;
+  };
 }
+
+const UNKNOWN_UPDATE_KIND = "future_update_kind";
 
 export const DEFAULT_PERMISSION_OPTIONS: readonly PermissionOption[] = [
   { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
@@ -186,6 +192,7 @@ export class FakeAcpAgent {
   readonly modeCalls: string[] = [];
   readonly prompts: string[] = [];
   readonly permissionOutcomes: RequestPermissionOutcome[] = [];
+  readonly clientRequestErrorCodes: number[] = [];
   cancelCalls = 0;
   private cancelSignal = Promise.withResolvers<null>();
   private readonly scripts: (readonly ScriptStep[])[] = [];
@@ -196,23 +203,14 @@ export class FakeAcpAgent {
     this.config = config;
     this.contained = contained;
     const stream = openAcpStream(contained.stdin, contained.stdout);
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
-    new AgentSideConnection((conn) => this.createAgent(conn), stream);
-  }
-
-  enqueue(steps: readonly ScriptStep[]): void {
-    this.scripts.push(steps);
-  }
-
-  private createAgent(peer: AgentPeer): Agent {
-    return {
-      initialize: (): InitializeResponse => {
+    agent()
+      .onRequest(methods.agent.initialize, (): InitializeResponse => {
         if (this.config.initializeError !== undefined) {
           throw toError(this.config.initializeError);
         }
         return { protocolVersion: PROTOCOL_VERSION, agentCapabilities: {} };
-      },
-      newSession: (): NewSessionResponse => {
+      })
+      .onRequest(methods.agent.session.new, (): NewSessionResponse => {
         if (this.config.stderrText !== undefined) {
           this.contained.stderr.write(this.config.stderrText);
         }
@@ -220,36 +218,43 @@ export class FakeAcpAgent {
           throw toError(this.config.newSessionError);
         }
         return { sessionId: SESSION_ID };
-      },
-      authenticate: () => ({}),
-      setSessionMode: ({ modeId }) => {
-        this.modeCalls.push(modeId);
+      })
+      .onRequest(methods.agent.authenticate, () => ({}))
+      .onRequest(methods.agent.session.setMode, ({ params }) => {
+        this.modeCalls.push(params.modeId);
         return {};
-      },
-      cancel: () => {
+      })
+      .onNotification(methods.agent.session.cancel, () => {
         this.cancelCalls += 1;
         this.cancelSignal.resolve(null);
-      },
-      prompt: async ({ prompt }): Promise<PromptResponse> => {
-        this.cancelSignal = Promise.withResolvers<null>();
-        for (const block of prompt) {
-          if (block.type === "text") {
-            this.prompts.push(block.text);
+      })
+      .onRequest(
+        methods.agent.session.prompt,
+        async ({ params, client }): Promise<PromptResponse> => {
+          this.cancelSignal = Promise.withResolvers<null>();
+          for (const block of params.prompt) {
+            if (block.type === "text") {
+              this.prompts.push(block.text);
+            }
           }
-        }
-        for (const step of this.scripts.shift() ?? DEFAULT_SCRIPT) {
-          const response = await this.runStep(peer, step);
-          if (response !== undefined) {
-            return response;
+          for (const step of this.scripts.shift() ?? DEFAULT_SCRIPT) {
+            const response = await this.runStep(client, step);
+            if (response !== undefined) {
+              return response;
+            }
           }
-        }
-        return { stopReason: "end_turn" };
-      },
-    };
+          return { stopReason: "end_turn" };
+        },
+      )
+      .connect(stream);
+  }
+
+  enqueue(steps: readonly ScriptStep[]): void {
+    this.scripts.push(steps);
   }
 
   private async runStep(
-    peer: AgentPeer,
+    peer: AgentContext,
     step: ScriptStep,
   ): Promise<PromptResponse | undefined> {
     switch (step.type) {
@@ -266,8 +271,26 @@ export class FakeAcpAgent {
         throw toError(step);
       case "hang":
         return new Promise<PromptResponse>(() => undefined);
+      case "ext_notification":
+        await peer.notify(step.method, { value: 1 });
+        return undefined;
+      case "unknown_update":
+        await peer.notify<RawSessionUpdateParams>(
+          methods.client.session.update,
+          {
+            sessionId: SESSION_ID,
+            update: {
+              sessionUpdate: UNKNOWN_UPDATE_KIND,
+              detail: "from a newer agent",
+            },
+          },
+        );
+        return undefined;
+      case "client_request":
+        await this.probeClientRequest(peer, step.method);
+        return undefined;
       default:
-        await peer.sessionUpdate({
+        await peer.notify(methods.client.session.update, {
           sessionId: SESSION_ID,
           update: toUpdate(step),
         });
@@ -275,11 +298,29 @@ export class FakeAcpAgent {
     }
   }
 
+  private async probeClientRequest(
+    peer: AgentContext,
+    method: string,
+  ): Promise<void> {
+    try {
+      await peer.request(method, { sessionId: SESSION_ID });
+    } catch (error) {
+      if (error instanceof RequestError) {
+        this.clientRequestErrorCodes.push(error.code);
+        return;
+      }
+      throw error;
+    }
+  }
+
   private async askPermission(
-    peer: AgentPeer,
+    peer: AgentContext,
     step: PermissionStep,
   ): Promise<void> {
-    const response = await peer.requestPermission({
+    const response = await peer.request<
+      RequestPermissionResponse,
+      RequestPermissionRequest
+    >(methods.client.session.requestPermission, {
       sessionId: SESSION_ID,
       toolCall: {
         toolCallId: step.toolCallId,

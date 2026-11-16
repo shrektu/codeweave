@@ -444,6 +444,124 @@ describe("acp adapter: stop", () => {
   });
 });
 
+const SETTLE_TIMEOUT_MS = 1000;
+const METHOD_NOT_FOUND_CODE = -32601;
+
+describe("acp adapter: unexpected peer messages", () => {
+  it("acp_ext_notification_is_ignored", async () => {
+    const rig = await createRig();
+    const { handle, events } = await startHandle(rig);
+    agentOf(rig).enqueue([
+      { type: "ext_notification", method: "_claude/test" },
+      { type: "text", text: "after ext" },
+      { type: "end", stopReason: "end_turn" },
+    ]);
+
+    await handle.prompt("go");
+
+    expect(events).toEqual([
+      { type: "text", text: "after ext" },
+      { type: "turn_end", stopReason: "end_turn" },
+    ]);
+  });
+
+  it("acp_unknown_session_update_does_not_break_stream", async () => {
+    const rig = await createRig();
+    const { handle, events } = await startHandle(rig);
+    agentOf(rig).enqueue([
+      { type: "unknown_update" },
+      { type: "text", text: "after unknown" },
+      { type: "end", stopReason: "end_turn" },
+    ]);
+
+    await handle.prompt("go");
+
+    expect(events).toEqual([
+      { type: "text", text: "after unknown" },
+      { type: "turn_end", stopReason: "end_turn" },
+    ]);
+  });
+
+  it("acp_unhandled_client_request_gets_method_not_found", async () => {
+    const rig = await createRig();
+    const { handle, events } = await startHandle(rig);
+    agentOf(rig).enqueue([
+      { type: "client_request", method: "fs/read_text_file" },
+      { type: "end", stopReason: "end_turn" },
+    ]);
+
+    await handle.prompt("go");
+
+    expect(agentOf(rig).clientRequestErrorCodes).toEqual([
+      METHOD_NOT_FOUND_CODE,
+    ]);
+    expect(events).toEqual([{ type: "turn_end", stopReason: "end_turn" }]);
+  });
+});
+
+describe("acp adapter: after process exit", () => {
+  it("set_profile_after_exit_does_not_hang", async () => {
+    const rig = await createRig();
+    const { handle } = await startHandle(rig);
+    containedOf(rig).emitExit(1);
+    containedOf(rig).stdout.end();
+
+    const outcome = await Promise.race([
+      Promise.allSettled([handle.setProfile(PermissionProfile.bypass)]).then(
+        () => "settled",
+      ),
+      new Promise<string>((resolve) =>
+        setTimeout(resolve, SETTLE_TIMEOUT_MS, "hung"),
+      ),
+    ]);
+
+    expect(outcome).toBe("settled");
+  });
+});
+
+describe("acp adapter: usage and ordering", () => {
+  it("acp_usage_update_without_meta_emits_nothing", async () => {
+    const rig = await createRig();
+    const { handle, events } = await startHandle(rig);
+    agentOf(rig).enqueue([
+      { type: "usage_update" },
+      { type: "end", stopReason: "end_turn" },
+    ]);
+
+    await handle.prompt("go");
+
+    expect(events).toEqual([{ type: "turn_end", stopReason: "end_turn" }]);
+  });
+
+  it("acp_turn_end_follows_all_session_updates", async () => {
+    const rig = await createRig();
+    const { handle, events } = await startHandle(rig);
+    agentOf(rig).enqueue([
+      { type: "text", text: "one" },
+      { type: "text", text: "two" },
+      {
+        type: "tool_call",
+        toolCallId: "t10",
+        title: "Run ls",
+        kind: "execute",
+        rawInput: { command: "ls" },
+      },
+      { type: "text", text: "three" },
+      { type: "end", stopReason: "end_turn" },
+    ]);
+
+    await handle.prompt("go");
+
+    expect(events.map((event) => event.type)).toEqual([
+      "text",
+      "text",
+      "tool_call",
+      "text",
+      "turn_end",
+    ]);
+  });
+});
+
 describe("acp adapter: launch environment", () => {
   it("acp_spawn_env_has_launcher_flags", async () => {
     const rig = await createRig();
