@@ -6,6 +6,7 @@ export default defineConfig({
   testDir: "tests/e2e",
   testMatch: [
     "rotation.spec.ts",
+    "flowRun.spec.ts",
     "codexRotation.spec.ts",
     "opencodeRotation.spec.ts",
     "agyRotation.spec.ts",
