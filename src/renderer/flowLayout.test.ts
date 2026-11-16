@@ -15,14 +15,14 @@ import {
 it("flow_layout_positions_every_node_and_labels_edges", async () => {
   const flow = makeFlow({
     nodes: [
-      { id: "plan", agent: "planner" },
-      { id: "build", agent: "implementer" },
-      { id: "review", agent: "reviewer" },
+      { id: "plan", agent: "planner", provider: null },
+      { id: "build", agent: "implementer", provider: null },
+      { id: "review", agent: "reviewer", provider: null },
     ],
     edges: [
-      { from: "plan", to: "build", kind: EdgeKind.waitsFor },
-      { from: "build", to: "review", kind: EdgeKind.handsOffTo },
-      { from: "plan", to: "review", kind: EdgeKind.reviews },
+      { from: "plan", to: "build", kind: EdgeKind.waitsFor, gate: false },
+      { from: "build", to: "review", kind: EdgeKind.handsOffTo, gate: false },
+      { from: "plan", to: "review", kind: EdgeKind.reviews, gate: false },
     ],
   });
 
@@ -62,7 +62,10 @@ it("flow_layout_of_empty_flow_is_empty", async () => {
 
 it("flow_layout_single_node_without_edges", async () => {
   const layout = await layoutFlow(
-    makeFlow({ nodes: [{ id: "solo", agent: "planner" }], edges: [] }),
+    makeFlow({
+      nodes: [{ id: "solo", agent: "planner", provider: null }],
+      edges: [],
+    }),
     FlowDirection.DOWN,
   );
 
@@ -75,19 +78,19 @@ it("flow_layout_single_node_without_edges", async () => {
 const FEATURE_DELIVERY = makeFlow({
   id: "feature-delivery",
   nodes: [
-    { id: "plan", agent: "planner" },
-    { id: "api", agent: "implementer" },
-    { id: "ui", agent: "implementer" },
-    { id: "test", agent: "tester" },
-    { id: "review", agent: "reviewer" },
+    { id: "plan", agent: "planner", provider: null },
+    { id: "api", agent: "implementer", provider: null },
+    { id: "ui", agent: "implementer", provider: null },
+    { id: "test", agent: "tester", provider: null },
+    { id: "review", agent: "reviewer", provider: null },
   ],
   edges: [
-    { from: "plan", to: "api", kind: EdgeKind.handsOffTo },
-    { from: "plan", to: "ui", kind: EdgeKind.handsOffTo },
-    { from: "api", to: "test", kind: EdgeKind.waitsFor },
-    { from: "ui", to: "test", kind: EdgeKind.waitsFor },
-    { from: "test", to: "review", kind: EdgeKind.handsOffTo },
-    { from: "review", to: "api", kind: EdgeKind.reviews },
+    { from: "plan", to: "api", kind: EdgeKind.handsOffTo, gate: false },
+    { from: "plan", to: "ui", kind: EdgeKind.handsOffTo, gate: false },
+    { from: "api", to: "test", kind: EdgeKind.waitsFor, gate: false },
+    { from: "ui", to: "test", kind: EdgeKind.waitsFor, gate: false },
+    { from: "test", to: "review", kind: EdgeKind.handsOffTo, gate: false },
+    { from: "review", to: "api", kind: EdgeKind.reviews, gate: false },
   ],
 });
 

@@ -12,6 +12,13 @@ function request(method: string, params: unknown): unknown {
   return { v: 6, id: "a", method, params };
 }
 
+const SAVE_FLOW = {
+  id: "ship",
+  title: "Ship",
+  nodes: [{ id: "a", agent: "c" }],
+  edges: [],
+};
+
 const VALID_REQUESTS: [string, unknown][] = [
   ["ping", {}],
   ["sessions/snapshot", {}],
@@ -82,6 +89,21 @@ const VALID_REQUESTS: [string, unknown][] = [
   ["settings/set", { claudeExecutable: null }],
   ["switchLog/list", {}],
   ["flows/list", { cwd: "/work" }],
+  [
+    "flows/save",
+    {
+      cwd: "/work",
+      file: "flows/ship.md",
+      revision: "abc",
+      flow: {
+        id: "ship",
+        title: "Ship",
+        maxRounds: 3,
+        nodes: [{ id: "a", agent: "coder", provider: "codex" }],
+        edges: [{ from: "a", to: "a", kind: "reviews", gate: true }],
+      },
+    },
+  ],
   ["settings/set", { terminalShell: "/bin/zsh" }],
   ["settings/set", { terminalShell: null }],
   ["terminal/open", { cwd: "/work", cols: 2, rows: 1 }],
@@ -314,6 +336,38 @@ const INVALID_REQUESTS: [string, unknown][] = [
   [
     "flows/list with extra param",
     request("flows/list", { cwd: "/w", glob: "*" }),
+  ],
+  [
+    "flows/save without revision",
+    request("flows/save", { cwd: "/w", file: "flows/a.md", flow: SAVE_FLOW }),
+  ],
+  [
+    "flows/save with maxRounds above the limit",
+    request("flows/save", {
+      cwd: "/w",
+      file: "flows/a.md",
+      revision: "r",
+      flow: { ...SAVE_FLOW, maxRounds: 11 },
+    }),
+  ],
+  [
+    "flows/save with unknown node provider",
+    request("flows/save", {
+      cwd: "/w",
+      file: "flows/a.md",
+      revision: "r",
+      flow: { ...SAVE_FLOW, nodes: [{ id: "a", agent: "c", provider: "x" }] },
+    }),
+  ],
+  [
+    "flows/save with extra param",
+    request("flows/save", {
+      cwd: "/w",
+      file: "flows/a.md",
+      revision: "r",
+      flow: SAVE_FLOW,
+      force: true,
+    }),
   ],
 ];
 

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { MIN_SECRET_LENGTH } from "../domain/constants";
+import { FlowSchema } from "../domain/flows";
 import {
   EffectLevel,
   PermissionProfile,
@@ -132,6 +133,12 @@ export const ParamsSchemas = {
   "settings/set": SettingsPatchSchema,
   "switchLog/list": EmptyParamsSchema,
   "flows/list": z.strictObject({ cwd: NonEmptyString }),
+  "flows/save": z.strictObject({
+    cwd: NonEmptyString,
+    file: NonEmptyString,
+    revision: NonEmptyString,
+    flow: FlowSchema,
+  }),
   "terminal/open": z.strictObject({
     cwd: NonEmptyString,
     cols: TerminalColsSchema,
@@ -192,6 +199,7 @@ export const RequestSchema = z.discriminatedUnion("method", [
   requestSchema("settings/set"),
   requestSchema("switchLog/list"),
   requestSchema("flows/list"),
+  requestSchema("flows/save"),
   requestSchema("vault/status"),
   requestSchema("models/catalog"),
   requestSchema("terminal/open"),
@@ -232,6 +240,7 @@ const resultSchemaDefinitions = {
     entries: z.array(SwitchLogEntryViewSchema),
   }),
   "flows/list": FlowsListSchema,
+  "flows/save": FlowsListSchema,
   "vault/status": VaultStatusSchema,
   "models/catalog": ModelCatalogSchema,
   "terminal/open": z.strictObject({

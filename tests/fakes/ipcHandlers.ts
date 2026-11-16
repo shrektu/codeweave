@@ -27,6 +27,7 @@ export function fakeHandlers(
     "settings/set": unavailable,
     "switchLog/list": unavailable,
     "flows/list": unavailable,
+    "flows/save": unavailable,
     "terminal/open": unavailable,
     "terminal/input": unavailable,
     "terminal/resize": unavailable,

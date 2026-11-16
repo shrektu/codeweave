@@ -46,9 +46,15 @@ function unwrap<T>(result: ParseResult<T>): T {
 }
 
 function exampleFlow(): FlowView {
-  return unwrap(
+  const { id, title, nodes, edges } = unwrap(
     parseFlowFile(readFileSync(join(ROOT_DIR, "flows", "example.md"), "utf8")),
   );
+  return makeFlow({
+    id,
+    title,
+    nodes: nodes.map((node) => ({ ...node, provider: null })),
+    edges: edges.map((edge) => ({ ...edge, gate: false })),
+  });
 }
 
 function exampleAgents(): AgentView[] {
@@ -56,11 +62,12 @@ function exampleAgents(): AgentView[] {
     parseAgentDocuments(
       readFileSync(join(ROOT_DIR, "agents", "example.md"), "utf8"),
     ),
-  ).map(({ id, role, provider, permissionProfile }) => ({
+  ).map(({ definition: { id, role, provider, permissionProfile }, body }) => ({
     id,
     role,
     provider,
     permissionProfile,
+    body,
   }));
 }
 
@@ -360,7 +367,7 @@ it("flow_tab_switches_between_flows_with_picker", async () => {
         makeFlow({
           id: "solo",
           title: "Solo run",
-          nodes: [{ id: "alone", agent: "implementer" }],
+          nodes: [{ id: "alone", agent: "implementer", provider: null }],
           edges: [],
         }),
       ],

@@ -161,18 +161,29 @@ export const AgentViewSchema = z.strictObject({
   role: z.string(),
   provider: z.enum(ProviderId),
   permissionProfile: z.enum(PermissionProfile),
+  body: z.string(),
 });
 export type AgentView = z.infer<typeof AgentViewSchema>;
 
 export const FlowViewSchema = z.strictObject({
   id: z.string(),
+  file: z.string(),
+  revision: z.string(),
   title: z.string(),
-  nodes: z.array(z.strictObject({ id: z.string(), agent: z.string() })),
+  maxRounds: z.int(),
+  nodes: z.array(
+    z.strictObject({
+      id: z.string(),
+      agent: z.string(),
+      provider: z.enum(ProviderId).nullable(),
+    }),
+  ),
   edges: z.array(
     z.strictObject({
       from: z.string(),
       to: z.string(),
       kind: z.enum(EdgeKind),
+      gate: z.boolean(),
     }),
   ),
 });

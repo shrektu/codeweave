@@ -2,7 +2,7 @@ import { SWITCH_LOG_SNAPSHOT_LIMIT } from "../shared/constants";
 
 import { createAccountsService, type AccountsService } from "./accountsService";
 import type { ConnectionRegistry } from "./connections";
-import { listFlows } from "./flows";
+import { listFlows, saveFlow } from "./flows";
 import type { IpcHandlers } from "./ipcServer";
 import type { LimitProbeService } from "./limitProbe";
 import type { ModelCatalogService } from "./opencode/catalog";
@@ -124,6 +124,7 @@ export function createHandlers({
       entries: await store.readSwitchLog(SWITCH_LOG_SNAPSHOT_LIMIT),
     }),
     "flows/list": ({ cwd }) => listFlows(cwd),
+    "flows/save": ({ cwd, ...params }) => saveFlow(cwd, params),
     "terminal/open": (params) => terminals.open(params),
     "terminal/input": ({ id, data }) => {
       terminals.input(id, data);

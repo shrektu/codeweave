@@ -255,6 +255,7 @@ export function makeAgent(overrides: Partial<AgentView> = {}): AgentView {
     role: "Implements the planned change",
     provider: ProviderId.claude,
     permissionProfile: PermissionProfile.plan,
+    body: "Implements the change.",
     ...overrides,
   };
 }
@@ -262,12 +263,17 @@ export function makeAgent(overrides: Partial<AgentView> = {}): AgentView {
 export function makeFlow(overrides: Partial<FlowView> = {}): FlowView {
   return {
     id: "ship",
+    file: "flows/ship.md",
+    revision: "rev-1",
     title: "Ship it",
+    maxRounds: 2,
     nodes: [
-      { id: "build", agent: "implementer" },
-      { id: "review", agent: "reviewer" },
+      { id: "build", agent: "implementer", provider: null },
+      { id: "review", agent: "reviewer", provider: null },
     ],
-    edges: [{ from: "build", to: "review", kind: EdgeKind.handsOffTo }],
+    edges: [
+      { from: "build", to: "review", kind: EdgeKind.handsOffTo, gate: false },
+    ],
     ...overrides,
   };
 }
