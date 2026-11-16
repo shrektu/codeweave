@@ -2,12 +2,11 @@ import { randomUUID } from "node:crypto";
 import { Readable, Writable } from "node:stream";
 
 import {
-  ClientSideConnection,
   PROTOCOL_VERSION,
+  client,
+  methods,
   ndJsonStream,
-  type Agent,
   type CancelNotification,
-  type Client,
   type InitializeRequest,
   type InitializeResponse,
   type NewSessionRequest,
@@ -17,7 +16,7 @@ import {
   type PromptResponse,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
-  type SessionNotification,
+  type SessionUpdate,
   type SetSessionModeRequest,
   type Stream,
 } from "@agentclientprotocol/sdk";
@@ -111,9 +110,30 @@ export function openAcpStream(input: Readable, output: Writable): Stream {
   return ndJsonStream(Writable.toWeb(output), toWebReadable(input));
 }
 
-function connect(toClient: (agent: Agent) => Client, stream: Stream): AcpPeer {
-  // eslint-disable-next-line @typescript-eslint/no-deprecated
-  return new ClientSideConnection(toClient, stream);
+interface ClientHandlers {
+  readonly onUpdate: (update: SessionUpdate) => void;
+  readonly onPermission: (
+    params: RequestPermissionRequest,
+  ) => Promise<RequestPermissionResponse>;
+}
+
+function connect(stream: Stream, handlers: ClientHandlers): AcpPeer {
+  const { agent } = client()
+    .onRequest(methods.client.session.requestPermission, ({ params }) =>
+      handlers.onPermission(params),
+    )
+    .onNotification(methods.client.session.update, ({ params }) => {
+      handlers.onUpdate(params.update);
+    })
+    .connect(stream);
+  return {
+    initialize: (params) => agent.request(methods.agent.initialize, params),
+    newSession: (params) => agent.request(methods.agent.session.new, params),
+    setSessionMode: (params) =>
+      agent.request(methods.agent.session.setMode, params),
+    prompt: (params) => agent.request(methods.agent.session.prompt, params),
+    cancel: (params) => agent.notify(methods.agent.session.cancel, params),
+  };
 }
 
 function toPermissionOption(
@@ -156,7 +176,12 @@ class ClaudeAcpSession implements AgentHandle {
     contained.onExit(() => {
       this.handleExit();
     });
-    this.peer = connect(() => this.client(), this.openStream());
+    this.peer = connect(this.openStream(), {
+      onUpdate: (update) => {
+        this.emitUpdate(update);
+      },
+      onPermission: (params) => this.requestPermission(params),
+    });
   }
 
   stderrTail(): string {
@@ -234,16 +259,10 @@ class ClaudeAcpSession implements AgentHandle {
     return openAcpStream(stdout, stdin);
   }
 
-  private client(): Client {
-    return {
-      sessionUpdate: (params: SessionNotification): void => {
-        for (const event of mapSessionUpdate(params.update)) {
-          this.emit(event);
-        }
-      },
-      requestPermission: (params) => this.requestPermission(params),
-      extNotification: () => Promise.resolve(),
-    };
+  private emitUpdate(update: SessionUpdate): void {
+    for (const event of mapSessionUpdate(update)) {
+      this.emit(event);
+    }
   }
 
   private async negotiate(spec: AgentStartSpec): Promise<void> {
