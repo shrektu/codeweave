@@ -31,6 +31,7 @@ import {
   renderWithServices,
   type FakeIpcClient,
 } from "../fakes/fakeIpcClient";
+import { makeCodeweaveApi } from "../fakes/fakeCodeweaveApi";
 
 const ROOT_DIR = join(import.meta.dirname, "..", "..");
 const PICKED_FOLDER = "/home/user/picked";
@@ -64,10 +65,9 @@ function exampleAgents(): AgentView[] {
 }
 
 beforeEach(() => {
-  window.codeweave = {
-    gpuAccelerated: true,
+  window.codeweave = makeCodeweaveApi({
     pickFolder: () => Promise.resolve(PICKED_FOLDER),
-  };
+  });
 });
 
 afterEach(cleanup);

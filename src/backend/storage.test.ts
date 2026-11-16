@@ -35,6 +35,8 @@ describe("json store", () => {
       agyExecutable: null,
       opencodeExecutable: null,
       terminalShell: null,
+      updateCheck: true,
+      updateChannel: "stable",
     });
   });
 
@@ -50,6 +52,8 @@ describe("json store", () => {
       agyExecutable: "/usr/bin/agy",
       opencodeExecutable: "/usr/bin/opencode",
       terminalShell: "/bin/zsh",
+      updateCheck: false,
+      updateChannel: "beta",
     } as const;
 
     await store.writeAccounts([account]);
@@ -215,6 +219,8 @@ describe("json store writes", () => {
         agyExecutable: null,
         opencodeExecutable: null,
         terminalShell: null,
+        updateCheck: true,
+        updateChannel: "stable",
       }),
     ).rejects.toBeInstanceOf(StorageCorruptError);
 

@@ -144,6 +144,8 @@ export async function createCodexRotationWorkspace(
       agyExecutable: null,
       opencodeExecutable: null,
       terminalShell: null,
+      updateCheck: false,
+      updateChannel: "stable",
     });
     return { root, userData, repo, accountA, accountB, dispose };
   } catch (error) {

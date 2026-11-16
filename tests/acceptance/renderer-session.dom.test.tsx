@@ -24,16 +24,16 @@ import {
   renderWithServices,
   staticStore,
 } from "../fakes/fakeIpcClient";
+import { makeCodeweaveApi } from "../fakes/fakeCodeweaveApi";
 
 process.env.TZ = "UTC";
 
 const PICKED_FOLDER = "/home/user/picked";
 
 beforeEach(() => {
-  window.codeweave = {
-    gpuAccelerated: true,
+  window.codeweave = makeCodeweaveApi({
     pickFolder: () => Promise.resolve(PICKED_FOLDER),
-  };
+  });
 });
 
 afterEach(cleanup);

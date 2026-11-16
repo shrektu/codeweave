@@ -138,6 +138,8 @@ export async function createRotationWorkspace(
     agyExecutable: null,
     opencodeExecutable: null,
     terminalShell: null,
+    updateCheck: false,
+    updateChannel: "stable",
   });
   return {
     root,

@@ -57,6 +57,14 @@ body {
   flex: 1;
 }
 
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: 12px var(--sans);
+  color: var(--text);
+}
+
 .pill {
   font: 11px var(--mono);
   padding: 4px 10px;

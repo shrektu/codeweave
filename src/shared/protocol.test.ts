@@ -392,6 +392,8 @@ describe("EventSchema", () => {
     agyExecutable: null,
     opencodeExecutable: null,
     terminalShell: null,
+    updateCheck: true,
+    updateChannel: "stable",
   };
   const logEntry = {
     at: 1,

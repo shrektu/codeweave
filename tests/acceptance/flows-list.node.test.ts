@@ -232,6 +232,7 @@ it("flows_list_handler_delegates_to_listFlows", async () => {
     catalog: { load: () => Promise.resolve({ models: [], error: null }) },
     containerStatus: { available: true, message: null },
     terminals: fakeTerminals(),
+    postUpdaterConfig: () => undefined,
   });
 
   const result = await handlers["flows/list"]({ cwd });

@@ -39,6 +39,7 @@
     "@xterm/xterm": "6.0.0",
     "@xyflow/react": "12.12.0",
     "diff": "9.0.0",
+    "electron-updater": "6.8.10",
     "elkjs": "0.12.0",
     "node-pty": "1.1.0",
     "shell-quote": "1.12.0",

@@ -5,6 +5,7 @@ interface RadioOptionProps {
   label: string;
   description?: string;
   checked: boolean;
+  disabled?: boolean;
   onSelect: () => void;
 }
 
@@ -13,6 +14,7 @@ export function RadioOption({
   label,
   description,
   checked,
+  disabled = false,
   onSelect,
 }: RadioOptionProps): JSX.Element {
   const inputId = useId();
@@ -24,6 +26,7 @@ export function RadioOption({
         type="radio"
         name={group}
         checked={checked}
+        disabled={disabled}
         aria-describedby={description === undefined ? undefined : descriptionId}
         onChange={onSelect}
       />

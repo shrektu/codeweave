@@ -53,6 +53,8 @@ const SETTINGS_EVENT = {
     agyExecutable: null,
     opencodeExecutable: null,
     terminalShell: null,
+    updateCheck: true,
+    updateChannel: "stable",
   },
 };
 

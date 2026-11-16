@@ -8,24 +8,35 @@ import {
   ipcMain,
   MessageChannelMain,
   safeStorage,
+  shell,
   utilityProcess,
   type IpcMainInvokeEvent,
   type OpenDialogOptions,
   type UtilityProcess,
 } from "electron";
+import electronUpdater from "electron-updater";
 
 import {
   CONNECT_MESSAGE_TYPE,
+  GET_AVAILABLE_UPDATE_CHANNEL,
   GPU_ACCELERATED_ARG,
+  OPEN_UPDATE_RELEASE_CHANNEL,
   PICK_FOLDER_CHANNEL,
   PORT_CHANNEL,
+  UPDATE_AVAILABLE_CHANNEL,
 } from "../shared/constants";
 import { RUN_ID_ENV } from "../backend/constants";
+import type { AvailableUpdate } from "../shared/api";
 import type { ConnectMessage } from "../shared/protocol";
+import { UpdaterConfigMessageSchema } from "../shared/updates";
 import { VaultRequestSchema } from "../shared/vault";
 
 import { isAppUrl } from "./appUrl";
-import { buildBackendArgs, TEST_AGENT_ENV_VAR } from "./backendArgs";
+import {
+  buildBackendArgs,
+  TEST_AGENT_ENV_VAR,
+  TEST_UPDATE_FEED_ENV_VAR,
+} from "./backendArgs";
 import { createSecretVault, handleVaultRequest } from "./secretVault";
 import {
   createBackendShutdownPort,
@@ -33,6 +44,11 @@ import {
   requestBackendShutdown,
   SHUTDOWN_TIMEOUT_MS,
 } from "./shutdown";
+import {
+  createUpdateNotifier,
+  openAvailableRelease,
+  type UpdateNotifier,
+} from "./updates";
 import { resolveUserDataOverride } from "./userDataOverride";
 
 Reflect.deleteProperty(process.env, RUN_ID_ENV);
@@ -66,7 +82,53 @@ async function pickFolder(event: IpcMainInvokeEvent): Promise<string | null> {
   return result.canceled ? null : (result.filePaths[0] ?? null);
 }
 
-function startBackend(): UtilityProcess {
+function logUpdateProblem(message: string, error?: unknown): void {
+  if (error === undefined) {
+    console.warn(message);
+  } else {
+    console.warn(message, error);
+  }
+}
+
+function broadcastAvailableUpdate(version: string | null): void {
+  const update: AvailableUpdate | null = version === null ? null : { version };
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send(UPDATE_AVAILABLE_CHANNEL, update);
+  }
+}
+
+function createNotifier(): UpdateNotifier {
+  return createUpdateNotifier({
+    updater: electronUpdater.autoUpdater,
+    isPackaged: app.isPackaged,
+    testFeedUrl: app.isPackaged
+      ? undefined
+      : process.env[TEST_UPDATE_FEED_ENV_VAR],
+    setInterval,
+    clearInterval,
+    onChanged: broadcastAvailableUpdate,
+    log: logUpdateProblem,
+  });
+}
+
+function registerUpdateHandlers(notifier: UpdateNotifier): void {
+  const fromApp = (event: IpcMainInvokeEvent): boolean =>
+    isAppUrl(event.senderFrame?.url ?? "", rendererEntry());
+  ipcMain.handle(
+    GET_AVAILABLE_UPDATE_CHANNEL,
+    (event): AvailableUpdate | null => {
+      const version = notifier.available();
+      return fromApp(event) && version !== null ? { version } : null;
+    },
+  );
+  ipcMain.handle(OPEN_UPDATE_RELEASE_CHANNEL, async (event) => {
+    if (fromApp(event)) {
+      await openAvailableRelease(notifier, (url) => shell.openExternal(url));
+    }
+  });
+}
+
+function startBackend(notifier: UpdateNotifier): UtilityProcess {
   const backend = utilityProcess.fork(
     join(import.meta.dirname, "backend.js"),
     buildBackendArgs({
@@ -80,6 +142,11 @@ function startBackend(): UtilityProcess {
     const request = VaultRequestSchema.safeParse(message);
     if (request.success) {
       backend.postMessage(handleVaultRequest(vault, request.data));
+      return;
+    }
+    const config = UpdaterConfigMessageSchema.safeParse(message);
+    if (config.success) {
+      notifier.configure(config.data);
     }
   });
   const port = createBackendShutdownPort(backend);
@@ -172,7 +239,12 @@ if (app.requestSingleInstanceLock()) {
   app.on("second-instance", focusExistingWindow);
   void app.whenReady().then(() => {
     ipcMain.handle(PICK_FOLDER_CHANNEL, (event) => pickFolder(event));
-    createWindow(startBackend());
+    const notifier = createNotifier();
+    registerUpdateHandlers(notifier);
+    app.on("before-quit", () => {
+      notifier.dispose();
+    });
+    createWindow(startBackend(notifier));
   });
 } else {
   app.quit();

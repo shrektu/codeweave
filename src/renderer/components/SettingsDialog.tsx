@@ -1,6 +1,10 @@
 import { useState, type JSX } from "react";
 
-import { EffectLevel, PermissionProfile } from "../../domain/types";
+import {
+  EffectLevel,
+  PermissionProfile,
+  UpdateChannel,
+} from "../../domain/types";
 import type { ParamsMap } from "../../shared/protocol";
 import type { SettingsView } from "../../shared/views";
 import { useApp } from "../services";
@@ -57,6 +61,11 @@ const EFFECT_OPTIONS: readonly { value: EffectLevel; label: string }[] = [
   { value: EffectLevel.full, label: "Full" },
 ];
 
+const CHANNEL_OPTIONS: readonly { value: UpdateChannel; label: string }[] = [
+  { value: UpdateChannel.stable, label: "Stable" },
+  { value: UpdateChannel.beta, label: "Beta (pre-releases)" },
+];
+
 const BYPASS_WARNING =
   "In Bypass mode the agent never asks, so Codeweave cannot block dangerous commands.";
 
@@ -95,6 +104,36 @@ function EffectsFieldset({ settings, onPatch }: PatchProps): JSX.Element {
           checked={settings.effectLevel === option.value}
           onSelect={() => {
             onPatch({ effectLevel: option.value });
+          }}
+        />
+      ))}
+    </fieldset>
+  );
+}
+
+function UpdatesFieldset({ settings, onPatch }: PatchProps): JSX.Element {
+  return (
+    <fieldset>
+      <legend className="sec">Updates</legend>
+      <label>
+        <input
+          type="checkbox"
+          checked={settings.updateCheck}
+          onChange={(event) => {
+            onPatch({ updateCheck: event.target.checked });
+          }}
+        />
+        Check for updates
+      </label>
+      {CHANNEL_OPTIONS.map((option) => (
+        <RadioOption
+          key={option.value}
+          group="update-channel"
+          label={option.label}
+          checked={settings.updateChannel === option.value}
+          disabled={!settings.updateCheck}
+          onSelect={() => {
+            onPatch({ updateChannel: option.value });
           }}
         />
       ))}
@@ -157,6 +196,7 @@ function SettingsForm({ settings }: { settings: SettingsView }): JSX.Element {
     <>
       <ProfileFieldset settings={settings} onPatch={onPatch} />
       <EffectsFieldset settings={settings} onPatch={onPatch} />
+      <UpdatesFieldset settings={settings} onPatch={onPatch} />
       <ExecutableField
         id="claude-executable"
         label="Claude executable"

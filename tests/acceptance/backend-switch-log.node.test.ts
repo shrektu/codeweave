@@ -43,6 +43,7 @@ it("switch_log_list_skips_malformed_lines", async () => {
     catalog: { load: () => Promise.resolve({ models: [], error: null }) },
     containerStatus: { available: true, message: null },
     terminals: fakeTerminals(),
+    postUpdaterConfig: () => undefined,
   });
 
   const { entries } = await handlers["switchLog/list"]({});

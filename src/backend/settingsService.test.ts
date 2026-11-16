@@ -13,7 +13,11 @@ async function setup(): Promise<{
   const store = createJsonStore(await makeTempDir());
   const broadcast = vi.fn();
   return {
-    service: createSettingsService({ store, broadcast }),
+    service: createSettingsService({
+      store,
+      broadcast,
+      postUpdaterConfig: () => undefined,
+    }),
     store,
     broadcast,
   };
@@ -31,6 +35,8 @@ describe("settings service", () => {
       agyExecutable: null,
       opencodeExecutable: null,
       terminalShell: null,
+      updateCheck: true,
+      updateChannel: "stable",
     });
   });
 
@@ -47,6 +53,8 @@ describe("settings service", () => {
       agyExecutable: null,
       opencodeExecutable: null,
       terminalShell: null,
+      updateCheck: true,
+      updateChannel: "stable",
     };
     expect(view).toEqual(expected);
     expect(await store.readSettings()).toEqual({ version: 1, ...expected });
@@ -92,6 +100,8 @@ describe("settings service", () => {
       agyExecutable: null,
       opencodeExecutable: null,
       terminalShell: null,
+      updateCheck: true,
+      updateChannel: "stable",
     });
   });
 
@@ -181,6 +191,8 @@ describe("settings service", () => {
       agyExecutable: null,
       opencodeExecutable: null,
       terminalShell: null,
+      updateCheck: true,
+      updateChannel: "stable",
     });
   });
 });

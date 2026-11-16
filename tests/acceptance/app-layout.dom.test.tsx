@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { App } from "../../src/renderer/App";
 import { EffectLevel } from "../../src/domain/types";
+import { makeCodeweaveApi } from "../fakes/fakeCodeweaveApi";
 import {
   createFakeIpcClient,
   makeSettings,
@@ -21,10 +22,7 @@ function connectedClient(settings = makeSettings()): FakeIpcClient {
 }
 
 beforeEach(() => {
-  window.codeweave = {
-    gpuAccelerated: true,
-    pickFolder: () => Promise.resolve(null),
-  };
+  window.codeweave = makeCodeweaveApi();
 });
 
 afterEach(() => {

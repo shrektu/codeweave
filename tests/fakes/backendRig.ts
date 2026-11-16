@@ -121,6 +121,7 @@ export interface BackendRigOptions {
   readonly opencodeConfig?: FakeOpencodeConfig;
   readonly catalogProbeTimeoutMs?: number;
   readonly vault?: FakeVault;
+  readonly postUpdaterConfig?: BackendDeps["postUpdaterConfig"];
   readonly probeStopResults?: ConstructorParameters<
     typeof ScriptedCodexContainer
   >[0];
@@ -348,6 +349,9 @@ function rigDeps(
     homeDir: "/home/jane",
     platform: options.platform ?? "linux",
     now: options.now ?? (() => RIG_NOW_MS),
+    ...(options.postUpdaterConfig === undefined
+      ? {}
+      : { postUpdaterConfig: options.postUpdaterConfig }),
     ...(options.catalogProbeTimeoutMs === undefined
       ? {}
       : { catalogProbeTimeoutMs: options.catalogProbeTimeoutMs }),

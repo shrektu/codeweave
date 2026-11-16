@@ -9,6 +9,7 @@ import {
   ProviderId,
   SwitchReason,
   TerminalStatus,
+  UpdateChannel,
 } from "../domain/types";
 
 import { SWITCH_LOG_SNAPSHOT_LIMIT } from "./constants";
@@ -198,6 +199,8 @@ export const SettingsViewSchema = z.strictObject({
   agyExecutable: z.string().nullable(),
   opencodeExecutable: z.string().nullable(),
   terminalShell: z.string().nullable(),
+  updateCheck: z.boolean(),
+  updateChannel: z.enum(UpdateChannel),
 });
 export type SettingsView = z.infer<typeof SettingsViewSchema>;
 

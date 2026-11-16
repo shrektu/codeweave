@@ -73,6 +73,10 @@ import {
   type ContainerStatus,
   type SessionService,
 } from "./session";
+import {
+  toUpdaterConfigMessage,
+  type PostUpdaterConfig,
+} from "./settingsService";
 import { createJsonStore, type JsonStore } from "./storage";
 import { createPtyLauncher, type PtyLauncherFactory } from "./terminal/pty";
 import {
@@ -101,6 +105,7 @@ export interface BackendDeps {
   readonly inspectWorktree: (cwd: string) => Promise<WorktreeState>;
   readonly catalogProbeTimeoutMs?: number;
   readonly ptyLauncher?: PtyLauncherFactory;
+  readonly postUpdaterConfig?: PostUpdaterConfig;
 }
 
 export interface Backend {
@@ -145,6 +150,8 @@ async function openContainer(
     throw error;
   }
 }
+
+const NO_UPDATER_CONFIG: PostUpdaterConfig = () => undefined;
 
 const OPENCODE_BINARY = "opencode";
 const SERVER_PASSWORD_BYTES = 32;
@@ -456,8 +463,20 @@ export function createBackendRegistry(backend: Backend): ConnectionRegistry {
   return createConnectionRegistry(backend.handlers, backend.onConnectionClosed);
 }
 
+async function postStoredUpdaterConfig(
+  store: JsonStore,
+  post: PostUpdaterConfig,
+): Promise<void> {
+  try {
+    post(toUpdaterConfigMessage(await store.readSettings()));
+  } catch (error) {
+    console.error("the updater configuration could not be posted", error);
+  }
+}
+
 export async function startBackend(deps: BackendDeps): Promise<Backend> {
   const { userData } = deps.args;
+  const postUpdaterConfig = deps.postUpdaterConfig ?? NO_UPDATER_CONFIG;
   const store = createJsonStore(userData);
   const keyStore = createKeyStore({
     path: join(userData, API_KEYS_FILE),
@@ -505,7 +524,9 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     catalog: createCatalog(deps, processes, store),
     containerStatus: status,
     terminals,
+    postUpdaterConfig,
   });
+  await postStoredUpdaterConfig(store, postUpdaterConfig);
   probes.start();
   return {
     handlers,

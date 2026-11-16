@@ -25,6 +25,12 @@ export const EffectLevel = {
 } as const;
 export type EffectLevel = (typeof EffectLevel)[keyof typeof EffectLevel];
 
+export const UpdateChannel = {
+  stable: "stable",
+  beta: "beta",
+} as const;
+export type UpdateChannel = (typeof UpdateChannel)[keyof typeof UpdateChannel];
+
 export const TerminalStatus = {
   running: "running",
   exited: "exited",

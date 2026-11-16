@@ -48,6 +48,13 @@ above it, or focus the splitter and use the arrow keys, to resize it.
 - The renderer is WebGL when the GPU is accelerated and falls back to DOM
   rendering otherwise or when the WebGL context is lost.
 
+## Updates
+
+Codeweave checks the GitHub Releases of `shrektu/codeweave` at start and every
+6 hours. It only notifies: a banner offers a `View release` link, and nothing
+is downloaded or installed. In Settings you can switch the check off and pick
+the Stable or Beta (pre-releases) channel.
+
 ## Checks
 
 ```sh
