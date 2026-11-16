@@ -26,6 +26,7 @@ import {
   renderWithServices,
   type FakeIpcClient,
 } from "../fakes/fakeIpcClient";
+import { makeCodeweaveApi } from "../fakes/fakeCodeweaveApi";
 
 const SUGGESTED_DIR = "/home/user/.codeweave-opencode";
 const PICKED_FOLDER = "/home/user/picked";
@@ -64,10 +65,9 @@ const MYSTERY = makeCatalogModel({
 const CATALOG: CatalogModel[] = [FAST, PAID, GEMINI, MYSTERY];
 
 beforeEach(() => {
-  window.codeweave = {
-    gpuAccelerated: true,
+  window.codeweave = makeCodeweaveApi({
     pickFolder: () => Promise.resolve(PICKED_FOLDER),
-  };
+  });
 });
 
 afterEach(() => {

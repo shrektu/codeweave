@@ -2,7 +2,8 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "lib": ["ES2024"],
-    "types": ["node"]
+    "types": ["node"],
+    "allowImportingTsExtensions": true
   },
   "include": [
     "electron.vite.config.ts",
@@ -12,6 +13,7 @@
     "src/backend",
     "src/shared",
     "src/domain",
+    "scripts/release",
     "tests/acceptance/*.node.test.ts"
   ]
 }

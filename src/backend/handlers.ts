@@ -9,7 +9,10 @@ import type { ModelCatalogService } from "./opencode/catalog";
 import type { KeyStore } from "./secrets/keyStore";
 import type { SecretVault } from "./secrets/vault";
 import type { ContainerStatus, SessionService } from "./session";
-import { createSettingsService } from "./settingsService";
+import {
+  createSettingsService,
+  type PostUpdaterConfig,
+} from "./settingsService";
 import type { JsonStore } from "./storage";
 import type { TerminalService } from "./terminal/service";
 
@@ -24,6 +27,7 @@ export interface HandlerDeps {
   catalog: ModelCatalogService;
   containerStatus: ContainerStatus;
   terminals: TerminalService;
+  postUpdaterConfig: PostUpdaterConfig;
 }
 
 function publishAccounts(accounts: AccountsService): void {
@@ -43,6 +47,7 @@ export function createHandlers({
   catalog,
   containerStatus,
   terminals,
+  postUpdaterConfig,
 }: HandlerDeps): IpcHandlers {
   const accounts = createAccountsService({
     store,
@@ -69,7 +74,11 @@ export function createHandlers({
     probes.trigger();
     return result;
   };
-  const settings = createSettingsService({ store, broadcast });
+  const settings = createSettingsService({
+    store,
+    broadcast,
+    postUpdaterConfig,
+  });
   return {
     ping: () => ({ pong: true, backendPid: process.pid }),
     "sessions/snapshot": async () => ({

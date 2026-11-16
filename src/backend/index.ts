@@ -46,6 +46,9 @@ const ready = startBackend({
   newRunId: () => randomUUID(),
   resolveExecutable: createExecutableResolver(process.env, process.platform),
   inspectWorktree,
+  postUpdaterConfig: (message) => {
+    process.parentPort.postMessage(message);
+  },
 }).then((backend) => {
   connections = createBackendRegistry(backend);
   return { backend, registry: connections };

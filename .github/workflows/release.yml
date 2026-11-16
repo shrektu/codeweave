@@ -1,0 +1,143 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - electron-builder.yml
+      - .github/workflows/release.yml
+      - scripts/release/**
+      - build/**
+      - package.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  version:
+    name: Resolve version
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.info.outputs.version }}
+      prerelease: ${{ steps.info.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - id: info
+        run: node scripts/release/tagVersion.ts
+
+  build:
+    name: Build ${{ matrix.target }} (${{ matrix.runner }})
+    needs: version
+    if: ${{ !cancelled() && (needs.version.result == 'success' || needs.version.result == 'skipped') }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux
+            runner: ubuntu-latest
+          - target: linux
+            runner: ubuntu-24.04-arm
+          - target: windows
+            runner: windows-latest
+          - target: mac
+            runner: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install packaging tools (Linux)
+        if: matrix.target == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools
+      - name: Install dependencies (Linux)
+        if: matrix.target == 'linux'
+        run: pnpm install --frozen-lockfile
+      - name: Install dependencies (all target architectures)
+        if: matrix.target != 'linux'
+        run: pnpm install --frozen-lockfile --cpu x64 --cpu arm64
+      - run: pnpm build
+      - name: Package (Linux)
+        if: matrix.target == 'linux'
+        run: node scripts/release/build.ts ${{ matrix.target }}
+      - name: Package (Windows)
+        if: matrix.target == 'windows'
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+          AZURE_SIGNING_PUBLISHER: ${{ vars.AZURE_SIGNING_PUBLISHER }}
+        run: node scripts/release/build.ts ${{ matrix.target }}
+      - name: Package (macOS)
+        if: matrix.target == 'mac'
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: node scripts/release/build.ts ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}-${{ runner.arch }}
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.blockmap
+            release/*.yml
+            !release/builder-debug.yml
+            !release/builder-effective-config.yaml
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+  publish:
+    name: Publish draft release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create or update the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          args=(--draft --generate-notes --title "Codeweave $VERSION")
+          if [ "$PRERELEASE" = "true" ]; then
+            args+=(--prerelease)
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            if [ "$(gh release view "$TAG" --json isDraft -q .isDraft)" != "true" ]; then
+              echo "Release $TAG is already published; refusing to overwrite its assets" >&2
+              exit 1
+            fi
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* "${args[@]}"
+          fi

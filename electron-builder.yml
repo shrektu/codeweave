@@ -2,9 +2,23 @@ appId: dev.codeweave.app
 productName: Codeweave
 directories:
   output: release
+npmRebuild: false
+icon: build/icon.png
+generateUpdatesFilesForAllChannels: true
+publish:
+  provider: github
+  owner: shrektu
+  repo: codeweave
+  releaseType: draft
 files:
   - out/**
   - package.json
+  - "!node_modules/node-pty/{src,deps,scripts,third_party}/**"
+  - "!node_modules/node-pty/build/Release/conpty/**"
+  - "!node_modules/node-pty/prebuilds/**"
+  - "node_modules/node-pty/prebuilds/${platform}-${arch}/**"
+  - "!node_modules/@anthropic-ai/claude-agent-sdk-*/**"
+  - "node_modules/@anthropic-ai/claude-agent-sdk-${platform}-${arch}/**"
 asarUnpack:
   - out/main/agyHook*.js
   - out/main/chunks/**
@@ -24,9 +38,26 @@ asarUnpack:
   - node_modules/node-pty/**
   - node_modules/zod/**
 linux:
-  target: AppImage
+  target:
+    - AppImage
+    - deb
+    - rpm
   category: Development
+  maintainer: Codeweave <shrektu@users.noreply.github.com>
+  synopsis: Desktop workspace for orchestrating coding agents
 win:
   target: nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  artifactName: "${productName}-Setup-${version}.${ext}"
 mac:
-  target: dmg
+  target:
+    - dmg
+    - zip
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  artifactName: "${productName}-${version}-${arch}.${ext}"

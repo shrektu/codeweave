@@ -29,6 +29,7 @@ import {
   renderWithServices,
   type FakeIpcClient,
 } from "../fakes/fakeIpcClient";
+import { makeCodeweaveApi } from "../fakes/fakeCodeweaveApi";
 
 const DOCK_STORAGE_KEY = "codeweave.terminalDock";
 const SESSION_CWD = "/home/user/project";
@@ -52,7 +53,7 @@ function setup(
   const pickFolder = vi.fn<() => Promise<string | null>>(() =>
     Promise.resolve(PICKED_CWD),
   );
-  window.codeweave = { gpuAccelerated, pickFolder };
+  window.codeweave = makeCodeweaveApi({ gpuAccelerated, pickFolder });
   const client = createFakeIpcClient();
   client.respond("ping", { pong: true, backendPid: 1 });
   client.respond("sessions/snapshot", makeSnapshot(snapshot));

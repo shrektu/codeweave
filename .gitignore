@@ -8,6 +8,6 @@ docs/stan-prac.md
 research_notes/
 reports/
 out/
-release/
+/release/
 test-results/
 playwright-report/

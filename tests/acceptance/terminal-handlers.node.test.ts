@@ -56,6 +56,7 @@ async function handlersFor(
     catalog: { load: () => Promise.resolve({ models: [], error: null }) },
     containerStatus: { available: true, message: null },
     terminals,
+    postUpdaterConfig: () => undefined,
   });
 }
 

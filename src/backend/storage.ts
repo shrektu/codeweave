@@ -16,6 +16,7 @@ import {
   PermissionProfile,
   ProviderId,
   SwitchReason,
+  UpdateChannel,
   type Account,
   type SwitchLogEntry,
 } from "../domain/types";
@@ -59,6 +60,8 @@ export const SettingsFileSchema = z.object({
   agyExecutable: z.string().nullable().default(null),
   opencodeExecutable: z.string().nullable().default(null),
   terminalShell: z.string().nullable().default(null),
+  updateCheck: z.boolean().default(true),
+  updateChannel: z.enum(UpdateChannel).default(UpdateChannel.stable),
 });
 
 const SwitchLogEntrySchema = z.object({
@@ -103,6 +106,8 @@ const DEFAULT_SETTINGS: SettingsFile = {
   agyExecutable: null,
   opencodeExecutable: null,
   terminalShell: null,
+  updateCheck: true,
+  updateChannel: UpdateChannel.stable,
 };
 
 export class StorageCorruptError extends Error {

@@ -11,6 +11,7 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar } from "./components/Sidebar";
 import { SwitchLog } from "./components/SwitchLog";
 import { TerminalDock } from "./components/TerminalDock";
+import { UpdateBanner } from "./components/UpdateBanner";
 import {
   FPS_MEASURE_DURATION_MS,
   chooseEffectLevel,
@@ -237,6 +238,7 @@ export function App(): JSX.Element {
           <i />
           CODEWEAVE
         </div>
+        <UpdateBanner />
         <div className="spacer" />
         <output
           className="pill"

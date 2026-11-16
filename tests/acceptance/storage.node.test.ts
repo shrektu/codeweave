@@ -24,7 +24,11 @@ it("settings_without_codex_executable_loads", async () => {
   expect(settings.codexExecutable).toBeNull();
   expect(settings.claudeExecutable).toBe("/usr/bin/claude");
 
-  const service = createSettingsService({ store, broadcast: () => undefined });
+  const service = createSettingsService({
+    store,
+    broadcast: () => undefined,
+    postUpdaterConfig: () => undefined,
+  });
   const view = await service.set({ codexExecutable: "/opt/codex" });
 
   expect(view.codexExecutable).toBe("/opt/codex");
@@ -37,6 +41,8 @@ it("settings_without_codex_executable_loads", async () => {
     agyExecutable: null,
     opencodeExecutable: null,
     terminalShell: null,
+    updateCheck: true,
+    updateChannel: "stable",
   });
 });
 
@@ -50,7 +56,11 @@ it("settings_without_agy_executable_loads", async () => {
   const store = createJsonStore(dir);
 
   const settings = await store.readSettings();
-  const service = createSettingsService({ store, broadcast: () => undefined });
+  const service = createSettingsService({
+    store,
+    broadcast: () => undefined,
+    postUpdaterConfig: () => undefined,
+  });
   const view = await service.set({ agyExecutable: "/opt/agy" });
 
   expect(settings.agyExecutable).toBeNull();
@@ -71,7 +81,11 @@ it("settings_without_terminal_shell_still_load", async () => {
   const store = createJsonStore(dir);
 
   const settings = await store.readSettings();
-  const service = createSettingsService({ store, broadcast: () => undefined });
+  const service = createSettingsService({
+    store,
+    broadcast: () => undefined,
+    postUpdaterConfig: () => undefined,
+  });
   const view = await service.set({ terminalShell: "/bin/zsh" });
 
   expect(settings.terminalShell).toBeNull();
@@ -111,6 +125,8 @@ it("storage_refuses_to_overwrite_corrupt_file", async () => {
       agyExecutable: null,
       opencodeExecutable: null,
       terminalShell: null,
+      updateCheck: true,
+      updateChannel: "stable",
     }),
   ).rejects.toBeInstanceOf(StorageCorruptError);
 

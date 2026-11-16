@@ -1,9 +1,18 @@
 {
   "name": "codeweave",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Codeweave desktop app",
-  "author": "Codeweave",
+  "license": "MIT",
+  "homepage": "https://github.com/shrektu/codeweave",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shrektu/codeweave.git"
+  },
+  "author": {
+    "name": "Codeweave",
+    "email": "shrektu@users.noreply.github.com"
+  },
   "type": "module",
   "main": "./out/main/index.js",
   "packageManager": "pnpm@12.14.0",
@@ -30,6 +39,7 @@
     "@xterm/xterm": "6.0.0",
     "@xyflow/react": "12.12.0",
     "diff": "9.0.0",
+    "electron-updater": "6.8.10",
     "elkjs": "0.12.0",
     "node-pty": "1.1.0",
     "shell-quote": "1.12.0",

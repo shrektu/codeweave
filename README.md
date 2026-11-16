@@ -4,6 +4,16 @@ Electron + React + TypeScript desktop app. The orchestration backend runs in an
 Electron `utilityProcess` and talks to the renderer over a `MessagePort` with a
 zod-validated, versioned protocol (`src/shared/protocol.ts`).
 
+## Download and releases
+
+Installers for Linux (AppImage, deb, rpm), Windows (NSIS) and macOS (dmg, zip)
+are attached to the [GitHub Releases](https://github.com/shrektu/codeweave/releases)
+page. Builds are unsigned until signing credentials are configured, so the
+first launch needs an extra step on Windows and macOS. The AppImage needs FUSE 2
+(`libfuse2t64` on Ubuntu 24.04 and newer, `libfuse2` before that); the deb and
+rpm packages do not. Cutting a release and
+the signing setup are described in [docs/releasing.md](docs/releasing.md).
+
 ## Requirements
 
 - Node.js 24 or newer
@@ -38,6 +48,13 @@ above it, or focus the splitter and use the arrow keys, to resize it.
 - The renderer is WebGL when the GPU is accelerated and falls back to DOM
   rendering otherwise or when the WebGL context is lost.
 
+## Updates
+
+Codeweave checks the GitHub Releases of `shrektu/codeweave` at start and every
+6 hours. It only notifies: a banner offers a `View release` link, and nothing
+is downloaded or installed. In Settings you can switch the check off and pick
+the Stable or Beta (pre-releases) channel.
+
 ## Checks
 
 ```sh
@@ -58,6 +75,14 @@ pnpm run pack
 
 `pnpm pack` is a built-in pnpm command, so the unpacked build is started with
 `pnpm run pack` (output in `release/`).
+
+Release installers are built per operating system on a native runner with
+`node scripts/release/build.ts <linux|windows|mac>` after `pnpm build`. The
+script runs electron-builder with the signing options that the available
+environment variables allow and then checks that every packaged app holds only
+binaries of its own architecture. The release workflow
+(`.github/workflows/release.yml`) runs it for every `v*` tag; see
+[docs/releasing.md](docs/releasing.md).
 
 In CI, `tests/e2e/terminal.spec.ts` also drives the packed app on all three
 systems: `CODEWEAVE_E2E_EXECUTABLE` points at the unpacked executable, for

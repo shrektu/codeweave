@@ -9,6 +9,7 @@ import {
   ProviderId,
   SwitchReason,
   TerminalStatus,
+  UpdateChannel,
 } from "../../src/domain/types";
 import type { IpcClient } from "../../src/renderer/ipc";
 import { ServicesContext } from "../../src/renderer/services";
@@ -214,6 +215,8 @@ export function makeSettings(
     agyExecutable: null,
     opencodeExecutable: null,
     terminalShell: null,
+    updateCheck: true,
+    updateChannel: UpdateChannel.stable,
     ...overrides,
   };
 }

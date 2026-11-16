@@ -1,7 +1,12 @@
 import { z } from "zod";
 
 import { MIN_SECRET_LENGTH } from "../domain/constants";
-import { EffectLevel, PermissionProfile, ProviderId } from "../domain/types";
+import {
+  EffectLevel,
+  PermissionProfile,
+  ProviderId,
+  UpdateChannel,
+} from "../domain/types";
 
 import {
   CONNECT_MESSAGE_TYPE,
@@ -74,6 +79,8 @@ const SettingsPatchSchema = z
     agyExecutable: z.string().nullable().optional(),
     opencodeExecutable: z.string().nullable().optional(),
     terminalShell: z.string().nullable().optional(),
+    updateCheck: z.boolean().optional(),
+    updateChannel: z.enum(UpdateChannel).optional(),
   })
   .refine((patch) => Object.values(patch).some((value) => value !== undefined));
 
