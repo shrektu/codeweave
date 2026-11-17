@@ -96,7 +96,7 @@ const FLOW_VIEW = {
   revision: "abc",
   title: "Ship",
   maxRounds: 2,
-  nodes: [{ id: "a", agent: "coder", provider: null }],
+  nodes: [{ id: "a", agent: "coder", provider: null, taskClass: null }],
   edges: [{ from: "a", to: "a", kind: "reviews", gate: false }],
 };
 
@@ -104,13 +104,18 @@ it("flow_view_schema_requires_resolved_defaults", () => {
   const { maxRounds: omitted, ...withoutRounds } = FLOW_VIEW;
   const withoutProvider = {
     ...FLOW_VIEW,
-    nodes: [{ id: "a", agent: "coder" }],
+    nodes: [{ id: "a", agent: "coder", taskClass: null }],
+  };
+  const withoutTaskClass = {
+    ...FLOW_VIEW,
+    nodes: [{ id: "a", agent: "coder", provider: null }],
   };
 
   expect(omitted).toBe(2);
   expect(FlowViewSchema.safeParse(FLOW_VIEW).success).toBe(true);
   expect(FlowViewSchema.safeParse(withoutRounds).success).toBe(false);
   expect(FlowViewSchema.safeParse(withoutProvider).success).toBe(false);
+  expect(FlowViewSchema.safeParse(withoutTaskClass).success).toBe(false);
 });
 
 it("agent_view_schema_requires_body", () => {
@@ -141,7 +146,7 @@ it("agent_view_schema_requires_file_revision_model_task_class_and_used_by", () =
     provider: "claude",
     model: "opus",
     permissionProfile: "plan",
-    taskClass: "impl",
+    taskClass: "standard",
     body: "Prose",
     usedBy: [{ file: "flows/ship.md", title: "Ship" }],
   };

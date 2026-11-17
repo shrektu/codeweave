@@ -14,7 +14,7 @@ import {
 
 const VIEW = makeAgent({
   model: "sonnet",
-  taskClass: "coding",
+  taskClass: "heavy",
   body: "Do the work.",
 });
 
@@ -44,7 +44,7 @@ describe("agentDraftOf", () => {
       provider: "claude",
       model: "sonnet",
       permissionProfile: "plan",
-      taskClass: "coding",
+      taskClass: "heavy",
       body: "Do the work.",
     });
   });
@@ -58,16 +58,16 @@ describe("agentDraftOf", () => {
 });
 
 describe("toAgentDefinition", () => {
-  it("trims model and task class", () => {
+  it("trims model", () => {
     expect(
-      toAgentDefinition(draft({ model: "  gpt-5  ", taskClass: " qa " })),
+      toAgentDefinition(draft({ model: "  gpt-5  ", taskClass: "light" })),
     ).toEqual({
       id: "implementer",
       role: "Implements the planned change",
       provider: "claude",
       permissionProfile: "plan",
       model: "gpt-5",
-      taskClass: "qa",
+      taskClass: "light",
     });
   });
 
@@ -132,7 +132,7 @@ describe("isAgentDraftChanged", () => {
     ["provider", { provider: ProviderId.codex }],
     ["model", { model: "gpt-5" }],
     ["permissionProfile", { permissionProfile: PermissionProfile.bypass }],
-    ["taskClass", { taskClass: "qa" }],
+    ["taskClass", { taskClass: "light" }],
     ["body", { body: "Changed." }],
   ])("is true when %s differs", (_field, change) => {
     expect(isAgentDraftChanged(draft(change), VIEW)).toBe(true);

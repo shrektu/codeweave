@@ -203,10 +203,11 @@ function flowView(
     revision,
     title: definition.title,
     maxRounds: definition.maxRounds ?? DEFAULT_FLOW_ROUNDS,
-    nodes: definition.nodes.map(({ id, agent, provider }) => ({
+    nodes: definition.nodes.map(({ id, agent, provider, taskClass }) => ({
       id,
       agent,
       provider: provider ?? null,
+      taskClass: taskClass ?? null,
     })),
     edges: definition.edges.map(({ from, to, kind, gate }) => ({
       from,

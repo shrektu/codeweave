@@ -226,7 +226,7 @@ it("create_writes_agent_file_and_lists_it", async () => {
       provider: "codex",
       model: "gpt-5",
       permissionProfile: "plan",
-      taskClass: "review",
+      taskClass: "light",
     },
     body: "\n  Review it.\n\n",
   });
@@ -237,7 +237,7 @@ role: Reviews code
 provider: codex
 model: gpt-5
 permissionProfile: plan
-taskClass: review
+taskClass: light
 ---
 
 Review it.
@@ -249,7 +249,7 @@ Review it.
     provider: "codex",
     permissionProfile: "plan",
     model: "gpt-5",
-    taskClass: "review",
+    taskClass: "light",
     body: "Review it.",
     file: "agents/reviewer.md",
     usedBy: [],
@@ -344,7 +344,7 @@ it("save_updates_fields_and_body_preserving_unknown_keys_comments_and_other_bloc
       role: "Builds and tests",
       provider: "codex",
       permissionProfile: "accept-edits",
-      taskClass: "impl",
+      taskClass: "standard",
     },
     body: "\nBuild and test it.\nTwice.\n\n",
   });
@@ -356,7 +356,7 @@ role: Builds and tests
 provider: codex
 permissionProfile: accept-edits
 owner: team-a
-taskClass: impl
+taskClass: standard
 ---
 
 Build and test it.
@@ -367,7 +367,7 @@ ${CHECKER_BLOCK}`);
   expect(result.agents.find((agent) => agent.id === "builder")).toMatchObject({
     role: "Builds and tests",
     model: null,
-    taskClass: "impl",
+    taskClass: "standard",
     body: "Build and test it.\nTwice.",
   });
 });

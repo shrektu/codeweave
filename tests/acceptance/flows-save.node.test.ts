@@ -433,7 +433,7 @@ it("flows_save_removes_anchored_node_entry", async () => {
   const text = await readFile(join(cwd, FLOW_FILE), "utf8");
   expect(result.errors).toEqual([]);
   expect(result.flows[0]?.nodes).toEqual([
-    { id: "check", agent: "reviewer", provider: null },
+    { id: "check", agent: "reviewer", provider: null, taskClass: null },
   ]);
   expect(text).toContain("color: red");
   expect(text).not.toContain("*m");

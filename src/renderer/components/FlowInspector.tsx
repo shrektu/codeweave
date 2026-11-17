@@ -253,6 +253,7 @@ function AddNodeForm({
     id: "",
     agent: agents[0]?.id ?? "",
     provider: null,
+    taskClass: null,
   });
   const submit = (event: SyntheticEvent): void => {
     event.preventDefault();

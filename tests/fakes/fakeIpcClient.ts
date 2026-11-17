@@ -295,8 +295,8 @@ export function makeFlow(overrides: Partial<FlowView> = {}): FlowView {
     title: "Ship it",
     maxRounds: 2,
     nodes: [
-      { id: "build", agent: "implementer", provider: null },
-      { id: "review", agent: "reviewer", provider: null },
+      { id: "build", agent: "implementer", provider: null, taskClass: null },
+      { id: "review", agent: "reviewer", provider: null, taskClass: null },
     ],
     edges: [
       { from: "build", to: "review", kind: EdgeKind.handsOffTo, gate: false },

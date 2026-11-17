@@ -45,7 +45,7 @@ role: Writes the docs
 provider: claude
 model: sonnet
 permissionProfile: accept-edits
-taskClass: M
+taskClass: standard
 ---
 
 Write the docs for the change.
@@ -57,6 +57,8 @@ Write the docs for the change.
 - `model` and `taskClass` are optional. The editor suggests models from the
   OpenCode catalog for OpenCode agents only; for other providers `model` is
   free text. Codeweave does not pass `model` to the agent CLI yet.
+  `taskClass` is `light`, `standard` or `heavy`; see
+  [docs/model-routing.md](docs/model-routing.md).
 - The text after the front matter is the agent's instructions.
 
 The **Agents** tab creates, edits, renames and deletes these files after you

@@ -1,5 +1,6 @@
 import { validateAgent } from "../domain/agentFile";
 import type { AgentDefinition } from "../domain/flows";
+import type { TaskClass } from "../domain/taskClass";
 import { PermissionProfile, ProviderId } from "../domain/types";
 import type { AgentView } from "../shared/views";
 
@@ -9,7 +10,7 @@ export interface AgentDraft {
   provider: ProviderId;
   model: string;
   permissionProfile: PermissionProfile;
-  taskClass: string;
+  taskClass: TaskClass | "";
   body: string;
 }
 
@@ -49,7 +50,7 @@ export function agentDraftOf(view: AgentView): AgentDraft {
 
 export function toAgentDefinition(draft: AgentDraft): AgentDefinition {
   const model = draft.model.trim();
-  const taskClass = draft.taskClass.trim();
+  const { taskClass } = draft;
   return {
     id: draft.id,
     role: draft.role,

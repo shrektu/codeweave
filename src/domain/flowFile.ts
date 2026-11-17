@@ -41,7 +41,7 @@ interface EntrySpec {
 
 const NODES_SPEC: EntrySpec = {
   name: "nodes",
-  managed: ["id", "agent", "provider"],
+  managed: ["id", "agent", "provider", "taskClass"],
   identity: ["id"],
 };
 const EDGES_SPEC: EntrySpec = {
@@ -51,10 +51,11 @@ const EDGES_SPEC: EntrySpec = {
 };
 
 function plainNodes(flow: FlowDefinition): Entry[] {
-  return flow.nodes.map(({ id, agent, provider }) => ({
+  return flow.nodes.map(({ id, agent, provider, taskClass }) => ({
     id,
     agent,
     ...(provider === undefined ? {} : { provider }),
+    ...(taskClass === undefined ? {} : { taskClass }),
   }));
 }
 

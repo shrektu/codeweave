@@ -130,7 +130,7 @@ function listText(): string {
 it("agents_tab_lists_agents_and_opens_one", async () => {
   const detailed = makeAgent({
     model: "sonnet",
-    taskClass: "coding",
+    taskClass: "heavy",
     body: "Line one.\nLine two.",
   });
   const client = appClient([detailed, REVIEWER]);
@@ -147,9 +147,25 @@ it("agents_tab_lists_agents_and_opens_one", async () => {
   expect(select("Provider").value).toBe("claude");
   expect(textbox("Model").value).toBe("sonnet");
   expect(select("Permission profile").value).toBe("plan");
-  expect(textbox("Task class").value).toBe("coding");
+  expect(select("Task class").value).toBe("heavy");
   expect(textbox("Instructions").value).toBe("Line one.\nLine two.");
   expect(button("Save").disabled).toBe(true);
+});
+
+it("agent_form_offers_the_three_task_classes_and_an_empty_choice", async () => {
+  await openAgentsTab(appClient(), "implementer");
+
+  const options = [...select("Task class").options].map((option) => [
+    option.value,
+    option.textContent,
+  ]);
+
+  expect(options).toEqual([
+    ["", "—"],
+    ["light", "light"],
+    ["standard", "standard"],
+    ["heavy", "heavy"],
+  ]);
 });
 
 it("edit_and_save_sends_params_and_stays_on_saved_agent", async () => {
@@ -279,7 +295,7 @@ it("create_new_agent_sends_create", async () => {
     revision: "agent-rev-3",
     role: "Runs the tests",
     permissionProfile: PermissionProfile.ask,
-    taskClass: "qa",
+    taskClass: "light",
     body: "Run the tests.",
   });
   client.respond("agents/create", listOf([IMPLEMENTER, REVIEWER, created]));
@@ -291,7 +307,7 @@ it("create_new_agent_sends_create", async () => {
   expect(button("Save").disabled).toBe(true);
   type("Id", "tester");
   type("Role", "Runs the tests");
-  type("Task class", "  qa  ");
+  fireEvent.change(select("Task class"), { target: { value: "light" } });
   type("Instructions", "Run the tests.");
   expect(button("Save").disabled).toBe(false);
   fireEvent.click(button("Save"));
@@ -305,7 +321,7 @@ it("create_new_agent_sends_create", async () => {
           role: "Runs the tests",
           provider: "claude",
           permissionProfile: "ask",
-          taskClass: "qa",
+          taskClass: "light",
         },
         body: "Run the tests.",
       },

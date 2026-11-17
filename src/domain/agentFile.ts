@@ -28,7 +28,6 @@ const INVALID_ID =
   "Agent id must start with a letter or digit and contain only letters, digits, _ and -";
 const BLANK_ROLE = "Role must not be blank";
 const BLANK_MODEL = "Model must not be blank when set";
-const BLANK_TASK_CLASS = "Task class must not be blank when set";
 const FENCE_LINE = `Instructions must not contain a line that is exactly "${FENCE}"`;
 
 interface LocatedBlock {
@@ -54,7 +53,6 @@ export function validateAgent(
       : []),
     ...(definition.role.trim() === "" ? [BLANK_ROLE] : []),
     ...(isBlank(definition.model) ? [BLANK_MODEL] : []),
-    ...(isBlank(definition.taskClass) ? [BLANK_TASK_CLASS] : []),
     ...(body.split(LINE_BREAK).includes(FENCE) ? [FENCE_LINE] : []),
   ];
 }

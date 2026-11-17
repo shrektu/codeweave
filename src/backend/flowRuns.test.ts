@@ -17,7 +17,7 @@ const FLOWS: FlowsList = {
       revision: "r1",
       title: "Solo",
       maxRounds: 2,
-      nodes: [{ id: "build", agent: "coder", provider: null }],
+      nodes: [{ id: "build", agent: "coder", provider: null, taskClass: null }],
       edges: [],
     },
   ],

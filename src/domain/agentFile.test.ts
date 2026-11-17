@@ -26,7 +26,7 @@ role: Second
 provider: codex
 model: gpt-5
 permissionProfile: ask
-taskClass: review
+taskClass: light
 owner: team
 ---
 
@@ -79,7 +79,7 @@ describe("agentFile: serializeAgentBlock", () => {
     );
 
     expect(result).toBe(
-      THREE.replace("model: gpt-5\n", "").replace("taskClass: review\n", ""),
+      THREE.replace("model: gpt-5\n", "").replace("taskClass: light\n", ""),
     );
   });
 
@@ -88,7 +88,7 @@ describe("agentFile: serializeAgentBlock", () => {
       serializeAgentBlock(
         THREE,
         "alpha",
-        { ...ALPHA, model: "opus", taskClass: "plan" },
+        { ...ALPHA, model: "opus", taskClass: "heavy" },
         "Body alpha.",
       ),
     );
@@ -96,7 +96,7 @@ describe("agentFile: serializeAgentBlock", () => {
     expect(result).toBe(
       THREE.replace(
         "permissionProfile: plan\n---\n\nBody alpha.",
-        "permissionProfile: plan\nmodel: opus\ntaskClass: plan\n---\n\nBody alpha.",
+        "permissionProfile: plan\nmodel: opus\ntaskClass: heavy\n---\n\nBody alpha.",
       ),
     );
   });
@@ -243,7 +243,7 @@ describe("agentFile: newAgentFile", () => {
       provider: "opencode",
       model: "anthropic/claude: x",
       permissionProfile: "accept-edits",
-      taskClass: "impl",
+      taskClass: "standard",
     };
 
     expect(
@@ -295,12 +295,9 @@ describe("agentFile: validateAgent", () => {
     ]);
   });
 
-  it("rejects a blank model and a blank task class when present", () => {
-    expect(
-      validateAgent({ ...ALPHA, model: " ", taskClass: "" }, "Body", []),
-    ).toEqual([
+  it("rejects a blank model when present", () => {
+    expect(validateAgent({ ...ALPHA, model: " " }, "Body", [])).toEqual([
       "Model must not be blank when set",
-      "Task class must not be blank when set",
     ]);
   });
 

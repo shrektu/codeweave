@@ -124,7 +124,7 @@ const VALID_REQUESTS: [string, unknown][] = [
       file: "agents/coder.md",
       revision: "abc",
       id: "coder",
-      agent: { ...SAVE_AGENT, model: "opus", taskClass: "impl" },
+      agent: { ...SAVE_AGENT, model: "opus", taskClass: "standard" },
       body: "",
     },
   ],
