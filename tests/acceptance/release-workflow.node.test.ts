@@ -68,6 +68,18 @@ function stepRunning(jobName: string, fragment: string): Step {
   return found;
 }
 
+function looksForMissingPnpm({ steps }: Job): boolean {
+  const pnpmSetup = steps.findIndex((step) =>
+    step.uses?.startsWith("pnpm/action-setup@"),
+  );
+  return steps.some(
+    (step, index) =>
+      step.uses?.startsWith("actions/setup-node@") === true &&
+      (pnpmSetup === -1 || pnpmSetup > index) &&
+      step.with?.["package-manager-cache"] !== false,
+  );
+}
+
 function runScripts(candidate: Job): string {
   return candidate.steps.map((step) => step.run ?? "").join("\n");
 }
@@ -276,6 +288,14 @@ describe("release workflow version job", () => {
       prerelease: "${{ steps.info.outputs.prerelease }}",
     });
     expect(stepRunning("version", "tagVersion.ts").id).toBe("info");
+  });
+
+  it("setup_node_never_looks_for_pnpm_that_its_job_did_not_install", () => {
+    const offenders = Object.entries(loadWorkflow().jobs)
+      .filter(([, candidate]) => looksForMissingPnpm(candidate))
+      .map(([name]) => name);
+
+    expect(offenders).toEqual([]);
   });
 });
 
