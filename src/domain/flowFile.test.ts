@@ -94,6 +94,21 @@ describe("serializeFlowFile", () => {
     }
   });
 
+  it("keeps node task class through save", () => {
+    const flow: FlowDefinition = {
+      ...EDITED,
+      nodes: [
+        { id: "build", agent: "coder", taskClass: "light" },
+        { id: "check", agent: "reviewer" },
+      ],
+    };
+
+    const text = serialized(ORIGINAL, flow);
+
+    expect(text).toContain("taskClass: light\n");
+    expect(parseFlowFile(text)).toEqual({ ok: true, value: flow });
+  });
+
   it("serialize_drops_undefined_optional_keys", () => {
     const text = serialized(ORIGINAL, {
       ...EDITED,

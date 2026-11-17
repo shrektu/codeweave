@@ -1,5 +1,6 @@
 import { useId, useState, type JSX } from "react";
 
+import { parseTaskClass, TASK_CLASS_ORDER } from "../../domain/taskClass";
 import type { AgentView, FlowsList } from "../../shared/views";
 import {
   agentDraftErrors,
@@ -15,6 +16,7 @@ import { AgentModelField } from "./AgentModelField";
 import { Dialog } from "./Dialog";
 import { EditFeedback } from "./EditFeedback";
 
+const NO_TASK_CLASS_LABEL = "—";
 const CONFLICT_MESSAGE =
   "This agent file changed on disk. Reload to edit the latest version.";
 
@@ -101,6 +103,35 @@ function ProviderSelect({
         {PROVIDER_IDS.map((provider) => (
           <option key={provider} value={provider}>
             {PROVIDER_LABELS[provider]}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function TaskClassSelect({
+  draft,
+  disabled,
+  onChange,
+}: DraftFieldProps): JSX.Element {
+  const id = useId();
+  return (
+    <div className="field">
+      <label htmlFor={id}>Task class</label>
+      <select
+        id={id}
+        value={draft.taskClass}
+        disabled={disabled}
+        onChange={(event) => {
+          const taskClass = parseTaskClass(event.target.value);
+          onChange({ ...draft, taskClass: taskClass ?? "" });
+        }}
+      >
+        <option value="">{NO_TASK_CLASS_LABEL}</option>
+        {TASK_CLASS_ORDER.map((taskClass) => (
+          <option key={taskClass} value={taskClass}>
+            {taskClass}
           </option>
         ))}
       </select>
@@ -215,14 +246,7 @@ function Fields({
           set({ model });
         }}
       />
-      <TextField
-        label="Task class"
-        value={draft.taskClass}
-        disabled={disabled}
-        onChange={(taskClass) => {
-          set({ taskClass });
-        }}
-      />
+      <TaskClassSelect draft={draft} disabled={disabled} onChange={onChange} />
       <BodyField
         value={draft.body}
         disabled={disabled}

@@ -111,6 +111,7 @@ export function rotationSettings(profile: PermissionProfile): SettingsFile {
     terminalShell: null,
     updateCheck: false,
     updateChannel: "stable",
+    defaultTaskClass: "standard",
   };
 }
 

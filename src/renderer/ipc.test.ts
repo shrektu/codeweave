@@ -55,6 +55,7 @@ const SETTINGS_EVENT = {
     terminalShell: null,
     updateCheck: true,
     updateChannel: "stable",
+    defaultTaskClass: "standard",
   },
 };
 

@@ -4,7 +4,7 @@ role: Implements the planned change and keeps the tests green
 provider: claude
 model: sonnet
 permissionProfile: accept-edits
-taskClass: M
+taskClass: standard
 ---
 
 The implementer writes the failing test first, makes it pass, and reports what

@@ -55,6 +55,7 @@ const InputItemSchema = z.looseObject({
 });
 
 const RequestBodySchema = z.looseObject({
+  model: z.string().optional(),
   input: z.array(InputItemSchema).default([]),
   tools: z.array(z.looseObject({ name: z.string().optional() })).default([]),
 });
@@ -64,6 +65,7 @@ type InputItem = z.infer<typeof InputItemSchema>;
 export interface RecordedRequest {
   readonly key: string;
   readonly path: string;
+  readonly model: string | null;
   readonly inputText: string;
   readonly functionCallOutputs: number;
   readonly toolNames: readonly string[];
@@ -94,6 +96,7 @@ function record(key: string, path: string, body: RequestBody): RecordedRequest {
   return {
     key,
     path,
+    model: body.model ?? null,
     inputText: body.input.flatMap(itemTexts).join("\n"),
     functionCallOutputs: body.input.filter(
       (item) => item.type === FUNCTION_CALL_OUTPUT_TYPE,

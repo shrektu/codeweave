@@ -1,9 +1,12 @@
+import type { ApiProviderId } from "./apiProviders";
 import type { AgentEvent, FileDiff, ToolCallStatus } from "./events";
 import {
   createPermissionRecord,
   expireAll,
   type PermissionRecord,
 } from "./permissionRecords";
+import type { RouteSource } from "./routing";
+import type { TaskClass } from "./taskClass";
 
 export interface TurnLogEntry {
   readonly toolCallId: string;
@@ -29,8 +32,20 @@ export type LastTurn =
   | { readonly kind: "ended"; readonly stopReason: string }
   | { readonly kind: "failed"; readonly message: string };
 
+export interface TurnRouteEntry {
+  readonly promptSeq: number;
+  readonly accountId: string;
+  readonly model: string | null;
+  readonly effectiveModel: string | null;
+  readonly apiProvider: ApiProviderId | null;
+  readonly requestedClass: TaskClass;
+  readonly servedClass: TaskClass | null;
+  readonly source: RouteSource;
+}
+
 export interface SessionState {
   readonly messages: readonly AssistantMessage[];
+  readonly turns: readonly TurnRouteEntry[];
   readonly toolCalls: readonly ToolCallEntry[];
   readonly turnLog: readonly TurnLogEntry[];
   readonly previousTurnLog: readonly TurnLogEntry[];
@@ -41,6 +56,7 @@ export interface SessionState {
 
 export const INITIAL_SESSION_STATE: SessionState = {
   messages: [],
+  turns: [],
   toolCalls: [],
   turnLog: [],
   previousTurnLog: [],
@@ -187,6 +203,40 @@ function finishTurn(state: SessionState, lastTurn: LastTurn): SessionState {
   };
 }
 
+export function reservePromptSeq(state: SessionState): {
+  readonly state: SessionState;
+  readonly seq: number;
+} {
+  return {
+    state: { ...state, nextSeq: state.nextSeq + 1 },
+    seq: state.nextSeq,
+  };
+}
+
+export function recordTurnRoute(
+  state: SessionState,
+  entry: TurnRouteEntry,
+): SessionState {
+  const index = state.turns.findIndex(
+    (turn) => turn.promptSeq === entry.promptSeq,
+  );
+  return {
+    ...state,
+    turns:
+      index === -1 ? [...state.turns, entry] : state.turns.with(index, entry),
+  };
+}
+
+function applyEffectiveModel(state: SessionState, model: string): SessionState {
+  const last = state.turns.at(-1);
+  return last === undefined
+    ? state
+    : {
+        ...state,
+        turns: state.turns.with(-1, { ...last, effectiveModel: model }),
+      };
+}
+
 export function reduceSession(
   state: SessionState,
   event: AgentEvent,
@@ -216,6 +266,8 @@ export function reduceSession(
       return finishTurn(state, { kind: "failed", message: event.message });
     case "process_exit":
       return { ...state, permissions: expireAll(state.permissions) };
+    case "model":
+      return applyEffectiveModel(state, event.model);
     case "rate_limit":
     case "api_retry":
       return state;

@@ -7,8 +7,11 @@ import {
 } from "./permissionRecords";
 import {
   INITIAL_SESSION_STATE,
+  recordTurnRoute,
   reduceSession,
+  reservePromptSeq,
   type SessionState,
+  type TurnRouteEntry,
 } from "./sessionReducer";
 
 function reduceAll(events: readonly AgentEvent[]): SessionState {
@@ -329,5 +332,85 @@ it("update_without_diffs_keeps_diffs", () => {
   expect(state.toolCalls[0]).toMatchObject({
     status: "completed",
     diffs: EDIT_DIFFS,
+  });
+});
+
+const GROQ_TURN: TurnRouteEntry = {
+  promptSeq: 3,
+  accountId: "acc-groq",
+  model: "openai/gpt-oss-20b",
+  effectiveModel: null,
+  apiProvider: "groq",
+  requestedClass: "light",
+  servedClass: "light",
+  source: "routed",
+};
+const CEREBRAS_TURN: TurnRouteEntry = {
+  ...GROQ_TURN,
+  accountId: "acc-cerebras",
+  model: "qwen-3.8-27b",
+  apiProvider: "cerebras",
+  requestedClass: "heavy",
+  servedClass: "heavy",
+};
+
+describe("session reducer: turn routes", () => {
+  it("reserves the next seq for a prompt", () => {
+    const first = reservePromptSeq(INITIAL_SESSION_STATE);
+    const second = reservePromptSeq(first.state);
+
+    expect([first.seq, second.seq]).toEqual([0, 1]);
+    expect(second.state.nextSeq).toBe(2);
+  });
+
+  it("records one entry per prompt", () => {
+    const state = recordTurnRoute(INITIAL_SESSION_STATE, GROQ_TURN);
+
+    expect(state.turns).toEqual([GROQ_TURN]);
+  });
+
+  it("a resend replaces the entry of the same prompt", () => {
+    const first = recordTurnRoute(INITIAL_SESSION_STATE, GROQ_TURN);
+    const next = recordTurnRoute(first, {
+      ...CEREBRAS_TURN,
+      promptSeq: GROQ_TURN.promptSeq,
+    });
+
+    expect(next.turns).toEqual([
+      { ...CEREBRAS_TURN, promptSeq: GROQ_TURN.promptSeq },
+    ]);
+  });
+
+  it("a later prompt appends after earlier entries", () => {
+    const first = recordTurnRoute(INITIAL_SESSION_STATE, GROQ_TURN);
+    const next = recordTurnRoute(first, { ...CEREBRAS_TURN, promptSeq: 4 });
+
+    expect(next.turns.map((turn) => turn.promptSeq)).toEqual([3, 4]);
+  });
+
+  it("a model event fills the effective model of the latest turn", () => {
+    const withTurns = recordTurnRoute(
+      recordTurnRoute(INITIAL_SESSION_STATE, GROQ_TURN),
+      { ...CEREBRAS_TURN, promptSeq: 4 },
+    );
+
+    const state = reduceSession(withTurns, {
+      type: "model",
+      model: "qwen-3.8-27b-0925",
+    });
+
+    expect(state.turns.map((turn) => turn.effectiveModel)).toEqual([
+      null,
+      "qwen-3.8-27b-0925",
+    ]);
+  });
+
+  it("a model event without a turn changes nothing", () => {
+    const state = reduceSession(INITIAL_SESSION_STATE, {
+      type: "model",
+      model: "any",
+    });
+
+    expect(state).toEqual(INITIAL_SESSION_STATE);
   });
 });

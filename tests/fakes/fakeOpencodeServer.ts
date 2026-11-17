@@ -33,6 +33,7 @@ import {
   PermissionProfile,
   ProviderId,
   type Account,
+  type ApiAccount,
 } from "../../src/domain/types";
 
 import { FakeContained, unsupportedLaunch } from "./fakeContainer";
@@ -173,9 +174,18 @@ type EventStep = Exclude<
 const ASSISTANT_MESSAGE_ID = "msg_1";
 const USER_MESSAGE_DIGITS = 4;
 
-function messageUpdated(id: string, role: "user" | "assistant"): Json {
+export interface AssistantModel {
+  readonly providerID: string;
+  readonly modelID: string;
+}
+
+function messageUpdated(
+  id: string,
+  role: "user" | "assistant",
+  model: AssistantModel | null = null,
+): Json {
   return envelope("message.updated", {
-    info: { id, role, sessionID: OPENCODE_SESSION_ID },
+    info: { id, role, sessionID: OPENCODE_SESSION_ID, ...model },
   });
 }
 
@@ -323,6 +333,7 @@ function sendJson(response: ServerResponse, value: unknown): void {
 
 export class FakeOpencodeServer {
   providers: unknown = { providers: [], default: {} };
+  assistantModel: AssistantModel | null = null;
   readonly requests: RecordedRequest[] = [];
   readonly replies: PermissionReply[] = [];
   private readonly scripts: (readonly OpencodeStep[])[] = [];
@@ -585,7 +596,9 @@ export class FakeOpencodeServer {
     const announce = (): void => {
       this.emit(messageUpdated(userMessageId, "user"));
       this.emit(userTextEvent(userMessageId, promptText));
-      this.emit(messageUpdated(ASSISTANT_MESSAGE_ID, "assistant"));
+      this.emit(
+        messageUpdated(ASSISTANT_MESSAGE_ID, "assistant", this.assistantModel),
+      );
     };
     if (first?.type === "slow_user_message") {
       setTimeout(announce, first.ms);
@@ -653,6 +666,7 @@ export interface FakeOpencodeConfig {
   stalledRoutes?: readonly Route["kind"][];
   delayedRoutes?: ReadonlyMap<Route["kind"], number>;
   providers?: unknown;
+  assistantModel?: AssistantModel;
 }
 
 const StartupConfigSchema = z.looseObject({
@@ -730,6 +744,9 @@ export class ScriptedOpencodeContainer implements ProcessContainer {
     if (this.config.providers !== undefined) {
       server.providers = this.config.providers;
     }
+    if (this.config.assistantModel !== undefined) {
+      server.assistantModel = this.config.assistantModel;
+    }
     this.config.stalledRoutes?.forEach((kind) => {
       server.stall(kind);
     });
@@ -774,6 +791,7 @@ export interface OpencodeRigOptions {
   readonly warmUpTimeoutMs?: number;
   readonly stopGraceMs?: number;
   readonly staleGateGraceMs?: number;
+  readonly api?: ApiAccount;
 }
 
 export interface OpencodeRig {
@@ -823,6 +841,7 @@ export async function createOpencodeRig(
     label: "OpenCode",
     configDir: accountDir,
     order: 0,
+    api: options.api,
   };
   return {
     container,

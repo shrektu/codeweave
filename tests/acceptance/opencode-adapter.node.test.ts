@@ -11,7 +11,8 @@ import {
 import { PROCESS_EXITED_MESSAGE } from "../../src/backend/constants";
 import type { AgentEvent } from "../../src/domain/events";
 import { createRateLimitDetector } from "../../src/domain/rateLimit";
-import { PermissionProfile } from "../../src/domain/types";
+import { ApiProviderId } from "../../src/domain/apiProviders";
+import { PermissionProfile, type ApiAccount } from "../../src/domain/types";
 import {
   OPENCODE_RIG_NOW_MS,
   OPENCODE_RIG_PASSWORD,
@@ -73,7 +74,7 @@ async function runScript(
 ): Promise<{ handle: AgentHandle; events: AgentEvent[] }> {
   const started = await startOpencodeHandle(rig, profile);
   opencodeServerOf(rig).enqueue(steps);
-  await started.handle.prompt("go");
+  await started.handle.prompt("go", { model: null });
   return started;
 }
 
@@ -337,7 +338,7 @@ describe("opencode adapter: permissions", () => {
       { type: "idle" },
     ]);
 
-    const turn = handle.prompt("go");
+    const turn = handle.prompt("go", { model: null });
     const request = await opencodePermissionRequestOf(events);
 
     expect(request).toEqual({
@@ -393,7 +394,7 @@ describe("opencode adapter: edit permissions", () => {
       { type: "idle" },
     ]);
 
-    const turn = handle.prompt("go");
+    const turn = handle.prompt("go", { model: null });
     const request = await opencodePermissionRequestOf(events);
     handle.answerPermission("per_2", "once");
     await turn;
@@ -423,7 +424,7 @@ describe("opencode adapter: permissions during stop", () => {
       });
       await server.nextReply();
     });
-    const turn = handle.prompt("go");
+    const turn = handle.prompt("go", { model: null });
     await vi.waitFor(() => {
       expect(server.requestsTo("POST", PROMPT_PATH)).toHaveLength(1);
     });
@@ -457,7 +458,7 @@ describe("opencode adapter: pending permissions at stop", () => {
       },
       { type: "idle" },
     ]);
-    const turn = handle.prompt("go");
+    const turn = handle.prompt("go", { model: null });
     await opencodePermissionRequestOf(events);
 
     await handle.stop(STOP_GRACE_MS);
@@ -656,6 +657,148 @@ describe("opencode adapter: other failures", () => {
   });
 });
 
+const GROQ_API: ApiAccount = {
+  provider: ApiProviderId.groq,
+  model: "llama-3.3-70b-versatile",
+  baseUrl: null,
+  rotation: true,
+};
+
+describe("opencode adapter: model selection", () => {
+  it("model reaches opencode prompt body", async () => {
+    const rig = await createOpencodeRig({ api: GROQ_API });
+    const { handle } = await startOpencodeHandle(rig);
+
+    await handle.prompt("go", { model: "openai/gpt-oss-20b" });
+
+    const [request] = opencodeServerOf(rig).requestsTo("POST", PROMPT_PATH);
+    expect(request?.body).toEqual({
+      parts: [{ type: "text", text: "go" }],
+      agent: expect.any(String) as string,
+      model: { providerID: "groq", modelID: "openai/gpt-oss-20b" },
+    });
+  });
+
+  it("null model omits the prompt model", async () => {
+    const rig = await createOpencodeRig({ api: GROQ_API });
+    const { handle } = await startOpencodeHandle(rig);
+
+    await handle.prompt("go", { model: null });
+
+    const [request] = opencodeServerOf(rig).requestsTo("POST", PROMPT_PATH);
+    expect(request?.body).toEqual({
+      parts: [{ type: "text", text: "go" }],
+      agent: expect.any(String) as string,
+    });
+  });
+
+  it("rejected model fails the turn without a rate limit", async () => {
+    const rig = await createOpencodeRig({ api: GROQ_API });
+    const { handle, events } = await startOpencodeHandle(rig);
+    opencodeServerOf(rig).enqueue([
+      {
+        type: "error",
+        name: "ProviderModelNotFoundError",
+        message: "Model not found: groq/nonsense",
+      },
+      { type: "idle" },
+    ]);
+
+    await handle.prompt("go", { model: "nonsense" });
+
+    expect(events.at(-1)).toEqual({
+      type: "turn_error",
+      errorKind: null,
+      rpcCode: null,
+      message: "Model not found: groq/nonsense",
+    });
+    expect(settleWithDetector(events)).toEqual({
+      kind: "failed",
+      message: "Model not found: groq/nonsense",
+    });
+  });
+});
+
+describe("opencode adapter: model reporting", () => {
+  it("adapter reports the assistant model", async () => {
+    const rig = await createOpencodeRig({ api: GROQ_API });
+    const { handle, events } = await startOpencodeHandle(rig);
+    opencodeServerOf(rig).assistantModel = {
+      providerID: "groq",
+      modelID: "openai/gpt-oss-20b",
+    };
+
+    await handle.prompt("one", { model: null });
+    await handle.prompt("two", { model: null });
+
+    expect(events.filter((event) => event.type === "model")).toEqual([
+      { type: "model", model: "openai/gpt-oss-20b" },
+      { type: "model", model: "openai/gpt-oss-20b" },
+    ]);
+  });
+
+  it("opencode reports the model on every turn", async () => {
+    const rig = await createOpencodeRig({ api: GROQ_API });
+    const { handle, events } = await startOpencodeHandle(rig);
+    opencodeServerOf(rig).assistantModel = {
+      providerID: "groq",
+      modelID: "openai/gpt-oss-20b",
+    };
+
+    await handle.prompt("one", { model: null });
+    await handle.prompt("two", { model: null });
+
+    expect(events.filter((event) => event.type === "model")).toEqual([
+      { type: "model", model: "openai/gpt-oss-20b" },
+      { type: "model", model: "openai/gpt-oss-20b" },
+    ]);
+  });
+});
+
+describe("opencode adapter: stale model reports", () => {
+  it("late model event from a cancelled turn is not reported on the next turn", async () => {
+    const rig = await createOpencodeRig({ api: GROQ_API });
+    const { handle, events } = await startOpencodeHandle(rig);
+    const server = opencodeServerOf(rig);
+    server.assistantModel = { providerID: "groq", modelID: "model-a" };
+    server.enqueue([{ type: "wait_abort" }, { type: "idle" }]);
+    const first = handle.prompt("one", { model: null });
+    await vi.waitFor(() => {
+      expect(events).toContainEqual({ type: "model", model: "model-a" });
+    });
+    await handle.cancel();
+    await first;
+    const seen = events.length;
+    server.assistantModel = { providerID: "groq", modelID: "model-b" };
+    server.enqueue([
+      { type: "slow_user_message", ms: SLOW_USER_MESSAGE_MS },
+      {
+        type: "raw",
+        event: {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "msg_1",
+              role: "assistant",
+              sessionID: OPENCODE_SESSION_ID,
+              providerID: "groq",
+              modelID: "model-a",
+            },
+          },
+        },
+      },
+      { type: "wait", ms: SLOW_USER_MESSAGE_MS * 2 },
+      { type: "idle" },
+    ]);
+
+    await handle.prompt("two", { model: null });
+
+    expect(
+      events.slice(seen).filter((event) => event.type === "model"),
+    ).toEqual([{ type: "model", model: "model-b" }]);
+  });
+});
+
 describe("opencode adapter: turn lifecycle", () => {
   it("cancel_aborts_and_ends_turn_cancelled", async () => {
     const rig = await createOpencodeRig();
@@ -666,7 +809,7 @@ describe("opencode adapter: turn lifecycle", () => {
       { type: "wait_abort" },
       { type: "idle" },
     ]);
-    const turn = handle.prompt("go");
+    const turn = handle.prompt("go", { model: null });
     await vi.waitFor(() => {
       expect(typesOf(events)).toContain("text");
     });
@@ -685,11 +828,11 @@ describe("opencode adapter: turn lifecycle", () => {
     const { handle } = await startOpencodeHandle(rig);
     const server = opencodeServerOf(rig);
     server.enqueue([{ type: "wait_abort" }, { type: "idle" }]);
-    const turn = handle.prompt("first");
+    const turn = handle.prompt("first", { model: null });
 
-    await expect(handle.prompt("second")).rejects.toBeInstanceOf(
-      TurnInProgressError,
-    );
+    await expect(
+      handle.prompt("second", { model: null }),
+    ).rejects.toBeInstanceOf(TurnInProgressError);
 
     await handle.cancel();
     await turn;
@@ -704,7 +847,7 @@ describe("opencode adapter: process lifecycle", () => {
       { type: "text", partId: "prt_a", text: "partial" },
       { type: "hang" },
     ]);
-    const turn = handle.prompt("go");
+    const turn = handle.prompt("go", { model: null });
     await vi.waitFor(() => {
       expect(typesOf(events)).toContain("text");
     });
@@ -758,7 +901,7 @@ describe("opencode adapter: profiles", () => {
     const { handle } = await startOpencodeHandle(rig, PermissionProfile.ask);
 
     await handle.setProfile(PermissionProfile.plan);
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
 
     expect(
       opencodeServerOf(rig).requestsTo("POST", PROMPT_PATH)[0]?.body,
@@ -863,10 +1006,10 @@ describe("opencode adapter: stale idle", () => {
       { type: "text", partId: "prt_second", text: "second" },
       { type: "idle" },
     ]);
-    await handle.prompt("first");
+    await handle.prompt("first", { model: null });
     events.length = 0;
 
-    await handle.prompt("second");
+    await handle.prompt("second", { model: null });
 
     expect(events).toEqual([
       { type: "text", messageId: "prt_second", text: "second" },
@@ -879,10 +1022,10 @@ describe("opencode adapter: stale idle", () => {
     const { handle, events } = await startOpencodeHandle(rig);
     const server = opencodeServerOf(rig);
     server.enqueue([BOOM, { type: "hang" }]);
-    await handle.prompt("first");
+    await handle.prompt("first", { model: null });
     events.length = 0;
 
-    await handle.prompt("second");
+    await handle.prompt("second", { model: null });
 
     expect(events).toEqual([
       {
@@ -916,10 +1059,10 @@ describe("opencode adapter: cancelled turn waiting for idle", () => {
       { type: "wait", ms: CANCEL_STALE_IDLE_DELAY_MS },
       { type: "idle" },
     ]);
-    await handle.prompt("first");
+    await handle.prompt("first", { model: null });
     events.length = 0;
 
-    const second = handle.prompt("second");
+    const second = handle.prompt("second", { model: null });
     await handle.cancel();
     await second;
 
@@ -943,11 +1086,11 @@ describe("opencode adapter: prompt timeout", () => {
       { type: "text", partId: "prt_second", text: "second" },
       { type: "idle" },
     ]);
-    await handle.prompt("first");
+    await handle.prompt("first", { model: null });
     expect(typesOf(events)).toEqual(["turn_error"]);
     events.length = 0;
 
-    await handle.prompt("second");
+    await handle.prompt("second", { model: null });
 
     expect(events).toEqual([
       { type: "text", messageId: "prt_second", text: "second" },
@@ -963,12 +1106,12 @@ describe("opencode adapter: unaccepted prompt timeout", () => {
     const { handle, events } = await startOpencodeHandle(rig);
     const server = opencodeServerOf(rig);
     server.stall("prompt");
-    await handle.prompt("first");
+    await handle.prompt("first", { model: null });
     expect(typesOf(events)).toEqual(["turn_error"]);
     server.unstall("prompt");
     events.length = 0;
 
-    await handle.prompt("second");
+    await handle.prompt("second", { model: null });
 
     expect(events).toEqual([{ type: "turn_end", stopReason: "end_turn" }]);
     expect(server.requestsTo("POST", PROMPT_PATH)).toHaveLength(2);
@@ -987,11 +1130,11 @@ describe("opencode adapter: late idle after unaccepted timeout", () => {
       { type: "text", partId: "prt_second", text: "second" },
       { type: "idle" },
     ]);
-    await handle.prompt("first");
+    await handle.prompt("first", { model: null });
     expect(typesOf(events)).toEqual(["turn_error"]);
     events.length = 0;
 
-    await handle.prompt("second");
+    await handle.prompt("second", { model: null });
 
     expect(events).toEqual([
       { type: "text", messageId: "prt_second", text: "second" },
@@ -1015,11 +1158,11 @@ describe("opencode adapter: trailing idle after rate limit", () => {
       { type: "text", partId: "prt_second", text: "second" },
       { type: "idle" },
     ]);
-    await handle.prompt("first");
+    await handle.prompt("first", { model: null });
     expect(typesOf(events)).toEqual(["rate_limit", "turn_error"]);
     events.length = 0;
 
-    await handle.prompt("second");
+    await handle.prompt("second", { model: null });
 
     expect(events).toEqual([
       { type: "text", messageId: "prt_second", text: "second" },
@@ -1034,7 +1177,7 @@ describe("opencode adapter: prompt rejected before user message", () => {
     const { handle, events } = await startOpencodeHandle(rig);
     const server = opencodeServerOf(rig);
     server.enqueue([{ type: "reject_prompt", message: "Agent not found" }]);
-    await handle.prompt("first");
+    await handle.prompt("first", { model: null });
     expect(events).toEqual([
       {
         type: "turn_error",
@@ -1045,7 +1188,7 @@ describe("opencode adapter: prompt rejected before user message", () => {
     ]);
     events.length = 0;
 
-    await handle.prompt("second");
+    await handle.prompt("second", { model: null });
 
     expect(events).toEqual([{ type: "turn_end", stopReason: "end_turn" }]);
     expect(server.requestsTo("POST", PROMPT_PATH)).toHaveLength(2);
@@ -1069,7 +1212,7 @@ describe("opencode adapter: slow user message", () => {
       { type: "idle" },
     ]);
 
-    await handle.prompt("first");
+    await handle.prompt("first", { model: null });
 
     expect(events).toEqual([
       { type: "text", messageId: "prt_slow", text: "slow" },
@@ -1109,7 +1252,7 @@ describe("opencode adapter: child sessions", () => {
       { type: "text", partId: "prt_parent", text: "parent" },
       { type: "idle" },
     ]);
-    const turn = handle.prompt("go");
+    const turn = handle.prompt("go", { model: null });
 
     await permissionRequestsIn(events, 1);
     handle.answerPermission("per_child", "once");
@@ -1146,7 +1289,7 @@ describe("opencode adapter: child sessions", () => {
       bashPermission("per_child", CHILD_SESSION_ID),
       { type: "idle" },
     ]);
-    const turn = handle.prompt("go");
+    const turn = handle.prompt("go", { model: null });
     await permissionRequestsIn(events, 1);
 
     await handle.stop(STOP_GRACE_MS);
@@ -1169,7 +1312,7 @@ describe("opencode adapter: secrets in logs", () => {
     const { handle } = await startOpencodeHandle(rig);
 
     opencodeServerOf(rig).emitRaw(LEAKED_PAYLOAD);
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
 
     const logged = warn.mock.calls.flat().map(String).join("\n");
     expect(logged).not.toContain("sk-test");
@@ -1203,7 +1346,10 @@ describe("opencode adapter: request timeouts", () => {
     const { handle, events } = await startOpencodeHandle(rig);
     opencodeServerOf(rig).stall("prompt");
 
-    const outcome = await settlesWithin(handle.prompt("go"), SETTLE_WINDOW_MS);
+    const outcome = await settlesWithin(
+      handle.prompt("go", { model: null }),
+      SETTLE_WINDOW_MS,
+    );
 
     expect(outcome.settled).toBe(true);
     expect(typesOf(events)).toEqual(["turn_error"]);
@@ -1214,7 +1360,7 @@ describe("opencode adapter: request timeouts", () => {
     const { handle, events } = await startOpencodeHandle(rig);
     const server = opencodeServerOf(rig);
     server.enqueue([bashPermission("per_stall"), { type: "idle" }]);
-    const turn = handle.prompt("go");
+    const turn = handle.prompt("go", { model: null });
     await permissionRequestsIn(events, 1);
     server.stall("permission");
     server.stall("abort");

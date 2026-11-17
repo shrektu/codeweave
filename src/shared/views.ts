@@ -7,6 +7,8 @@ import {
   FlowNodeRunStatus,
   FlowRunStatus,
 } from "../domain/flowRun";
+import { RouteSource } from "../domain/routing";
+import { TaskClass, TaskClassSchema } from "../domain/taskClass";
 import {
   EdgeKind,
   EffectLevel,
@@ -143,6 +145,18 @@ export const LastTurnViewSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("failed"), message: z.string() }),
 ]);
 
+export const TurnRouteViewSchema = z.strictObject({
+  promptSeq: z.int(),
+  accountId: z.string(),
+  model: z.string().nullable(),
+  effectiveModel: z.string().nullable(),
+  apiProvider: z.enum(ApiProviderId).nullable(),
+  requestedClass: z.enum(TaskClass),
+  servedClass: z.enum(TaskClass).nullable(),
+  source: z.enum(RouteSource),
+});
+export type TurnRouteView = z.infer<typeof TurnRouteViewSchema>;
+
 export const SessionViewSchema = z.strictObject({
   id: z.string(),
   cwd: z.string(),
@@ -158,6 +172,7 @@ export const SessionViewSchema = z.strictObject({
   lastTurn: LastTurnViewSchema.nullable(),
   turnInFlight: z.boolean(),
   flowRef: FlowRefSchema.nullable(),
+  turns: z.array(TurnRouteViewSchema),
 });
 export type SessionView = z.infer<typeof SessionViewSchema>;
 
@@ -169,7 +184,7 @@ export const AgentViewSchema = z.strictObject({
   provider: z.enum(ProviderId),
   model: z.string().nullable(),
   permissionProfile: z.enum(PermissionProfile),
-  taskClass: z.string().nullable(),
+  taskClass: TaskClassSchema.nullable(),
   body: z.string(),
   usedBy: z.array(z.strictObject({ file: z.string(), title: z.string() })),
 });
@@ -186,6 +201,7 @@ export const FlowViewSchema = z.strictObject({
       id: z.string(),
       agent: z.string(),
       provider: z.enum(ProviderId).nullable(),
+      taskClass: TaskClassSchema.nullable(),
     }),
   ),
   edges: z.array(
@@ -250,6 +266,7 @@ export const SettingsViewSchema = z.strictObject({
   terminalShell: z.string().nullable(),
   updateCheck: z.boolean(),
   updateChannel: z.enum(UpdateChannel),
+  defaultTaskClass: TaskClassSchema,
 });
 export type SettingsView = z.infer<typeof SettingsViewSchema>;
 

@@ -59,6 +59,44 @@ describe("flows: parsing", () => {
     });
   });
 
+  it("accepts the three task classes", () => {
+    for (const taskClass of ["light", "standard", "heavy"]) {
+      const result = parseAgentFile(
+        AGENT_MARKDOWN.replace(
+          "---\nBody",
+          `taskClass: ${taskClass}\n---\nBody`,
+        ),
+      );
+
+      expect(result.ok && result.value.taskClass).toBe(taskClass);
+    }
+  });
+
+  it("rejects unknown task class with the allowed values", () => {
+    const result = parseAgentFile(
+      AGENT_MARKDOWN.replace("---\nBody", "taskClass: M\n---\nBody"),
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      errors: ["taskClass: Task class must be one of: light, standard, heavy"],
+    });
+  });
+
+  it("parses a node task class", () => {
+    const result = parseFlowFile(`---
+id: f
+title: F
+nodes:
+  - id: a
+    agent: implementer
+    taskClass: heavy
+edges: []
+---`);
+
+    expect(result.ok && result.value.nodes[0]?.taskClass).toBe("heavy");
+  });
+
   it("reports missing frontmatter", () => {
     expect(parseAgentFile("# just text")).toEqual({
       ok: false,

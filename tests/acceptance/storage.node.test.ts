@@ -43,6 +43,7 @@ it("settings_without_codex_executable_loads", async () => {
     terminalShell: null,
     updateCheck: true,
     updateChannel: "stable",
+    defaultTaskClass: "standard",
   });
 });
 
@@ -127,6 +128,7 @@ it("storage_refuses_to_overwrite_corrupt_file", async () => {
       terminalShell: null,
       updateCheck: true,
       updateChannel: "stable",
+      defaultTaskClass: "standard",
     }),
   ).rejects.toBeInstanceOf(StorageCorruptError);
 

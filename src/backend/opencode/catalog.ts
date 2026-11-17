@@ -9,6 +9,7 @@ import {
   ApiTier,
   FreeModels,
 } from "../../domain/apiProviders";
+import { FREE_MODEL_MARKER } from "../../domain/modelChoice";
 import { PermissionProfile, ProviderId } from "../../domain/types";
 import { CATALOG_PROBE_TIMEOUT_MS } from "../../shared/constants";
 import type { CatalogModel, ModelCatalog } from "../../shared/views";
@@ -38,7 +39,6 @@ const CATALOG_ACCOUNT_DIR = "account";
 const CATALOG_RUN_DIR = "run";
 const CATALOG_PLACEHOLDER_KEY = "catalog-placeholder-key";
 const CATALOG_ACCOUNT_ID = "opencode-catalog";
-const FREE_MODEL_MARKER = ":free";
 
 const CATALOG_PROVIDER_IDS: readonly ApiProviderId[] = Object.values(
   ApiProviderId,

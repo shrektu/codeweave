@@ -68,7 +68,7 @@ it("session_text_and_tool_card_reach_view", async () => {
 
   expect(accepted).toEqual({ accepted: true });
   const view = await rig.session();
-  expect(view.messages).toEqual([{ id: null, text: "Looking at it", seq: 0 }]);
+  expect(view.messages).toEqual([{ id: null, text: "Looking at it", seq: 1 }]);
   expect(view.toolCalls).toEqual([
     {
       toolCallId: "t1",
@@ -77,7 +77,7 @@ it("session_text_and_tool_card_reach_view", async () => {
       status: "completed",
       command: "pnpm test",
       output: "all green",
-      seq: 1,
+      seq: 2,
     },
   ]);
   const pushed = rig.broadcastsOf("session/changed").at(-1);
@@ -131,7 +131,7 @@ it("ask_permission_snapshot_and_exact_option_answer", async () => {
       toolCallId: "t1",
       title: "Run pnpm test",
       command: "pnpm test",
-      seq: 0,
+      seq: 1,
       options: [
         { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
         {

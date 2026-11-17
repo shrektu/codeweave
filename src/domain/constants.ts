@@ -37,3 +37,4 @@ export const MIN_SECRET_LENGTH = 8;
 export const SECRET_HINT_LENGTH = 4;
 export const NO_MESSAGE_KEY = "";
 export const AGENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+export const MODEL_AUTO = "auto";

@@ -15,10 +15,14 @@ import { startOpenaiChatMock } from "../fakes/openaiChatMock";
 
 import {
   OPENCODE_ACCOUNT_SPECS,
+  OPENCODE_KEY_GROQ,
   OPENCODE_KEYS,
+  OPENCODE_ROUTING_ACCOUNT_SPEC,
+  OPENCODE_ROUTING_SCENARIOS,
   OPENCODE_ROTATION_SCENARIOS,
   findKeyLeaks,
   opencodeBinaryOnPath,
+  pointAccountsAtMock,
   writeKeyringPreload,
   type OpencodeAccountSpec,
 } from "./opencodeRotationFixture";
@@ -42,6 +46,10 @@ const AGENT_OPTION = "OpenCode (API key)";
 const API_PROVIDER_VALUE = "custom";
 const MOCK_MODEL = "mock-model";
 const KEY_HINT_LENGTH = 4;
+const LIGHT_MODEL = "openai/gpt-oss-20b";
+const HEAVY_MODEL = "openai/gpt-oss-120b";
+const LIGHT_BADGE = `${LIGHT_MODEL} · light`;
+const HEAVY_BADGE = `${HEAVY_MODEL} · heavy`;
 const SANDBOX_FLAGS =
   process.env.CI !== undefined && process.platform === "linux"
     ? ["--no-sandbox"]
@@ -57,9 +65,14 @@ async function addAccount(
   await dialog.getByLabel("Agent").selectOption({ label: AGENT_OPTION });
   await dialog.getByLabel("Label", { exact: true }).fill(spec.label);
   await dialog.getByLabel("Config directory").fill(configDir);
-  await dialog.getByLabel("API provider").selectOption(API_PROVIDER_VALUE);
-  await dialog.getByLabel("Model", { exact: true }).fill(MOCK_MODEL);
-  await dialog.getByLabel("Base URL").fill(mockUrl);
+  const apiProvider = spec.provider ?? API_PROVIDER_VALUE;
+  await dialog.getByLabel("API provider").selectOption(apiProvider);
+  await dialog
+    .getByLabel("Model", { exact: true })
+    .fill(spec.model ?? MOCK_MODEL);
+  if (apiProvider === API_PROVIDER_VALUE) {
+    await dialog.getByLabel("Base URL").fill(mockUrl);
+  }
   await dialog.getByLabel("API key").fill(spec.apiKey);
   const failure = dialog.locator("form.add-account p.error");
   const submit = dialog.getByRole("button", { name: "Add account" });
@@ -114,9 +127,10 @@ async function addAccounts(
   page: Page,
   userData: string,
   mockUrl: string,
+  specs: readonly OpencodeAccountSpec[] = OPENCODE_ACCOUNT_SPECS,
 ): Promise<void> {
   await page.getByRole("button", { name: "Accounts", exact: true }).click();
-  for (const spec of OPENCODE_ACCOUNT_SPECS) {
+  for (const spec of specs) {
     await addAccount(
       page,
       spec,
@@ -182,6 +196,96 @@ test("opencode_ui_rotates_api_key_a_to_b", async () => {
     );
     expect(await readEffectLines(repo)).toEqual(["deploy-side-effect"]);
     expect(await findKeyLeaks([userData], OPENCODE_KEYS)).toEqual([]);
+  } finally {
+    await cleanup.run();
+  }
+});
+
+async function stubFolderDialog(
+  app: ElectronApplication,
+  folder: string,
+): Promise<void> {
+  await app.evaluate(({ dialog }, picked) => {
+    dialog.showOpenDialog = () =>
+      Promise.resolve({ canceled: false, filePaths: [picked] });
+  }, folder);
+}
+
+async function sendWithClass(
+  page: Page,
+  taskClass: string,
+  prompt: string,
+): Promise<void> {
+  await page.getByLabel("Task class").selectOption(taskClass);
+  await page.getByPlaceholder("Describe the task").fill(prompt);
+  await page.getByRole("button", { name: "Send" }).click();
+}
+
+async function seedRoutingAccount(
+  root: string,
+  userData: string,
+  mockUrl: string,
+): Promise<void> {
+  const setup = await launchApp(root, userData);
+  const page = await setup.firstWindow();
+  await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
+    "Connected",
+  );
+  await addAccounts(page, userData, mockUrl, [OPENCODE_ROUTING_ACCOUNT_SPEC]);
+  await setup.close();
+  await pointAccountsAtMock(userData, mockUrl);
+}
+
+test("composer classes route the real opencode", async () => {
+  opencodeBinaryOnPath();
+  const cleanup = createCleanupStack();
+  try {
+    const root = await mkdtemp(join(tmpdir(), WORKSPACE_PREFIX));
+    cleanup.add(() => rm(root, { recursive: true, force: true }));
+    const userData = join(root, "user-data");
+    const repo = join(root, "repo");
+    await createRepo(repo);
+    const mock = await startOpenaiChatMock({
+      scenarios: OPENCODE_ROUTING_SCENARIOS,
+      toolCommand: ROTATION_COMMAND,
+    });
+    cleanup.add(() => mock.close());
+
+    await seedRoutingAccount(root, userData, mock.url);
+
+    const app = await launchApp(root, userData);
+    cleanup.add(() => app.close());
+    await stubFolderDialog(app, repo);
+    const page = await app.firstWindow();
+    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
+      "Connected",
+    );
+    await page.getByRole("button", { name: "Choose folder…" }).click();
+
+    const badges = page.locator(".turn-badge");
+    const idle = page.locator(".session-head .phase");
+    await sendWithClass(page, "light", "Say hello");
+    await expect(badges.nth(0)).toContainText(LIGHT_BADGE, {
+      timeout: STEP_TIMEOUT_MS,
+    });
+    await expect(idle).toContainText(/Idle on G/, {
+      timeout: STEP_TIMEOUT_MS,
+    });
+    await sendWithClass(page, "heavy", "Say hello again");
+    await expect(badges.nth(1)).toContainText(HEAVY_BADGE, {
+      timeout: STEP_TIMEOUT_MS,
+    });
+    await expect(idle).toContainText(/Idle on G/, {
+      timeout: STEP_TIMEOUT_MS,
+    });
+
+    expect(
+      mock
+        .requests()
+        .filter((request) => request.hasTools)
+        .map((request) => request.model),
+    ).toEqual([LIGHT_MODEL, HEAVY_MODEL]);
+    expect(await findKeyLeaks([userData], [OPENCODE_KEY_GROQ])).toEqual([]);
   } finally {
     await cleanup.run();
   }

@@ -9,6 +9,7 @@ import type {
   RotationPhaseView,
   SessionView,
   ToolCallView,
+  TurnRouteView,
 } from "../../shared/views";
 import {
   accountLabel,
@@ -19,6 +20,7 @@ import {
   providerOf,
   type SelectableProvider,
 } from "../format";
+import { turnBadge } from "../routingText";
 import { useApp } from "../services";
 import { useAsyncAction } from "../useAsyncAction";
 
@@ -56,6 +58,7 @@ type StreamItem = { readonly key: string; readonly seq: number } & (
   | { readonly kind: "message"; readonly message: MessageView }
   | { readonly kind: "tool"; readonly tool: ToolCallView }
   | { readonly kind: "permission"; readonly permission: PermissionView }
+  | { readonly kind: "turn"; readonly turn: TurnRouteView }
 );
 
 function streamItems(session: SessionView): StreamItem[] {
@@ -78,12 +81,33 @@ function streamItems(session: SessionView): StreamItem[] {
       seq: permission.seq,
       permission,
     })),
+    ...session.turns.map((turn): StreamItem => ({
+      kind: "turn",
+      key: `turn-${turn.promptSeq.toString()}`,
+      seq: turn.promptSeq,
+      turn,
+    })),
   ];
   return items.toSorted((left, right) => left.seq - right.seq);
 }
 
+function TurnBadgeEntry({ turn }: { turn: TurnRouteView }): JSX.Element {
+  const badge = turnBadge(turn);
+  return (
+    <li
+      className="turn-badge"
+      title={badge.description}
+      aria-label={badge.description}
+    >
+      {badge.text}
+    </li>
+  );
+}
+
 function StreamEntry({ item }: { item: StreamItem }): JSX.Element {
   switch (item.kind) {
+    case "turn":
+      return <TurnBadgeEntry turn={item.turn} />;
     case "message":
       return <li className="card">{item.message.text}</li>;
     case "tool":

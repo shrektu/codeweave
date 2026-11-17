@@ -82,6 +82,45 @@ describe("buildSessionConfig", () => {
       },
     });
   });
+
+  it("baseUrl account declares the provider tier models", () => {
+    const credentials: OpencodeCredentials = {
+      providerId: "groq",
+      model: "llama-3.3-70b-versatile",
+      baseUrl: "http://127.0.0.1:9999/v1",
+      apiKey: "sk-test-C",
+    };
+
+    const { provider } = buildSessionConfig({
+      credentials,
+      keyFilePath: "/run/key",
+    });
+
+    expect(provider.groq?.models).toEqual({
+      "llama-3.3-70b-versatile": { name: "llama-3.3-70b-versatile" },
+      "openai/gpt-oss-20b": { name: "openai/gpt-oss-20b" },
+      "openai/gpt-oss-120b": { name: "openai/gpt-oss-120b" },
+    });
+  });
+
+  it("baseUrl account whose model is a tier model declares it once", () => {
+    const credentials: OpencodeCredentials = {
+      providerId: "groq",
+      model: "openai/gpt-oss-120b",
+      baseUrl: "http://127.0.0.1:9999/v1",
+      apiKey: "sk-test-C",
+    };
+
+    const { provider } = buildSessionConfig({
+      credentials,
+      keyFilePath: "/run/key",
+    });
+
+    expect(provider.groq?.models).toEqual({
+      "openai/gpt-oss-120b": { name: "openai/gpt-oss-120b" },
+      "openai/gpt-oss-20b": { name: "openai/gpt-oss-20b" },
+    });
+  });
 });
 
 describe("run files", () => {

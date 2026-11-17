@@ -379,6 +379,38 @@ html[data-fx="low"] .btn.pri {
   align-self: center;
 }
 
+.composer {
+  flex-wrap: wrap;
+}
+
+.composer textarea {
+  min-width: 160px;
+}
+
+.composer-routing {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 132px;
+}
+
+.composer-routing select,
+.composer-routing input {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 6px;
+  font: 11px var(--mono);
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+}
+
+.turn-badge {
+  font: 11px var(--mono);
+  color: var(--dim);
+}
+
 .send {
   width: 34px;
   height: 34px;

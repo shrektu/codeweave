@@ -14,7 +14,8 @@ import {
   type Transition,
 } from "../domain/flowRun";
 import type { FlowDefinition } from "../domain/flows";
-import { EdgeKind, type WorktreeState } from "../domain/types";
+import { isAutoModel, type ModelChoice } from "../domain/modelChoice";
+import { EdgeKind, type ProviderId, type WorktreeState } from "../domain/types";
 import { IpcError, IpcErrorCode, type ParamsMap } from "../shared/protocol";
 import type {
   AgentView,
@@ -26,6 +27,17 @@ import type {
 import type { ConnectionRegistry } from "./connections";
 import { failure, highestSeq, watchTurn, type NodeOutcome } from "./nodeTurn";
 import type { SessionService } from "./session";
+
+function modelChoiceOf(
+  nodeProvider: ProviderId | undefined,
+  agent: AgentView,
+): ModelChoice | null {
+  const ownProvider =
+    nodeProvider === undefined || nodeProvider === agent.provider;
+  return ownProvider && agent.model !== null && !isAutoModel(agent.model)
+    ? { provider: agent.provider, model: agent.model }
+    : null;
+}
 
 export interface FlowRunDeps {
   readonly sessions: SessionService;
@@ -99,10 +111,11 @@ function toDefinition(view: FlowView): FlowDefinition {
     id: view.id,
     title: view.title,
     maxRounds: view.maxRounds,
-    nodes: view.nodes.map(({ id, agent, provider }) => ({
+    nodes: view.nodes.map(({ id, agent, provider, taskClass }) => ({
       id,
       agent,
       ...(provider === null ? {} : { provider }),
+      ...(taskClass === null ? {} : { taskClass }),
     })),
     edges: view.edges.map((edge) => ({ ...edge })),
   };
@@ -316,11 +329,15 @@ class FlowRunner implements FlowRunService {
 
   private async openSession(run: ActiveRun, nodeId: string): Promise<void> {
     const { node, agent } = this.resolve(run, nodeId);
+    const model = modelChoiceOf(node.provider, agent);
+    const taskClass = node.taskClass ?? agent.taskClass;
     await this.deps.sessions.start({
       cwd: run.state.cwd,
       profile: agent.permissionProfile,
       provider: node.provider ?? agent.provider,
       flowRef: { flowId: run.state.flowId, nodeId },
+      ...(model === null ? {} : { model }),
+      ...(taskClass === null ? {} : { taskClass }),
     });
   }
 

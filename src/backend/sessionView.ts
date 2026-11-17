@@ -87,5 +87,6 @@ export function toSessionView(input: SessionViewInput): SessionView {
     lastTurn: state.lastTurn,
     turnInFlight: input.turnInFlight,
     flowRef: input.flowRef,
+    turns: state.turns.map((turn) => ({ ...turn })),
   };
 }

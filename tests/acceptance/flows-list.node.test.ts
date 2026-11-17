@@ -108,7 +108,9 @@ it("flows_list_reports_broken_file_beside_valid_flow", async () => {
         revision: sha256(VALID_FLOW),
         title: "Ship it",
         maxRounds: 2,
-        nodes: [{ id: "build", agent: "coder", provider: null }],
+        nodes: [
+          { id: "build", agent: "coder", provider: null, taskClass: null },
+        ],
         edges: [],
       },
     ],
@@ -181,6 +183,23 @@ it("flows_list_defaults_provider_gate_and_rounds", async () => {
   expect(tuned?.maxRounds).toBe(5);
   expect(tuned?.nodes.map((node) => node.provider)).toEqual(["codex", null]);
   expect(tuned?.edges.map((edge) => edge.gate)).toEqual([false, true]);
+});
+
+it("flow view exposes node task class", async () => {
+  const cwd = await project({
+    "flows/tuned.md": CONFIGURED_FLOW.replace(
+      "    provider: codex\n",
+      "    provider: codex\n    taskClass: heavy\n",
+    ),
+    "agents/coder.md": CODER_AGENT,
+  });
+
+  const result = await listFlows(cwd);
+
+  expect(result.flows[0]?.nodes.map((node) => node.taskClass)).toEqual([
+    "heavy",
+    null,
+  ]);
 });
 
 it("flows_list_without_dirs_returns_empty", async () => {

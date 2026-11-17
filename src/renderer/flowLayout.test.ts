@@ -15,9 +15,9 @@ import {
 it("flow_layout_positions_every_node_and_labels_edges", async () => {
   const flow = makeFlow({
     nodes: [
-      { id: "plan", agent: "planner", provider: null },
-      { id: "build", agent: "implementer", provider: null },
-      { id: "review", agent: "reviewer", provider: null },
+      { id: "plan", agent: "planner", provider: null, taskClass: null },
+      { id: "build", agent: "implementer", provider: null, taskClass: null },
+      { id: "review", agent: "reviewer", provider: null, taskClass: null },
     ],
     edges: [
       { from: "plan", to: "build", kind: EdgeKind.waitsFor, gate: false },
@@ -63,7 +63,9 @@ it("flow_layout_of_empty_flow_is_empty", async () => {
 it("flow_layout_single_node_without_edges", async () => {
   const layout = await layoutFlow(
     makeFlow({
-      nodes: [{ id: "solo", agent: "planner", provider: null }],
+      nodes: [
+        { id: "solo", agent: "planner", provider: null, taskClass: null },
+      ],
       edges: [],
     }),
     FlowDirection.DOWN,
@@ -78,11 +80,11 @@ it("flow_layout_single_node_without_edges", async () => {
 const FEATURE_DELIVERY = makeFlow({
   id: "feature-delivery",
   nodes: [
-    { id: "plan", agent: "planner", provider: null },
-    { id: "api", agent: "implementer", provider: null },
-    { id: "ui", agent: "implementer", provider: null },
-    { id: "test", agent: "tester", provider: null },
-    { id: "review", agent: "reviewer", provider: null },
+    { id: "plan", agent: "planner", provider: null, taskClass: null },
+    { id: "api", agent: "implementer", provider: null, taskClass: null },
+    { id: "ui", agent: "implementer", provider: null, taskClass: null },
+    { id: "test", agent: "tester", provider: null, taskClass: null },
+    { id: "review", agent: "reviewer", provider: null, taskClass: null },
   ],
   edges: [
     { from: "plan", to: "api", kind: EdgeKind.handsOffTo, gate: false },

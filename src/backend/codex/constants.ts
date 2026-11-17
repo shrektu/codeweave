@@ -15,6 +15,7 @@ export const CodexNotification = {
   itemCompleted: "item/completed",
   agentMessageDelta: "item/agentMessage/delta",
   rateLimitsUpdated: "account/rateLimits/updated",
+  modelRerouted: "model/rerouted",
 } as const;
 
 export const CodexServerRequest = {

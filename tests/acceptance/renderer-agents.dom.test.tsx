@@ -30,6 +30,8 @@ const WAIT_OPTIONS = { timeout: 5000 } as const;
 const CONFLICT_TEXT =
   "This agent file changed on disk. Reload to edit the latest version.";
 const UNKNOWN_MODEL_TEXT = "This model is not in the OpenCode catalog.";
+const UNKNOWN_PROVIDER_TEXT =
+  "The part before the first / is not a known API provider.";
 const QUALIFIED_MODEL = "groq/llama-3.3-70b";
 
 beforeEach(() => {
@@ -130,7 +132,7 @@ function listText(): string {
 it("agents_tab_lists_agents_and_opens_one", async () => {
   const detailed = makeAgent({
     model: "sonnet",
-    taskClass: "coding",
+    taskClass: "heavy",
     body: "Line one.\nLine two.",
   });
   const client = appClient([detailed, REVIEWER]);
@@ -147,9 +149,25 @@ it("agents_tab_lists_agents_and_opens_one", async () => {
   expect(select("Provider").value).toBe("claude");
   expect(textbox("Model").value).toBe("sonnet");
   expect(select("Permission profile").value).toBe("plan");
-  expect(textbox("Task class").value).toBe("coding");
+  expect(select("Task class").value).toBe("heavy");
   expect(textbox("Instructions").value).toBe("Line one.\nLine two.");
   expect(button("Save").disabled).toBe(true);
+});
+
+it("agent_form_offers_the_three_task_classes_and_an_empty_choice", async () => {
+  await openAgentsTab(appClient(), "implementer");
+
+  const options = [...select("Task class").options].map((option) => [
+    option.value,
+    option.textContent,
+  ]);
+
+  expect(options).toEqual([
+    ["", "—"],
+    ["light", "light"],
+    ["standard", "standard"],
+    ["heavy", "heavy"],
+  ]);
 });
 
 it("edit_and_save_sends_params_and_stays_on_saved_agent", async () => {
@@ -279,7 +297,7 @@ it("create_new_agent_sends_create", async () => {
     revision: "agent-rev-3",
     role: "Runs the tests",
     permissionProfile: PermissionProfile.ask,
-    taskClass: "qa",
+    taskClass: "light",
     body: "Run the tests.",
   });
   client.respond("agents/create", listOf([IMPLEMENTER, REVIEWER, created]));
@@ -291,7 +309,7 @@ it("create_new_agent_sends_create", async () => {
   expect(button("Save").disabled).toBe(true);
   type("Id", "tester");
   type("Role", "Runs the tests");
-  type("Task class", "  qa  ");
+  fireEvent.change(select("Task class"), { target: { value: "light" } });
   type("Instructions", "Run the tests.");
   expect(button("Save").disabled).toBe(false);
   fireEvent.click(button("Save"));
@@ -305,7 +323,7 @@ it("create_new_agent_sends_create", async () => {
           role: "Runs the tests",
           provider: "claude",
           permissionProfile: "ask",
-          taskClass: "qa",
+          taskClass: "light",
         },
         body: "Run the tests.",
       },
@@ -579,4 +597,49 @@ it("flow_add_node_lists_saved_agent", async () => {
     "option",
   );
   expect(options.map((option) => option.textContent)).toContain("builder");
+});
+
+const ROUTING_HELP =
+  "Leave empty or set auto to let task-class routing pick a model on API-key accounts; subscriptions then use the CLI default.";
+const PROVIDER_HELP: [string, string][] = [
+  [
+    "claude",
+    "An alias (sonnet, opus, haiku) or a model id that Claude Code lists; sent with every turn.",
+  ],
+  ["codex", "A Codex model id; sent with every turn."],
+  [
+    "gemini",
+    "A model name as `agy models` shows it, e.g. Gemini 4 Hydrogen (Medium); passed as --model.",
+  ],
+  ["opencode", "<provider>/<model>, e.g. groq/openai/gpt-oss-20b."],
+];
+
+it("agent model field explains the format per provider", async () => {
+  const client = appClient();
+  client.respond("models/catalog", { models: [], error: null });
+  await openAgentsTab(client, "implementer");
+
+  for (const [provider, help] of PROVIDER_HELP) {
+    fireEvent.change(select("Provider"), { target: { value: provider } });
+    expect(screen.getByText(`${help} ${ROUTING_HELP}`)).toBeTruthy();
+  }
+});
+
+it("agent model field warns on an unknown opencode provider", async () => {
+  const client = appClient();
+  client.respond("models/catalog", { models: [], error: null });
+  await openAgentsTab(client, "implementer");
+  fireEvent.change(select("Provider"), { target: { value: "opencode" } });
+
+  type("Model", "grok/llama");
+  expect(screen.getByText(UNKNOWN_PROVIDER_TEXT)).toBeTruthy();
+
+  type("Model", "groq/llama");
+  expect(screen.queryByText(UNKNOWN_PROVIDER_TEXT)).toBeNull();
+
+  type("Model", "auto");
+  expect(screen.queryByText(UNKNOWN_PROVIDER_TEXT)).toBeNull();
+
+  type("Model", "");
+  expect(screen.queryByText(UNKNOWN_PROVIDER_TEXT)).toBeNull();
 });

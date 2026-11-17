@@ -37,7 +37,12 @@ function ok(result: ReturnType<typeof addNode>): FlowDraft {
 describe("addNode", () => {
   it("appends a valid node", () => {
     const draft = ok(
-      addNode(baseDraft(), { id: "docs_1", agent: "reviewer", provider: null }),
+      addNode(baseDraft(), {
+        id: "docs_1",
+        agent: "reviewer",
+        provider: null,
+        taskClass: null,
+      }),
     );
     expect(draft.nodes.map((node) => node.id)).toEqual([
       "build",
@@ -53,7 +58,12 @@ describe("addNode", () => {
     ["build", 'Node id "build" already exists'],
   ])("rejects id %j", (id, message) => {
     expect(
-      addNode(baseDraft(), { id, agent: "reviewer", provider: null }),
+      addNode(baseDraft(), {
+        id,
+        agent: "reviewer",
+        provider: null,
+        taskClass: null,
+      }),
     ).toEqual({ ok: false, error: message });
   });
 });
@@ -75,7 +85,12 @@ describe("removeNode", () => {
 
   it("keeps unrelated edges", () => {
     const draft = ok(
-      addNode(baseDraft(), { id: "docs", agent: "reviewer", provider: null }),
+      addNode(baseDraft(), {
+        id: "docs",
+        agent: "reviewer",
+        provider: null,
+        taskClass: null,
+      }),
     );
     expect(removeNode(draft, "docs").edges).toEqual(draft.edges);
   });
@@ -88,8 +103,8 @@ describe("updateNode", () => {
       provider: ProviderId.gemini,
     });
     expect(next.nodes).toEqual([
-      { id: "build", agent: "reviewer", provider: "gemini" },
-      { id: "review", agent: "reviewer", provider: null },
+      { id: "build", agent: "reviewer", provider: "gemini", taskClass: null },
+      { id: "review", agent: "reviewer", provider: null, taskClass: null },
     ]);
   });
 
@@ -99,7 +114,12 @@ describe("updateNode", () => {
     });
     expect(
       updateNode(withProvider, "build", { provider: null }).nodes[0],
-    ).toEqual({ id: "build", agent: "implementer", provider: null });
+    ).toEqual({
+      id: "build",
+      agent: "implementer",
+      provider: null,
+      taskClass: null,
+    });
   });
 });
 
@@ -224,6 +244,25 @@ describe("toDefinition", () => {
       ],
     });
   });
+
+  it("keeps a node task class from the view", () => {
+    const view = makeFlow({
+      nodes: [
+        {
+          id: "build",
+          agent: "implementer",
+          provider: null,
+          taskClass: "heavy",
+        },
+        { id: "review", agent: "reviewer", provider: null, taskClass: null },
+      ],
+    });
+
+    expect(toDefinition(draftOf(view)).nodes).toEqual([
+      { id: "build", agent: "implementer", taskClass: "heavy" },
+      { id: "review", agent: "reviewer" },
+    ]);
+  });
 });
 
 describe("draftErrors", () => {
@@ -242,7 +281,10 @@ describe("draftErrors", () => {
     );
     const broken: FlowDraft = {
       ...cyclic,
-      nodes: [...cyclic.nodes, { id: "build", agent: "ghost", provider: null }],
+      nodes: [
+        ...cyclic.nodes,
+        { id: "build", agent: "ghost", provider: null, taskClass: null },
+      ],
     };
     expect(draftErrors(broken, AGENTS)).toEqual([
       'Duplicate node id "build"',
@@ -267,6 +309,7 @@ describe("saveParamsOf", () => {
         id: "docs",
         agent: "reviewer",
         provider: null,
+        taskClass: null,
       }),
     );
 

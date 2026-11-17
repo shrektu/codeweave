@@ -2,6 +2,7 @@ import { parse } from "yaml";
 import { z } from "zod";
 
 import { MAX_FLOW_ROUNDS, MIN_FLOW_ROUNDS } from "./constants";
+import { TaskClassSchema } from "./taskClass";
 import { EdgeKind, PermissionProfile, ProviderId } from "./types";
 
 export const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---/;
@@ -15,7 +16,7 @@ export const AgentSchema = z.object({
   provider: z.enum(ProviderId),
   model: z.string().min(1).optional(),
   permissionProfile: z.enum(PermissionProfile),
-  taskClass: z.string().min(1).optional(),
+  taskClass: TaskClassSchema.optional(),
 });
 
 export const FlowSchema = z.object({
@@ -27,6 +28,7 @@ export const FlowSchema = z.object({
       id: z.string().min(1),
       agent: z.string().min(1),
       provider: z.enum(ProviderId).optional(),
+      taskClass: TaskClassSchema.optional(),
     }),
   ),
   edges: z.array(

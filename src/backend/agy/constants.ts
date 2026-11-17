@@ -119,6 +119,7 @@ export const AgyFlag = {
   outputFormat: "--output-format",
   settings: "--settings",
   mode: "--mode",
+  model: "--model",
   conversation: "--conversation",
   prompt: "-p",
 } as const;

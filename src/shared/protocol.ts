@@ -3,6 +3,7 @@ import { z } from "zod";
 import { MIN_SECRET_LENGTH } from "../domain/constants";
 import { FlowDecision } from "../domain/flowRun";
 import { AgentSchema, FlowSchema } from "../domain/flows";
+import { TaskClassSchema } from "../domain/taskClass";
 import {
   EffectLevel,
   PermissionProfile,
@@ -73,6 +74,11 @@ const TerminalRowsSchema = z
 const TerminalIdParamsSchema = z.strictObject({ id: NonEmptyString });
 const OkResultSchema = z.strictObject({ ok: z.literal(true) });
 
+const ModelChoiceSchema = z.strictObject({
+  provider: z.enum(ProviderId),
+  model: NonBlankString,
+});
+
 const SettingsPatchSchema = z
   .strictObject({
     permissionProfile: z.enum(PermissionProfile).optional(),
@@ -84,6 +90,7 @@ const SettingsPatchSchema = z
     terminalShell: z.string().nullable().optional(),
     updateCheck: z.boolean().optional(),
     updateChannel: z.enum(UpdateChannel).optional(),
+    defaultTaskClass: TaskClassSchema.optional(),
   })
   .refine((patch) => Object.values(patch).some((value) => value !== undefined));
 
@@ -95,8 +102,14 @@ export const ParamsSchemas = {
     profile: z.enum(PermissionProfile).optional(),
     flowRef: FlowRefSchema.optional(),
     provider: z.enum(ProviderId).optional(),
+    model: ModelChoiceSchema.optional(),
+    taskClass: TaskClassSchema.optional(),
   }),
-  "session/prompt": z.strictObject({ text: NonBlankString }),
+  "session/prompt": z.strictObject({
+    text: NonBlankString,
+    taskClass: TaskClassSchema.optional(),
+    model: ModelChoiceSchema.optional(),
+  }),
   "session/stop": EmptyParamsSchema,
   "permission/answer": z.strictObject({
     requestId: NonEmptyString,

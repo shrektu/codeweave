@@ -139,9 +139,9 @@ it("flow_edit_adds_node_and_saves_wire_flow", async () => {
   const saved = makeFlow({
     revision: "rev-2",
     nodes: [
-      { id: "build", agent: "implementer", provider: null },
-      { id: "review", agent: "reviewer", provider: null },
-      { id: "docs", agent: "reviewer", provider: "codex" },
+      { id: "build", agent: "implementer", provider: null, taskClass: null },
+      { id: "review", agent: "reviewer", provider: null, taskClass: null },
+      { id: "docs", agent: "reviewer", provider: "codex", taskClass: null },
     ],
   });
   client.respond("flows/save", makeFlowsList({ flows: [saved] }));
@@ -194,7 +194,14 @@ it("flow_edit_removes_node_and_its_edges", async () => {
       flows: [
         makeFlow({
           revision: "rev-2",
-          nodes: [{ id: "build", agent: "implementer", provider: null }],
+          nodes: [
+            {
+              id: "build",
+              agent: "implementer",
+              provider: null,
+              taskClass: null,
+            },
+          ],
           edges: [],
         }),
       ],
@@ -299,7 +306,11 @@ it("flow_edit_changes_agent_and_provider", async () => {
           title: "Ship it",
           maxRounds: 2,
           nodes: [
-            { id: "build", agent: "reviewer", provider: "gemini" },
+            {
+              id: "build",
+              agent: "reviewer",
+              provider: "gemini",
+            },
             { id: "review", agent: "reviewer" },
           ],
           edges: [{ from: "build", to: "review", kind: "hands_off_to" }],
@@ -346,8 +357,13 @@ it("flow_edit_invalid_draft_disables_save_and_lists_errors", async () => {
       flows: [
         makeFlow({
           nodes: [
-            { id: "build", agent: "implementer", provider: null },
-            { id: "review", agent: "ghost", provider: null },
+            {
+              id: "build",
+              agent: "implementer",
+              provider: null,
+              taskClass: null,
+            },
+            { id: "review", agent: "ghost", provider: null, taskClass: null },
           ],
         }),
       ],
@@ -471,8 +487,8 @@ it("flow_graph_connect_adds_hands_off_edge", async () => {
     title: "Ship it",
     maxRounds: 2,
     nodes: [
-      { id: "build", agent: "implementer", provider: null },
-      { id: "review", agent: "reviewer", provider: null },
+      { id: "build", agent: "implementer", provider: null, taskClass: null },
+      { id: "review", agent: "reviewer", provider: null, taskClass: null },
     ],
     edges: [
       { from: "build", to: "review", kind: "hands_off_to", gate: false },
@@ -517,7 +533,9 @@ it("flow_graph_delete_removes_selected_node_and_clears_selection", async () => {
     id: "ship",
     title: "Ship it",
     maxRounds: 2,
-    nodes: [{ id: "build", agent: "implementer", provider: null }],
+    nodes: [
+      { id: "build", agent: "implementer", provider: null, taskClass: null },
+    ],
     edges: [],
   });
   expect(onSelectionChange).toHaveBeenCalledWith(null);
@@ -864,7 +882,14 @@ it("flow_edit_missing_flow_after_reload_offers_discard", async () => {
           id: "other",
           file: "flows/other.md",
           title: "Other flow",
-          nodes: [{ id: "solo", agent: "implementer", provider: null }],
+          nodes: [
+            {
+              id: "solo",
+              agent: "implementer",
+              provider: null,
+              taskClass: null,
+            },
+          ],
           edges: [],
         }),
       ],
@@ -874,7 +899,9 @@ it("flow_edit_missing_flow_after_reload_offers_discard", async () => {
     id: "other",
     file: "flows/other.md",
     title: "Other flow",
-    nodes: [{ id: "solo", agent: "implementer", provider: null }],
+    nodes: [
+      { id: "solo", agent: "implementer", provider: null, taskClass: null },
+    ],
     edges: [],
   });
   await editThenReloadWith(client, makeFlowsList({ flows: [remaining] }));
@@ -899,4 +926,42 @@ it("flow_edit_missing_last_flow_keeps_discard", async () => {
 
   await screen.findByText("No flows found in this folder.", {}, WAIT_OPTIONS);
   expect(screen.queryByText(MISSING_FLOW_TEXT)).toBeNull();
+});
+
+it("flow inspector sets the node task class", async () => {
+  const client = appClient();
+  client.respond("flows/save", makeFlowsList());
+  await startEditing(client);
+
+  fireEvent.click(await findGraphNode("build"));
+  const panel = await screen.findByRole("region", { name: "Node build" });
+  const select = within(panel).getByLabelText<HTMLSelectElement>("Task class");
+  expect(Array.from(select.options, (option) => option.textContent)).toEqual([
+    "—",
+    "light",
+    "standard",
+    "heavy",
+  ]);
+  fireEvent.change(select, { target: { value: "heavy" } });
+  fireEvent.click(saveButton());
+
+  await waitFor(() => {
+    expect(savedRequests(client)).toEqual([
+      {
+        cwd: SESSION_CWD,
+        file: "flows/ship.md",
+        revision: "rev-1",
+        flow: {
+          id: "ship",
+          title: "Ship it",
+          maxRounds: 2,
+          nodes: [
+            { id: "build", agent: "implementer", taskClass: "heavy" },
+            { id: "review", agent: "reviewer" },
+          ],
+          edges: [{ from: "build", to: "review", kind: "hands_off_to" }],
+        },
+      },
+    ]);
+  }, WAIT_OPTIONS);
 });

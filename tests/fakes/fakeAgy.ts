@@ -74,6 +74,7 @@ export interface AgySpawn {
   readonly probe: boolean;
   readonly settings: Json | null;
   readonly mode: string | null;
+  readonly model: string | null;
   readonly conversation: string | null;
   readonly geminiDir: string | null;
   readonly configFilesAtSpawn: readonly string[];
@@ -89,6 +90,7 @@ const UserLineSchema = z.object({
 });
 const FLAG_SETTINGS = "--settings";
 const FLAG_MODE = "--mode";
+const FLAG_MODEL = "--model";
 const FLAG_CONVERSATION = "--conversation";
 const FLAG_PROMPT = "-p";
 const FLAG_GEMINI_DIR_PREFIX = "--gemini_dir=";
@@ -645,6 +647,7 @@ export class ScriptedAgyContainer implements ProcessContainer {
       probe,
       settings: settingsOf(spec.args),
       mode: valueAfter(spec.args, FLAG_MODE),
+      model: valueAfter(spec.args, FLAG_MODEL),
       conversation: valueAfter(spec.args, FLAG_CONVERSATION),
       geminiDir,
       configFilesAtSpawn: configFilesIn(geminiDir),

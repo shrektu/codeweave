@@ -89,6 +89,9 @@ interface Rig {
   readonly repo: string;
 }
 
+const REQUESTED_MODEL = "Gemini 3.8 Flash (Medium)";
+const REQUESTED_MODEL_API_NAME = "gemini-3.8-flash";
+
 const cleanup = createCleanupStack();
 
 function isolatedParentEnv(): NodeJS.ProcessEnv {
@@ -274,6 +277,68 @@ describe("rotation with the real agy CLI and a local Gemini API mock", () => {
       const main = rig.gemini.requests(GeminiRequestKind.main);
       expect(main).toHaveLength(EXPECTED_MAIN_REQUESTS);
       expect(JSON.stringify(main[1]?.body)).toContain(HOOK_DENIAL_REASON);
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
+describe("model selection with the real agy CLI and a local Gemini API mock", () => {
+  it(
+    "model reaches the real agy",
+    async () => {
+      const rig = await openRig(GeminiScenario.ok);
+      assertAgyIsolated(rig.isolation);
+      const { handlers } = rig.backend;
+
+      await handlers["session/start"]({
+        cwd: rig.repo,
+        profile: PermissionProfile.unattended,
+        provider: ProviderId.gemini,
+        model: { provider: ProviderId.gemini, model: REQUESTED_MODEL },
+      });
+      await handlers["session/prompt"]({ text: "Reply with one word" });
+      await vi.waitFor(async () => {
+        expect((await sessionOf(rig)).lastTurn).not.toBeNull();
+      }, WAIT_OPTIONS);
+
+      expect((await sessionOf(rig)).lastTurn?.kind).toBe("ended");
+      expect(
+        rig.gemini
+          .requests(GeminiRequestKind.main)
+          .map((request) => request.model),
+      ).toContain(REQUESTED_MODEL_API_NAME);
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
+describe("rejected model with the real agy CLI", () => {
+  it(
+    "rejected model fails the real agy turn",
+    async () => {
+      const rig = await openRig(GeminiScenario.ok);
+      assertAgyIsolated(rig.isolation);
+      const { handlers } = rig.backend;
+
+      await handlers["session/start"]({
+        cwd: rig.repo,
+        profile: PermissionProfile.unattended,
+        provider: ProviderId.gemini,
+        model: { provider: ProviderId.gemini, model: "nonsense" },
+      });
+      await handlers["session/prompt"]({ text: "Reply with one word" });
+      await vi.waitFor(async () => {
+        expect((await sessionOf(rig)).lastTurn).not.toBeNull();
+      }, WAIT_OPTIONS);
+
+      const { lastTurn } = await sessionOf(rig);
+      expect(lastTurn?.kind).toBe("failed");
+      expect(lastTurn).toMatchObject({
+        message: expect.stringContaining(
+          "model nonsense is not recognized as a known model",
+        ) as unknown,
+      });
+      expect(rig.gemini.requests(GeminiRequestKind.main)).toEqual([]);
     },
     TEST_TIMEOUT_MS,
   );

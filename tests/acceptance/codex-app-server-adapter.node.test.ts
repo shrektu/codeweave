@@ -147,7 +147,7 @@ describe("codex app-server adapter: turn", () => {
       { type: "complete", status: "completed" },
     ]);
 
-    await handle.prompt("list files");
+    await handle.prompt("list files", { model: null });
 
     expect(events).toEqual([
       INITIAL_RATE_LIMIT,
@@ -185,7 +185,7 @@ describe("codex app-server adapter: approval", () => {
       { type: "complete", status: "completed" },
     ]);
 
-    const turn = handle.prompt("build it");
+    const turn = handle.prompt("build it", { model: null });
     const { requestId, ...request } = await codexPermissionRequestOf(events);
 
     expect(requestId).not.toBe("");
@@ -233,7 +233,7 @@ describe("codex app-server adapter: limits", () => {
       },
     ]);
 
-    await handle.prompt("keep going");
+    await handle.prompt("keep going", { model: null });
 
     expect(events.slice(1)).toEqual([
       expect.objectContaining({ type: "tool_call", toolCallId: "c3" }),
@@ -276,7 +276,7 @@ describe("codex app-server adapter: auth", () => {
       },
     ]);
 
-    await handle.prompt("hello");
+    await handle.prompt("hello", { model: null });
 
     expect(events.at(-1)).toEqual({
       type: "turn_error",
@@ -288,13 +288,171 @@ describe("codex app-server adapter: auth", () => {
   });
 });
 
+describe("codex app-server adapter: model selection", () => {
+  it("model reaches codex turn/start", async () => {
+    const rig = await createCodexRig();
+    const { handle } = await startCodexHandle(rig);
+
+    await handle.prompt("go", { model: "gpt-5-codex" });
+
+    expect(serverOf(rig).paramsOf("turn/start")).toEqual([
+      expect.objectContaining({ model: "gpt-5-codex" }) as unknown,
+    ]);
+  });
+
+  it("null model omits turn/start model", async () => {
+    const rig = await createCodexRig();
+    const { handle } = await startCodexHandle(rig);
+
+    await handle.prompt("go", { model: null });
+
+    const [params] = serverOf(rig).paramsOf("turn/start");
+    expect(params).toEqual(expect.objectContaining({ threadId: "thr-1" }));
+    expect(params).not.toHaveProperty("model");
+  });
+});
+
+describe("codex app-server adapter: model reporting", () => {
+  it("adapter reports thread and rerouted model", async () => {
+    const rig = await createCodexRig();
+    rig.container.config.threadModel = "gpt-5-codex";
+    const { handle, events } = await startCodexHandle(rig);
+    serverOf(rig).enqueue([
+      {
+        type: "notify",
+        method: "model/rerouted",
+        params: {
+          fromModel: "gpt-5-codex",
+          toModel: "gpt-5-mini",
+          reason: "highRiskCyberActivity",
+        },
+      },
+      { type: "complete", status: "completed" },
+    ]);
+
+    await handle.prompt("go", { model: null });
+
+    expect(events.filter((event) => event.type === "model")).toEqual([
+      { type: "model", model: "gpt-5-codex" },
+      { type: "model", model: "gpt-5-mini" },
+    ]);
+  });
+
+  it("codex reports the turn model it sent", async () => {
+    const rig = await createCodexRig();
+    rig.container.config.threadModel = "gpt-5-codex";
+    const { handle, events } = await startCodexHandle(rig);
+
+    await handle.prompt("go", { model: "gpt-5-mini" });
+
+    expect(events.filter((event) => event.type === "model")).toEqual([
+      { type: "model", model: "gpt-5-mini" },
+    ]);
+  });
+
+  it("codex reroute after the turn model wins", async () => {
+    const rig = await createCodexRig();
+    rig.container.config.threadModel = "gpt-5-codex";
+    const { handle, events } = await startCodexHandle(rig);
+    serverOf(rig).enqueue([
+      {
+        type: "notify",
+        method: "model/rerouted",
+        params: {
+          fromModel: "gpt-5-mini",
+          toModel: "gpt-5-nano",
+          reason: "highRiskCyberActivity",
+        },
+      },
+      { type: "complete", status: "completed" },
+    ]);
+
+    await handle.prompt("go", { model: "gpt-5-mini" });
+
+    expect(events.filter((event) => event.type === "model")).toEqual([
+      { type: "model", model: "gpt-5-mini" },
+      { type: "model", model: "gpt-5-nano" },
+    ]);
+  });
+
+  it("codex null turn model keeps the announced model", async () => {
+    const rig = await createCodexRig();
+    rig.container.config.threadModel = "gpt-5-codex";
+    const { handle, events } = await startCodexHandle(rig);
+
+    await handle.prompt("one", { model: "gpt-5-mini" });
+    await handle.prompt("two", { model: null });
+
+    expect(events.filter((event) => event.type === "model")).toEqual([
+      { type: "model", model: "gpt-5-mini" },
+      { type: "model", model: "gpt-5-mini" },
+    ]);
+  });
+
+  it("codex reports the model on every turn", async () => {
+    const rig = await createCodexRig();
+    rig.container.config.threadModel = "gpt-5-codex";
+    const { handle, events } = await startCodexHandle(rig);
+
+    await handle.prompt("one", { model: "gpt-5-mini" });
+    await handle.prompt("two", { model: "gpt-5-mini" });
+
+    expect(events.filter((event) => event.type === "model")).toEqual([
+      { type: "model", model: "gpt-5-mini" },
+      { type: "model", model: "gpt-5-mini" },
+    ]);
+  });
+
+  it("malformed rerouted notification reports no model", async () => {
+    const rig = await createCodexRig();
+    const { handle, events } = await startCodexHandle(rig);
+    serverOf(rig).enqueue([
+      {
+        type: "notify",
+        method: "model/rerouted",
+        params: { fromModel: "gpt-5-codex", toModel: 5 },
+      },
+      { type: "complete", status: "completed" },
+    ]);
+
+    await handle.prompt("go", { model: null });
+
+    expect(events.filter((event) => event.type === "model")).toEqual([]);
+  });
+
+  it("rejected model fails the turn without a rate limit", async () => {
+    const rig = await createCodexRig();
+    const { handle, events } = await startCodexHandle(rig);
+    serverOf(rig).enqueue([
+      {
+        type: "fail",
+        codexErrorInfo: "modelNotFound",
+        message: "The model nonsense does not exist.",
+      },
+    ]);
+
+    await handle.prompt("go", { model: "nonsense" });
+
+    expect(events.at(-1)).toEqual({
+      type: "turn_error",
+      errorKind: null,
+      rpcCode: null,
+      message: "The model nonsense does not exist.",
+    });
+    expect(settleOutcome(events)).toEqual({
+      kind: "failed",
+      message: "The model nonsense does not exist.",
+    });
+  });
+});
+
 describe("codex app-server adapter: cancel and exit", () => {
   it("codex_cancel_sends_turn_interrupt", async () => {
     const rig = await createCodexRig();
     const { handle, events } = await startCodexHandle(rig);
     serverOf(rig).enqueue([{ type: "await_interrupt" }]);
 
-    const turn = handle.prompt("long task");
+    const turn = handle.prompt("long task", { model: null });
     await vi.waitFor(() => {
       expect(serverOf(rig).methods()).toContain("turn/start");
     });
@@ -315,7 +473,7 @@ describe("codex app-server adapter: cancel and exit", () => {
     const { handle, events } = await startCodexHandle(rig);
     serverOf(rig).enqueue([agentDelta("m2", "partial"), { type: "exit" }]);
 
-    await handle.prompt("crash please");
+    await handle.prompt("crash please", { model: null });
 
     await vi.waitFor(() => {
       expect(events.at(-1)).toEqual({ type: "process_exit" });
@@ -378,7 +536,7 @@ describe("codex app-server adapter: start and close regressions", () => {
     const { handle, events } = await startCodexHandle(rig);
     serverOf(rig).enqueue([{ type: "hang" }]);
 
-    const turn = handle.prompt("stall");
+    const turn = handle.prompt("stall", { model: null });
     await vi.waitFor(() => {
       expect(serverOf(rig).methods()).toContain("turn/start");
     });
@@ -411,7 +569,7 @@ describe("codex app-server adapter: reached type regressions", () => {
     serverOf(rig).enqueue([
       { type: "fail", codexErrorInfo: "usageLimitExceeded", message: "limit" },
     ]);
-    await handle.prompt("hit the limit");
+    await handle.prompt("hit the limit", { model: null });
 
     pushRateLimitUpdate(rig, rateSnapshot(null, null));
 
@@ -444,13 +602,13 @@ describe("codex app-server adapter: profile regressions", () => {
     const rig = await createCodexRig();
     const { handle } = await startCodexHandle(rig, PermissionProfile.ask);
 
-    await handle.prompt("one");
+    await handle.prompt("one", { model: null });
     await handle.setProfile(PermissionProfile.bypass);
-    await handle.prompt("two");
-    await handle.prompt("three");
+    await handle.prompt("two", { model: null });
+    await handle.prompt("three", { model: null });
     await handle.setProfile(PermissionProfile.ask);
-    await handle.prompt("four");
-    await handle.prompt("five");
+    await handle.prompt("four", { model: null });
+    await handle.prompt("five", { model: null });
 
     const overrides = serverOf(rig)
       .paramsOf("turn/start")
@@ -488,7 +646,7 @@ describe("codex app-server adapter: cancel regressions", () => {
     rig.container.config.turnStartHang = true;
     const { handle } = await startCodexHandle(rig);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const turn = handle.prompt("never answered");
+    const turn = handle.prompt("never answered", { model: null });
     await vi.waitFor(() => {
       expect(serverOf(rig).methods()).toContain("turn/start");
     });
@@ -508,7 +666,7 @@ describe("codex app-server adapter: cancel regressions", () => {
     const { handle } = await startCodexHandle(rig);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     serverOf(rig).enqueue([{ type: "hang" }]);
-    const turn = handle.prompt("long");
+    const turn = handle.prompt("long", { model: null });
     await vi.waitFor(() => {
       expect(serverOf(rig).methods()).toContain("turn/start");
     });
@@ -606,7 +764,7 @@ describe("codex app-server adapter: round two regressions", () => {
       { type: "fail", codexErrorInfo: "usageLimitExceeded", message: "limit" },
     ]);
 
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
     await Promise.all(serverOf(rig).delayedReplies);
 
     expect(events.filter((event) => event.type === "rate_limit")).toEqual([
@@ -653,7 +811,7 @@ describe("codex app-server adapter: stream regressions", () => {
     const { handle, events } = await startCodexHandle(rig);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     serverOf(rig).enqueue([{ type: "hang" }]);
-    const turn = handle.prompt("stall");
+    const turn = handle.prompt("stall", { model: null });
     await vi.waitFor(() => {
       expect(serverOf(rig).methods()).toContain("turn/start");
     });

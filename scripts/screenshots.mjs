@@ -71,14 +71,14 @@ const AGENTS = [
     "Implements the API changes and keeps the tests green",
     "sonnet",
     "accept-edits",
-    "M",
+    "standard",
   ],
   [
     "frontend-dev",
     "Implements the UI changes against the new API",
     "sonnet",
     "accept-edits",
-    "M",
+    "standard",
   ],
   ["tester", "Runs the test suite and reports failures", "haiku", "unattended"],
   [

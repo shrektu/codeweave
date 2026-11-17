@@ -16,6 +16,7 @@ const SNAPSHOT_DIR = "/tmp/codeweave-agy-snap-abc";
 function launchFor(
   profile: PermissionProfile,
   conversationId: string | null,
+  model: string | null = null,
 ): ReturnType<typeof buildAgyLaunch> {
   return buildAgyLaunch({
     executable: EXECUTABLE,
@@ -24,6 +25,7 @@ function launchFor(
     conversationId,
     configDir: CONFIG_DIR,
     profile,
+    model,
     worktreeRoot: WORKTREE,
     snapshotDir: SNAPSHOT_DIR,
   });
@@ -59,6 +61,23 @@ describe("agy launch arguments", () => {
     ]);
   });
 
+  it("model_adds_the_model_flag_before_the_gemini_dir", () => {
+    const launch = launchFor(PermissionProfile.ask, null, "gemini-3-pro");
+
+    const flagAt = launch.args.indexOf("--model");
+    expect(launch.args[flagAt + 1]).toBe("gemini-3-pro");
+    expect(flagAt).toBeGreaterThan(-1);
+    expect(flagAt).toBeLessThan(
+      launch.args.findIndex((arg) => arg.startsWith("--gemini_dir=")),
+    );
+  });
+
+  it("null_model_adds_no_model_flag", () => {
+    const launch = launchFor(PermissionProfile.ask, null, null);
+
+    expect(launch.args).not.toContain("--model");
+  });
+
   it("settings_argument_is_the_json_of_the_profile_settings", () => {
     const launch = launchFor(PermissionProfile.ask, null);
 
@@ -76,6 +95,7 @@ describe("agy launch arguments", () => {
       conversationId: null,
       configDir: "accounts/one",
       profile: PermissionProfile.ask,
+      model: null,
       worktreeRoot: WORKTREE,
       snapshotDir: SNAPSHOT_DIR,
     });

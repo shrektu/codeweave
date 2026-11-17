@@ -14,6 +14,7 @@ import {
   type AgentHandle,
   type AgentStartResult,
   type AgentStartSpec,
+  type TurnOptions,
 } from "../agentAdapter";
 import type { AgentProcess, AgentProcesses } from "../agentProcesses";
 import {
@@ -71,6 +72,7 @@ import {
   ErrorNotificationParamsSchema,
   FileChangeApprovalParamsSchema,
   ItemNotificationParamsSchema,
+  ModelReroutedParamsSchema,
   PermissionsApprovalParamsSchema,
   RateLimitsReadResponseSchema,
   ThreadStartResponseSchema,
@@ -191,6 +193,8 @@ class CodexAppServerSession implements AgentHandle {
   private readonly rateLimitReadTimeoutMs: number;
   private resolveExit: () => void = () => undefined;
   private threadId = "";
+  private model: string | null = null;
+  private reportedModel: string | null = null;
   private readonly stopGraceMs: number;
   private appliedPolicy: ProfilePolicy;
   private policy: ProfilePolicy;
@@ -238,11 +242,11 @@ class CodexAppServerSession implements AgentHandle {
     };
   }
 
-  async prompt(text: string): Promise<void> {
+  async prompt(text: string, options: TurnOptions): Promise<void> {
     if (this.turn !== null) {
       throw new TurnInProgressError(this.runId);
     }
-    const current = this.runTurn(text);
+    const current = this.runTurn(text, options);
     this.turn = current;
     await current.finally(() => {
       this.turn = this.turn === current ? null : this.turn;
@@ -372,6 +376,7 @@ class CodexAppServerSession implements AgentHandle {
       ThreadStartResponseSchema,
     );
     this.threadId = thread.thread.id;
+    this.model = thread.model ?? null;
   }
 
   private async loadInitialRateLimits(): Promise<void> {
@@ -405,11 +410,14 @@ class CodexAppServerSession implements AgentHandle {
     this.limitsRevision += 1;
   }
 
-  private async runTurn(text: string): Promise<void> {
+  private async runTurn(text: string, options: TurnOptions): Promise<void> {
     this.announceRateLimits();
+    this.model = options.model ?? this.model;
+    this.reportedModel = null;
+    this.announceModel();
     const active = newActiveTurn();
     this.active = active;
-    const events = await this.driveTurn(text, active);
+    const events = await this.driveTurn(text, active, options);
     this.active = null;
     this.cancelPending();
     this.turn = null;
@@ -421,13 +429,14 @@ class CodexAppServerSession implements AgentHandle {
   private async driveTurn(
     text: string,
     active: ActiveTurn,
+    options: TurnOptions,
   ): Promise<AgentEvent[]> {
     try {
       const desired = this.policy;
       const started = await this.untilExit(
         this.rpc.request(
           CodexMethod.turnStart,
-          this.turnParams(text, desired),
+          this.turnParams(text, desired, options.model),
           TurnStartResponseSchema,
         ),
       );
@@ -445,6 +454,7 @@ class CodexAppServerSession implements AgentHandle {
   private turnParams(
     text: string,
     desired: ProfilePolicy,
+    model: string | null,
   ): Readonly<Record<string, unknown>> {
     const changed =
       desired.approvalPolicy !== this.appliedPolicy.approvalPolicy ||
@@ -452,6 +462,7 @@ class CodexAppServerSession implements AgentHandle {
     return {
       threadId: this.threadId,
       input: [{ type: "text", text }],
+      ...(model === null ? {} : { model }),
       ...(changed
         ? {
             approvalPolicy: desired.approvalPolicy,
@@ -534,8 +545,30 @@ class CodexAppServerSession implements AgentHandle {
     }
   }
 
+  private announceModel(): void {
+    if (this.model !== null && this.model !== this.reportedModel) {
+      this.reportedModel = this.model;
+      this.emit({ type: "model", model: this.model });
+    }
+  }
+
+  private onModelRerouted(params: unknown): void {
+    const parsed = this.parse(
+      ModelReroutedParamsSchema,
+      CodexNotification.modelRerouted,
+      params,
+    );
+    if (parsed !== null) {
+      this.model = parsed.toModel;
+      this.announceModel();
+    }
+  }
+
   private onNotification(method: string, params: unknown): void {
     switch (method) {
+      case CodexNotification.modelRerouted:
+        this.onModelRerouted(params);
+        return;
       case CodexNotification.itemStarted:
         this.onItemStarted(params);
         return;

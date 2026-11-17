@@ -241,6 +241,7 @@ it("legacy_storage_files_load_unchanged", async () => {
     terminalShell: null,
     updateCheck: true,
     updateChannel: "stable",
+    defaultTaskClass: "standard",
   });
 });
 

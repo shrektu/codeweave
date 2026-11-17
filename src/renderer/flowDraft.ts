@@ -1,5 +1,6 @@
 import { MAX_FLOW_ROUNDS, MIN_FLOW_ROUNDS } from "../domain/constants";
 import { validateFlow, type FlowDefinition } from "../domain/flows";
+import type { TaskClass } from "../domain/taskClass";
 import { EdgeKind, ProviderId } from "../domain/types";
 import type { ParamsMap } from "../shared/protocol";
 import type { AgentView, FlowView } from "../shared/views";
@@ -8,6 +9,7 @@ export interface DraftNode {
   id: string;
   agent: string;
   provider: ProviderId | null;
+  taskClass: TaskClass | null;
 }
 
 export interface DraftEdge {
@@ -43,6 +45,7 @@ export type FlowSelection =
 export interface NodePatch {
   agent?: string;
   provider?: ProviderId | null;
+  taskClass?: TaskClass | null;
 }
 
 export interface EdgePatch {
@@ -196,6 +199,7 @@ export function toDefinition(draft: FlowDraft): FlowDefinition {
       id: node.id,
       agent: node.agent,
       ...(node.provider === null ? {} : { provider: node.provider }),
+      ...(node.taskClass === null ? {} : { taskClass: node.taskClass }),
     })),
     edges: draft.edges.map((edge) => ({
       from: edge.from,

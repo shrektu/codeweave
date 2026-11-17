@@ -52,7 +52,7 @@ function exampleFlow(): FlowView {
   return makeFlow({
     id,
     title,
-    nodes: nodes.map((node) => ({ ...node, provider: null })),
+    nodes: nodes.map((node) => ({ ...node, provider: null, taskClass: null })),
     edges: edges.map((edge) => ({ ...edge, gate: false })),
   });
 }
@@ -369,7 +369,14 @@ it("flow_tab_switches_between_flows_with_picker", async () => {
         makeFlow({
           id: "solo",
           title: "Solo run",
-          nodes: [{ id: "alone", agent: "implementer", provider: null }],
+          nodes: [
+            {
+              id: "alone",
+              agent: "implementer",
+              provider: null,
+              taskClass: null,
+            },
+          ],
           edges: [],
         }),
       ],

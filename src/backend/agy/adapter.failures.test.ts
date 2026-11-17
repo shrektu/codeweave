@@ -51,7 +51,7 @@ describe("agy adapter model failures", () => {
     const { rig, handle, events } = await startedAgy();
     rig.container.scriptTurn(quotaFailureTurn(CONV, false));
 
-    await handle.prompt("work");
+    await handle.prompt("work", { model: null });
 
     expect(eventTypes(events)).toEqual([
       "rate_limit",
@@ -79,7 +79,7 @@ describe("agy adapter model failures", () => {
       }),
     ]);
 
-    await handle.prompt("work");
+    await handle.prompt("work", { model: null });
 
     expect(withoutRateLimit(events)).toEqual([
       {
@@ -106,7 +106,7 @@ describe("agy adapter quota classification of this turn only", () => {
       exitWith(3),
     ]);
 
-    await handle.prompt("work");
+    await handle.prompt("work", { model: null });
 
     expect(withoutRateLimit(events)).toEqual([
       {
@@ -135,10 +135,10 @@ describe("agy adapter quota classification of this turn only", () => {
       resultStep(CONV, STICKY_RESULT),
       exitWith(3),
     ]);
-    await handle.prompt("one");
+    await handle.prompt("one", { model: null });
     events.length = 0;
 
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(events).toEqual([
       {
@@ -159,7 +159,7 @@ describe("agy adapter respawn races with stop", () => {
     rig.container.scriptProcess({ spawnGate: gate.promise });
     rig.container.scriptTurn(replyTurn(CONV, "late"));
     await handle.setProfile(PermissionProfile.plan);
-    const prompt = handle.prompt("late");
+    const prompt = handle.prompt("late", { model: null });
     await vi.waitFor(() => {
       expect(rig.container.gatedSpawns()).toBe(1);
     });
@@ -191,7 +191,7 @@ describe("agy adapter respawn races with cancel", () => {
     rig.container.scriptProcess({ spawnGate: gate.promise });
     rig.container.scriptTurn(replyTurn(CONV, "late"));
     await handle.setProfile(PermissionProfile.plan);
-    const prompt = handle.prompt("late");
+    const prompt = handle.prompt("late", { model: null });
     await vi.waitFor(() => {
       expect(rig.container.gatedSpawns()).toBe(1);
     });
@@ -225,13 +225,13 @@ describe("agy adapter respawn races with cancel", () => {
       }),
       HANG,
     ]);
-    const running = handle.prompt("task");
+    const running = handle.prompt("task", { model: null });
     await waitForEvent(events, "text");
     const cancelling = handle.cancel();
     await running;
     rig.container.scriptTurn(replyTurn(CONV, "again"));
 
-    const second = handle.prompt("again");
+    const second = handle.prompt("again", { model: null });
     exit.resolve(undefined);
     await cancelling;
     await second;
@@ -254,7 +254,7 @@ describe("agy adapter authentication failures", () => {
       HANG,
     ]);
 
-    const prompt = handle.prompt("work");
+    const prompt = handle.prompt("work", { model: null });
 
     expect(await settlesWithin(prompt, SETTLE_BOUND_MS)).toBe(true);
     expect(withoutRateLimit(events)).toEqual([
@@ -281,7 +281,7 @@ describe("agy adapter authentication failures", () => {
       exitWith(1),
     ]);
 
-    await handle.prompt("work");
+    await handle.prompt("work", { model: null });
 
     expect(withoutRateLimit(events)).toEqual([
       {
@@ -312,7 +312,7 @@ describe("agy adapter cancel and stop edges", () => {
       textDeltaStep(at(CONV, 1), "Working"),
       HANG,
     ]);
-    const prompt = handle.prompt("work");
+    const prompt = handle.prompt("work", { model: null });
     await waitForEvent(events, "text");
 
     const stopped = await handle.stop(AGY_RIG_GRACE_MS);
@@ -337,12 +337,12 @@ describe("agy adapter subscribers and busy turns", () => {
       textDeltaStep(at(CONV, 1), "Working"),
       HANG,
     ]);
-    const first = handle.prompt("first");
+    const first = handle.prompt("first", { model: null });
     await waitForEvent(events, "text");
 
-    await expect(handle.prompt("second")).rejects.toBeInstanceOf(
-      TurnInProgressError,
-    );
+    await expect(
+      handle.prompt("second", { model: null }),
+    ).rejects.toBeInstanceOf(TurnInProgressError);
     await handle.stop(AGY_RIG_GRACE_MS);
     await first;
 
@@ -359,7 +359,7 @@ describe("agy adapter subscribers and busy turns", () => {
     handle.subscribe((event) => seen.push(event));
     rig.container.scriptTurn(replyTurn(CONV, "hi"));
 
-    await handle.prompt("hi");
+    await handle.prompt("hi", { model: null });
 
     expect(eventTypes(seen)).toEqual(["rate_limit", "text", "turn_end"]);
   });
@@ -371,7 +371,7 @@ describe("agy adapter subscribers and busy turns", () => {
     unsubscribe();
     rig.container.scriptTurn(replyTurn(CONV, "hi"));
 
-    await handle.prompt("hi");
+    await handle.prompt("hi", { model: null });
 
     expect(seen).toEqual([]);
   });

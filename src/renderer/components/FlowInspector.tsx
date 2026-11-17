@@ -1,6 +1,11 @@
 import { useState, type JSX, type SyntheticEvent } from "react";
 
 import { MAX_FLOW_ROUNDS, MIN_FLOW_ROUNDS } from "../../domain/constants";
+import {
+  parseTaskClass,
+  TASK_CLASS_ORDER,
+  type TaskClass,
+} from "../../domain/taskClass";
 import { EdgeKind, type ProviderId } from "../../domain/types";
 import type { AgentView } from "../../shared/views";
 import {
@@ -43,6 +48,8 @@ interface EditorProps {
 
 const EDGE_KINDS = Object.values(EdgeKind);
 const DEFAULT_PROVIDER_VALUE = "";
+const NO_TASK_CLASS_VALUE = "";
+const NO_TASK_CLASS_LABEL = "—";
 
 function Notice({ message }: { message: string | null }): JSX.Element | null {
   return message === null ? null : <p className="error">{message}</p>;
@@ -122,6 +129,33 @@ function ProviderSelect({
         {PROVIDER_IDS.map((id) => (
           <option key={id} value={id}>
             {PROVIDER_LABELS[id]}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function TaskClassSelect({
+  value,
+  onChange,
+}: {
+  value: TaskClass | null;
+  onChange: (taskClass: TaskClass | null) => void;
+}): JSX.Element {
+  return (
+    <label className="field">
+      Task class
+      <select
+        value={value ?? NO_TASK_CLASS_VALUE}
+        onChange={(event) => {
+          onChange(parseTaskClass(event.target.value));
+        }}
+      >
+        <option value={NO_TASK_CLASS_VALUE}>{NO_TASK_CLASS_LABEL}</option>
+        {TASK_CLASS_ORDER.map((taskClass) => (
+          <option key={taskClass} value={taskClass}>
+            {taskClass}
           </option>
         ))}
       </select>
@@ -253,6 +287,7 @@ function AddNodeForm({
     id: "",
     agent: agents[0]?.id ?? "",
     provider: null,
+    taskClass: null,
   });
   const submit = (event: SyntheticEvent): void => {
     event.preventDefault();
@@ -376,6 +411,12 @@ function NodeEditor({
         value={node.provider}
         onChange={(provider) => {
           onDraftChange(updateNode(draft, node.id, { provider }));
+        }}
+      />
+      <TaskClassSelect
+        value={node.taskClass}
+        onChange={(taskClass) => {
+          onDraftChange(updateNode(draft, node.id, { taskClass }));
         }}
       />
       <button
