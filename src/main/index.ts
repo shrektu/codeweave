@@ -50,11 +50,13 @@ import {
   type UpdateNotifier,
 } from "./updates";
 import { resolveUserDataOverride } from "./userDataOverride";
+import { linuxWindowIcon } from "./windowIcon";
 
 Reflect.deleteProperty(process.env, RUN_ID_ENV);
 
 const RENDERER_INDEX_PATH = join(import.meta.dirname, "../renderer/index.html");
 const GPU_COMPOSITING_ENABLED_PREFIX = "enabled";
+const LINUX_PLATFORM = "linux";
 const WINDOW_WIDTH = 1440;
 const WINDOW_HEIGHT = 900;
 
@@ -180,6 +182,15 @@ function createWindow(backend: UtilityProcess): void {
     width: WINDOW_WIDTH,
     height: WINDOW_HEIGHT,
     backgroundColor: "#05070d",
+    ...(process.platform === LINUX_PLATFORM
+      ? {
+          icon: linuxWindowIcon(
+            app.isPackaged,
+            process.resourcesPath,
+            app.getAppPath(),
+          ),
+        }
+      : {}),
     webPreferences: {
       contextIsolation: true,
       sandbox: true,

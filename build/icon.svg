@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#131c30"/><stop offset="1" stop-color="#05070d"/></linearGradient>
+<filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="18" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+
+</defs>
+<rect x="64" y="64" width="896" height="896" rx="200" fill="url(#bg)"/>
+<rect x="68" y="68" width="888" height="888" rx="196" fill="none" stroke="#5ce1ff" stroke-opacity="0.32" stroke-width="8"/>
+
+<g stroke="#7d89a8" stroke-width="30" stroke-linecap="round" opacity="0.85">
+<line x1="512" y1="318" x2="336" y2="640"/><line x1="512" y1="318" x2="688" y2="640"/><line x1="336" y1="640" x2="688" y2="640"/>
+</g>
+<g filter="url(#glow)">
+<circle cx="512" cy="318" r="104" fill="#ff8a5c"/>
+<circle cx="336" cy="640" r="104" fill="#3de0b0"/>
+<circle cx="688" cy="640" r="104" fill="#7aa2ff"/>
+</g>
+<circle cx="512" cy="533" r="34" fill="none" stroke="#5ce1ff" stroke-width="16"/>
+</svg>

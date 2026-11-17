@@ -30,10 +30,17 @@ publish job, which never runs outside a `v*` tag.
 
 | System | Runner | Files |
 | --- | --- | --- |
-| Linux x64 | `ubuntu-latest` | `Codeweave-<version>.AppImage`, `.deb`, `.rpm`, `latest-linux.yml` |
-| Linux arm64 | `ubuntu-24.04-arm` | arm64 `.AppImage`, `.deb`, `.rpm`, `latest-linux-arm64.yml` |
+| Linux x64 | `ubuntu-latest` | `Codeweave-<version>.AppImage`, `codeweave_<version>_amd64.deb`, `codeweave-<version>.x86_64.rpm`, `latest-linux.yml` |
+| Linux arm64 | `ubuntu-24.04-arm` | `Codeweave-<version>-arm64.AppImage`, `codeweave_<version>_arm64.deb`, `codeweave-<version>.aarch64.rpm`, `latest-linux-arm64.yml` |
 | Windows x64 and arm64 | `windows-latest` | `Codeweave-Setup-<version>.exe` (one installer for both architectures), `latest.yml` |
-| macOS x64 and arm64 | `macos-latest` | `Codeweave-<version>-x64.dmg`, `-arm64.dmg`, matching `.zip` files, `latest-mac.yml` |
+| macOS x64 and arm64 | `macos-latest` | `Codeweave-<version>-x64.dmg`, `Codeweave-<version>-arm64.dmg`, matching `.zip` files, `latest-mac.yml` |
+
+The app icons (`build/icon.png`, `build/icons/`, `build/icon.ico`,
+`build/icon.icns`) are generated from `build/icon.svg`. Regenerate them with
+`node scripts/release/icon.ts`; it needs a display or `xvfb-run`.
+
+The AppImage needs FUSE 2 on the user's machine. Without it, start it with
+`--appimage-extract-and-run` or set `APPIMAGE_EXTRACT_AND_RUN=1`.
 
 Each job builds natively. `node-pty` is an N-API module: Linux uses the
 `build/Release/pty.node` compiled during `pnpm install`, Windows and macOS use
