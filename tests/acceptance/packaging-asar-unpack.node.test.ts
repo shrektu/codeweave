@@ -26,7 +26,12 @@ interface PackageManifest {
 }
 
 interface BuilderConfig {
+  readonly files: readonly string[];
   readonly asarUnpack: readonly string[];
+  readonly win: {
+    readonly files?: readonly string[];
+    readonly asarUnpack?: readonly string[];
+  };
 }
 
 function findPackageDir(name: string, fromDir: string): string | undefined {
@@ -96,6 +101,52 @@ it("node_pty_native_module_is_asar_unpacked", () => {
   ) as BuilderConfig;
 
   expect(config.asarUnpack).toContain("node_modules/node-pty/**");
+});
+
+const KOFFI_TARGET_PACKAGES = [
+  "@koromix/koffi-darwin-arm64",
+  "@koromix/koffi-darwin-x64",
+  "@koromix/koffi-linux-arm64",
+  "@koromix/koffi-linux-x64",
+  "@koromix/koffi-win32-arm64",
+  "@koromix/koffi-win32-x64",
+];
+
+it("koffi_native_module_is_asar_unpacked", () => {
+  const config = parse(
+    readFileSync(join(REPO_ROOT, "electron-builder.yml"), "utf8"),
+  ) as BuilderConfig;
+  const koffiManifest = JSON.parse(
+    readFileSync(
+      join(findPackageDir("koffi", REPO_ROOT) ?? "", "package.json"),
+      "utf8",
+    ),
+  ) as PackageManifest;
+
+  expect(Object.keys(koffiManifest.optionalDependencies ?? {})).toEqual(
+    expect.arrayContaining([...KOFFI_TARGET_PACKAGES]),
+  );
+  expect(config.files).toEqual(
+    expect.arrayContaining([
+      "!node_modules/@koromix/koffi-*/**",
+      "node_modules/@koromix/koffi-${platform}-${arch}/**",
+    ]),
+  );
+  expect(config.asarUnpack).toEqual(
+    expect.arrayContaining([
+      "node_modules/koffi/**",
+      ...KOFFI_TARGET_PACKAGES.map((name) => `node_modules/${name}/**`),
+    ]),
+  );
+});
+
+it("koffi_has_no_windows_only_packaging_section", () => {
+  const config = parse(
+    readFileSync(join(REPO_ROOT, "electron-builder.yml"), "utf8"),
+  ) as BuilderConfig;
+
+  expect(config.win.files).toBeUndefined();
+  expect(config.win.asarUnpack).toBeUndefined();
 });
 
 const EXECUTABLE_BITS = 0o111;

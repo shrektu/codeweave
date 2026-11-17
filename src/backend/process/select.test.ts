@@ -1,15 +1,44 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { FakeJobApi } from "../../../tests/fakes/fakeJobApi";
 import { createHangingExec } from "../../../tests/fakes/hangingExec";
 import { SYSTEMD_CALL_TIMEOUT_MS } from "../constants";
 
 import { ContainerKind, ContainerUnavailableError } from "./container";
+import { JobApiError } from "./jobApi";
 import { createProcessContainer, probeSystemdUser } from "./select";
 
 describe("createProcessContainer", () => {
-  it("win32_still_reports_container_unavailable", async () => {
+  it("win32_selects_job_container", async () => {
+    const api = new FakeJobApi();
+    const probe = vi.fn(() => Promise.resolve(true));
+
+    const container = await createProcessContainer(
+      "win32",
+      probe,
+      undefined,
+      () => Promise.resolve(api),
+    );
+
+    expect(container.kind).toBe(ContainerKind.jobObject);
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it("win32_without_job_api_reports_container_unavailable", async () => {
+    const outcome = createProcessContainer(
+      "win32",
+      () => Promise.resolve(true),
+      undefined,
+      () => Promise.reject(new JobApiError("koffi is missing")),
+    );
+
+    await expect(outcome).rejects.toBeInstanceOf(ContainerUnavailableError);
+    await expect(outcome).rejects.toThrow("koffi is missing");
+  });
+
+  it("unsupported_platform_reports_container_unavailable", async () => {
     await expect(
-      createProcessContainer("win32", () => Promise.resolve(true)),
+      createProcessContainer("freebsd", () => Promise.resolve(true)),
     ).rejects.toBeInstanceOf(ContainerUnavailableError);
   });
 

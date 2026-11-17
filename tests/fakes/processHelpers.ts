@@ -52,7 +52,32 @@ export async function isRunning(pid: number): Promise<boolean> {
   }
 }
 
-export async function isAlive(pid: number): Promise<boolean> {
+export async function isAliveWin32(pid: number): Promise<boolean> {
+  const { stdout } = await execFileAsync("tasklist", [
+    "/FI",
+    `PID eq ${String(pid)}`,
+    "/NH",
+    "/FO",
+    "CSV",
+  ]);
+  return new RegExp(`^"[^"]*","${String(pid)}"`, "m").test(stdout);
+}
+
+export async function killTreeWin32(pid: number): Promise<void> {
+  try {
+    await execFileAsync("taskkill", ["/F", "/T", "/PID", String(pid)]);
+  } catch (error) {
+    if (await isAliveWin32(pid)) {
+      throw error;
+    }
+  }
+}
+
+export function isAlive(pid: number): Promise<boolean> {
+  return process.platform === "win32" ? isAliveWin32(pid) : isAlivePs(pid);
+}
+
+async function isAlivePs(pid: number): Promise<boolean> {
   try {
     const { stdout } = await execFileAsync("ps", [
       "-o",
