@@ -63,6 +63,7 @@ export type Launcher<T extends LaunchedProcess> = (
 export interface ContainerOps {
   members(): Promise<readonly number[]>;
   killMembers(): Promise<void>;
+  beforeStop?(): Promise<void>;
 }
 
 export interface Launched<T extends LaunchedProcess> {

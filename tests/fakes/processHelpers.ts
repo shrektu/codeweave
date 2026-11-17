@@ -11,6 +11,7 @@ import { STOP_CONFIRM_TIMEOUT_MS } from "../../src/backend/constants";
 const execFileAsync = promisify(execFile);
 const ZOMBIE_STATE = "Z";
 const STAT_FIELDS_AFTER_COMM_OFFSET = 2;
+const PS_NO_MATCH_EXIT_CODE = 1;
 const SYSTEMD_PROBE_ARGS = [
   "--user",
   "--scope",
@@ -45,6 +46,28 @@ export async function isRunning(pid: number): Promise<boolean> {
     return !afterComm.startsWith(ZOMBIE_STATE);
   } catch (error) {
     if (isErrnoCode(error, "ENOENT")) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+export async function isAlive(pid: number): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync("ps", [
+      "-o",
+      "stat=",
+      "-p",
+      String(pid),
+    ]);
+    const state = stdout.trim();
+    return state !== "" && !state.startsWith(ZOMBIE_STATE);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      error.code === PS_NO_MATCH_EXIT_CODE
+    ) {
       return false;
     }
     throw error;

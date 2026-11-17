@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createHangingExec } from "../../../tests/fakes/hangingExec";
 import { SYSTEMD_CALL_TIMEOUT_MS } from "../constants";
@@ -7,12 +7,19 @@ import { ContainerKind, ContainerUnavailableError } from "./container";
 import { createProcessContainer, probeSystemdUser } from "./select";
 
 describe("createProcessContainer", () => {
-  it("create_container_refuses_unsupported_platform", async () => {
-    for (const platform of ["darwin", "win32"] as const) {
-      await expect(
-        createProcessContainer(platform, () => Promise.resolve(true)),
-      ).rejects.toBeInstanceOf(ContainerUnavailableError);
-    }
+  it("win32_still_reports_container_unavailable", async () => {
+    await expect(
+      createProcessContainer("win32", () => Promise.resolve(true)),
+    ).rejects.toBeInstanceOf(ContainerUnavailableError);
+  });
+
+  it("darwin_selects_marker_container_without_probing", async () => {
+    const probe = vi.fn(() => Promise.resolve(true));
+
+    const container = await createProcessContainer("darwin", probe);
+
+    expect(container.kind).toBe(ContainerKind.envMarker);
+    expect(probe).not.toHaveBeenCalled();
   });
 
   it("probe_timeout_falls_back_to_marker_container", async () => {

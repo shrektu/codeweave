@@ -26,6 +26,14 @@ export const SYSTEMD_RUN_BINARY = "systemd-run";
 export const SYSTEMCTL_BINARY = "systemctl";
 export const KILL_SIGNAL_ARG = "--signal=SIGKILL";
 export const MARKER_KILL_MAX_ROUNDS = 20;
+export const PS_BINARY = "ps";
+export const PS_TABLE_ARGS = [
+  "axeww",
+  "-o",
+  "pid=,ppid=,lstart=,command=",
+] as const;
+export const PS_ENV: Readonly<Record<string, string>> = { LC_ALL: "C" };
+export const PS_CALL_TIMEOUT_MS = 5000;
 export const PROC_ROOT = "/proc";
 export const PROC_MISSING_ERRNO_CODES: readonly string[] = [
   "EACCES",

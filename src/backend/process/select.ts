@@ -5,6 +5,7 @@ import { newInstanceId } from "../instance";
 import { ContainerUnavailableError, type ProcessContainer } from "./container";
 import { createSystemdScopeContainer } from "./linux";
 import { createEnvMarkerContainer, createProcProcessTable } from "./marker";
+import { createPsProcessTable } from "./psTable";
 
 const SYSTEMD_PROBE_ARGS = [
   "--user",
@@ -33,6 +34,13 @@ export async function createProcessContainer(
   probe: () => Promise<boolean> = probeSystemdUser,
   instanceId: string = newInstanceId(),
 ): Promise<ProcessContainer> {
+  if (platform === "darwin") {
+    return createEnvMarkerContainer({
+      processTable: createPsProcessTable(),
+      kill: (pid, signal) => process.kill(pid, signal),
+      instanceId,
+    });
+  }
   if (platform !== "linux") {
     throw new ContainerUnavailableError(
       `No process container for platform ${platform}`,
