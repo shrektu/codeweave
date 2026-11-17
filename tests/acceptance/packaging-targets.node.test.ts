@@ -11,6 +11,11 @@ const PNG_HEIGHT_OFFSET = 20;
 const ICON_SIZE = 1024;
 const ENTITLEMENTS_PATH = "build/entitlements.mac.plist";
 
+interface ExtraResource {
+  readonly from: string;
+  readonly to: string;
+}
+
 interface BuilderConfig {
   readonly appId: string;
   readonly productName: string;
@@ -27,10 +32,14 @@ interface BuilderConfig {
     readonly maintainer: string;
     readonly synopsis: string;
     readonly files?: readonly string[];
+    readonly syncDesktopName?: boolean;
+    readonly icon?: string;
+    readonly extraResources?: readonly ExtraResource[];
   };
   readonly win: {
     readonly target: string;
     readonly files?: readonly string[];
+    readonly icon?: string;
   };
   readonly nsis: Readonly<Record<string, string | boolean>>;
   readonly mac: {
@@ -41,10 +50,12 @@ interface BuilderConfig {
     readonly entitlementsInherit: string;
     readonly artifactName: string;
     readonly files?: readonly string[];
+    readonly icon?: string;
   };
 }
 
 interface PackageManifest {
+  readonly desktopName?: string;
   readonly version: string;
   readonly private: boolean;
   readonly license: string;
@@ -197,6 +208,32 @@ describe("release metadata", () => {
     expect(icon.subarray(0, 8).toString("hex")).toBe(PNG_SIGNATURE);
     expect(icon.readUInt32BE(PNG_WIDTH_OFFSET)).toBe(ICON_SIZE);
     expect(icon.readUInt32BE(PNG_HEIGHT_OFFSET)).toBe(ICON_SIZE);
+  });
+
+  it("declares_desktop_name_matching_the_executable", () => {
+    const manifest = JSON.parse(repoText("package.json")) as PackageManifest;
+
+    expect(manifest.desktopName).toBe("codeweave.desktop");
+  });
+
+  it("linux_syncs_the_desktop_file_name_and_uses_the_hicolor_set", () => {
+    const { linux } = builderConfig();
+
+    expect(linux.syncDesktopName).toBe(true);
+    expect(linux.icon).toBe("build/icons");
+  });
+
+  it("windows_and_mac_use_the_ico_and_icns", () => {
+    const { win, mac } = builderConfig();
+
+    expect(win.icon).toBe("build/icon.ico");
+    expect(mac.icon).toBe("build/icon.icns");
+  });
+
+  it("linux_ships_the_window_icon_as_a_resource", () => {
+    expect(builderConfig().linux.extraResources).toEqual([
+      { from: "build/icons/512x512.png", to: "icon.png" },
+    ]);
   });
 
   it("is_licensed_under_mit", () => {

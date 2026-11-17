@@ -1,13 +1,4 @@
-import { randomUUID } from "node:crypto";
-import {
-  link,
-  mkdir,
-  readFile,
-  realpath,
-  rm,
-  unlink,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import {
@@ -24,7 +15,7 @@ import {
 import { IpcError, IpcErrorCode, type ParamsMap } from "../shared/protocol";
 import type { AgentView, FlowsList } from "../shared/views";
 
-import { replaceFileAtomically } from "./atomicFile";
+import { createFileExclusively, replaceFileAtomically } from "./atomicFile";
 import {
   AGENTS_DIR,
   contentRevision,
@@ -35,7 +26,6 @@ import {
   withWorkspaceLock,
 } from "./flows";
 
-const TEMP_SUFFIX = ".tmp";
 const STALE_MESSAGE = "The agent file changed on disk";
 const ESCAPING_DIR_MESSAGE = `${AGENTS_DIR}/ must stay inside the project`;
 
@@ -102,18 +92,14 @@ async function createExclusively(
 ): Promise<string> {
   const name = `${id}${MARKDOWN_EXTENSION}`;
   const target = join(agentsDir, name);
-  const temp = `${target}.${randomUUID()}${TEMP_SUFFIX}`;
   try {
-    await writeFile(temp, text);
-    await link(temp, target);
+    await createFileExclusively(target, text);
     return target;
   } catch (error) {
     if (isExisting(error)) {
       throw validation(`An agent file named ${name} already exists`);
     }
     throw error;
-  } finally {
-    await rm(temp, { force: true });
   }
 }
 

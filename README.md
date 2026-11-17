@@ -4,22 +4,58 @@ Electron + React + TypeScript desktop app. The orchestration backend runs in an
 Electron `utilityProcess` and talks to the renderer over a `MessagePort` with a
 zod-validated, versioned protocol (`src/shared/protocol.ts`).
 
-## Download and releases
+## Download and install
 
-Installers for Linux (AppImage, deb, rpm), Windows (NSIS) and macOS (dmg, zip)
-are attached to the [GitHub Releases](https://github.com/shrektu/codeweave/releases)
-page. Builds are unsigned until signing credentials are configured, so the
-first launch needs an extra step on Windows and macOS. The AppImage needs FUSE 2
-(`libfuse2t64` on Ubuntu 24.04 and newer, `libfuse2` before that); the deb and
-rpm packages do not. Cutting a release and
-the signing setup are described in [docs/releasing.md](docs/releasing.md).
+Installers for Linux, Windows and macOS are attached to the
+[GitHub Releases](https://github.com/shrektu/codeweave/releases) page. Builds
+are unsigned until signing credentials are configured, so the first launch
+needs an extra step on Windows and macOS. Cutting a release and the signing
+setup are described in [docs/releasing.md](docs/releasing.md).
 
-## Requirements
+### Linux
+
+Pick the package for your distribution and architecture. File names below are
+for x64; the arm64 files are `Codeweave-<version>-arm64.AppImage`,
+`codeweave_<version>_arm64.deb` and `codeweave-<version>.aarch64.rpm`.
+
+- AppImage (`Codeweave-<version>.AppImage`): make it executable and run it.
+
+  ```sh
+  chmod +x Codeweave-<version>.AppImage
+  ./Codeweave-<version>.AppImage
+  ```
+
+  The AppImage needs FUSE 2: install `libfuse2t64` on Ubuntu 24.04 and newer,
+  `libfuse2` before that. Without FUSE run
+  `./Codeweave-<version>.AppImage --appimage-extract-and-run`, or set
+  `APPIMAGE_EXTRACT_AND_RUN=1`.
+- Debian and Ubuntu (`codeweave_<version>_amd64.deb`):
+  `sudo apt install ./codeweave_<version>_amd64.deb`
+- Fedora and RHEL (`codeweave-<version>.x86_64.rpm`):
+  `sudo dnf install ./codeweave-<version>.x86_64.rpm`
+
+The deb and rpm packages do not need FUSE.
+
+### Windows
+
+Run `Codeweave-Setup-<version>.exe`. It installs per user and lets you choose
+the directory. While the installer is unsigned, SmartScreen shows "Windows
+protected your PC": choose "More info", then "Run anyway".
+
+### macOS
+
+Download `Codeweave-<version>-x64.dmg` (Intel) or
+`Codeweave-<version>-arm64.dmg` (Apple silicon), open it and drag Codeweave to
+Applications. The matching `.zip` files hold the same app. The app is not
+notarized yet, so the first launch needs an extra step, described under
+"Unsigned builds" in [docs/releasing.md](docs/releasing.md).
+
+## Build from source
+
+Requirements:
 
 - Node.js 24 or newer
 - pnpm 12 (`corepack enable` picks the version from `package.json`)
-
-## Install
 
 ```sh
 pnpm install
@@ -127,7 +163,9 @@ Release installers are built per operating system on a native runner with
 `node scripts/release/build.ts <linux|windows|mac>` after `pnpm build`. The
 script runs electron-builder with the signing options that the available
 environment variables allow and then checks that every packaged app holds only
-binaries of its own architecture. The release workflow
+binaries of its own architecture. The app icons in `build/` are generated from
+`build/icon.svg` with `node scripts/release/icon.ts` (needs a display, or run it
+under `xvfb-run`). The release workflow
 (`.github/workflows/release.yml`) runs it for every `v*` tag; see
 [docs/releasing.md](docs/releasing.md).
 
