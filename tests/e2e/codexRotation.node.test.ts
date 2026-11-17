@@ -27,6 +27,7 @@ import {
 import type { SessionView } from "../../src/shared/views";
 import { createFakeVault } from "../fakes/fakeVault";
 import {
+  ResponsesScenario,
   startResponsesMock,
   type RecordedRequest,
   type ResponsesMock,
@@ -54,6 +55,7 @@ const STEP_TIMEOUT_MS = 120_000;
 const POLL_INTERVAL_MS = 250;
 const EFFECTS_FILE = "effects.log";
 const EXPECTED_EFFECT_LINES = ["deploy-side-effect"];
+const REQUESTED_MODEL = "gpt-5-mini";
 const CONTEXT_INTRO =
   "You are taking over a coding session from another account that hit its usage limit.";
 const NO_RERUN_WORDING =
@@ -119,8 +121,13 @@ function recordingContainer(
   };
 }
 
-async function openRig(profile: PermissionProfile): Promise<Rig> {
-  const mock = await startResponsesMock(CODEX_ROTATION_SCENARIOS);
+async function openRig(
+  profile: PermissionProfile,
+  scenarios: Readonly<
+    Record<string, ResponsesScenario>
+  > = CODEX_ROTATION_SCENARIOS,
+): Promise<Rig> {
+  const mock = await startResponsesMock(scenarios);
   cleanup.add(() => mock.close());
   const workspace = await createCodexRotationWorkspace(profile, mock.url);
   cleanup.add(() => workspace.dispose());
@@ -276,6 +283,39 @@ async function expectRotationWithoutRerun(rig: Rig): Promise<void> {
 afterEach(async () => {
   await cleanup.run();
 }, CLEANUP_TIMEOUT_MS);
+
+describe("model selection with the real codex CLI and a local Responses mock", () => {
+  it(
+    "model reaches the real codex",
+    async () => {
+      const rig = await openRig(PermissionProfile.unattended, {
+        [KEY_A]: ResponsesScenario.ok,
+        [KEY_B]: ResponsesScenario.ok,
+      });
+      const { handlers } = rig.backend;
+
+      await handlers["session/start"]({
+        cwd: rig.workspace.repo,
+        profile: PermissionProfile.unattended,
+        provider: ProviderId.codex,
+        model: { provider: ProviderId.codex, model: REQUESTED_MODEL },
+      });
+      await handlers["session/prompt"]({ text: "Reply with one word" });
+      await vi.waitFor(async () => {
+        expect((await sessionOf(rig)).lastTurn).not.toBeNull();
+      }, WAIT_OPTIONS);
+
+      expect((await sessionOf(rig)).lastTurn).toEqual({
+        kind: "ended",
+        stopReason: "end_turn",
+      });
+      expect(rig.mock.requests().map((request) => request.model)).toContain(
+        REQUESTED_MODEL,
+      );
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
 
 describe("rotation with the real codex CLI and a local Responses mock", () => {
   it(

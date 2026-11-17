@@ -218,6 +218,7 @@ export function reduceSession(
       return { ...state, permissions: expireAll(state.permissions) };
     case "rate_limit":
     case "api_retry":
+    case "model":
       return state;
   }
 }

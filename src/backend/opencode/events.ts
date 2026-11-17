@@ -41,6 +41,12 @@ export const SessionScope = {
 } as const;
 export type SessionScope = (typeof SessionScope)[keyof typeof SessionScope];
 
+interface MessageInfo {
+  readonly id: string;
+  readonly role: string;
+  readonly modelID?: string | undefined;
+}
+
 export interface OpencodeEventMapper {
   map(event: OpencodeEvent): AgentEvent[];
   scopeOf(event: OpencodeEvent): SessionScope;
@@ -194,6 +200,7 @@ export function createEventMapper(
   const tools = new Set<string>();
   const roles = new Map<string, string>();
   const descendants = new Set<string>();
+  let reportedModel: string | null = null;
 
   function scopeOf(event: OpencodeEvent): SessionScope {
     const owner = sessionOf(event);
@@ -236,6 +243,19 @@ export function createEventMapper(
     return text === "" ? [] : [{ type: "text", messageId: part.id, text }];
   }
 
+  function mapMessage(info: MessageInfo): AgentEvent[] {
+    roles.set(info.id, info.role);
+    if (
+      info.role !== OpencodeRole.assistant ||
+      info.modelID === undefined ||
+      info.modelID === reportedModel
+    ) {
+      return [];
+    }
+    reportedModel = info.modelID;
+    return [{ type: "model", model: info.modelID }];
+  }
+
   function mapTool(part: ToolPart): AgentEvent[] {
     const seen = tools.has(part.callID);
     tools.add(part.callID);
@@ -251,13 +271,10 @@ export function createEventMapper(
         case OpencodeEventType.sessionUpdated:
           observeSession(event.properties.info);
           return [];
-        case OpencodeEventType.messageUpdated: {
-          const { info } = event.properties;
-          if (scope === SessionScope.own) {
-            roles.set(info.id, info.role);
-          }
-          return [];
-        }
+        case OpencodeEventType.messageUpdated:
+          return scope === SessionScope.own
+            ? mapMessage(event.properties.info)
+            : [];
         case OpencodeEventType.partUpdated: {
           const { part } = event.properties;
           if (scope !== SessionScope.own) {

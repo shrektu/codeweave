@@ -6,6 +6,7 @@ import type { AgentProcess } from "../agentProcesses";
 export interface LiveProcess {
   readonly agentProcess: AgentProcess;
   readonly profile: PermissionProfile;
+  readonly model: string | null;
   readonly stdoutClosed: Promise<void>;
   readonly stderrClosed: Promise<void>;
   readonly snapshotDir: string;
@@ -24,6 +25,7 @@ export interface ProcessHandlers {
 export function attachProcess(
   agentProcess: AgentProcess,
   profile: PermissionProfile,
+  model: string | null,
   runId: string,
   snapshotDir: string,
   handlers: ProcessHandlers,
@@ -34,6 +36,7 @@ export function attachProcess(
   const live: LiveProcess = {
     agentProcess,
     profile,
+    model,
     stdoutClosed: closed.promise.then(() => undefined),
     stderrClosed: stderrEnded.promise.then(() => undefined),
     snapshotDir,

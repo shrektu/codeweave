@@ -83,7 +83,7 @@ describe("codex adapter rate limit reads", () => {
       { type: "fail", codexErrorInfo: "usageLimitExceeded", message: "limit" },
     ]);
 
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
 
     expect(events).toEqual([
       {
@@ -112,7 +112,7 @@ describe("codex adapter rate limit reads", () => {
       { type: "fail", codexErrorInfo: "usageLimitExceeded", message: "limit" },
     ]);
 
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
 
     expect(events.map((event) => event.type)).toEqual(["turn_error"]);
   });
@@ -127,7 +127,7 @@ describe("codex adapter rate limit reads", () => {
       { type: "fail", codexErrorInfo: "usageLimitExceeded", message: "limit" },
     ]);
 
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
 
     expect(events[0]).toEqual({
       type: "rate_limit",
@@ -173,8 +173,8 @@ describe("codex adapter rate limit updates", () => {
     const rig = await createCodexRig();
     const { handle, events } = await startCodexHandle(rig);
 
-    await handle.prompt("one");
-    await handle.prompt("two");
+    await handle.prompt("one", { model: null });
+    await handle.prompt("two", { model: null });
 
     expect(events.map((event) => event.type)).toEqual([
       "rate_limit",
@@ -190,7 +190,7 @@ describe("codex adapter stop handling", () => {
     const { handle, events } = await startCodexHandle(rig);
     const server = serverOf(rig);
     server.enqueue([commandApproval("c1", "make"), { type: "hang" }]);
-    const turn = handle.prompt("build");
+    const turn = handle.prompt("build", { model: null });
     await codexPermissionRequestOf(events);
     codexContainedOf(rig).holdStops();
 
@@ -221,7 +221,7 @@ describe("codex adapter stop handling", () => {
     const { handle, events } = await startCodexHandle(rig);
     const server = serverOf(rig);
     server.enqueue([commandApproval("c1", "make"), { type: "hang" }]);
-    const turn = handle.prompt("build");
+    const turn = handle.prompt("build", { model: null });
     const request = await codexPermissionRequestOf(events);
 
     codexContainedOf(rig).emitExit(1);
@@ -249,7 +249,7 @@ describe("codex adapter tolerance", () => {
       { type: "complete", status: "completed" },
     ]);
 
-    await handle.prompt("hello");
+    await handle.prompt("hello", { model: null });
 
     expect(serverOf(rig).answers).toEqual([
       {
@@ -275,7 +275,7 @@ describe("codex adapter tolerance", () => {
       { type: "complete", status: "completed" },
     ]);
 
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
 
     expect(events.map((event) => event.type)).toEqual([
       "rate_limit",
@@ -312,9 +312,9 @@ describe("codex adapter profiles", () => {
     const rig = await createCodexRig();
     const { handle } = await startCodexHandle(rig, PermissionProfile.ask);
 
-    await handle.prompt("one");
+    await handle.prompt("one", { model: null });
     await handle.setProfile(PermissionProfile.bypass);
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(serverOf(rig).paramsOf("turn/start")).toEqual([
       { threadId: "thr-1", input: [{ type: "text", text: "one" }] },
@@ -334,10 +334,10 @@ describe("codex adapter turn lifecycle", () => {
     const { handle } = await startCodexHandle(rig);
     serverOf(rig).enqueue([{ type: "await_interrupt" }]);
 
-    const turn = handle.prompt("first");
-    await expect(handle.prompt("second")).rejects.toBeInstanceOf(
-      TurnInProgressError,
-    );
+    const turn = handle.prompt("first", { model: null });
+    await expect(
+      handle.prompt("second", { model: null }),
+    ).rejects.toBeInstanceOf(TurnInProgressError);
     await handle.cancel();
     await turn;
   });
@@ -350,7 +350,7 @@ describe("codex adapter turn lifecycle", () => {
     };
     const { handle, events } = await startCodexHandle(rig);
 
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
 
     expect(events.at(-1)).toEqual({
       type: "turn_error",
@@ -388,7 +388,7 @@ describe("codex adapter approvals", () => {
       { type: "complete", status: "completed" },
     ]);
 
-    const turn = handle.prompt("build");
+    const turn = handle.prompt("build", { model: null });
     const request = await codexPermissionRequestOf(events);
 
     expect(() => {
@@ -417,7 +417,7 @@ describe("codex adapter approvals", () => {
       { type: "complete", status: "completed" },
     ]);
 
-    const turn = handle.prompt("edit");
+    const turn = handle.prompt("edit", { model: null });
     const request = await codexPermissionRequestOf(events);
     handle.answerPermission(request.requestId, "decline");
     await turn;
@@ -445,7 +445,7 @@ describe("codex adapter permissions request", () => {
       { type: "complete", status: "completed" },
     ]);
 
-    const turn = handle.prompt("net");
+    const turn = handle.prompt("net", { model: null });
     const first = await codexPermissionRequestOf(events);
     handle.answerPermission(first.requestId, "grant");
     await vi.waitFor(() => {
@@ -471,7 +471,7 @@ describe("codex adapter review regressions", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     const { handle, events } = await startCodexHandle(rig);
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
 
     const warned = warn.mock.calls.map(([message]) => String(message));
     expect(warned.some((text) => text.includes("rate limit read failed"))).toBe(
@@ -486,7 +486,7 @@ describe("codex adapter review regressions", () => {
     const { handle, events } = await startCodexHandle(rig);
     serverOf(rig).enqueue([{ type: "hang" }]);
 
-    const turn = handle.prompt("stall");
+    const turn = handle.prompt("stall", { model: null });
     await vi.waitFor(() => {
       expect(serverOf(rig).methods()).toContain("turn/start");
     });
@@ -505,9 +505,9 @@ describe("codex adapter review regressions", () => {
     const { handle } = await startCodexHandle(rig, PermissionProfile.plan);
 
     await handle.setProfile(PermissionProfile.bypass);
-    await handle.prompt("wide");
+    await handle.prompt("wide", { model: null });
     await handle.setProfile(PermissionProfile.plan);
-    await handle.prompt("narrow");
+    await handle.prompt("narrow", { model: null });
 
     expect(serverOf(rig).paramsOf("turn/start")).toEqual([
       {
@@ -544,7 +544,7 @@ describe("codex adapter late read regressions", () => {
     serverOf(rig).enqueue([
       { type: "fail", codexErrorInfo: "usageLimitExceeded", message: "limit" },
     ]);
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
 
     pushUpdate(
       rig,
@@ -594,7 +594,7 @@ describe("codex adapter late read regressions", () => {
     serverOf(rig).enqueue([
       { type: "fail", codexErrorInfo: "usageLimitExceeded", message: "limit" },
     ]);
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
     await Promise.all(serverOf(rig).delayedReplies);
 
     expect(events.filter((event) => event.type === "rate_limit")).toEqual([
@@ -609,7 +609,7 @@ describe("codex adapter cancel regressions", () => {
     rig.container.config.turnStartHang = true;
     const { handle } = await startCodexHandle(rig);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const turn = handle.prompt("silent");
+    const turn = handle.prompt("silent", { model: null });
     await vi.waitFor(() => {
       expect(serverOf(rig).methods()).toContain("turn/start");
     });

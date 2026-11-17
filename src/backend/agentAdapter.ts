@@ -19,11 +19,15 @@ export const AgentStartFailure = {
 export type AgentStartFailure =
   (typeof AgentStartFailure)[keyof typeof AgentStartFailure];
 
+export interface TurnOptions {
+  readonly model: string | null;
+}
+
 export interface AgentHandle {
   readonly accountId: string;
   readonly runId: string;
   subscribe(listener: (event: AgentEvent) => void): () => void;
-  prompt(text: string): Promise<void>;
+  prompt(text: string, options: TurnOptions): Promise<void>;
   answerPermission(requestId: string, optionId: string): void;
   setProfile(profile: PermissionProfile): Promise<void>;
   cancel(): Promise<void>;

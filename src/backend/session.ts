@@ -8,6 +8,7 @@ import {
 } from "../domain/constants";
 import { buildContextPackage } from "../domain/contextPackage";
 import type { AgentEvent } from "../domain/events";
+import { explicitModelOn, type ModelChoice } from "../domain/modelChoice";
 import { decidePermission } from "../domain/permissionPolicy";
 import { rotationPool } from "../domain/rotationPool";
 import {
@@ -15,7 +16,6 @@ import {
   expireAll,
   resolve,
   type PermissionRecord,
-  type TransitionFailure,
 } from "../domain/permissionRecords";
 import {
   createRateLimitDetector,
@@ -74,6 +74,7 @@ import { toSessionView } from "./sessionView";
 import { observeViews } from "./sessionViews";
 import { configuredExecutable } from "./settingsService";
 import type { JsonStore } from "./storage";
+import { transitionError } from "./transitionError";
 
 type PermissionRequest = Extract<AgentEvent, { type: "permission_request" }>;
 
@@ -123,6 +124,7 @@ interface RunSpec {
   readonly cwd: string;
   readonly profile: PermissionProfile;
   readonly flowRef: FlowRef | null;
+  readonly model: ModelChoice | null;
 }
 
 const INACTIVE_PHASES: readonly RotationPhase["phase"][] = [
@@ -134,29 +136,6 @@ const READY: AccountRuntime = { status: "ready" };
 const NEEDS_LOGIN: AccountRuntime = { status: "needs_login" };
 const PREVIOUS_AGENT_RUNNING_MESSAGE = "The previous agent is still running";
 const NO_USABLE_ACCOUNT_MESSAGE = "No usable account";
-
-function transitionError(reason: TransitionFailure): IpcError {
-  switch (reason) {
-    case "expired":
-      return new IpcError(IpcErrorCode.EXPIRED, "Permission request expired");
-    case "resolved":
-    case "already_answering":
-      return new IpcError(
-        IpcErrorCode.CONFLICT,
-        "Permission request was already answered",
-      );
-    case "unknown_option":
-      return new IpcError(
-        IpcErrorCode.VALIDATION,
-        "Option is not offered by this request",
-      );
-    case "not_answering":
-      return new IpcError(
-        IpcErrorCode.INTERNAL,
-        "Permission request is not being answered",
-      );
-  }
-}
 
 function startError(
   account: Account,
@@ -559,8 +538,9 @@ class SessionRun {
     const detector = createRateLimitDetector(this.deps.now);
     this.detector = detector;
     this.publish();
+    const model = explicitModelOn(this.registered, accountId, this.spec.model);
     try {
-      await handle.prompt(text);
+      await handle.prompt(text, { model });
     } catch (error) {
       console.error(`prompt failed on ${accountId}: ${this.maskedText(error)}`);
       this.onEvent(handle, {
@@ -808,6 +788,7 @@ async function createRun(
       cwd: params.cwd,
       profile: params.profile ?? settings.permissionProfile,
       flowRef: params.flowRef ?? null,
+      model: params.model ?? null,
     },
     provider,
     registered,

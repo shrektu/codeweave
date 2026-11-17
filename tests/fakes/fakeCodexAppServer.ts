@@ -59,6 +59,7 @@ export interface FakeCodexConfig {
   rateLimitReads?: readonly RateLimitRead[];
   stderrText?: string;
   threadStartError?: { code: number; message: string };
+  threadModel?: string;
   turnStartError?: { code: number; message: string };
   turnStartHang?: boolean;
   interruptHang?: boolean;
@@ -349,7 +350,12 @@ export class FakeCodexAppServer {
           this.replyError(id, code, message);
           return;
         }
-        this.reply(id, { thread: { id: THREAD_ID, status: { type: "idle" } } });
+        this.reply(id, {
+          thread: { id: THREAD_ID, status: { type: "idle" } },
+          ...(this.config.threadModel === undefined
+            ? {}
+            : { model: this.config.threadModel, modelProvider: "openai" }),
+        });
         return;
       case "turn/start":
         if (this.config.turnStartHang === true) {

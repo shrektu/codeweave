@@ -44,6 +44,7 @@ const MessageSchema = z.looseObject({
 });
 
 export const MessagesBodySchema = z.looseObject({
+  model: z.string().optional(),
   tools: z.array(z.looseObject({ name: z.string() })).optional(),
   messages: z.array(MessageSchema).default([]),
 });

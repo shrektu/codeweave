@@ -95,6 +95,12 @@ export const ParamsSchemas = {
     profile: z.enum(PermissionProfile).optional(),
     flowRef: FlowRefSchema.optional(),
     provider: z.enum(ProviderId).optional(),
+    model: z
+      .strictObject({
+        provider: z.enum(ProviderId),
+        model: NonBlankString,
+      })
+      .optional(),
   }),
   "session/prompt": z.strictObject({ text: NonBlankString }),
   "session/stop": EmptyParamsSchema,

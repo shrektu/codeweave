@@ -24,6 +24,7 @@ export interface AgyLaunchInput {
   readonly conversationId: string | null;
   readonly configDir: string;
   readonly profile: PermissionProfile;
+  readonly model: string | null;
   readonly worktreeRoot: string;
   readonly snapshotDir: string;
 }
@@ -56,6 +57,7 @@ export function buildAgyLaunch(input: AgyLaunchInput): AgyLaunch {
       AgyFlag.settings,
       JSON.stringify(settings),
       ...(mode === null ? [] : [AgyFlag.mode, mode]),
+      ...(input.model === null ? [] : [AgyFlag.model, input.model]),
       ...(input.conversationId === null
         ? []
         : [AgyFlag.conversation, input.conversationId]),

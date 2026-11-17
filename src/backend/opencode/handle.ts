@@ -1,3 +1,4 @@
+import { API_PROVIDERS } from "../../domain/apiProviders";
 import {
   ERROR_KIND_RATE_LIMIT,
   MS_PER_SECOND,
@@ -15,6 +16,7 @@ import {
   UnknownPermissionError,
   type AgentHandle,
   type AgentStartSpec,
+  type TurnOptions,
 } from "../agentAdapter";
 import type { AgentProcess } from "../agentProcesses";
 import {
@@ -25,7 +27,11 @@ import { withTimeout } from "../codex/handshake";
 import { PROCESS_EXITED_MESSAGE } from "../constants";
 import type { StopResult } from "../process/container";
 
-import { OpencodeHttpError, type OpencodeClient } from "./client";
+import {
+  OpencodeHttpError,
+  type OpencodeClient,
+  type PromptModel,
+} from "./client";
 import {
   LONG_RETRY_THRESHOLD_MS,
   OpencodeAgent,
@@ -191,7 +197,7 @@ export class OpencodeHandle implements AgentHandle {
     };
   }
 
-  async prompt(text: string): Promise<void> {
+  async prompt(text: string, options: TurnOptions): Promise<void> {
     if (this.turn !== null) {
       throw new TurnInProgressError(this.runId);
     }
@@ -199,7 +205,7 @@ export class OpencodeHandle implements AgentHandle {
     this.turn = turn;
     try {
       if (await this.ensureIdle(turn)) {
-        await this.sendPrompt(turn, text);
+        await this.sendPrompt(turn, text, options.model);
       }
       await turn.done.promise;
     } finally {
@@ -329,7 +335,21 @@ export class OpencodeHandle implements AgentHandle {
     });
   }
 
-  private async sendPrompt(turn: ActiveTurn, text: string): Promise<void> {
+  private promptModel(modelId: string | null): PromptModel | null {
+    const { api } = this.ctx.spec.account;
+    return modelId === null || api === undefined
+      ? null
+      : {
+          providerID: API_PROVIDERS[api.provider].opencodeId,
+          modelID: modelId,
+        };
+  }
+
+  private async sendPrompt(
+    turn: ActiveTurn,
+    text: string,
+    model: string | null,
+  ): Promise<void> {
     if (this.interrupted(turn)) {
       this.endCancelled(turn);
       return;
@@ -348,6 +368,7 @@ export class OpencodeHandle implements AgentHandle {
         sessionId: this.sessionId,
         text,
         agent: agentFor(this.profile),
+        model: this.promptModel(model),
       });
     } catch (error) {
       if (error instanceof OpencodeHttpError) {
@@ -421,6 +442,9 @@ export class OpencodeHandle implements AgentHandle {
       case OpencodeEventType.messageUpdated:
         if (own) {
           this.onMessage(event.properties.info);
+          mapped.forEach((agentEvent) => {
+            this.emit(agentEvent);
+          });
         }
         return;
       case OpencodeEventType.sessionCreated:

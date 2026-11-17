@@ -198,13 +198,13 @@ const UNKNOWN_ERROR = {
 describe("stale idle", () => {
   it("stale_idle_after_error_does_not_end_next_turn", async () => {
     const rig = await openRig();
-    const first = rig.handle.prompt("first");
+    const first = rig.handle.prompt("first", { model: null });
     await flush();
     await rig.push("message.updated", userMessage(FIRST_RUN_MESSAGE));
     await rig.push("session.error", UNKNOWN_ERROR);
     await first;
 
-    const second = trackedPromise(rig.handle.prompt("second"));
+    const second = trackedPromise(rig.handle.prompt("second", { model: null }));
     await flush();
     await rig.push("session.idle", { sessionID: SESSION });
 
@@ -224,13 +224,13 @@ describe("stale idle", () => {
     second: ReturnType<typeof trackedPromise>;
   }> {
     const rig = await openRig();
-    const first = rig.handle.prompt("first");
+    const first = rig.handle.prompt("first", { model: null });
     await flush();
     await rig.push("message.updated", userMessage(FIRST_RUN_MESSAGE));
     await rig.push("session.error", UNKNOWN_ERROR);
     await first;
     rig.events.length = 0;
-    const second = trackedPromise(rig.handle.prompt("second"));
+    const second = trackedPromise(rig.handle.prompt("second", { model: null }));
     await flush();
     await rig.push("session.idle", { sessionID: SESSION });
     expect(rig.prompts).toEqual(["first", "second"]);
@@ -264,7 +264,7 @@ describe("stale idle", () => {
 
   it("send_does_not_lower_status_boundary", async () => {
     const rig = await openRig();
-    const first = rig.handle.prompt("first");
+    const first = rig.handle.prompt("first", { model: null });
     await flush();
     await rig.push("message.updated", userMessage("msg_0100"));
     await rig.push("session.error", UNKNOWN_ERROR);
@@ -273,7 +273,7 @@ describe("stale idle", () => {
     rig.serverBusy.current = false;
     rig.latestMessage.current = "msg_0300";
 
-    const second = trackedPromise(rig.handle.prompt("second"));
+    const second = trackedPromise(rig.handle.prompt("second", { model: null }));
     await flush();
     expect(rig.prompts).toEqual(["first", "second"]);
     await rig.push("message.updated", userMessage("msg_0200"));
@@ -287,14 +287,14 @@ describe("stale idle", () => {
 
   it("busy_session_after_abort_fails_turn_without_prompt", async () => {
     const rig = await openRig();
-    const first = rig.handle.prompt("first");
+    const first = rig.handle.prompt("first", { model: null });
     await flush();
     await rig.push("message.updated", userMessage(FIRST_RUN_MESSAGE));
     await rig.push("session.error", UNKNOWN_ERROR);
     await first;
     rig.events.length = 0;
 
-    await rig.handle.prompt("second");
+    await rig.handle.prompt("second", { model: null });
 
     expect(rig.prompts).toEqual(["first"]);
     expect(rig.aborts).toEqual([SESSION]);
@@ -313,7 +313,7 @@ describe("stale idle", () => {
     await rig.push("session.error", UNKNOWN_ERROR);
     await rig.push("session.idle", { sessionID: SESSION });
 
-    const turn = trackedPromise(rig.handle.prompt("go"));
+    const turn = trackedPromise(rig.handle.prompt("go", { model: null }));
     await flush();
 
     expect(rig.prompts).toEqual(["go"]);
@@ -328,7 +328,7 @@ describe("stale idle", () => {
 describe("cancelled turn waiting for idle", () => {
   async function withBusySession(): Promise<Rig> {
     const rig = await openRig();
-    const first = rig.handle.prompt("first");
+    const first = rig.handle.prompt("first", { model: null });
     await flush();
     await rig.push("message.updated", userMessage(FIRST_RUN_MESSAGE));
     await rig.push("session.error", UNKNOWN_ERROR);
@@ -339,7 +339,7 @@ describe("cancelled turn waiting for idle", () => {
 
   it("cancel_during_idle_wait_does_not_send_prompt", async () => {
     const rig = await withBusySession();
-    const second = rig.handle.prompt("second");
+    const second = rig.handle.prompt("second", { model: null });
     await flush();
 
     await rig.handle.cancel();
@@ -352,7 +352,7 @@ describe("cancelled turn waiting for idle", () => {
 
   it("stop_during_idle_wait_does_not_send_prompt", async () => {
     const rig = await withBusySession();
-    const second = rig.handle.prompt("second");
+    const second = rig.handle.prompt("second", { model: null });
     await flush();
     const releaseAborts = rig.holdAborts();
 
@@ -377,10 +377,10 @@ describe("prompt request failures", () => {
     rig.promptFailures.push(
       new Error("The operation was aborted due to timeout"),
     );
-    await rig.handle.prompt("first");
+    await rig.handle.prompt("first", { model: null });
     rig.events.length = 0;
 
-    const second = trackedPromise(rig.handle.prompt("second"));
+    const second = trackedPromise(rig.handle.prompt("second", { model: null }));
     await flush();
 
     expect(rig.prompts).toEqual(["first"]);
@@ -399,11 +399,11 @@ describe("prompt request failures", () => {
     rig.promptFailures.push(
       new Error("The operation was aborted due to timeout"),
     );
-    await rig.handle.prompt("first");
+    await rig.handle.prompt("first", { model: null });
     rig.events.length = 0;
     rig.serverBusy.current = false;
 
-    const second = trackedPromise(rig.handle.prompt("second"));
+    const second = trackedPromise(rig.handle.prompt("second", { model: null }));
     await flush();
 
     expect(rig.prompts).toEqual(["first", "second"]);
@@ -422,10 +422,10 @@ describe("prompt request failures", () => {
     rig.promptFailures.push(
       new Error("The operation was aborted due to timeout"),
     );
-    await rig.handle.prompt("first");
+    await rig.handle.prompt("first", { model: null });
     rig.events.length = 0;
     rig.serverBusy.current = false;
-    const second = trackedPromise(rig.handle.prompt("second"));
+    const second = trackedPromise(rig.handle.prompt("second", { model: null }));
     await flush();
     expect(rig.prompts).toEqual(["first", "second"]);
     return { rig, second };
@@ -479,12 +479,12 @@ describe("prompt request failures", () => {
     rig.promptFailures.push(
       new Error("The operation was aborted due to timeout"),
     );
-    await rig.handle.prompt("first");
+    await rig.handle.prompt("first", { model: null });
     rig.events.length = 0;
     rig.serverBusy.current = false;
     rig.serverFaults[fault] = true;
 
-    await rig.handle.prompt("second");
+    await rig.handle.prompt("second", { model: null });
 
     expect(rig.prompts).toEqual(["first"]);
     expect(rig.events).toEqual([
@@ -502,9 +502,9 @@ describe("prompt request failures", () => {
     rig.promptFailures.push(
       new OpencodeHttpError("POST", "/prompt_async", 500),
     );
-    await rig.handle.prompt("first");
+    await rig.handle.prompt("first", { model: null });
 
-    const second = trackedPromise(rig.handle.prompt("second"));
+    const second = trackedPromise(rig.handle.prompt("second", { model: null }));
     await flush();
 
     expect(rig.prompts).toEqual(["first", "second"]);
@@ -521,7 +521,7 @@ async function withGatedTurn(): Promise<{
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const rig = await openRig();
   rig.latestMessage.current = null;
-  const turn = trackedPromise(rig.handle.prompt("go"));
+  const turn = trackedPromise(rig.handle.prompt("go", { model: null }));
   await flush();
   return { rig, turn };
 }
@@ -550,7 +550,7 @@ describe("prompt rejected before the user message", () => {
       },
     ]);
     rig.serverBusy.current = false;
-    const next = trackedPromise(rig.handle.prompt("next"));
+    const next = trackedPromise(rig.handle.prompt("next", { model: null }));
     await flush();
     expect(rig.prompts).toEqual(["go", "next"]);
     expect(next.done()).toBe(false);
@@ -563,14 +563,14 @@ async function withSecondTurnAfterEarlierOne(latest: string): Promise<{
 }> {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const rig = await openRig();
-  const first = rig.handle.prompt("first");
+  const first = rig.handle.prompt("first", { model: null });
   await flush();
   await rig.push("message.updated", userMessage("msg_0100"));
   await rig.push("session.idle", { sessionID: SESSION });
   await first;
   rig.events.length = 0;
   rig.latestMessage.current = latest;
-  const turn = trackedPromise(rig.handle.prompt("second"));
+  const turn = trackedPromise(rig.handle.prompt("second", { model: null }));
   await flush();
   expect(rig.prompts).toEqual(["first", "second"]);
   return { rig, turn };
@@ -681,7 +681,7 @@ describe("child session permissions", () => {
     turn: ReturnType<typeof trackedPromise>;
   }> {
     const rig = await openRig();
-    const turn = trackedPromise(rig.handle.prompt("go"));
+    const turn = trackedPromise(rig.handle.prompt("go", { model: null }));
     await flush();
     await rig.push("session.created", {
       info: { id: CHILD, parentID: SESSION },

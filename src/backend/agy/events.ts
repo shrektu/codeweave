@@ -224,7 +224,7 @@ export class TurnTracker {
         message: result?.error ?? AUTH_FAILED_RESULT_ERROR,
       };
     }
-    if (!this.failed) {
+    if (!this.failed && !this.resultRejectsTurn(result)) {
       return null;
     }
     const fromLines = this.errorLines.map(errorLineText).join(" ");
@@ -240,6 +240,14 @@ export class TurnTracker {
       return { kind: "cancelled" };
     }
     return this.failure(result, previousResultError) ?? { kind: "ended" };
+  }
+
+  private resultRejectsTurn(result: AgyResult | undefined): boolean {
+    return (
+      result?.status === AgyResultStatus.error &&
+      result.finished_reason !== FINISHED_REASON_INTERRUPTED &&
+      !this.sawResponse
+    );
   }
 
   private resultReportsAuthFailure(result: AgyResult | undefined): boolean {

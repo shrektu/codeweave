@@ -221,6 +221,7 @@ describe("responses mock limits and recording", () => {
       {
         key: KEY_OK,
         path: "/v1/responses",
+        model: null,
         inputText: "first\nsecond",
         functionCallOutputs: 1,
         toolNames: [SHELL_TOOL, EXEC_TOOL],

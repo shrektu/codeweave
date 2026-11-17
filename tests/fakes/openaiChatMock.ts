@@ -37,11 +37,13 @@ const USAGE = {
 } as const;
 
 const RequestBodySchema = z.looseObject({
+  model: z.string().optional(),
   tools: z.array(z.unknown()).default([]),
 });
 
 export interface ChatRecordedRequest {
   readonly key: string;
+  readonly model: string | null;
   readonly hasTools: boolean;
   readonly path: string;
 }
@@ -158,6 +160,11 @@ function hasTools(raw: string): boolean {
   return parsed.success && parsed.data.tools.length > 0;
 }
 
+function modelOf(raw: string): string | null {
+  const parsed = RequestBodySchema.safeParse(JSON.parse(raw || "{}"));
+  return parsed.success ? (parsed.data.model ?? null) : null;
+}
+
 function createHandler(
   options: ChatMockOptions,
   requests: ChatRecordedRequest[],
@@ -169,7 +176,7 @@ function createHandler(
     const path = (req.url ?? "").split("?")[0] ?? "";
     const key = bearerKey(req);
     const withTools = hasTools(raw);
-    requests.push({ key, hasTools: withTools, path });
+    requests.push({ key, model: modelOf(raw), hasTools: withTools, path });
     const scenario = Object.hasOwn(options.scenarios, key)
       ? options.scenarios[key]
       : undefined;

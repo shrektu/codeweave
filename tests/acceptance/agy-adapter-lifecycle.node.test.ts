@@ -68,7 +68,7 @@ async function afterQuotaTurn(): Promise<{
     responseDoneStep(at(CONV, 2)),
     stickyResult(QUOTA_ERROR_TEXT),
   ]);
-  await handle.prompt("one");
+  await handle.prompt("one", { model: null });
   await handle.setProfile(PermissionProfile.plan);
   events.length = 0;
   return { rig, handle, events };
@@ -99,7 +99,7 @@ describe("agy adapter stop racing the pre-spawn window", () => {
         flag = next;
       },
     });
-    const prompt = handle.prompt("late");
+    const prompt = handle.prompt("late", { model: null });
 
     expect(await settlesWithin(stopped.promise, SETTLE_BOUND_MS)).toBe(true);
     await settlesWithin(prompt, SETTLE_BOUND_MS);
@@ -136,7 +136,7 @@ describe("agy adapter late error line after a recovery", () => {
       exitWith(3),
     ]);
 
-    await handle.prompt("work");
+    await handle.prompt("work", { model: null });
 
     expect(events.at(-1)).toEqual({
       type: "turn_error",
@@ -162,7 +162,7 @@ describe("agy adapter cumulative result errors across respawns", () => {
       exitWith(3),
     ]);
 
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(rig.container.agySpawns()).toHaveLength(2);
     expect(events).toEqual([
@@ -190,7 +190,7 @@ describe("agy adapter cumulative result errors across respawns", () => {
       exitWith(3),
     ]);
 
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(events.at(-1)).toEqual({
       type: "turn_error",
@@ -218,7 +218,7 @@ describe("agy adapter result error memory per conversation", () => {
       exitWith(3),
     ]);
 
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(events.at(-1)).toMatchObject({
       type: "turn_error",
@@ -232,7 +232,7 @@ describe("agy adapter regression guard for plain replies", () => {
     const { rig, handle, events } = await afterQuotaTurn();
     rig.container.scriptTurn(replyTurn(CONV, "fine"));
 
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(events.at(-1)).toEqual({ type: "turn_end", stopReason: "end_turn" });
   });

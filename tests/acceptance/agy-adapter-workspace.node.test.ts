@@ -42,7 +42,7 @@ async function plant(
 async function firstTurnDone(rig: AgyRig): ReturnType<typeof startAgyHandle> {
   const started = await startAgyHandle(rig);
   rig.container.scriptTurn(replyTurn(CONV, "one"));
-  await started.handle.prompt("one");
+  await started.handle.prompt("one", { model: null });
   return started;
 }
 
@@ -53,7 +53,7 @@ describe("agy adapter workspace config guard", () => {
     await plant(rig, "hooks.json", '{"evil":true}');
     await handle.setProfile(PermissionProfile.plan);
 
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(rig.container.agySpawns()).toHaveLength(1);
     expect(events.at(-1)).toEqual({
@@ -71,7 +71,7 @@ describe("agy adapter workspace config guard", () => {
     await plant(rig, "plugins/p/plugin.json", "2");
     await handle.setProfile(PermissionProfile.unattended);
 
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(rig.container.agySpawns()).toHaveLength(1);
     expect(events.at(-1)).toMatchObject({
@@ -87,7 +87,7 @@ describe("agy adapter workspace config guard", () => {
     await handle.setProfile(PermissionProfile.plan);
     rig.container.scriptTurn(replyTurn(CONV, "two"));
 
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(rig.container.agySpawns()).toHaveLength(2);
   });
@@ -99,7 +99,7 @@ describe("agy adapter workspace config guard", () => {
     await handle.setProfile(PermissionProfile.plan);
     rig.container.scriptTurn(replyTurn(CONV, "two"));
 
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(rig.container.agySpawns()).toHaveLength(2);
     expect(events.map((event) => event.type)).not.toContain("turn_error");
@@ -127,7 +127,7 @@ describe("agy adapter fast result waits for the init workspace check", () => {
     await plant(rig, "hooks.json", '{"evil":true}');
     rig.container.scriptTurn(replyTurn(CONV, "one"));
 
-    await handle.prompt("one");
+    await handle.prompt("one", { model: null });
 
     expect(events.map((event) => event.type)).not.toContain("turn_end");
     expect(events.filter((event) => event.type === "turn_error")).toEqual([
@@ -146,7 +146,7 @@ describe("agy adapter fast result waits for the init workspace check", () => {
     const { handle, events } = await startAgyHandle(rig);
     rig.container.scriptTurn(replyTurn(CONV, "one"));
 
-    await handle.prompt("one");
+    await handle.prompt("one", { model: null });
 
     expect(events.map((event) => event.type)).not.toContain("turn_error");
     expect(events.at(-1)).toMatchObject({ type: "turn_end" });
@@ -171,7 +171,7 @@ describe("agy adapter workspace walk is bounded", () => {
       await handle.setProfile(PermissionProfile.plan);
       rig.container.scriptTurn(replyTurn(CONV, "two"));
 
-      const prompt = handle.prompt("two");
+      const prompt = handle.prompt("two", { model: null });
 
       expect(await settlesWithin(prompt, SETTLE_BOUND_MS)).toBe(true);
       expect(rig.container.agySpawns()).toHaveLength(1);
@@ -197,7 +197,7 @@ describe("agy adapter workspace config guard around the spawn", () => {
       ...replyTurn(CONV, "one").slice(1),
     ]);
 
-    await handle.prompt("one");
+    await handle.prompt("one", { model: null });
 
     expect(events.at(-1)).toEqual({
       type: "turn_error",
@@ -222,7 +222,7 @@ describe("agy adapter workspace config guard around the spawn", () => {
     await handle.setProfile(PermissionProfile.plan);
     rig.container.scriptTurn(replyTurn(CONV, "two"));
 
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(observed.slice(0, 3)).toEqual([1, 1, 2]);
   });
@@ -240,7 +240,7 @@ describe("agy adapter workspace config guard around the spawn", () => {
     const { handle, events } = await firstTurnDone(rig);
     await handle.setProfile(PermissionProfile.plan);
 
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(rig.container.agySpawns()).toHaveLength(1);
     expect(events.at(-1)).toMatchObject({
@@ -261,7 +261,7 @@ describe("agy adapter workspace guard follows symlinks", () => {
     await writeFile(join(rig.cwd, "shared", "plugin.js"), "2");
     await handle.setProfile(PermissionProfile.plan);
 
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(rig.container.agySpawns()).toHaveLength(1);
     expect(events.at(-1)).toMatchObject({

@@ -70,12 +70,12 @@ describe("agy adapter hook configuration", () => {
     await writeFile(join(configPath, HOOKS_FILE), '{"stale":true}');
     const { handle } = await startAgyHandle(rig);
     rig.container.scriptTurn(replyTurn(CONV, "one"));
-    await handle.prompt("one");
+    await handle.prompt("one", { model: null });
     await handle.setProfile(PermissionProfile.plan);
     await writeFile(join(configPath, HOOKS_FILE), '{"stale":"again"}');
     rig.container.scriptTurn(replyTurn(CONV, "two"));
 
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(agySpawnAt(rig, 0).hooksJsonAtSpawn).toContain('"PreToolUse"');
     expect(agySpawnAt(rig, 1).hooksJsonAtSpawn).toContain('"PreToolUse"');
@@ -89,7 +89,7 @@ describe("agy adapter hook tampering", () => {
     const configPath = join(rig.configDir, CONFIG_SEGMENT);
     const { handle } = await startAgyHandle(rig);
     rig.container.scriptTurn(replyTurn(CONV, "one"));
-    await handle.prompt("one");
+    await handle.prompt("one", { model: null });
     const original = await readFile(join(configPath, HOOKS_FILE), "utf8");
     await writeFile(join(configPath, HOOKS_FILE), "{}");
     await Promise.all(
@@ -98,7 +98,7 @@ describe("agy adapter hook tampering", () => {
     await handle.setProfile(PermissionProfile.plan);
     rig.container.scriptTurn(replyTurn(CONV, "two"));
 
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(agySpawnAt(rig, 1).hooksJsonAtSpawn).toBe(original);
     expect(agySpawnAt(rig, 1).configFilesAtSpawn).toEqual([HOOKS_FILE]);
@@ -108,7 +108,7 @@ describe("agy adapter hook tampering", () => {
     const rig = await createAgyRig();
     const { handle } = await startAgyHandle(rig);
     rig.container.scriptTurn(replyTurn(CONV, "one"));
-    await handle.prompt("one");
+    await handle.prompt("one", { model: null });
     await rm(join(rig.configDir, CONFIG_SEGMENT), {
       recursive: true,
       force: true,
@@ -116,7 +116,7 @@ describe("agy adapter hook tampering", () => {
     await handle.setProfile(PermissionProfile.plan);
     rig.container.scriptTurn(replyTurn(CONV, "two"));
 
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(agySpawnAt(rig, 1).configFilesAtSpawn).toEqual([HOOKS_FILE]);
   });
@@ -127,10 +127,10 @@ describe("agy adapter hook environment", () => {
     const rig = await createAgyRig();
     const { handle } = await startAgyHandle(rig, PermissionProfile.unattended);
     rig.container.scriptTurn(replyTurn(CONV, "one"));
-    await handle.prompt("one");
+    await handle.prompt("one", { model: null });
     await handle.setProfile(PermissionProfile.plan);
     rig.container.scriptTurn(replyTurn(CONV, "two"));
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(agySpawnAt(rig, 0).spec.env).toMatchObject({
       CODEWEAVE_AGY_PROFILE: "unattended",

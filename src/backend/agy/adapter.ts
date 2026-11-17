@@ -17,6 +17,7 @@ import {
   type AgentHandle,
   type AgentStartResult,
   type AgentStartSpec,
+  type TurnOptions,
 } from "../agentAdapter";
 import type { AgentProcesses } from "../agentProcesses";
 import {
@@ -134,6 +135,8 @@ class AgySession implements AgentHandle {
   private readonly listeners: ListenerSet;
   private readonly handlers: ProcessHandlers;
   private profile: PermissionProfile;
+  private model: string | null = null;
+  private reportedModel: string | null = null;
   private live: LiveProcess | null = null;
   private spawning: Promise<LiveProcess> | null = null;
   private conversationId: string | null = null;
@@ -184,8 +187,9 @@ class AgySession implements AgentHandle {
     return this.listeners.add(listener);
   }
 
-  async prompt(text: string): Promise<void> {
+  async prompt(text: string, options: TurnOptions): Promise<void> {
     const turn = this.beginTurn();
+    this.model = options.model;
     this.announceLimits();
     const events = await this.drive(text, turn).catch((error: unknown) => {
       console.error(`agy turn failed: ${this.runId}`, error);
@@ -255,8 +259,16 @@ class AgySession implements AgentHandle {
       return exitedEvents(PROCESS_EXITED_MESSAGE);
     }
     turn.process = live;
+    this.announceModel(live);
     live.agentProcess.contained.stdin.write(agyTurnLine(text));
     return turn.finished.promise;
+  }
+
+  private announceModel(live: LiveProcess): void {
+    if (live.model !== null && live.model !== this.reportedModel) {
+      this.reportedModel = live.model;
+      this.emit({ type: "model", model: live.model });
+    }
   }
 
   private async prepare(turn: ActiveTurn): Promise<Prepared> {
@@ -265,7 +277,8 @@ class AgySession implements AgentHandle {
       previous !== null &&
       !previous.exited &&
       !previous.planned &&
-      previous.profile === this.profile
+      previous.profile === this.profile &&
+      previous.model === this.model
     ) {
       return { live: previous };
     }
@@ -342,10 +355,11 @@ class AgySession implements AgentHandle {
 
   private async startProcess(): Promise<LiveProcess> {
     const profile = this.profile;
+    const model = this.model;
     await this.deps.writeHookConfig(this.spec.account.configDir);
     const snapshotDir = await mkdtemp(join(tmpdir(), AGY_SNAPSHOT_DIR_PREFIX));
     try {
-      return await this.startInto(profile, snapshotDir);
+      return await this.startInto(profile, model, snapshotDir);
     } catch (error) {
       await this.removeSnapshotDir(snapshotDir);
       throw error;
@@ -354,6 +368,7 @@ class AgySession implements AgentHandle {
 
   private async startInto(
     profile: PermissionProfile,
+    model: string | null,
     snapshotDir: string,
   ): Promise<LiveProcess> {
     const launch = buildAgyLaunch({
@@ -363,6 +378,7 @@ class AgySession implements AgentHandle {
       conversationId: this.conversationId,
       configDir: this.spec.account.configDir,
       profile,
+      model,
       worktreeRoot: this.spec.cwd,
       snapshotDir,
     });
@@ -377,6 +393,7 @@ class AgySession implements AgentHandle {
     this.live = attachProcess(
       agentProcess,
       profile,
+      model,
       this.runId,
       snapshotDir,
       this.handlers,

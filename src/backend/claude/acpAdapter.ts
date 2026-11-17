@@ -16,7 +16,10 @@ import {
   type PromptResponse,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
+  type SessionConfigOption,
   type SessionUpdate,
+  type SetSessionConfigOptionRequest,
+  type SetSessionConfigOptionResponse,
   type SetSessionModeRequest,
   type Stream,
 } from "@agentclientprotocol/sdk";
@@ -32,6 +35,7 @@ import {
   type AgentHandle,
   type AgentStartResult,
   type AgentStartSpec,
+  type TurnOptions,
 } from "../agentAdapter";
 import type { AgentProcess, AgentProcesses } from "../agentProcesses";
 import {
@@ -39,6 +43,7 @@ import {
   DEFAULT_TOOL_KIND,
   MODE_BYPASS,
   MODE_DEFAULT,
+  MODEL_CONFIG_ID,
   PROCESS_EXITED_MESSAGE,
   STDERR_TAIL_CHARS,
 } from "../constants";
@@ -59,6 +64,9 @@ interface AcpPeer {
   initialize(params: InitializeRequest): Promise<InitializeResponse>;
   newSession(params: NewSessionRequest): Promise<NewSessionResponse>;
   setSessionMode(params: SetSessionModeRequest): Promise<unknown>;
+  setSessionConfigOption(
+    params: SetSessionConfigOptionRequest,
+  ): Promise<SetSessionConfigOptionResponse>;
   prompt(params: PromptRequest): Promise<PromptResponse>;
   cancel(params: CancelNotification): Promise<void>;
 }
@@ -131,9 +139,18 @@ function connect(stream: Stream, handlers: ClientHandlers): AcpPeer {
     newSession: (params) => agent.request(methods.agent.session.new, params),
     setSessionMode: (params) =>
       agent.request(methods.agent.session.setMode, params),
+    setSessionConfigOption: (params) =>
+      agent.request(methods.agent.session.setConfigOption, params),
     prompt: (params) => agent.request(methods.agent.session.prompt, params),
     cancel: (params) => agent.notify(methods.agent.session.cancel, params),
   };
+}
+
+function modelOf(
+  options: readonly SessionConfigOption[] | null | undefined,
+): string | null {
+  const option = options?.find((item) => item.id === MODEL_CONFIG_ID);
+  return option?.type === "select" ? option.currentValue : null;
 }
 
 function toPermissionOption(
@@ -152,6 +169,8 @@ class ClaudeAcpSession implements AgentHandle {
   private readonly exitSignal: Promise<void>;
   private resolveExit: () => void = () => undefined;
   private sessionId = "";
+  private currentModel: string | null = null;
+  private reportedModel: string | null = null;
   private stderrText = "";
   private exited = false;
   private exitEmitted = false;
@@ -204,11 +223,11 @@ class ClaudeAcpSession implements AgentHandle {
     };
   }
 
-  async prompt(text: string): Promise<void> {
+  async prompt(text: string, options: TurnOptions): Promise<void> {
     if (this.turn !== null) {
       throw new TurnInProgressError(this.runId);
     }
-    const run = this.runTurn(text);
+    const run = this.runTurn(text, options);
     this.turn = run;
     try {
       await run;
@@ -275,17 +294,38 @@ class ClaudeAcpSession implements AgentHandle {
       mcpServers: [],
     });
     this.sessionId = session.sessionId;
+    this.currentModel = modelOf(session.configOptions);
     if (spec.profile === PermissionProfile.bypass) {
       await this.setProfile(spec.profile);
     }
   }
 
-  private async runTurn(text: string): Promise<void> {
-    const response = this.peer
-      .prompt({
+  private async selectModel(model: string | null): Promise<void> {
+    if (model !== null && model !== this.currentModel) {
+      const updated = await this.peer.setSessionConfigOption({
         sessionId: this.sessionId,
-        prompt: [{ type: "text", text }],
-      })
+        configId: MODEL_CONFIG_ID,
+        value: model,
+      });
+      this.currentModel = modelOf(updated.configOptions) ?? model;
+    }
+    if (
+      this.currentModel !== null &&
+      this.currentModel !== this.reportedModel
+    ) {
+      this.reportedModel = this.currentModel;
+      this.emit({ type: "model", model: this.currentModel });
+    }
+  }
+
+  private async runTurn(text: string, options: TurnOptions): Promise<void> {
+    const response = this.selectModel(options.model)
+      .then(() =>
+        this.peer.prompt({
+          sessionId: this.sessionId,
+          prompt: [{ type: "text", text }],
+        }),
+      )
       .then((result): AgentEvent => ({
         type: "turn_end",
         stopReason: result.stopReason,

@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
-import { createOpencodeClient, type OpencodeClient } from "./client";
+import {
+  createOpencodeClient,
+  promptBody,
+  type OpencodeClient,
+} from "./client";
 
 const SERVER_SECRET = randomUUID();
 const REQUEST_TIMEOUT_MS = 20;
@@ -71,6 +75,38 @@ function outcomeOf(work: Promise<unknown>): Promise<string> {
   ]);
 }
 
+describe("prompt body", () => {
+  it("model_adds_provider_and_model_ids", () => {
+    expect(
+      promptBody({
+        sessionId: "ses_1",
+        text: "go",
+        agent: "build",
+        model: { providerID: "groq", modelID: "openai/gpt-oss-20b" },
+      }),
+    ).toEqual({
+      parts: [{ type: "text", text: "go" }],
+      agent: "build",
+      model: { providerID: "groq", modelID: "openai/gpt-oss-20b" },
+    });
+  });
+
+  it("null_model_leaves_the_model_key_out", () => {
+    const body = promptBody({
+      sessionId: "ses_1",
+      text: "go",
+      agent: "build",
+      model: null,
+    });
+
+    expect(body).toEqual({
+      parts: [{ type: "text", text: "go" }],
+      agent: "build",
+    });
+    expect(body).not.toHaveProperty("model");
+  });
+});
+
 describe("request timeouts", () => {
   it("client_request_times_out", async () => {
     const client = clientWith(stalledFetch);
@@ -79,7 +115,12 @@ describe("request timeouts", () => {
     expect(await outcomeOf(client.createSession())).toBe("rejected");
     expect(
       await outcomeOf(
-        client.promptAsync({ sessionId: "ses_1", text: "go", agent: "build" }),
+        client.promptAsync({
+          sessionId: "ses_1",
+          text: "go",
+          agent: "build",
+          model: null,
+        }),
       ),
     ).toBe("rejected");
     expect(await outcomeOf(client.abort("ses_1"))).toBe("rejected");

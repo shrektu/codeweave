@@ -22,6 +22,7 @@ import {
 import type { SessionView } from "../../src/shared/views";
 import { createFakeVault } from "../fakes/fakeVault";
 import {
+  ChatScenario,
   startOpenaiChatMock,
   type OpenaiChatMock,
 } from "../fakes/openaiChatMock";
@@ -53,6 +54,8 @@ const STEP_TIMEOUT_MS = 120_000;
 const POLL_INTERVAL_MS = 250;
 const EFFECTS_FILE = "effects.log";
 const EXPECTED_EFFECT_LINES = ["deploy-side-effect"];
+const CONFIGURED_MODEL = "mock-model";
+const UNKNOWN_MODEL = "requested-model";
 const PROC_ROOT = "/proc";
 const SERVE_ARGUMENT = "serve";
 const OPENCODE_CMDLINE_MARKER = "opencode";
@@ -102,11 +105,15 @@ function captureConsole(): string[] {
   return output;
 }
 
-async function openRig(): Promise<Rig> {
+async function openRig(
+  scenarios: Readonly<
+    Record<string, ChatScenario>
+  > = OPENCODE_ROTATION_SCENARIOS,
+): Promise<Rig> {
   opencodeBinaryOnPath();
   const consoleOutput = captureConsole();
   const mock = await startOpenaiChatMock({
-    scenarios: OPENCODE_ROTATION_SCENARIOS,
+    scenarios,
     toolCommand: ROTATION_COMMAND,
   });
   cleanup.add(() => mock.close());
@@ -241,6 +248,80 @@ afterEach(async () => {
   vi.restoreAllMocks();
   await cleanup.run();
 }, CLEANUP_TIMEOUT_MS);
+
+describe("model selection with the real opencode CLI and a local chat mock", () => {
+  it(
+    "model reaches the real opencode",
+    async () => {
+      const rig = await openRig({
+        [OPENCODE_KEY_A]: ChatScenario.ok,
+        [OPENCODE_KEY_B]: ChatScenario.ok,
+      });
+      const { handlers } = rig.backend;
+
+      await handlers["session/start"]({
+        cwd: rig.repo,
+        profile: PermissionProfile.unattended,
+        provider: ProviderId.opencode,
+        model: {
+          provider: ProviderId.opencode,
+          model: `custom/${CONFIGURED_MODEL}`,
+        },
+      });
+      await handlers["session/prompt"]({ text: "Reply with one word" });
+      await vi.waitFor(async () => {
+        expect((await sessionOf(rig)).lastTurn).not.toBeNull();
+      }, WAIT_OPTIONS);
+
+      expect((await sessionOf(rig)).lastTurn).toEqual({
+        kind: "ended",
+        stopReason: "end_turn",
+      });
+      expect(rig.mock.requests().map((request) => request.model)).toContain(
+        CONFIGURED_MODEL,
+      );
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
+describe("rejected model with the real opencode CLI and a local chat mock", () => {
+  it(
+    "model unknown to the real opencode fails the turn without rotation",
+    async () => {
+      const rig = await openRig({
+        [OPENCODE_KEY_A]: ChatScenario.ok,
+        [OPENCODE_KEY_B]: ChatScenario.ok,
+      });
+      const { handlers } = rig.backend;
+
+      await handlers["session/start"]({
+        cwd: rig.repo,
+        profile: PermissionProfile.unattended,
+        provider: ProviderId.opencode,
+        model: {
+          provider: ProviderId.opencode,
+          model: `custom/${UNKNOWN_MODEL}`,
+        },
+      });
+      await handlers["session/prompt"]({ text: "Reply with one word" });
+      await vi.waitFor(async () => {
+        expect((await sessionOf(rig)).lastTurn).not.toBeNull();
+      }, WAIT_OPTIONS);
+
+      const view = await sessionOf(rig);
+      expect(view.lastTurn).toEqual({
+        kind: "failed",
+        message: expect.stringContaining(UNKNOWN_MODEL) as string,
+      });
+      expect(view.activeAccountId).toBe((await accountIds(rig)).A);
+      expect(rig.mock.requests().filter((request) => request.hasTools)).toEqual(
+        [],
+      );
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
 
 describe("key rotation with the real opencode CLI and a local chat mock", () => {
   it(

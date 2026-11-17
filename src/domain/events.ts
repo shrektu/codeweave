@@ -73,6 +73,7 @@ export type AgentEvent =
       readonly utilization: unknown;
     }
   | { readonly type: "api_retry" }
+  | { readonly type: "model"; readonly model: string }
   | { readonly type: "turn_end"; readonly stopReason: string }
   | {
       readonly type: "turn_error";

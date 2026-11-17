@@ -30,7 +30,7 @@ describe("acp adapter process exit", () => {
         options: DEFAULT_PERMISSION_OPTIONS,
       },
     ]);
-    const turn = handle.prompt("build");
+    const turn = handle.prompt("build", { model: null });
     const request = await permissionRequestOf(events);
 
     containedOf(rig).stdin.destroy();
@@ -46,7 +46,7 @@ describe("acp adapter process exit", () => {
     const rig = await createRig();
     const { handle, events } = await startHandle(rig);
     agentOf(rig).enqueue([{ type: "hang" }]);
-    const turn = handle.prompt("never answered");
+    const turn = handle.prompt("never answered", { model: null });
     await vi.waitFor(() => {
       expect(agentOf(rig).prompts).toEqual(["never answered"]);
     });
@@ -95,7 +95,7 @@ describe("acp adapter permission bookkeeping", () => {
         options: DEFAULT_PERMISSION_OPTIONS,
       },
     ]);
-    const turn = handle.prompt("edit");
+    const turn = handle.prompt("edit", { model: null });
     const request = await permissionRequestOf(events);
 
     handle.answerPermission(request.requestId, "reject-once");

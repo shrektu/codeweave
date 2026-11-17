@@ -289,6 +289,54 @@ describe("agy turn result classification", () => {
   });
 });
 
+describe("agy error result without error lines", () => {
+  const REJECTED_MODEL_TEXT =
+    'invalid model selection (--model "nonsense" --effort ""): model nonsense is not recognized as a known model or custom model in settings';
+
+  it("error result without error lines fails the turn", () => {
+    const outcome = new TurnTracker().settle(
+      result({
+        status: "ERROR",
+        error: REJECTED_MODEL_TEXT,
+        finished_reason: "error",
+      }),
+    );
+
+    expect(outcome).toEqual({ kind: "failed", message: REJECTED_MODEL_TEXT });
+  });
+
+  it("error result with a quota text is a rate limit", () => {
+    const outcome = new TurnTracker().settle(
+      result({ status: "ERROR", error: QUOTA_TEXT, finished_reason: "error" }),
+    );
+
+    expect(outcome).toEqual({ kind: "quota", message: QUOTA_TEXT });
+  });
+
+  it("error result without any text fails with the generic message", () => {
+    const outcome = new TurnTracker().settle(
+      result({ status: "ERROR", finished_reason: "error" }),
+    );
+
+    expect(outcome).toEqual({
+      kind: "failed",
+      message: "The model request failed",
+    });
+  });
+
+  it("repeated error result from an earlier turn is not re-raised", () => {
+    const tracker = new TurnTracker();
+    tracker.observeStep(step({ text_delta: "ok" }), CONV);
+
+    const outcome = tracker.settle(
+      result({ status: "ERROR", error: QUOTA_TEXT, response: "ok" }),
+      QUOTA_TEXT,
+    );
+
+    expect(outcome).toEqual({ kind: "ended" });
+  });
+});
+
 describe("agy turn result error freshness", () => {
   const failedResult = result({
     status: "ERROR",

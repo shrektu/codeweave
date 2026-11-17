@@ -6,6 +6,7 @@ import {
   UnknownPermissionError,
 } from "../../src/backend/agentAdapter";
 import type { StopResult } from "../../src/backend/process/container";
+import { createRateLimitDetector } from "../../src/domain/rateLimit";
 import { PermissionProfile } from "../../src/domain/types";
 import {
   AUTH_REQUIRED_CODE,
@@ -60,7 +61,7 @@ describe("acp adapter: streaming", () => {
       { type: "end", stopReason: "end_turn" },
     ]);
 
-    await handle.prompt("list files");
+    await handle.prompt("list files", { model: null });
 
     expect(events).toEqual([
       { type: "text", text: "Hello" },
@@ -104,7 +105,7 @@ describe("acp adapter: streaming", () => {
       { type: "end", stopReason: "end_turn" },
     ]);
 
-    await handle.prompt("deploy it");
+    await handle.prompt("deploy it", { model: null });
 
     expect(events[1]).toEqual({
       type: "tool_call_update",
@@ -133,7 +134,7 @@ describe("acp adapter: permission answer", () => {
       { type: "end", stopReason: "end_turn" },
     ]);
 
-    const turn = handle.prompt("edit it");
+    const turn = handle.prompt("edit it", { model: null });
     const request = await permissionRequestOf(events);
 
     expect(request).toEqual({
@@ -179,7 +180,7 @@ describe("acp adapter: permission validation", () => {
       },
     ]);
 
-    const turn = handle.prompt("remove it");
+    const turn = handle.prompt("remove it", { model: null });
     const request = await permissionRequestOf(events);
 
     expect(() => {
@@ -211,7 +212,7 @@ describe("acp adapter: cancelled turn", () => {
       },
     ]);
 
-    const turn = handle.prompt("build");
+    const turn = handle.prompt("build", { model: null });
     const request = await permissionRequestOf(events);
     await handle.cancel();
     await turn;
@@ -245,10 +246,12 @@ describe("acp adapter: overlapping prompts", () => {
       },
     ]);
 
-    const turn = handle.prompt("first");
+    const turn = handle.prompt("first", { model: null });
     const request = await permissionRequestOf(events);
 
-    await expect(handle.prompt("second")).rejects.toThrow(TurnInProgressError);
+    await expect(handle.prompt("second", { model: null })).rejects.toThrow(
+      TurnInProgressError,
+    );
     handle.answerPermission(request.requestId, "allow-once");
     await turn;
 
@@ -279,14 +282,16 @@ describe("acp adapter: prompt from terminal event", () => {
     const chained: Promise<void>[] = [];
     handle.subscribe((event) => {
       if (event.type === "turn_end" && chained.length === 0) {
-        chained.push(handle.prompt("next"));
+        chained.push(handle.prompt("next", { model: null }));
       }
     });
 
-    await handle.prompt("first");
+    await handle.prompt("first", { model: null });
     const request = await permissionRequestOf(events);
 
-    await expect(handle.prompt("third")).rejects.toThrow(TurnInProgressError);
+    await expect(handle.prompt("third", { model: null })).rejects.toThrow(
+      TurnInProgressError,
+    );
     handle.answerPermission(request.requestId, "allow-once");
     await Promise.all(chained);
 
@@ -324,7 +329,7 @@ describe("acp adapter: rate limits", () => {
       },
     ]);
 
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
 
     expect(events).toEqual([
       {
@@ -344,7 +349,7 @@ describe("acp adapter: rate limits", () => {
       { type: "end", stopReason: "end_turn" },
     ]);
 
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
 
     expect(events).toEqual([
       {
@@ -416,7 +421,7 @@ describe("acp adapter: stop", () => {
       { type: "end", stopReason: "cancelled" },
     ]);
 
-    const turn = handle.prompt("build");
+    const turn = handle.prompt("build", { model: null });
     await permissionRequestOf(events);
     const stopped = await handle.stop(RIG_GRACE_MS);
     containedOf(rig).emitExit(0);
@@ -457,7 +462,7 @@ describe("acp adapter: unexpected peer messages", () => {
       { type: "end", stopReason: "end_turn" },
     ]);
 
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
 
     expect(events).toEqual([
       { type: "text", text: "after ext" },
@@ -474,7 +479,7 @@ describe("acp adapter: unexpected peer messages", () => {
       { type: "end", stopReason: "end_turn" },
     ]);
 
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
 
     expect(events).toEqual([
       { type: "text", text: "after unknown" },
@@ -490,7 +495,7 @@ describe("acp adapter: unexpected peer messages", () => {
       { type: "end", stopReason: "end_turn" },
     ]);
 
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
 
     expect(agentOf(rig).clientRequestErrorCodes).toEqual([
       METHOD_NOT_FOUND_CODE,
@@ -528,7 +533,7 @@ describe("acp adapter: usage and ordering", () => {
       { type: "end", stopReason: "end_turn" },
     ]);
 
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
 
     expect(events).toEqual([{ type: "turn_end", stopReason: "end_turn" }]);
   });
@@ -550,7 +555,7 @@ describe("acp adapter: usage and ordering", () => {
       { type: "end", stopReason: "end_turn" },
     ]);
 
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
 
     expect(events.map((event) => event.type)).toEqual([
       "text",
@@ -576,5 +581,107 @@ describe("acp adapter: launch environment", () => {
     expect(spec?.env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR).toBe("1");
     expect(spec?.env.ELECTRON_RUN_AS_NODE).toBe("1");
     expect(spec?.env.CLAUDE_CODE_EXECUTABLE).toBe("/usr/bin/claude");
+  });
+});
+
+describe("acp adapter: model selection", () => {
+  it("model reaches claude-agent-acp via set_config_option", async () => {
+    const rig = await createRig();
+    const { handle } = await startHandle(rig);
+
+    await handle.prompt("go", { model: "claude-sonnet-4-5" });
+
+    expect(agentOf(rig).configCalls).toEqual([
+      { configId: "model", value: "claude-sonnet-4-5" },
+    ]);
+    expect(agentOf(rig).callOrder).toEqual(["set_config_option", "prompt"]);
+  });
+
+  it("unchanged model is not set again", async () => {
+    const rig = await createRig();
+    const { handle } = await startHandle(rig);
+
+    await handle.prompt("one", { model: "claude-sonnet-4-5" });
+    await handle.prompt("two", { model: "claude-sonnet-4-5" });
+    await handle.prompt("three", { model: "claude-opus-4-1" });
+
+    expect(agentOf(rig).configCalls).toEqual([
+      { configId: "model", value: "claude-sonnet-4-5" },
+      { configId: "model", value: "claude-opus-4-1" },
+    ]);
+    expect(agentOf(rig).callOrder).toEqual([
+      "set_config_option",
+      "prompt",
+      "prompt",
+      "set_config_option",
+      "prompt",
+    ]);
+  });
+
+  it("model equal to the session model is not set", async () => {
+    const rig = await createRig();
+    rig.container.config.sessionModel = "claude-sonnet-4-5";
+    const { handle } = await startHandle(rig);
+
+    await handle.prompt("go", { model: "claude-sonnet-4-5" });
+
+    expect(agentOf(rig).configCalls).toEqual([]);
+  });
+
+  it("null model leaves the session model alone", async () => {
+    const rig = await createRig();
+    const { handle } = await startHandle(rig);
+
+    await handle.prompt("go", { model: null });
+
+    expect(agentOf(rig).configCalls).toEqual([]);
+    expect(agentOf(rig).prompts).toEqual(["go"]);
+  });
+});
+
+describe("acp adapter: model reporting", () => {
+  it("adapter reports the session model", async () => {
+    const rig = await createRig();
+    rig.container.config.sessionModel = "default";
+    const { handle, events } = await startHandle(rig);
+
+    await handle.prompt("one", { model: null });
+    await handle.prompt("two", { model: "claude-opus-4-1" });
+
+    expect(events).toEqual([
+      { type: "model", model: "default" },
+      { type: "turn_end", stopReason: "end_turn" },
+      { type: "model", model: "claude-opus-4-1" },
+      { type: "turn_end", stopReason: "end_turn" },
+    ]);
+  });
+
+  it("rejected model fails the turn without a rate limit", async () => {
+    const rig = await createRig();
+    rig.container.config.setConfigOptionError = {
+      code: -32602,
+      message: "Unknown model: nonsense",
+    };
+    const { handle, events } = await startHandle(rig);
+    const detector = createRateLimitDetector(() => 0);
+    handle.subscribe((event) => {
+      detector.observe(event);
+    });
+
+    await handle.prompt("go", { model: "nonsense" });
+
+    expect(events).toEqual([
+      {
+        type: "turn_error",
+        errorKind: null,
+        rpcCode: -32602,
+        message: expect.stringContaining("Unknown model: nonsense") as string,
+      },
+    ]);
+    expect(agentOf(rig).prompts).toEqual([]);
+    expect(detector.settle()).toEqual({
+      kind: "failed",
+      message: expect.stringContaining("Unknown model: nonsense") as string,
+    });
   });
 });

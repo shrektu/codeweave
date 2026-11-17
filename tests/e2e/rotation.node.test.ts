@@ -18,9 +18,14 @@ import {
   type Backend,
 } from "../../src/backend/startup";
 import { inspectWorktree } from "../../src/backend/worktree";
-import { PermissionProfile, SwitchReason } from "../../src/domain/types";
+import {
+  PermissionProfile,
+  ProviderId,
+  SwitchReason,
+} from "../../src/domain/types";
 import type { SessionView } from "../../src/shared/views";
 import {
+  MockScenario,
   startAnthropicMock,
   userTexts,
   type AnthropicMock,
@@ -47,6 +52,7 @@ const STEP_TIMEOUT_MS = 120_000;
 const POLL_INTERVAL_MS = 250;
 const EFFECTS_FILE = "effects.log";
 const EXPECTED_EFFECT_LINES = ["deploy-side-effect"];
+const REQUESTED_MODEL = "haiku";
 const WAIT_OPTIONS = {
   timeout: STEP_TIMEOUT_MS,
   interval: POLL_INTERVAL_MS,
@@ -88,7 +94,10 @@ function recordingContainer(
   };
 }
 
-async function openRig(profile: PermissionProfile): Promise<Rig> {
+async function openRig(
+  profile: PermissionProfile,
+  scenarios: Readonly<Record<string, MockScenario>> = ROTATION_SCENARIOS,
+): Promise<Rig> {
   const workspace = await createRotationWorkspace(profile);
   cleanup.add(() => workspace.dispose());
   const spawned: Contained[] = [];
@@ -98,7 +107,7 @@ async function openRig(profile: PermissionProfile): Promise<Rig> {
     runAGoneAtSecondSpawn: null,
   };
   const mock = await startAnthropicMock({
-    scenarios: ROTATION_SCENARIOS,
+    scenarios,
     toolCommand: ROTATION_COMMAND,
     onMainRequest: async (key) => {
       const [runA] = spawned;
@@ -238,6 +247,37 @@ async function expectRotationWithoutRerun(rig: Rig): Promise<void> {
 afterEach(async () => {
   await cleanup.run();
 }, CLEANUP_TIMEOUT_MS);
+
+describe("model selection with the real claude CLI and a local API mock", () => {
+  it(
+    "model reaches the real claude",
+    async () => {
+      const rig = await openRig(PermissionProfile.unattended, {
+        [KEY_A]: MockScenario.ok,
+        [KEY_B]: MockScenario.ok,
+      });
+      const { handlers } = rig.backend;
+
+      await handlers["session/start"]({
+        cwd: rig.workspace.repo,
+        profile: PermissionProfile.unattended,
+        model: { provider: ProviderId.claude, model: REQUESTED_MODEL },
+      });
+      await handlers["session/prompt"]({ text: "Reply with one word" });
+      await vi.waitFor(async () => {
+        expect((await sessionOf(rig)).lastTurn).not.toBeNull();
+      }, WAIT_OPTIONS);
+
+      expect((await sessionOf(rig)).lastTurn).toEqual({
+        kind: "ended",
+        stopReason: "end_turn",
+      });
+      const main = rig.mock.requests.find((request) => request.isMain);
+      expect(main?.body.model).toContain(REQUESTED_MODEL);
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
 
 describe("rotation with the real claude CLI and a local API mock", () => {
   it(

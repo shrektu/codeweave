@@ -130,7 +130,7 @@ async function runTurn(options: TurnOptions): Promise<{
     rig,
     options.profile ?? PermissionProfile.acceptEdits,
   );
-  await handle.prompt("go");
+  await handle.prompt("go", { model: null });
   return { rig, events };
 }
 
@@ -164,7 +164,7 @@ async function openTurn(
   await writeFile(join(rig.cwd, SEED_FILE), SEED);
   rig.container.scriptTurn(steps(rig.cwd));
   const { handle, events } = await startAgyHandle(rig, profile);
-  const prompting = handle.prompt("go");
+  const prompting = handle.prompt("go", { model: null });
   return {
     rig,
     events,
@@ -439,7 +439,7 @@ describe("agy snapshot dir cleanup", () => {
     );
     const dir = snapshotDirOf(rig);
 
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
 
     await vi.waitFor(() => {
       expect(diffUpdates(events)).toEqual([
@@ -465,7 +465,7 @@ describe("agy snapshot dir cleanup", () => {
     );
     const dir = snapshotDirOf(rig);
 
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
 
     await vi.waitFor(() => {
       expect(existsSync(dir)).toBe(false);

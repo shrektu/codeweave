@@ -16,6 +16,7 @@ import {
   type RequestPermissionOutcome,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
+  type SessionConfigOption,
   type SessionUpdate,
   type StopReason,
   type ToolCallStatus,
@@ -113,7 +114,26 @@ export type ScriptStep =
 export interface FakeAcpConfig {
   initializeError?: FakeRpcFailure;
   newSessionError?: FakeRpcFailure;
+  setConfigOptionError?: FakeRpcFailure;
+  sessionModel?: string;
   stderrText?: string;
+}
+
+export interface ConfigCall {
+  readonly configId: string;
+  readonly value: string | boolean;
+}
+
+const MODEL_CONFIG_ID = "model";
+
+function modelConfigOption(current: string): SessionConfigOption {
+  return {
+    id: MODEL_CONFIG_ID,
+    name: "Model",
+    type: "select",
+    currentValue: current,
+    options: [{ value: current, name: current }],
+  };
 }
 
 interface RawSessionUpdateParams {
@@ -190,6 +210,8 @@ function toUpdate(step: NotificationStep): SessionUpdate {
 
 export class FakeAcpAgent {
   readonly modeCalls: string[] = [];
+  readonly configCalls: ConfigCall[] = [];
+  readonly callOrder: string[] = [];
   readonly prompts: string[] = [];
   readonly permissionOutcomes: RequestPermissionOutcome[] = [];
   readonly clientRequestErrorCodes: number[] = [];
@@ -217,9 +239,30 @@ export class FakeAcpAgent {
         if (this.config.newSessionError !== undefined) {
           throw toError(this.config.newSessionError);
         }
-        return { sessionId: SESSION_ID };
+        return {
+          sessionId: SESSION_ID,
+          ...(this.config.sessionModel === undefined
+            ? {}
+            : { configOptions: [modelConfigOption(this.config.sessionModel)] }),
+        };
       })
       .onRequest(methods.agent.authenticate, () => ({}))
+      .onRequest(methods.agent.session.setConfigOption, ({ params }) => {
+        this.configCalls.push({
+          configId: params.configId,
+          value: params.value,
+        });
+        this.callOrder.push("set_config_option");
+        if (this.config.setConfigOptionError !== undefined) {
+          throw toError(this.config.setConfigOptionError);
+        }
+        return {
+          configOptions:
+            typeof params.value === "string"
+              ? [modelConfigOption(params.value)]
+              : [],
+        };
+      })
       .onRequest(methods.agent.session.setMode, ({ params }) => {
         this.modeCalls.push(params.modeId);
         return {};
@@ -232,6 +275,7 @@ export class FakeAcpAgent {
         methods.agent.session.prompt,
         async ({ params, client }): Promise<PromptResponse> => {
           this.cancelSignal = Promise.withResolvers<null>();
+          this.callOrder.push("prompt");
           for (const block of params.prompt) {
             if (block.type === "text") {
               this.prompts.push(block.text);

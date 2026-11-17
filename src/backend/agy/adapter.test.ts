@@ -110,7 +110,7 @@ describe("agy adapter start", () => {
     const { handle, events } = await startAgyHandle(rig);
     rig.container.scriptTurn(replyTurn(CONV, "hi"));
 
-    await handle.prompt("hi");
+    await handle.prompt("hi", { model: null });
 
     expect(eventTypes(events)).toEqual(["text", "turn_end"]);
   });
@@ -134,13 +134,13 @@ describe("agy adapter respawn after a failed stop", () => {
       stopResults: Array<StopResult>(10).fill(FAILED_STOP),
     });
     rig.container.scriptTurn(CANCEL_TURN);
-    const running = handle.prompt("task");
+    const running = handle.prompt("task", { model: null });
     await waitForEvent(events, "text");
     await handle.cancel();
     await running;
     events.length = 0;
 
-    await handle.prompt("again");
+    await handle.prompt("again", { model: null });
 
     expect(rig.container.agySpawns()).toHaveLength(1);
     expect(events).toEqual([
@@ -157,11 +157,11 @@ describe("agy adapter respawn after a failed stop", () => {
   it("respawn_gives_up_when_the_previous_stop_never_settles", async () => {
     const { rig, handle, events } = await started({ holdStops: true });
     rig.container.scriptTurn(replyTurn(CONV, "one"));
-    await handle.prompt("one");
+    await handle.prompt("one", { model: null });
     await handle.setProfile(PermissionProfile.plan);
     events.length = 0;
 
-    const second = handle.prompt("two");
+    const second = handle.prompt("two", { model: null });
 
     expect(await settlesWithin(second, SETTLE_BOUND_MS)).toBe(true);
     expect(rig.container.agySpawns()).toHaveLength(1);
@@ -173,11 +173,11 @@ describe("agy adapter respawn after an exit", () => {
   it("idle_crash_respawns_with_the_conversation_and_stays_silent", async () => {
     const { rig, handle, events } = await started();
     rig.container.scriptTurn(replyTurn(CONV, "one"));
-    await handle.prompt("one");
+    await handle.prompt("one", { model: null });
     rig.container.agySpawns()[0]?.contained.exit(1);
     rig.container.scriptTurn(replyTurn(CONV, "two"));
 
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(rig.container.agySpawns()[1]?.conversation).toBe(CONV);
     expect(eventTypes(events)).not.toContain("process_exit");
@@ -189,9 +189,9 @@ describe("agy adapter respawn after an exit", () => {
     rig.container.scriptTurn(replyTurn(CONV, "one"));
     rig.container.scriptTurn(replyTurn(CONV, "two"));
 
-    await handle.prompt("one");
+    await handle.prompt("one", { model: null });
     await handle.setProfile(PermissionProfile.ask);
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(rig.container.agySpawns()).toHaveLength(1);
     expect(rig.container.agySpawns()[0]?.stdinLines).toHaveLength(2);
@@ -200,13 +200,13 @@ describe("agy adapter respawn after an exit", () => {
   it("a_respawn_spawn_failure_is_a_turn_error_without_process_exit", async () => {
     const { rig, handle, events } = await started();
     rig.container.scriptTurn(replyTurn(CONV, "one"));
-    await handle.prompt("one");
+    await handle.prompt("one", { model: null });
     rig.container.agySpawns()[0]?.contained.exit(1);
     rig.container.spawnFailure = new Error("spawn agy EAGAIN");
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     events.length = 0;
 
-    await handle.prompt("two");
+    await handle.prompt("two", { model: null });
 
     expect(events).toEqual([
       {
@@ -222,7 +222,7 @@ describe("agy adapter respawn after an exit", () => {
     const { rig, handle, events } = await started();
     await handle.stop(AGY_RIG_GRACE_MS);
 
-    await handle.prompt("late");
+    await handle.prompt("late", { model: null });
 
     expect(events.slice(1)).toEqual([
       {
@@ -252,7 +252,7 @@ describe("agy adapter input noise", () => {
       resultStep(CONV, { status: "SUCCESS", response: "fine" }),
     ]);
 
-    await handle.prompt("go");
+    await handle.prompt("go", { model: null });
 
     expect(events.slice(1)).toEqual([
       { type: "text", messageId: "conv-1:2", text: "fine" },
@@ -267,7 +267,7 @@ async function quotaAfter(usage: UsageScript): Promise<AgentEvent[]> {
   rig.container.scriptTurn(quotaFailureTurn(CONV));
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
   events.length = 0;
-  await handle.prompt("work");
+  await handle.prompt("work", { model: null });
   return events.filter(
     (event) => event.type === "rate_limit" && event.status === "rejected",
   );
@@ -326,7 +326,7 @@ describe("agy adapter usage probes run outside the workspace", () => {
     const { handle } = await startAgyHandle(rig);
     rig.container.scriptTurn(quotaFailureTurn(CONV));
 
-    await handle.prompt("work");
+    await handle.prompt("work", { model: null });
 
     expect(rig.container.probeSpawns().map((spawn) => spawn.spec.cwd)).toEqual([
       rig.configDir,
@@ -353,7 +353,7 @@ describe("agy adapter workspace fingerprint after init", () => {
       ...replyTurn(CONV, "one").slice(1),
     ]);
 
-    await handle.prompt("one");
+    await handle.prompt("one", { model: null });
 
     expect(events.at(-1)).toMatchObject({
       type: "turn_error",
@@ -396,7 +396,7 @@ describe("agy adapter snapshot dir lifetime", () => {
     const spawn = rig.container.agySpawns()[0];
     const dir = spawn?.spec.env[AGY_SNAPSHOT_DIR_ENV] ?? "";
 
-    const prompt = handle.prompt("go");
+    const prompt = handle.prompt("go", { model: null });
     await vi.waitFor(() => {
       expect(spawn?.contained.hookOutputs).toHaveLength(1);
     });
@@ -430,7 +430,7 @@ describe("agy adapter fast result waits for the init workspace check", () => {
     });
     const { handle, events } = await startAgyHandle(rig);
     rig.container.scriptTurn(replyTurn(CONV, "one"));
-    return { check, prompt: handle.prompt("one"), events };
+    return { check, prompt: handle.prompt("one", { model: null }), events };
   }
 
   it("fast_result_waits_for_init_workspace_check_failing", async () => {

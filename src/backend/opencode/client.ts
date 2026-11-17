@@ -41,10 +41,26 @@ export interface OpencodeClientOptions {
   readonly warmUpTimeoutMs?: number;
 }
 
+export interface PromptModel {
+  readonly providerID: string;
+  readonly modelID: string;
+}
+
 export interface PromptRequest {
   readonly sessionId: string;
   readonly text: string;
   readonly agent: OpencodeAgent;
+  readonly model: PromptModel | null;
+}
+
+export function promptBody(
+  request: PromptRequest,
+): Readonly<Record<string, unknown>> {
+  return {
+    parts: [{ type: "text", text: request.text }],
+    agent: request.agent,
+    ...(request.model === null ? {} : { model: request.model }),
+  };
 }
 
 export interface OpencodeClient {
@@ -192,11 +208,11 @@ export function createOpencodeClient(
       const [latest] = LatestMessagesSchema.parse(await response.json());
       return latest?.info.id ?? null;
     },
-    promptAsync: ({ sessionId, text, agent }) =>
+    promptAsync: (request) =>
       sendAndDiscard({
         method: "POST",
-        path: sessionPath(sessionId, OpencodePath.promptAsync),
-        body: { parts: [{ type: "text", text }], agent },
+        path: sessionPath(request.sessionId, OpencodePath.promptAsync),
+        body: promptBody(request),
       }),
     abort: (sessionId) =>
       sendAndDiscard({

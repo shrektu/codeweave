@@ -69,6 +69,7 @@ export const DEFAULT_TOOL_STATUS: ToolCallStatus = "pending";
 export const TOOL_OUTPUT_SEPARATOR = "\n";
 export const MODE_BYPASS = "bypassPermissions";
 export const MODE_DEFAULT = "default";
+export const MODEL_CONFIG_ID = "model";
 export const STDERR_TAIL_CHARS = 4096;
 export const PROCESS_EXITED_MESSAGE = "Agent process exited";
 export const DEFAULT_STOP_GRACE_MS = 3000;
