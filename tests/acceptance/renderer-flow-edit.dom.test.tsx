@@ -927,3 +927,41 @@ it("flow_edit_missing_last_flow_keeps_discard", async () => {
   await screen.findByText("No flows found in this folder.", {}, WAIT_OPTIONS);
   expect(screen.queryByText(MISSING_FLOW_TEXT)).toBeNull();
 });
+
+it("flow inspector sets the node task class", async () => {
+  const client = appClient();
+  client.respond("flows/save", makeFlowsList());
+  await startEditing(client);
+
+  fireEvent.click(await findGraphNode("build"));
+  const panel = await screen.findByRole("region", { name: "Node build" });
+  const select = within(panel).getByLabelText<HTMLSelectElement>("Task class");
+  expect(Array.from(select.options, (option) => option.textContent)).toEqual([
+    "—",
+    "light",
+    "standard",
+    "heavy",
+  ]);
+  fireEvent.change(select, { target: { value: "heavy" } });
+  fireEvent.click(saveButton());
+
+  await waitFor(() => {
+    expect(savedRequests(client)).toEqual([
+      {
+        cwd: SESSION_CWD,
+        file: "flows/ship.md",
+        revision: "rev-1",
+        flow: {
+          id: "ship",
+          title: "Ship it",
+          maxRounds: 2,
+          nodes: [
+            { id: "build", agent: "implementer", taskClass: "heavy" },
+            { id: "review", agent: "reviewer" },
+          ],
+          edges: [{ from: "build", to: "review", kind: "hands_off_to" }],
+        },
+      },
+    ]);
+  }, WAIT_OPTIONS);
+});

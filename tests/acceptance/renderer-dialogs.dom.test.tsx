@@ -532,3 +532,25 @@ it("accounts_dialog_shows_conflict_message_on_remove", async () => {
     params: { id: "acc-0" },
   });
 });
+
+it("settings dialog sets the default task class", async () => {
+  const client = settingsClient();
+  renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
+
+  const select =
+    await screen.findByLabelText<HTMLSelectElement>("Default task class");
+  expect(select.value).toBe("standard");
+  fireEvent.change(select, { target: { value: "heavy" } });
+
+  await waitFor(() => {
+    expect(client.requests).toContainEqual({
+      method: "settings/set",
+      params: { defaultTaskClass: "heavy" },
+    });
+  });
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText<HTMLSelectElement>("Default task class").value,
+    ).toBe("heavy");
+  });
+});

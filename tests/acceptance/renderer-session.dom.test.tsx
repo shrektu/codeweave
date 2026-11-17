@@ -11,7 +11,7 @@ import { PermissionCard } from "../../src/renderer/components/PermissionCard";
 import { SessionStream } from "../../src/renderer/components/SessionStream";
 import { IpcRemoteError } from "../../src/renderer/ipc";
 import { IpcErrorCode } from "../../src/shared/protocol";
-import type { RotationPhaseView } from "../../src/shared/views";
+import type { RotationPhaseView, TurnRouteView } from "../../src/shared/views";
 import {
   createFakeIpcClient,
   makeAccount,
@@ -379,4 +379,89 @@ it("session_stop_sends_request", () => {
     method: "session/stop",
     params: {},
   });
+});
+
+function makeTurn(overrides: Partial<TurnRouteView> = {}): TurnRouteView {
+  return {
+    promptSeq: 0,
+    accountId: "acc-1",
+    model: "openai/gpt-oss-20b",
+    effectiveModel: null,
+    apiProvider: "groq",
+    requestedClass: "light",
+    servedClass: "light",
+    source: "routed",
+    ...overrides,
+  };
+}
+
+function renderTurns(turns: TurnRouteView[]): void {
+  const client = createFakeIpcClient();
+  client.respond(
+    "sessions/snapshot",
+    makeSnapshot({
+      session: makeSession({
+        messages: [makeMessage({ text: "Done", seq: 1 })],
+        turns,
+      }),
+    }),
+  );
+  renderWithServices(<SessionStream />, client);
+}
+
+it("turn badge shows the routed model and class", async () => {
+  renderTurns([makeTurn({ effectiveModel: "openai/gpt-oss-20b" })]);
+
+  const badge = await screen.findByText("groq/openai/gpt-oss-20b · light");
+  expect(badge.getAttribute("title")).toBe(
+    "This turn used groq/openai/gpt-oss-20b (light)",
+  );
+  const items = screen.getAllByRole("listitem").map((item) => item.textContent);
+  expect(items.indexOf("groq/openai/gpt-oss-20b · light")).toBeLessThan(
+    items.indexOf("Done"),
+  );
+});
+
+it("turn badge shows the class fallback", async () => {
+  renderTurns([
+    makeTurn({
+      model: "openai/gpt-oss-120b",
+      requestedClass: "standard",
+      servedClass: "heavy",
+    }),
+  ]);
+
+  expect(
+    await screen.findByText("groq/openai/gpt-oss-120b · standard → heavy"),
+  ).toBeTruthy();
+});
+
+it("turn badge marks a not routed turn", async () => {
+  renderTurns([
+    makeTurn({
+      requestedClass: "standard",
+      servedClass: null,
+      source: "account",
+    }),
+  ]);
+
+  expect(
+    await screen.findByText("groq/openai/gpt-oss-20b · standard · not routed"),
+  ).toBeTruthy();
+});
+
+it("turn badge shows the CLI default", async () => {
+  renderTurns([
+    makeTurn({
+      model: null,
+      apiProvider: null,
+      requestedClass: "standard",
+      servedClass: null,
+      source: "cli_default",
+    }),
+  ]);
+
+  expect(
+    await screen.findByText("CLI default · standard · not routed"),
+  ).toBeTruthy();
 });

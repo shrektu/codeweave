@@ -45,6 +45,7 @@ export type FlowSelection =
 export interface NodePatch {
   agent?: string;
   provider?: ProviderId | null;
+  taskClass?: TaskClass | null;
 }
 
 export interface EdgePatch {

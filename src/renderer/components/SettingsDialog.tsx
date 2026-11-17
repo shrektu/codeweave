@@ -5,9 +5,11 @@ import {
   PermissionProfile,
   UpdateChannel,
 } from "../../domain/types";
+import { parseTaskClass, TASK_CLASS_ORDER } from "../../domain/taskClass";
 import type { ParamsMap } from "../../shared/protocol";
 import type { SettingsView } from "../../shared/views";
 import { PROFILE_OPTIONS } from "../profileOptions";
+import { TASK_CLASS_LABELS } from "../routingText";
 import { useApp } from "../services";
 import { useAsyncAction } from "../useAsyncAction";
 
@@ -73,6 +75,32 @@ function EffectsFieldset({ settings, onPatch }: PatchProps): JSX.Element {
           }}
         />
       ))}
+    </fieldset>
+  );
+}
+
+function RoutingFieldset({ settings, onPatch }: PatchProps): JSX.Element {
+  return (
+    <fieldset>
+      <legend className="sec">Task routing</legend>
+      <label>
+        Default task class
+        <select
+          value={settings.defaultTaskClass}
+          onChange={(event) => {
+            const defaultTaskClass = parseTaskClass(event.target.value);
+            if (defaultTaskClass !== null) {
+              onPatch({ defaultTaskClass });
+            }
+          }}
+        >
+          {TASK_CLASS_ORDER.map((taskClass) => (
+            <option key={taskClass} value={taskClass}>
+              {TASK_CLASS_LABELS[taskClass]}
+            </option>
+          ))}
+        </select>
+      </label>
     </fieldset>
   );
 }
@@ -162,6 +190,7 @@ function SettingsForm({ settings }: { settings: SettingsView }): JSX.Element {
     <>
       <ProfileFieldset settings={settings} onPatch={onPatch} />
       <EffectsFieldset settings={settings} onPatch={onPatch} />
+      <RoutingFieldset settings={settings} onPatch={onPatch} />
       <UpdatesFieldset settings={settings} onPatch={onPatch} />
       <ExecutableField
         id="claude-executable"

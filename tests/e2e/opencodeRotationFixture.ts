@@ -4,7 +4,9 @@ import { delimiter, join } from "node:path";
 
 import { RUN_DIR_PREFIX } from "../../src/backend/opencode/constants";
 import { defaultRuntimeRoot } from "../../src/backend/opencode/config";
-import type { ApiProviderId } from "../../src/domain/apiProviders";
+import { ACCOUNTS_FILE } from "../../src/backend/constants";
+import { AccountsFileSchema } from "../../src/backend/storage";
+import { ApiProviderId } from "../../src/domain/apiProviders";
 import { ProviderId } from "../../src/domain/types";
 import type { ParamsMap } from "../../src/shared/protocol";
 import { ChatScenario } from "../fakes/openaiChatMock";
@@ -17,6 +19,13 @@ export const OPENCODE_ROTATION_SCENARIOS: Readonly<
 > = {
   [OPENCODE_KEY_A]: ChatScenario.toolThen429,
   [OPENCODE_KEY_B]: ChatScenario.ok,
+};
+
+export const OPENCODE_KEY_GROQ = "sk-test-fake-key-G";
+export const OPENCODE_ROUTING_SCENARIOS: Readonly<
+  Record<string, ChatScenario>
+> = {
+  [OPENCODE_KEY_GROQ]: ChatScenario.ok,
 };
 
 const OPENCODE_BINARY = "opencode";
@@ -34,6 +43,29 @@ export const OPENCODE_ACCOUNT_SPECS: readonly OpencodeAccountSpec[] = [
   { label: "A", apiKey: OPENCODE_KEY_A },
   { label: "B", apiKey: OPENCODE_KEY_B },
 ];
+
+export const OPENCODE_ROUTING_ACCOUNT_SPEC: OpencodeAccountSpec = {
+  label: "G",
+  apiKey: OPENCODE_KEY_GROQ,
+  provider: ApiProviderId.groq,
+  model: "openai/gpt-oss-120b",
+};
+
+export async function pointAccountsAtMock(
+  userData: string,
+  mockUrl: string,
+): Promise<void> {
+  const file = join(userData, ACCOUNTS_FILE);
+  const stored = AccountsFileSchema.parse(
+    JSON.parse(await readFile(file, "utf8")),
+  );
+  const accounts = stored.accounts.map((account) =>
+    account.api === undefined
+      ? account
+      : { ...account, api: { ...account.api, baseUrl: mockUrl } },
+  );
+  await writeFile(file, JSON.stringify({ ...stored, accounts }));
+}
 
 type OpencodeAddParams = Extract<
   ParamsMap["accounts/add"],

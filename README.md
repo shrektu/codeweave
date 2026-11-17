@@ -56,9 +56,19 @@ Write the docs for the change.
   are required.
 - `model` and `taskClass` are optional. The editor suggests models from the
   OpenCode catalog for OpenCode agents only; for other providers `model` is
-  free text. Codeweave does not pass `model` to the agent CLI yet.
-  `taskClass` is `light`, `standard` or `heavy`; see
-  [docs/model-routing.md](docs/model-routing.md).
+  free text. Leave it empty or set `auto` to let task-class routing choose.
+  Every agent CLI receives the model with each turn, in the format of its
+  provider:
+  - Claude: an alias (`sonnet`, `opus`, `haiku`) or a model id Claude Code lists.
+  - Codex: a Codex model id.
+  - Gemini: a model name as `agy models` shows it, for example
+    `Gemini 4 Hydrogen (Medium)`.
+  - OpenCode: `<provider>/<model>`, for example `groq/openai/gpt-oss-20b`.
+- `taskClass` is `light`, `standard` or `heavy`. On OpenCode API-key accounts
+  Codeweave picks a model per turn from the class; subscription accounts keep
+  the CLI default. The composer lets you choose a class and a model for the next
+  prompt, and every turn shows a badge with the model that handled it. Details
+  in [docs/model-routing.md](docs/model-routing.md).
 - The text after the front matter is the agent's instructions.
 
 The **Agents** tab creates, edits, renames and deletes these files after you

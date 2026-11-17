@@ -109,6 +109,22 @@ function explicitRoute(
   };
 }
 
+export function isModelAllowed(
+  api: ApiAccount,
+  model: string,
+  tiers: readonly ModelTier[] = MODEL_TIERS,
+): boolean {
+  return (
+    !isFreeOnly(api) ||
+    model === api.model ||
+    model.includes(FREE_MODEL_MARKER) ||
+    tiers.some(
+      (tier) =>
+        tier.provider === api.provider && tier.modelId === model && tier.free,
+    )
+  );
+}
+
 function allowedExplicitModel(
   account: Account,
   choice: ModelChoice | null,
@@ -116,17 +132,10 @@ function allowedExplicitModel(
 ): string | null {
   const model = explicitModelFor(account, choice);
   const { api } = account;
-  if (model === null || api === undefined || !isFreeOnly(api)) {
+  if (model === null || api === undefined) {
     return model;
   }
-  const free =
-    model === api.model ||
-    model.includes(FREE_MODEL_MARKER) ||
-    tiers.some(
-      (tier) =>
-        tier.provider === api.provider && tier.modelId === model && tier.free,
-    );
-  return free ? model : null;
+  return isModelAllowed(api, model, tiers) ? model : null;
 }
 
 export function routeTurn(

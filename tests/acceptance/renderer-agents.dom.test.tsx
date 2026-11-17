@@ -30,6 +30,8 @@ const WAIT_OPTIONS = { timeout: 5000 } as const;
 const CONFLICT_TEXT =
   "This agent file changed on disk. Reload to edit the latest version.";
 const UNKNOWN_MODEL_TEXT = "This model is not in the OpenCode catalog.";
+const UNKNOWN_PROVIDER_TEXT =
+  "The part before the first / is not a known API provider.";
 const QUALIFIED_MODEL = "groq/llama-3.3-70b";
 
 beforeEach(() => {
@@ -595,4 +597,49 @@ it("flow_add_node_lists_saved_agent", async () => {
     "option",
   );
   expect(options.map((option) => option.textContent)).toContain("builder");
+});
+
+const ROUTING_HELP =
+  "Leave empty or set auto to let task-class routing pick a model on API-key accounts; subscriptions then use the CLI default.";
+const PROVIDER_HELP: [string, string][] = [
+  [
+    "claude",
+    "An alias (sonnet, opus, haiku) or a model id that Claude Code lists; sent with every turn.",
+  ],
+  ["codex", "A Codex model id; sent with every turn."],
+  [
+    "gemini",
+    "A model name as `agy models` shows it, e.g. Gemini 4 Hydrogen (Medium); passed as --model.",
+  ],
+  ["opencode", "<provider>/<model>, e.g. groq/openai/gpt-oss-20b."],
+];
+
+it("agent model field explains the format per provider", async () => {
+  const client = appClient();
+  client.respond("models/catalog", { models: [], error: null });
+  await openAgentsTab(client, "implementer");
+
+  for (const [provider, help] of PROVIDER_HELP) {
+    fireEvent.change(select("Provider"), { target: { value: provider } });
+    expect(screen.getByText(`${help} ${ROUTING_HELP}`)).toBeTruthy();
+  }
+});
+
+it("agent model field warns on an unknown opencode provider", async () => {
+  const client = appClient();
+  client.respond("models/catalog", { models: [], error: null });
+  await openAgentsTab(client, "implementer");
+  fireEvent.change(select("Provider"), { target: { value: "opencode" } });
+
+  type("Model", "grok/llama");
+  expect(screen.getByText(UNKNOWN_PROVIDER_TEXT)).toBeTruthy();
+
+  type("Model", "groq/llama");
+  expect(screen.queryByText(UNKNOWN_PROVIDER_TEXT)).toBeNull();
+
+  type("Model", "auto");
+  expect(screen.queryByText(UNKNOWN_PROVIDER_TEXT)).toBeNull();
+
+  type("Model", "");
+  expect(screen.queryByText(UNKNOWN_PROVIDER_TEXT)).toBeNull();
 });

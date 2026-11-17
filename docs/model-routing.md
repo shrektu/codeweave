@@ -33,6 +33,20 @@ Applies to OpenCode accounts that use an API provider (`routeByClass` in `src/do
 The result records the requested class, the class actually served and the source: `routed`, `account`
 (configured model kept) or `cli_default`.
 
+## In the app
+
+- The composer has a class selector (Auto, Light, Standard, Heavy) and a model field next to the prompt.
+  Auto sends no class, an empty model sends no model. The choice stays until you change it, and a change
+  made while a turn runs applies to the next prompt. For an OpenCode API account the model field suggests
+  that provider's table rows and the account's own model as `<provider>/<model>`; other accounts take free
+  text.
+- Every turn shows a badge under its prompt: the model that handled it and the class, for example
+  `groq/openai/gpt-oss-20b · light`. A fallback reads `heavy → standard` (requested → served). A turn that
+  was not routed reads `standard · not routed`, an explicit model `override` or `agent model`, and a
+  subscription account `CLI default`.
+- Settings has a "Default task class" that is the last layer above.
+- The flow inspector sets a node's class; it is saved to the flow file.
+
 ## How a tier is assigned
 
 Within one provider, models are ranked by the output price the provider publishes: the cheapest is
