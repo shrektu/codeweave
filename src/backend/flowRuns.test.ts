@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
 
+import type { TaskClass } from "../domain/taskClass";
 import { PermissionProfile, ProviderId } from "../domain/types";
 import { IpcError, IpcErrorCode } from "../shared/protocol";
 import type { FlowsList, SessionView } from "../shared/views";
@@ -52,6 +53,7 @@ const RUNNING_VIEW: SessionView = {
   lastTurn: null,
   turnInFlight: true,
   flowRef: { flowId: "solo", nodeId: "build" },
+  turns: [],
 };
 const STOPPED_VIEW: SessionView = {
   ...RUNNING_VIEW,
@@ -182,4 +184,67 @@ it("flow_runs_visit_never_stops_a_session_it_did_not_open", async () => {
   expect(service.view()?.failure).toBe("A session is already running");
   expect(stop).not.toHaveBeenCalled();
   expect(service.isActive()).toBe(false);
+});
+
+function withTaskClasses(
+  nodeClass: TaskClass | null,
+  agentClass: TaskClass | null,
+): FlowsList {
+  const [flow] = FLOWS.flows;
+  const [agent] = FLOWS.agents;
+  if (flow === undefined || agent === undefined) {
+    throw new Error("the fixture has no flow or agent");
+  }
+  return {
+    ...FLOWS,
+    flows: [
+      {
+        ...flow,
+        nodes: [
+          {
+            id: "build",
+            agent: "coder",
+            provider: null,
+            taskClass: nodeClass,
+          },
+        ],
+      },
+    ],
+    agents: [{ ...agent, taskClass: agentClass }],
+  };
+}
+
+it.each([
+  { nodeClass: "light", agentClass: "heavy", expected: "light" },
+  { nodeClass: null, agentClass: "heavy", expected: "heavy" },
+] as const)(
+  "flow_runs_toDefinition_keeps_node_task_class_$nodeClass_$agentClass",
+  async ({ nodeClass, agentClass, expected }) => {
+    const { service, start, listing } = harness(() =>
+      Promise.resolve(RUNNING_VIEW),
+    );
+    listing.resolve(withTaskClasses(nodeClass, agentClass));
+
+    await service.start(START_PARAMS);
+
+    await vi.waitFor(() => {
+      expect(start).toHaveBeenCalledWith(
+        expect.objectContaining({ taskClass: expected }),
+      );
+    });
+  },
+);
+
+it("flow_runs_omit_task_class_when_node_and_agent_have_none", async () => {
+  const { service, start, listing } = harness(() =>
+    Promise.resolve(RUNNING_VIEW),
+  );
+  listing.resolve(withTaskClasses(null, null));
+
+  await service.start(START_PARAMS);
+
+  await vi.waitFor(() => {
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+  expect(start.mock.calls[0]?.[0]).not.toHaveProperty("taskClass");
 });

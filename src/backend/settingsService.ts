@@ -57,6 +57,7 @@ function toView(settings: SettingsFile): SettingsView {
     terminalShell: settings.terminalShell,
     updateCheck: settings.updateCheck,
     updateChannel: settings.updateChannel,
+    defaultTaskClass: settings.defaultTaskClass,
   };
 }
 
@@ -110,6 +111,7 @@ export function createSettingsService({
               : patch.terminalShell,
           updateCheck: patch.updateCheck ?? current.updateCheck,
           updateChannel: patch.updateChannel ?? current.updateChannel,
+          defaultTaskClass: patch.defaultTaskClass ?? current.defaultTaskClass,
         };
         await store.writeSettings(next);
         const view = toView(next);

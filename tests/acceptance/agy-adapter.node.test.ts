@@ -686,7 +686,22 @@ describe("agy adapter model reporting", () => {
 
     expect(events.filter((event) => event.type === "model")).toEqual([
       { type: "model", model: "gemini-3-pro" },
+      { type: "model", model: "gemini-3-pro" },
       { type: "model", model: "gemini-3-flash" },
+    ]);
+  });
+
+  it("agy reports the model on every turn", async () => {
+    const { rig, handle, events } = await readyHandle();
+    rig.container.scriptTurn(replyTurn(CONV, "one"));
+    rig.container.scriptTurn(replyTurn(CONV, "two"));
+
+    await handle.prompt("one", { model: "gemini-3-pro" });
+    await handle.prompt("two", { model: "gemini-3-pro" });
+
+    expect(events.filter((event) => event.type === "model")).toEqual([
+      { type: "model", model: "gemini-3-pro" },
+      { type: "model", model: "gemini-3-pro" },
     ]);
   });
 });

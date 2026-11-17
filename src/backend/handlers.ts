@@ -107,8 +107,8 @@ export function createHandlers({
       });
       return view;
     },
-    "session/prompt": async ({ text }) => {
-      await sessions.prompt(text);
+    "session/prompt": async ({ text, ...overrides }) => {
+      await sessions.prompt(text, overrides);
       return { accepted: true };
     },
     "session/stop": async () => {

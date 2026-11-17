@@ -146,6 +146,7 @@ export async function createCodexRotationWorkspace(
       terminalShell: null,
       updateCheck: false,
       updateChannel: "stable",
+      defaultTaskClass: "standard",
     });
     return { root, userData, repo, accountA, accountB, dispose };
   } catch (error) {

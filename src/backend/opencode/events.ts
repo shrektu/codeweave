@@ -50,6 +50,7 @@ interface MessageInfo {
 export interface OpencodeEventMapper {
   map(event: OpencodeEvent): AgentEvent[];
   scopeOf(event: OpencodeEvent): SessionScope;
+  beginTurn(): void;
 }
 
 const TOOL_KINDS: Readonly<Record<string, string>> = {
@@ -264,6 +265,9 @@ export function createEventMapper(
 
   return {
     scopeOf,
+    beginTurn() {
+      reportedModel = null;
+    },
     map(event) {
       const scope = scopeOf(event);
       switch (event.type) {

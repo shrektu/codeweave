@@ -111,10 +111,11 @@ function toDefinition(view: FlowView): FlowDefinition {
     id: view.id,
     title: view.title,
     maxRounds: view.maxRounds,
-    nodes: view.nodes.map(({ id, agent, provider }) => ({
+    nodes: view.nodes.map(({ id, agent, provider, taskClass }) => ({
       id,
       agent,
       ...(provider === null ? {} : { provider }),
+      ...(taskClass === null ? {} : { taskClass }),
     })),
     edges: view.edges.map((edge) => ({ ...edge })),
   };
@@ -329,12 +330,14 @@ class FlowRunner implements FlowRunService {
   private async openSession(run: ActiveRun, nodeId: string): Promise<void> {
     const { node, agent } = this.resolve(run, nodeId);
     const model = modelChoiceOf(node.provider, agent);
+    const taskClass = node.taskClass ?? agent.taskClass;
     await this.deps.sessions.start({
       cwd: run.state.cwd,
       profile: agent.permissionProfile,
       provider: node.provider ?? agent.provider,
       flowRef: { flowId: run.state.flowId, nodeId },
       ...(model === null ? {} : { model }),
+      ...(taskClass === null ? {} : { taskClass }),
     });
   }
 

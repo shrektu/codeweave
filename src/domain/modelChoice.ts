@@ -3,6 +3,8 @@ import { ProviderId, type Account } from "./types";
 
 const API_PROVIDER_SEPARATOR = "/";
 
+export const FREE_MODEL_MARKER = ":free";
+
 export interface ModelChoice {
   readonly provider: ProviderId;
   readonly model: string;

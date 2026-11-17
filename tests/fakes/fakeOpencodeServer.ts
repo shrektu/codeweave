@@ -666,6 +666,7 @@ export interface FakeOpencodeConfig {
   stalledRoutes?: readonly Route["kind"][];
   delayedRoutes?: ReadonlyMap<Route["kind"], number>;
   providers?: unknown;
+  assistantModel?: AssistantModel;
 }
 
 const StartupConfigSchema = z.looseObject({
@@ -742,6 +743,9 @@ export class ScriptedOpencodeContainer implements ProcessContainer {
     }
     if (this.config.providers !== undefined) {
       server.providers = this.config.providers;
+    }
+    if (this.config.assistantModel !== undefined) {
+      server.assistantModel = this.config.assistantModel;
     }
     this.config.stalledRoutes?.forEach((kind) => {
       server.stall(kind);

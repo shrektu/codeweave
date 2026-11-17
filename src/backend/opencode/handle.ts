@@ -442,9 +442,11 @@ export class OpencodeHandle implements AgentHandle {
       case OpencodeEventType.messageUpdated:
         if (own) {
           this.onMessage(event.properties.info);
-          mapped.forEach((agentEvent) => {
-            this.emit(agentEvent);
-          });
+          if (this.staleBefore === null && this.turn?.sent === true) {
+            mapped.forEach((agentEvent) => {
+              this.emit(agentEvent);
+            });
+          }
         }
         return;
       case OpencodeEventType.sessionCreated:
@@ -464,6 +466,7 @@ export class OpencodeHandle implements AgentHandle {
     }
     if (gate.after === null || info.id > gate.after) {
       this.staleBefore = null;
+      this.mapper?.beginTurn();
       if (this.turn !== null) {
         this.clearGateTimer(this.turn);
       }

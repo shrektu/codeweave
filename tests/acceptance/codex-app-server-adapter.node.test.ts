@@ -385,6 +385,21 @@ describe("codex app-server adapter: model reporting", () => {
 
     expect(events.filter((event) => event.type === "model")).toEqual([
       { type: "model", model: "gpt-5-mini" },
+      { type: "model", model: "gpt-5-mini" },
+    ]);
+  });
+
+  it("codex reports the model on every turn", async () => {
+    const rig = await createCodexRig();
+    rig.container.config.threadModel = "gpt-5-codex";
+    const { handle, events } = await startCodexHandle(rig);
+
+    await handle.prompt("one", { model: "gpt-5-mini" });
+    await handle.prompt("two", { model: "gpt-5-mini" });
+
+    expect(events.filter((event) => event.type === "model")).toEqual([
+      { type: "model", model: "gpt-5-mini" },
+      { type: "model", model: "gpt-5-mini" },
     ]);
   });
 

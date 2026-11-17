@@ -170,7 +170,6 @@ class ClaudeAcpSession implements AgentHandle {
   private resolveExit: () => void = () => undefined;
   private sessionId = "";
   private currentModel: string | null = null;
-  private reportedModel: string | null = null;
   private stderrText = "";
   private exited = false;
   private exitEmitted = false;
@@ -309,11 +308,7 @@ class ClaudeAcpSession implements AgentHandle {
       });
       this.currentModel = modelOf(updated.configOptions) ?? model;
     }
-    if (
-      this.currentModel !== null &&
-      this.currentModel !== this.reportedModel
-    ) {
-      this.reportedModel = this.currentModel;
+    if (this.currentModel !== null) {
       this.emit({ type: "model", model: this.currentModel });
     }
   }

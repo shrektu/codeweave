@@ -37,6 +37,7 @@ describe("settings service", () => {
       terminalShell: null,
       updateCheck: true,
       updateChannel: "stable",
+      defaultTaskClass: "standard",
     });
   });
 
@@ -55,6 +56,7 @@ describe("settings service", () => {
       terminalShell: null,
       updateCheck: true,
       updateChannel: "stable",
+      defaultTaskClass: "standard",
     };
     expect(view).toEqual(expected);
     expect(await store.readSettings()).toEqual({ version: 1, ...expected });
@@ -102,6 +104,7 @@ describe("settings service", () => {
       terminalShell: null,
       updateCheck: true,
       updateChannel: "stable",
+      defaultTaskClass: "standard",
     });
   });
 
@@ -193,6 +196,7 @@ describe("settings service", () => {
       terminalShell: null,
       updateCheck: true,
       updateChannel: "stable",
+      defaultTaskClass: "standard",
     });
   });
 });

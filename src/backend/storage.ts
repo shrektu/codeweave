@@ -11,6 +11,7 @@ import { join } from "node:path";
 
 import { z } from "zod";
 
+import { TaskClass, TaskClassSchema } from "../domain/taskClass";
 import {
   EffectLevel,
   PermissionProfile,
@@ -62,6 +63,7 @@ export const SettingsFileSchema = z.object({
   terminalShell: z.string().nullable().default(null),
   updateCheck: z.boolean().default(true),
   updateChannel: z.enum(UpdateChannel).default(UpdateChannel.stable),
+  defaultTaskClass: TaskClassSchema.default(TaskClass.standard),
 });
 
 const SwitchLogEntrySchema = z.object({
@@ -108,6 +110,7 @@ const DEFAULT_SETTINGS: SettingsFile = {
   terminalShell: null,
   updateCheck: true,
   updateChannel: UpdateChannel.stable,
+  defaultTaskClass: TaskClass.standard,
 };
 
 export class StorageCorruptError extends Error {

@@ -733,7 +733,69 @@ describe("opencode adapter: model reporting", () => {
 
     expect(events.filter((event) => event.type === "model")).toEqual([
       { type: "model", model: "openai/gpt-oss-20b" },
+      { type: "model", model: "openai/gpt-oss-20b" },
     ]);
+  });
+
+  it("opencode reports the model on every turn", async () => {
+    const rig = await createOpencodeRig({ api: GROQ_API });
+    const { handle, events } = await startOpencodeHandle(rig);
+    opencodeServerOf(rig).assistantModel = {
+      providerID: "groq",
+      modelID: "openai/gpt-oss-20b",
+    };
+
+    await handle.prompt("one", { model: null });
+    await handle.prompt("two", { model: null });
+
+    expect(events.filter((event) => event.type === "model")).toEqual([
+      { type: "model", model: "openai/gpt-oss-20b" },
+      { type: "model", model: "openai/gpt-oss-20b" },
+    ]);
+  });
+});
+
+describe("opencode adapter: stale model reports", () => {
+  it("late model event from a cancelled turn is not reported on the next turn", async () => {
+    const rig = await createOpencodeRig({ api: GROQ_API });
+    const { handle, events } = await startOpencodeHandle(rig);
+    const server = opencodeServerOf(rig);
+    server.assistantModel = { providerID: "groq", modelID: "model-a" };
+    server.enqueue([{ type: "wait_abort" }, { type: "idle" }]);
+    const first = handle.prompt("one", { model: null });
+    await vi.waitFor(() => {
+      expect(events).toContainEqual({ type: "model", model: "model-a" });
+    });
+    await handle.cancel();
+    await first;
+    const seen = events.length;
+    server.assistantModel = { providerID: "groq", modelID: "model-b" };
+    server.enqueue([
+      { type: "slow_user_message", ms: SLOW_USER_MESSAGE_MS },
+      {
+        type: "raw",
+        event: {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "msg_1",
+              role: "assistant",
+              sessionID: OPENCODE_SESSION_ID,
+              providerID: "groq",
+              modelID: "model-a",
+            },
+          },
+        },
+      },
+      { type: "wait", ms: SLOW_USER_MESSAGE_MS * 2 },
+      { type: "idle" },
+    ]);
+
+    await handle.prompt("two", { model: null });
+
+    expect(
+      events.slice(seen).filter((event) => event.type === "model"),
+    ).toEqual([{ type: "model", model: "model-b" }]);
   });
 });
 

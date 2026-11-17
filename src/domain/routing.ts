@@ -1,4 +1,9 @@
 import { API_PROVIDERS, ApiTier, FreeModels } from "./apiProviders";
+import {
+  explicitModelFor,
+  FREE_MODEL_MARKER,
+  type ModelChoice,
+} from "./modelChoice";
 import { MODEL_TIERS, type ModelTier } from "./modelTiers";
 import { TASK_CLASS_ORDER, type TaskClass } from "./taskClass";
 import { ProviderId, type Account, type ApiAccount } from "./types";
@@ -7,6 +12,8 @@ export const RouteSource = {
   routed: "routed",
   account: "account",
   cliDefault: "cli_default",
+  override: "override",
+  agent: "agent",
 } as const;
 export type RouteSource = (typeof RouteSource)[keyof typeof RouteSource];
 
@@ -17,13 +24,16 @@ export interface ClassRoute {
   readonly source: RouteSource;
 }
 
+function isFreeOnly(api: ApiAccount): boolean {
+  const info = API_PROVIDERS[api.provider];
+  return info.tier === ApiTier.free && info.freeModels === FreeModels.marked;
+}
+
 function candidatesFor(
   api: ApiAccount,
   tiers: readonly ModelTier[],
 ): ModelTier[] {
-  const info = API_PROVIDERS[api.provider];
-  const freeOnly =
-    info.tier === ApiTier.free && info.freeModels === FreeModels.marked;
+  const freeOnly = isFreeOnly(api);
   return tiers.filter(
     (tier) => tier.provider === api.provider && (!freeOnly || tier.free),
   );
@@ -77,6 +87,62 @@ export function routeByClass(
     servedClass: row.taskClass,
     source: RouteSource.routed,
   };
+}
+
+export interface RouteRequest {
+  readonly account: Account;
+  readonly taskClass: TaskClass;
+  readonly override: ModelChoice | null;
+  readonly agentModel: ModelChoice | null;
+}
+
+function explicitRoute(
+  request: RouteRequest,
+  model: string,
+  source: RouteSource,
+): ClassRoute {
+  return {
+    model,
+    requestedClass: request.taskClass,
+    servedClass: null,
+    source,
+  };
+}
+
+function allowedExplicitModel(
+  account: Account,
+  choice: ModelChoice | null,
+  tiers: readonly ModelTier[],
+): string | null {
+  const model = explicitModelFor(account, choice);
+  const { api } = account;
+  if (model === null || api === undefined || !isFreeOnly(api)) {
+    return model;
+  }
+  const free =
+    model === api.model ||
+    model.includes(FREE_MODEL_MARKER) ||
+    tiers.some(
+      (tier) =>
+        tier.provider === api.provider && tier.modelId === model && tier.free,
+    );
+  return free ? model : null;
+}
+
+export function routeTurn(
+  request: RouteRequest,
+  tiers: readonly ModelTier[] = MODEL_TIERS,
+): ClassRoute {
+  const { account, taskClass } = request;
+  const override = allowedExplicitModel(account, request.override, tiers);
+  if (override !== null) {
+    return explicitRoute(request, override, RouteSource.override);
+  }
+  const agent = allowedExplicitModel(account, request.agentModel, tiers);
+  if (agent !== null) {
+    return explicitRoute(request, agent, RouteSource.agent);
+  }
+  return routeByClass(account, taskClass, tiers);
 }
 
 export function resolveTaskClass(

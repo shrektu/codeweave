@@ -37,6 +37,7 @@ describe("json store", () => {
       terminalShell: null,
       updateCheck: true,
       updateChannel: "stable",
+      defaultTaskClass: "standard",
     });
   });
 
@@ -54,6 +55,7 @@ describe("json store", () => {
       terminalShell: "/bin/zsh",
       updateCheck: false,
       updateChannel: "beta",
+      defaultTaskClass: "heavy",
     } as const;
 
     await store.writeAccounts([account]);
@@ -221,6 +223,7 @@ describe("json store writes", () => {
         terminalShell: null,
         updateCheck: true,
         updateChannel: "stable",
+        defaultTaskClass: "standard",
       }),
     ).rejects.toBeInstanceOf(StorageCorruptError);
 

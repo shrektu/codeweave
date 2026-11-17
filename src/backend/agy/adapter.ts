@@ -136,7 +136,6 @@ class AgySession implements AgentHandle {
   private readonly handlers: ProcessHandlers;
   private profile: PermissionProfile;
   private model: string | null = null;
-  private reportedModel: string | null = null;
   private live: LiveProcess | null = null;
   private spawning: Promise<LiveProcess> | null = null;
   private conversationId: string | null = null;
@@ -265,8 +264,7 @@ class AgySession implements AgentHandle {
   }
 
   private announceModel(live: LiveProcess): void {
-    if (live.model !== null && live.model !== this.reportedModel) {
-      this.reportedModel = live.model;
+    if (live.model !== null) {
       this.emit({ type: "model", model: live.model });
     }
   }

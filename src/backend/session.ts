@@ -8,7 +8,6 @@ import {
 } from "../domain/constants";
 import { buildContextPackage } from "../domain/contextPackage";
 import type { AgentEvent } from "../domain/events";
-import { explicitModelOn, type ModelChoice } from "../domain/modelChoice";
 import { decidePermission } from "../domain/permissionPolicy";
 import { rotationPool } from "../domain/rotationPool";
 import {
@@ -75,6 +74,14 @@ import { observeViews } from "./sessionViews";
 import { configuredExecutable } from "./settingsService";
 import type { JsonStore } from "./storage";
 import { transitionError } from "./transitionError";
+import {
+  beginPrompt,
+  NO_PROMPT,
+  recordTurn,
+  type CurrentPrompt,
+  type PromptOverrides,
+  type TurnRoutingSpec,
+} from "./turnRouting";
 
 type PermissionRequest = Extract<AgentEvent, { type: "permission_request" }>;
 
@@ -107,7 +114,7 @@ export interface SessionServiceDeps {
 export interface SessionService {
   view(): SessionView | null;
   start(params: ParamsMap["session/start"]): Promise<SessionView>;
-  prompt(text: string): Promise<void>;
+  prompt(text: string, overrides?: PromptOverrides): Promise<void>;
   stop(): Promise<void>;
   answerPermission(requestId: string, optionId: string): void;
   isInUse(accountId: string): boolean;
@@ -120,11 +127,10 @@ export interface SessionService {
   shutdown(): Promise<void>;
 }
 
-interface RunSpec {
+interface RunSpec extends TurnRoutingSpec {
   readonly cwd: string;
   readonly profile: PermissionProfile;
   readonly flowRef: FlowRef | null;
-  readonly model: ModelChoice | null;
 }
 
 const INACTIVE_PHASES: readonly RotationPhase["phase"][] = [
@@ -210,6 +216,7 @@ class SessionRun {
   );
   private state: SessionState = INITIAL_SESSION_STATE;
   private readonly userPrompts: string[] = [];
+  private currentPrompt: CurrentPrompt = NO_PROMPT;
   private readonly limits = new Map<string, LimitView>();
   private readonly handles = new Map<string, AgentHandle>();
   private readonly retired = new WeakSet<AgentHandle>();
@@ -339,7 +346,7 @@ class SessionRun {
     this.controller.setAccounts(this.accounts);
   }
 
-  prompt(text: string): void {
+  prompt(text: string, overrides: PromptOverrides = {}): void {
     const phase = this.phase();
     if (
       phase.phase !== "running" ||
@@ -352,6 +359,9 @@ class SessionRun {
       );
     }
     this.userPrompts.push(text);
+    const begun = beginPrompt(this.state, overrides);
+    this.state = begun.state;
+    this.currentPrompt = begun.prompt;
     void this.userTurn(phase.accountId, text);
   }
 
@@ -538,7 +548,15 @@ class SessionRun {
     const detector = createRateLimitDetector(this.deps.now);
     this.detector = detector;
     this.publish();
-    const model = explicitModelOn(this.registered, accountId, this.spec.model);
+    const routed = recordTurn({
+      state: this.state,
+      accounts: this.registered,
+      accountId,
+      spec: this.spec,
+      prompt: this.currentPrompt,
+    });
+    this.state = routed.state;
+    const { model } = routed;
     try {
       await handle.prompt(text, { model });
     } catch (error) {
@@ -789,6 +807,8 @@ async function createRun(
       profile: params.profile ?? settings.permissionProfile,
       flowRef: params.flowRef ?? null,
       model: params.model ?? null,
+      taskClass: params.taskClass ?? null,
+      defaultTaskClass: settings.defaultTaskClass,
     },
     provider,
     registered,
@@ -943,8 +963,8 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       checkRuntime();
       return view;
     },
-    prompt: async (text) => {
-      requireRun().prompt(text);
+    prompt: async (text, overrides) => {
+      requireRun().prompt(text, overrides);
       return Promise.resolve();
     },
     stop: async () => {

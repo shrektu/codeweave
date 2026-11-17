@@ -4,6 +4,7 @@ import { delimiter, join } from "node:path";
 
 import { RUN_DIR_PREFIX } from "../../src/backend/opencode/constants";
 import { defaultRuntimeRoot } from "../../src/backend/opencode/config";
+import type { ApiProviderId } from "../../src/domain/apiProviders";
 import { ProviderId } from "../../src/domain/types";
 import type { ParamsMap } from "../../src/shared/protocol";
 import { ChatScenario } from "../fakes/openaiChatMock";
@@ -25,6 +26,8 @@ const CUSTOM_API_PROVIDER = "custom";
 export interface OpencodeAccountSpec {
   readonly label: string;
   readonly apiKey: string;
+  readonly provider?: ApiProviderId;
+  readonly model?: string;
 }
 
 export const OPENCODE_ACCOUNT_SPECS: readonly OpencodeAccountSpec[] = [
@@ -47,8 +50,8 @@ export function opencodeAddParams(
     configDir: join(userData, "accounts", spec.label.toLowerCase()),
     provider: ProviderId.opencode,
     api: {
-      provider: CUSTOM_API_PROVIDER,
-      model: MOCK_MODEL,
+      provider: spec.provider ?? CUSTOM_API_PROVIDER,
+      model: spec.model ?? MOCK_MODEL,
       baseUrl: mockUrl,
       rotation: true,
     },

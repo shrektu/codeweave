@@ -2,6 +2,9 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { API_PROVIDERS } from "../../domain/apiProviders";
+import { MODEL_TIERS } from "../../domain/modelTiers";
+
 import {
   CONFIG_FILE_NAME,
   FILE_REFERENCE_PREFIX,
@@ -71,8 +74,20 @@ function providerConfig(input: SessionConfigInput): OpencodeProviderConfig {
   return {
     npm: OPENAI_COMPATIBLE_PACKAGE,
     options: { apiKey, baseURL: credentials.baseUrl },
-    models: { [credentials.model]: { name: credentials.model } },
+    models: declaredModels(credentials),
   };
+}
+
+function declaredModels(
+  credentials: OpencodeCredentials,
+): Record<string, { readonly name: string }> {
+  const routed = MODEL_TIERS.filter(
+    (tier) =>
+      API_PROVIDERS[tier.provider].opencodeId === credentials.providerId,
+  ).map((tier) => tier.modelId);
+  return Object.fromEntries(
+    [credentials.model, ...routed].map((model) => [model, { name: model }]),
+  );
 }
 
 export function buildSessionConfig(

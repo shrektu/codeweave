@@ -656,6 +656,20 @@ describe("acp adapter: model reporting", () => {
     ]);
   });
 
+  it("claude reports the model on every turn", async () => {
+    const rig = await createRig();
+    rig.container.config.sessionModel = "default";
+    const { handle, events } = await startHandle(rig);
+
+    await handle.prompt("one", { model: null });
+    await handle.prompt("two", { model: null });
+
+    expect(events.filter((event) => event.type === "model")).toEqual([
+      { type: "model", model: "default" },
+      { type: "model", model: "default" },
+    ]);
+  });
+
   it("rejected model fails the turn without a rate limit", async () => {
     const rig = await createRig();
     rig.container.config.setConfigOptionError = {

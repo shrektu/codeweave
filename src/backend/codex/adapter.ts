@@ -413,6 +413,7 @@ class CodexAppServerSession implements AgentHandle {
   private async runTurn(text: string, options: TurnOptions): Promise<void> {
     this.announceRateLimits();
     this.model = options.model ?? this.model;
+    this.reportedModel = null;
     this.announceModel();
     const active = newActiveTurn();
     this.active = active;

@@ -2,6 +2,7 @@ import { render, type RenderResult } from "@testing-library/react";
 import { createElement, type ReactElement } from "react";
 
 import { ApiProviderId } from "../../src/domain/apiProviders";
+import { TaskClass } from "../../src/domain/taskClass";
 import { EdgeKind } from "../../src/domain/types";
 import {
   EffectLevel,
@@ -201,6 +202,7 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
     lastTurn: null,
     turnInFlight: false,
     flowRef: null,
+    turns: [],
     ...overrides,
   };
 }
@@ -218,6 +220,7 @@ export function makeSettings(
     terminalShell: null,
     updateCheck: true,
     updateChannel: UpdateChannel.stable,
+    defaultTaskClass: TaskClass.standard,
     ...overrides,
   };
 }

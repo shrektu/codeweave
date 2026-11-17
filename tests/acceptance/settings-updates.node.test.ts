@@ -43,6 +43,36 @@ it("settings_without_update_fields_load_with_defaults", async () => {
   expect(view.updateChannel).toBe("stable");
 });
 
+it("old settings load with standard task class", async () => {
+  const dir = await seededDir(SETTINGS_WITHOUT_UPDATE_FIELDS);
+  const store = createJsonStore(dir);
+
+  const settings = await store.readSettings();
+  const view = await createSettingsService({
+    store,
+    broadcast: () => undefined,
+    postUpdaterConfig: () => undefined,
+  }).get();
+
+  expect(settings.defaultTaskClass).toBe("standard");
+  expect(view.defaultTaskClass).toBe("standard");
+});
+
+it("default task class round trips through settings", async () => {
+  const dir = await seededDir(SETTINGS_WITHOUT_UPDATE_FIELDS);
+  const service = createSettingsService({
+    store: createJsonStore(dir),
+    broadcast: () => undefined,
+    postUpdaterConfig: () => undefined,
+  });
+
+  const afterSet = await service.set({ defaultTaskClass: "light" });
+
+  expect(afterSet.defaultTaskClass).toBe("light");
+  const reloaded = await createJsonStore(dir).readSettings();
+  expect(reloaded.defaultTaskClass).toBe("light");
+});
+
 it("settings_round_trip_update_fields", async () => {
   const dir = await seededDir(SETTINGS_WITHOUT_UPDATE_FIELDS);
   const service = createSettingsService({

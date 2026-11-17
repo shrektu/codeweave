@@ -6,8 +6,14 @@ import {
   ApiTier,
   FreeModels,
 } from "./apiProviders";
+import type { ModelChoice } from "./modelChoice";
 import { MODEL_TIERS } from "./modelTiers";
-import { resolveTaskClass, routeByClass, RouteSource } from "./routing";
+import {
+  resolveTaskClass,
+  routeByClass,
+  RouteSource,
+  routeTurn,
+} from "./routing";
 import { TaskClass } from "./taskClass";
 import { ProviderId, type Account } from "./types";
 
@@ -211,5 +217,242 @@ describe("routeByClass over every provider and class", () => {
 
       expect(route.servedClass).toBe(expectedServed(testCase));
     }
+  });
+});
+
+const GROQ_ACCOUNT_MODEL = "llama-3.3-70b-versatile";
+const OPENCODE_GROQ_LIGHT = "groq/openai/gpt-oss-20b";
+const OPENCODE_CEREBRAS = "cerebras/gpt-oss-120b";
+
+function opencodeChoice(model: string): ModelChoice {
+  return { provider: ProviderId.opencode, model };
+}
+
+describe("routeTurn", () => {
+  const groq = apiAccount(ApiProviderId.groq, GROQ_ACCOUNT_MODEL);
+
+  it("an override that fits the account wins over class and agent", () => {
+    expect(
+      routeTurn({
+        account: groq,
+        taskClass: TaskClass.heavy,
+        override: opencodeChoice(OPENCODE_GROQ_LIGHT),
+        agentModel: opencodeChoice("groq/openai/gpt-oss-120b"),
+      }),
+    ).toEqual({
+      model: "openai/gpt-oss-20b",
+      requestedClass: "heavy",
+      servedClass: null,
+      source: "override",
+    });
+  });
+
+  it("an override for another provider falls through to the agent model", () => {
+    expect(
+      routeTurn({
+        account: groq,
+        taskClass: TaskClass.light,
+        override: opencodeChoice(OPENCODE_CEREBRAS),
+        agentModel: opencodeChoice(OPENCODE_GROQ_LIGHT),
+      }),
+    ).toEqual({
+      model: "openai/gpt-oss-20b",
+      requestedClass: "light",
+      servedClass: null,
+      source: "agent",
+    });
+  });
+
+  it("an agent model that fits wins over class routing", () => {
+    expect(
+      routeTurn({
+        account: groq,
+        taskClass: TaskClass.heavy,
+        override: null,
+        agentModel: opencodeChoice(OPENCODE_GROQ_LIGHT),
+      }),
+    ).toEqual({
+      model: "openai/gpt-oss-20b",
+      requestedClass: "heavy",
+      servedClass: null,
+      source: "agent",
+    });
+  });
+});
+
+describe("routeTurn fallbacks", () => {
+  const groq = apiAccount(ApiProviderId.groq, GROQ_ACCOUNT_MODEL);
+
+  it("neither fitting falls back to class routing", () => {
+    expect(
+      routeTurn({
+        account: groq,
+        taskClass: TaskClass.light,
+        override: opencodeChoice(OPENCODE_CEREBRAS),
+        agentModel: { provider: ProviderId.claude, model: "opus" },
+      }),
+    ).toEqual({
+      model: "openai/gpt-oss-20b",
+      requestedClass: "light",
+      servedClass: "light",
+      source: "routed",
+    });
+  });
+
+  it("auto choices fall back to class routing", () => {
+    expect(
+      routeTurn({
+        account: groq,
+        taskClass: TaskClass.heavy,
+        override: opencodeChoice("auto"),
+        agentModel: opencodeChoice("auto"),
+      }),
+    ).toMatchObject({ model: "openai/gpt-oss-120b", source: "routed" });
+  });
+});
+
+describe("routeTurn subscriptions and tiers", () => {
+  it("a subscription takes an explicit model of its own provider", () => {
+    expect(
+      routeTurn({
+        account: subscription(ProviderId.claude),
+        taskClass: TaskClass.light,
+        override: { provider: ProviderId.claude, model: "opus" },
+        agentModel: null,
+      }),
+    ).toEqual({
+      model: "opus",
+      requestedClass: "light",
+      servedClass: null,
+      source: "override",
+    });
+  });
+
+  it("a subscription without an explicit model uses the CLI default", () => {
+    expect(
+      routeTurn({
+        account: subscription(ProviderId.claude),
+        taskClass: TaskClass.heavy,
+        override: null,
+        agentModel: opencodeChoice(OPENCODE_GROQ_LIGHT),
+      }),
+    ).toEqual({
+      model: null,
+      requestedClass: "heavy",
+      servedClass: null,
+      source: "cli_default",
+    });
+  });
+
+  it("uses the tiers it is given", () => {
+    const tiers = MODEL_TIERS.filter(
+      (tier) => tier.modelId === "glm-4.7-flash",
+    );
+
+    expect(
+      routeTurn(
+        {
+          account: apiAccount(ApiProviderId.zai, "glm-5.3"),
+          taskClass: TaskClass.heavy,
+          override: null,
+          agentModel: null,
+        },
+        tiers,
+      ),
+    ).toMatchObject({ model: "glm-4.7-flash", servedClass: "light" });
+  });
+});
+
+describe("routeTurn free-marked accounts", () => {
+  const zai = apiAccount(ApiProviderId.zai, "glm-4.7-flash");
+  const PAID_ZAI = "zai/glm-5.3";
+
+  it("explicit paid model is skipped on a free-marked account", () => {
+    const viaOverride = routeTurn({
+      account: zai,
+      taskClass: TaskClass.heavy,
+      override: opencodeChoice(PAID_ZAI),
+      agentModel: null,
+    });
+    const viaAgent = routeTurn({
+      account: zai,
+      taskClass: TaskClass.heavy,
+      override: null,
+      agentModel: opencodeChoice(PAID_ZAI),
+    });
+    const overrideThenAgent = routeTurn({
+      account: zai,
+      taskClass: TaskClass.heavy,
+      override: opencodeChoice(PAID_ZAI),
+      agentModel: opencodeChoice("zai/glm-4.7-flash"),
+    });
+
+    expect(viaOverride).toMatchObject({
+      model: "glm-4.7-flash",
+      source: "routed",
+    });
+    expect(viaAgent).toMatchObject({
+      model: "glm-4.7-flash",
+      source: "routed",
+    });
+    expect(overrideThenAgent).toMatchObject({
+      model: "glm-4.7-flash",
+      source: "agent",
+    });
+  });
+});
+
+describe("routeTurn free-marked accounts honour allowed models", () => {
+  const zai = apiAccount(ApiProviderId.zai, "glm-4.7-flash");
+  const PAID_ZAI = "zai/glm-5.3";
+
+  it("explicit free or own model is honoured on a free-marked account", () => {
+    const own = apiAccount(ApiProviderId.zai, "glm-5.3");
+
+    expect(
+      routeTurn({
+        account: own,
+        taskClass: TaskClass.light,
+        override: opencodeChoice(PAID_ZAI),
+        agentModel: null,
+      }),
+    ).toMatchObject({ model: "glm-5.3", source: "override" });
+    expect(
+      routeTurn({
+        account: zai,
+        taskClass: TaskClass.heavy,
+        override: opencodeChoice("zai/glm-4.7-flash"),
+        agentModel: null,
+      }),
+    ).toMatchObject({ model: "glm-4.7-flash", source: "override" });
+    expect(
+      routeTurn({
+        account: apiAccount(ApiProviderId.openrouter, "meta/other"),
+        taskClass: TaskClass.heavy,
+        override: null,
+        agentModel: opencodeChoice("openrouter/vendor/model:free"),
+      }),
+    ).toMatchObject({ model: "vendor/model:free", source: "agent" });
+  });
+});
+
+describe("routeTurn explicit models on unrestricted providers", () => {
+  it("paid and all-free providers keep explicit models", () => {
+    expect(
+      routeTurn({
+        account: apiAccount(ApiProviderId.deepseek, "deepseek-chat"),
+        taskClass: TaskClass.light,
+        override: opencodeChoice("deepseek/deepseek-reasoner"),
+        agentModel: null,
+      }),
+    ).toMatchObject({ model: "deepseek-reasoner", source: "override" });
+    expect(
+      routeTurn({
+        account: apiAccount(ApiProviderId.groq, GROQ_ACCOUNT_MODEL),
+        taskClass: TaskClass.light,
+        override: opencodeChoice("groq/anything-else"),
+        agentModel: null,
+      }),
+    ).toMatchObject({ model: "anything-else", source: "override" });
   });
 });

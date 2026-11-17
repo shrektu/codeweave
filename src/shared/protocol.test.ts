@@ -40,6 +40,16 @@ const VALID_REQUESTS: [string, unknown][] = [
   ],
   ["session/start", { cwd: "/work", provider: "codex" }],
   ["session/prompt", { text: "hi" }],
+  [
+    "session/prompt",
+    {
+      text: "hi",
+      taskClass: "light",
+      model: { provider: "opencode", model: "groq/openai/gpt-oss-20b" },
+    },
+  ],
+  ["session/start", { cwd: "/work", taskClass: "heavy" }],
+  ["settings/set", { defaultTaskClass: "light" }],
   ["session/stop", {}],
   ["permission/answer", { requestId: "r", optionId: "o" }],
   ["accounts/list", {}],
@@ -349,6 +359,25 @@ const INVALID_REQUESTS: [string, unknown][] = [
   ],
   ["session/prompt with numeric text", request("session/prompt", { text: 5 })],
   [
+    "session/prompt with an unknown task class",
+    request("session/prompt", { text: "hi", taskClass: "medium" }),
+  ],
+  [
+    "session/prompt with a blank model",
+    request("session/prompt", {
+      text: "hi",
+      model: { provider: "opencode", model: " " },
+    }),
+  ],
+  [
+    "session/start with an unknown task class",
+    request("session/start", { cwd: "/work", taskClass: "M" }),
+  ],
+  [
+    "settings/set with an unknown default task class",
+    request("settings/set", { defaultTaskClass: "huge" }),
+  ],
+  [
     "permission/answer without option",
     request("permission/answer", { requestId: "r" }),
   ],
@@ -544,6 +573,7 @@ describe("EventSchema", () => {
     terminalShell: null,
     updateCheck: true,
     updateChannel: "stable",
+    defaultTaskClass: "standard",
   };
   const logEntry = {
     at: 1,
