@@ -23,21 +23,27 @@ import type {
 import { replaceFileAtomically } from "./atomicFile";
 import { KeyedMutex } from "./keyedMutex";
 
-const FLOWS_DIR = "flows";
-const AGENTS_DIR = "agents";
-const MARKDOWN_EXTENSION = ".md";
+export const FLOWS_DIR = "flows";
+export const AGENTS_DIR = "agents";
+export const MARKDOWN_EXTENSION = ".md";
 
-const FLOW_PREFIX = `${FLOWS_DIR}/`;
+const DEFINITION_LABELS = {
+  [FLOWS_DIR]: "Flow",
+  [AGENTS_DIR]: "Agent",
+} as const;
 const FORBIDDEN_NAME_CHARS = ["/", "\\", "\0"] as const;
+
+type DefinitionDir = keyof typeof DEFINITION_LABELS;
 
 function isMarkdownName(name: string): boolean {
   return name.endsWith(MARKDOWN_EXTENSION);
 }
 
-function isFlowFile(file: string): boolean {
-  const name = file.slice(FLOW_PREFIX.length);
+function isDefinitionFile(dir: DefinitionDir, file: string): boolean {
+  const prefix = `${dir}/`;
+  const name = file.slice(prefix.length);
   return (
-    file.startsWith(FLOW_PREFIX) &&
+    file.startsWith(prefix) &&
     isMarkdownName(name) &&
     FORBIDDEN_NAME_CHARS.every((char) => !name.includes(char))
   );
@@ -46,6 +52,11 @@ const PARENT_SEGMENT = "..";
 
 interface LoadedFlow {
   readonly definition: FlowDefinition;
+  readonly revision: string;
+}
+
+interface LoadedAgentFile {
+  readonly documents: AgentDocument[];
   readonly revision: string;
 }
 
@@ -73,6 +84,10 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+export function isMissing(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
 function failure(file: string, error: unknown): FlowFileError {
   return { file, messages: [errorText(error)] };
 }
@@ -89,7 +104,7 @@ async function markdownNames(
       .toSorted();
     return { ok: true, value: names };
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+    if (isMissing(error)) {
       return { ok: true, value: [] };
     }
     return { ok: false, error: failure(dir, error) };
@@ -124,15 +139,45 @@ async function loadDir<T>(
   };
 }
 
-function agentView({
-  definition: { id, role, provider, permissionProfile },
-  body,
-}: AgentDocument): AgentView {
-  return { id, role, provider, permissionProfile, body };
+export function contentRevision(markdown: string): string {
+  return createHash("sha256").update(markdown).digest("hex");
 }
 
-export function flowRevision(markdown: string): string {
-  return createHash("sha256").update(markdown).digest("hex");
+function usedBy(
+  id: string,
+  flows: readonly ParsedFile<LoadedFlow>[],
+): AgentView["usedBy"] {
+  return flows
+    .filter(({ value }) => value.definition.nodes.some((n) => n.agent === id))
+    .map(({ file, value }) => ({ file, title: value.definition.title }));
+}
+
+function agentViews(
+  { file, value: { documents, revision } }: ParsedFile<LoadedAgentFile>,
+  flows: readonly ParsedFile<LoadedFlow>[],
+): AgentView[] {
+  return documents.map(({ definition, body }) => ({
+    id: definition.id,
+    file,
+    revision,
+    role: definition.role,
+    provider: definition.provider,
+    model: definition.model ?? null,
+    permissionProfile: definition.permissionProfile,
+    taskClass: definition.taskClass ?? null,
+    body,
+    usedBy: usedBy(definition.id, flows),
+  }));
+}
+
+function parseLoadedAgents(markdown: string): ParseResult<LoadedAgentFile> {
+  const parsed = parseAgentDocuments(markdown);
+  return parsed.ok
+    ? {
+        ok: true,
+        value: { documents: parsed.value, revision: contentRevision(markdown) },
+      }
+    : parsed;
 }
 
 function parseLoadedFlow(markdown: string): ParseResult<LoadedFlow> {
@@ -142,7 +187,7 @@ function parseLoadedFlow(markdown: string): ParseResult<LoadedFlow> {
         ok: true,
         value: {
           definition: parsed.value,
-          revision: flowRevision(markdown),
+          revision: contentRevision(markdown),
         },
       }
     : parsed;
@@ -208,10 +253,11 @@ function deduplicate(valid: readonly ParsedFile<LoadedFlow>[]): Deduplicated {
 export async function listFlows(cwd: string): Promise<FlowsList> {
   const [flowFiles, agentFiles] = await Promise.all([
     loadDir(cwd, FLOWS_DIR, parseLoadedFlow),
-    loadDir(cwd, AGENTS_DIR, parseAgentDocuments),
+    loadDir(cwd, AGENTS_DIR, parseLoadedAgents),
   ]);
-  const documents = agentFiles.files.flatMap(({ value }) => value);
-  const agents = documents.map(({ definition }) => definition);
+  const agents = agentFiles.files.flatMap(({ value }) =>
+    value.documents.map(({ definition }) => definition),
+  );
   const validated = flowFiles.files.map(({ file, value }) => ({
     file,
     loaded: value,
@@ -224,7 +270,9 @@ export async function listFlows(cwd: string): Promise<FlowsList> {
   );
   return {
     flows: unique.flows,
-    agents: documents.map(agentView),
+    agents: agentFiles.files.flatMap((file) =>
+      agentViews(file, flowFiles.files),
+    ),
     errors: [
       ...flowFiles.errors,
       ...validated
@@ -236,7 +284,7 @@ export async function listFlows(cwd: string): Promise<FlowsList> {
   };
 }
 
-function isInside(parent: string, child: string): boolean {
+export function isInside(parent: string, child: string): boolean {
   const path = relative(parent, child);
   const escapesParent =
     path === PARENT_SEGMENT ||
@@ -245,34 +293,60 @@ function isInside(parent: string, child: string): boolean {
   return path !== "" && !escapesParent && !isAbsolute(path);
 }
 
-async function resolveFlowFile(cwd: string, file: string): Promise<string> {
-  if (!isFlowFile(file)) {
+export async function resolveDefinitionFile(
+  cwd: string,
+  dir: DefinitionDir,
+  file: string,
+): Promise<string> {
+  const label = DEFINITION_LABELS[dir];
+  if (!isDefinitionFile(dir, file)) {
     throw new IpcError(
       IpcErrorCode.VALIDATION,
-      `Flow file must be a .md file directly in ${FLOWS_DIR}/`,
+      `${label} file must be a .md file directly in ${dir}/`,
     );
   }
   try {
-    const [flowsDir, target] = await Promise.all([
-      realpath(join(cwd, FLOWS_DIR)),
+    const [definitionsDir, target] = await Promise.all([
+      realpath(join(cwd, dir)),
       realpath(join(cwd, file)),
     ]);
-    if (!isInside(flowsDir, target)) {
+    if (!isInside(definitionsDir, target)) {
       throw new IpcError(
         IpcErrorCode.VALIDATION,
-        `Flow file must stay inside ${FLOWS_DIR}/`,
+        `${label} file must stay inside ${dir}/`,
       );
     }
     return target;
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      throw new IpcError(IpcErrorCode.NOT_FOUND, `Flow file ${file} not found`);
+    if (isMissing(error)) {
+      throw new IpcError(
+        IpcErrorCode.NOT_FOUND,
+        `${label} file ${file} not found`,
+      );
     }
     throw error;
   }
 }
 
-const saveLocks = new KeyedMutex();
+const workspaceLocks = new KeyedMutex();
+
+async function workspaceKey(cwd: string): Promise<string> {
+  try {
+    return await realpath(cwd);
+  } catch (error) {
+    if (isMissing(error)) {
+      return cwd;
+    }
+    throw error;
+  }
+}
+
+export async function withWorkspaceLock<T>(
+  cwd: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  return workspaceLocks.run(await workspaceKey(cwd), task);
+}
 
 async function applyFlowSave(
   cwd: string,
@@ -280,7 +354,7 @@ async function applyFlowSave(
   { revision, flow }: SaveFlowParams,
 ): Promise<void> {
   const current = await readFile(target, "utf8");
-  if (flowRevision(current) !== revision) {
+  if (contentRevision(current) !== revision) {
     throw new IpcError(IpcErrorCode.CONFLICT, "The flow file changed on disk");
   }
   const existing = parseFlowFile(current);
@@ -312,7 +386,9 @@ export async function saveFlow(
   cwd: string,
   params: SaveFlowParams,
 ): Promise<FlowsList> {
-  const target = await resolveFlowFile(cwd, params.file);
-  await saveLocks.run(target, () => applyFlowSave(cwd, target, params));
+  await withWorkspaceLock(cwd, async () => {
+    const target = await resolveDefinitionFile(cwd, FLOWS_DIR, params.file);
+    await applyFlowSave(cwd, target, params);
+  });
   return listFlows(cwd);
 }

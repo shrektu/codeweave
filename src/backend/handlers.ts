@@ -3,6 +3,7 @@ import { IpcError, IpcErrorCode } from "../shared/protocol";
 
 import { createAccountsService, type AccountsService } from "./accountsService";
 import type { ConnectionRegistry } from "./connections";
+import { createAgent, deleteAgent, saveAgent } from "./agents";
 import { listFlows, saveFlow } from "./flows";
 import type { FlowRunService } from "./flowRuns";
 import type { IpcHandlers } from "./ipcServer";
@@ -139,6 +140,9 @@ export function createHandlers({
     }),
     "flows/list": ({ cwd }) => listFlows(cwd),
     "flows/save": ({ cwd, ...params }) => saveFlow(cwd, params),
+    "agents/create": ({ cwd, ...params }) => createAgent(cwd, params),
+    "agents/save": ({ cwd, ...params }) => saveAgent(cwd, params),
+    "agents/delete": ({ cwd, ...params }) => deleteAgent(cwd, params),
     "flow/start": (params) => flowRuns.start(params),
     "flow/stop": async () => {
       const stopped = flowRuns.isActive();

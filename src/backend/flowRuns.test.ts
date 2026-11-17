@@ -24,10 +24,15 @@ const FLOWS: FlowsList = {
   agents: [
     {
       id: "coder",
+      file: "agents/coder.md",
+      revision: "r2",
       role: "Writes the change",
       provider: ProviderId.claude,
+      model: null,
       permissionProfile: PermissionProfile.unattended,
+      taskClass: null,
       body: "Write small changes.",
+      usedBy: [],
     },
   ],
   errors: [],

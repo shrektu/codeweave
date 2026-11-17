@@ -62,13 +62,15 @@ function exampleAgents(): AgentView[] {
     parseAgentDocuments(
       readFileSync(join(ROOT_DIR, "agents", "example.md"), "utf8"),
     ),
-  ).map(({ definition: { id, role, provider, permissionProfile }, body }) => ({
-    id,
-    role,
-    provider,
-    permissionProfile,
-    body,
-  }));
+  ).map(({ definition, body }) =>
+    makeAgent({
+      id: definition.id,
+      role: definition.role,
+      provider: definition.provider,
+      permissionProfile: definition.permissionProfile,
+      body,
+    }),
+  );
 }
 
 beforeEach(() => {

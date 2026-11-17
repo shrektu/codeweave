@@ -9,7 +9,7 @@ const FRONTMATTER_BLOCKS_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---$/gm;
 const MISSING_FRONTMATTER = "Missing YAML frontmatter";
 const EMPTY_FLOW = "Flow has no nodes";
 
-const AgentSchema = z.object({
+export const AgentSchema = z.object({
   id: z.string().min(1),
   role: z.string().min(1),
   provider: z.enum(ProviderId),
@@ -94,15 +94,32 @@ export function parseFlowFile(markdown: string): ParseResult<FlowDefinition> {
   return parseWith(FlowSchema, markdown);
 }
 
+export interface AgentBlock {
+  readonly yaml: string;
+  readonly start: number;
+  readonly bodyStart: number;
+  readonly end: number;
+}
+
+export function agentBlocks(markdown: string): AgentBlock[] {
+  const matches = [...markdown.matchAll(FRONTMATTER_BLOCKS_PATTERN)];
+  return matches.map((match, index) => ({
+    yaml: match[1] ?? "",
+    start: match.index,
+    bodyStart: match.index + match[0].length,
+    end: matches[index + 1]?.index ?? markdown.length,
+  }));
+}
+
 export function parseAgentDocuments(
   markdown: string,
 ): ParseResult<AgentDocument[]> {
-  const blocks = [...markdown.matchAll(FRONTMATTER_BLOCKS_PATTERN)];
+  const blocks = agentBlocks(markdown);
   if (blocks.length === 0) {
     return { ok: false, errors: [MISSING_FRONTMATTER] };
   }
   const results = blocks.map((block) =>
-    parseAgentFile(`---\n${block[1] ?? ""}\n---`),
+    parseAgentFile(`---\n${block.yaml}\n---`),
   );
   const errors = results.flatMap((result, index) =>
     result.ok
@@ -119,12 +136,10 @@ export function parseAgentDocuments(
       if (!result.ok || block === undefined) {
         return [];
       }
-      const bodyStart = block.index + block[0].length;
-      const bodyEnd = blocks[index + 1]?.index ?? markdown.length;
       return [
         {
           definition: result.value,
-          body: markdown.slice(bodyStart, bodyEnd).trim(),
+          body: markdown.slice(block.bodyStart, block.end).trim(),
         },
       ];
     }),
@@ -199,7 +214,7 @@ function edgeShapeErrors(flow: FlowDefinition): string[] {
 
 export function validateFlow(
   flow: FlowDefinition,
-  agents: readonly AgentDefinition[],
+  agents: readonly Pick<AgentDefinition, "id">[],
 ): string[] {
   const agentIds = new Set(agents.map((agent) => agent.id));
   const nodeIds = new Set(flow.nodes.map((node) => node.id));

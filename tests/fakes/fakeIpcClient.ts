@@ -274,10 +274,15 @@ export function makeSwitchEntry(
 export function makeAgent(overrides: Partial<AgentView> = {}): AgentView {
   return {
     id: "implementer",
+    file: "agents/implementer.md",
+    revision: "agent-rev-1",
     role: "Implements the planned change",
     provider: ProviderId.claude,
+    model: null,
     permissionProfile: PermissionProfile.plan,
+    taskClass: null,
     body: "Implements the change.",
+    usedBy: [],
     ...overrides,
   };
 }

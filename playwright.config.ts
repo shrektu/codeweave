@@ -12,6 +12,7 @@ export default defineConfig({
     "agyRotation.spec.ts",
     "agyEditDiff.spec.ts",
     "flowRun.spec.ts",
+    "agentEditor.spec.ts",
   ],
   timeout: TEST_TIMEOUT_MS,
   workers: 1,

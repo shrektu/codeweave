@@ -28,11 +28,12 @@ const SANDBOX_FLAGS =
     : [];
 const FLOW_WORKSPACE_PREFIX = "codeweave-flow-run-";
 const AGENTS_FILE = join("agents", "flow-agents.md");
-const FLOW_FILE = join("flows", "two-node.md");
+export const FLOW_FILE = join("flows", "two-node.md");
 const VERDICT_SECTION_MARKER = "## Verdict";
 const HANDOFF_SECTION_MARKER = "## Hand-off from build";
 const BUILD_NODE_MARKER = "Node: build";
 const REVIEW_NODE_MARKER = "Node: review";
+const DOCS_NODE_MARKER = "Node: docs";
 
 export const FLOW_TASK = "Add a greeting helper";
 export const BUILD_REPLY = "Implemented the change.";
@@ -149,6 +150,10 @@ export function isBuildNodePrompt(prompt: string): boolean {
 
 export function isReviewNodePrompt(prompt: string): boolean {
   return prompt.includes(REVIEW_NODE_MARKER);
+}
+
+export function isDocsNodePrompt(prompt: string): boolean {
+  return prompt.includes(DOCS_NODE_MARKER);
 }
 
 export function hasBuildHandoff(prompt: string): boolean {

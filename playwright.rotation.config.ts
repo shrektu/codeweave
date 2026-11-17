@@ -7,6 +7,7 @@ export default defineConfig({
   testMatch: [
     "rotation.spec.ts",
     "flowRun.spec.ts",
+    "agentEditor.spec.ts",
     "codexRotation.spec.ts",
     "opencodeRotation.spec.ts",
     "agyRotation.spec.ts",

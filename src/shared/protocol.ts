@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { MIN_SECRET_LENGTH } from "../domain/constants";
 import { FlowDecision } from "../domain/flowRun";
-import { FlowSchema } from "../domain/flows";
+import { AgentSchema, FlowSchema } from "../domain/flows";
 import {
   EffectLevel,
   PermissionProfile,
@@ -141,6 +141,25 @@ export const ParamsSchemas = {
     revision: NonEmptyString,
     flow: FlowSchema,
   }),
+  "agents/create": z.strictObject({
+    cwd: NonEmptyString,
+    agent: AgentSchema,
+    body: z.string(),
+  }),
+  "agents/save": z.strictObject({
+    cwd: NonEmptyString,
+    file: NonEmptyString,
+    revision: NonEmptyString,
+    id: NonEmptyString,
+    agent: AgentSchema,
+    body: z.string(),
+  }),
+  "agents/delete": z.strictObject({
+    cwd: NonEmptyString,
+    file: NonEmptyString,
+    revision: NonEmptyString,
+    id: NonEmptyString,
+  }),
   "flow/start": z.strictObject({
     cwd: NonEmptyString,
     flowId: NonEmptyString,
@@ -212,6 +231,9 @@ export const RequestSchema = z.discriminatedUnion("method", [
   requestSchema("switchLog/list"),
   requestSchema("flows/list"),
   requestSchema("flows/save"),
+  requestSchema("agents/create"),
+  requestSchema("agents/save"),
+  requestSchema("agents/delete"),
   requestSchema("flow/start"),
   requestSchema("flow/stop"),
   requestSchema("flow/decide"),
@@ -256,6 +278,9 @@ const resultSchemaDefinitions = {
   }),
   "flows/list": FlowsListSchema,
   "flows/save": FlowsListSchema,
+  "agents/create": FlowsListSchema,
+  "agents/save": FlowsListSchema,
+  "agents/delete": FlowsListSchema,
   "flow/start": FlowRunViewSchema,
   "flow/stop": z.strictObject({ stopped: z.boolean() }),
   "flow/decide": FlowRunViewSchema,
