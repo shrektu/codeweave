@@ -30,7 +30,12 @@ import {
 
 import {
   OPENCODE_ACCOUNT_SPECS,
+  OPENCODE_GO_ACCOUNT_SPECS,
+  OPENCODE_GO_ROTATION_SCENARIOS,
+  OPENCODE_GO_ROUTING_ACCOUNT_SPEC,
+  OPENCODE_GO_ROUTING_SCENARIOS,
   OPENCODE_KEYS,
+  OPENCODE_KEY_GO_A,
   OPENCODE_KEY_A,
   OPENCODE_KEY_B,
   OPENCODE_ROTATION_SCENARIOS,
@@ -60,6 +65,9 @@ const CONFIGURED_MODEL = "mock-model";
 const UNKNOWN_MODEL = `requested-model${FREE_MODEL_MARKER}`;
 const ROUTED_CONFIGURED_MODEL = "openai/gpt-oss-120b";
 const ROUTED_TIER_MODEL = "openai/gpt-oss-20b";
+const GO_LIGHT_MODEL = "mimo-v2.6-flash";
+const GO_MIN_RESET_SECONDS = 3600;
+const MILLIS_PER_SECOND = 1000;
 const PROC_ROOT = "/proc";
 const SERVE_ARGUMENT = "serve";
 const OPENCODE_CMDLINE_MARKER = "opencode";
@@ -192,8 +200,13 @@ async function accountIds(rig: Rig): Promise<Record<string, string>> {
   );
 }
 
-async function rotate(): Promise<Rig> {
-  const rig = await openRig();
+async function rotate(
+  scenarios: Readonly<
+    Record<string, ChatScenario>
+  > = OPENCODE_ROTATION_SCENARIOS,
+  specs: readonly OpencodeAccountSpec[] = OPENCODE_ACCOUNT_SPECS,
+): Promise<Rig> {
+  const rig = await openRig(scenarios, specs);
   const ids = await accountIds(rig);
   const { handlers } = rig.backend;
   await handlers["session/start"]({
@@ -324,6 +337,84 @@ describe("class routing with the real opencode CLI and a local chat mock", () =>
       expect(rig.mock.requests().map((request) => request.model)).toContain(
         ROUTED_TIER_MODEL,
       );
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
+describe("opencode go with the real opencode CLI and a local chat mock", () => {
+  it(
+    "go_routed_model_reaches_the_real_opencode",
+    async () => {
+      const rig = await openRig(OPENCODE_GO_ROUTING_SCENARIOS, [
+        OPENCODE_GO_ROUTING_ACCOUNT_SPEC,
+      ]);
+      const { handlers } = rig.backend;
+
+      await handlers["session/start"]({
+        cwd: rig.repo,
+        profile: PermissionProfile.unattended,
+        provider: ProviderId.opencode,
+      });
+      await handlers["session/prompt"]({
+        text: "Reply with one word",
+        taskClass: "light",
+      });
+      await vi.waitFor(async () => {
+        expect((await sessionOf(rig)).lastTurn).not.toBeNull();
+      }, WAIT_OPTIONS);
+
+      expect((await sessionOf(rig)).lastTurn).toEqual({
+        kind: "ended",
+        stopReason: "end_turn",
+      });
+      const turnRequests = rig.mock
+        .requests()
+        .filter((request) => request.hasTools);
+      expect(turnRequests.length).toBeGreaterThan(0);
+      expect(turnRequests.map((request) => request.model)).toEqual(
+        turnRequests.map(() => GO_LIGHT_MODEL),
+      );
+      expect(turnRequests.every((request) => request.sessionId !== null)).toBe(
+        true,
+      );
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
+describe("opencode go limit with the real opencode CLI and a chat mock", () => {
+  it(
+    "opencode_go_rotates_after_usage_limit",
+    async () => {
+      const rig = await rotate(
+        OPENCODE_GO_ROTATION_SCENARIOS,
+        OPENCODE_GO_ACCOUNT_SPECS,
+      );
+      const ids = await accountIds(rig);
+
+      const { entries } = await rig.backend.handlers["switchLog/list"]({});
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({
+        from: ids.A,
+        to: ids.B,
+        reason: SwitchReason.rateLimit,
+      });
+      const resetsAt = entries[0]?.resetsAt;
+      expect(resetsAt).toEqual(expect.any(Number));
+      expect(resetsAt ?? 0).toBeGreaterThan(
+        Date.now() / MILLIS_PER_SECOND + GO_MIN_RESET_SECONDS,
+      );
+      const requestsA = rig.mock
+        .requests()
+        .filter((request) => request.key === OPENCODE_KEY_GO_A);
+      expect(requestsA.length).toBeGreaterThan(0);
+      expect(requestsA.every((request) => request.sessionId !== null)).toBe(
+        true,
+      );
+      const view = await sessionOf(rig);
+      expect(view.activeAccountId).toBe(ids.B);
+      expect(await readEffectLines(rig.repo)).toEqual(EXPECTED_EFFECT_LINES);
     },
     TEST_TIMEOUT_MS,
   );

@@ -172,6 +172,36 @@ it("paid_openrouter_model_is_not_free", () => {
   ]);
 });
 
+it("go_models_are_free_only_at_zero_cost", () => {
+  const result = toCatalogModels(
+    providers([
+      "opencode-go",
+      [
+        model("kimi-k2.7-code", { cost: { input: 0.95, output: 4 } }),
+        model("beam-free", { cost: { input: 0, output: 0 } }),
+        model("tagged:free", { cost: { input: 3, output: 15 } }),
+      ],
+    ]),
+  );
+
+  expect(result.map((item) => [item.modelId, item.free])).toEqual([
+    ["kimi-k2.7-code", false],
+    ["beam-free", true],
+    ["tagged:free", true],
+  ]);
+});
+
+it("go_models_report_unknown_training", () => {
+  const [first] = toCatalogModels(
+    providers(["opencode-go", [model("kimi-k2.7-code")]]),
+  );
+
+  expect(first).toMatchObject({
+    providerId: "opencode-go",
+    trainsOnData: "unknown",
+  });
+});
+
 it("google_models_report_training_on_data", () => {
   const [first] = toCatalogModels(providers(["google", [model("gemini-x")]]));
 

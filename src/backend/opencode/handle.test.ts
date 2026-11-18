@@ -718,3 +718,74 @@ describe("child session permissions", () => {
     expect(rig.replies).toEqual([[CHILD, "per_child", "reject"]]);
   });
 });
+
+const GO_LIMIT_MESSAGE =
+  "5 hour usage limit reached. It will reset in 2 hours.";
+const GO_LIMIT_RESET_MS = 7_200_000;
+const GO_RATE_LIMIT_EVENTS = [
+  {
+    type: "rate_limit",
+    status: "rejected",
+    resetsAt: GO_LIMIT_RESET_MS / 1000,
+    rateLimitType: null,
+    utilization: null,
+  },
+  {
+    type: "turn_error",
+    errorKind: "rate_limit",
+    rpcCode: null,
+    message: GO_LIMIT_MESSAGE,
+  },
+];
+
+describe("opencode go usage limit", () => {
+  it("go_limit_retry_status_ends_the_turn_as_rate_limit_with_reset", async () => {
+    const rig = await openRig();
+    const turn = rig.handle.prompt("go", { model: null });
+    await flush();
+    await rig.push("message.updated", USER_MESSAGE);
+
+    await rig.push("session.status", {
+      sessionID: SESSION,
+      status: {
+        type: "retry",
+        attempt: 1,
+        message: GO_LIMIT_MESSAGE,
+        next: GO_LIMIT_RESET_MS,
+        action: {
+          reason: "account_rate_limit",
+          provider: "opencode-go",
+          title: "Go limit reached",
+        },
+      },
+    });
+
+    await turn;
+
+    expect(rig.events).toEqual(GO_RATE_LIMIT_EVENTS);
+    expect(rig.aborts).toEqual([SESSION]);
+  });
+
+  it("go_limit_session_error_ends_the_turn_as_rate_limit", async () => {
+    const rig = await openRig();
+    const turn = rig.handle.prompt("go", { model: null });
+    await flush();
+    await rig.push("message.updated", USER_MESSAGE);
+
+    await rig.push("session.error", {
+      sessionID: SESSION,
+      error: {
+        name: "APIError",
+        data: {
+          message: GO_LIMIT_MESSAGE,
+          statusCode: 429,
+          responseHeaders: { "retry-after": "7200" },
+        },
+      },
+    });
+
+    await turn;
+
+    expect(rig.events).toEqual(GO_RATE_LIMIT_EVENTS);
+  });
+});

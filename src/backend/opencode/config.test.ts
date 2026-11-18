@@ -103,6 +103,44 @@ describe("buildSessionConfig", () => {
     });
   });
 
+  it("go_base_url_account_declares_the_go_tier_models", () => {
+    const credentials: OpencodeCredentials = {
+      providerId: "opencode-go",
+      model: "kimi-k2.7-code",
+      baseUrl: "http://127.0.0.1:9999/v1",
+      apiKey: "sk-test-D",
+    };
+
+    const { provider } = buildSessionConfig({
+      credentials,
+      keyFilePath: "/run/key",
+    });
+
+    const ids = [
+      "kimi-k3",
+      "kimi-k3.1-pro",
+      "qwen3.8-max",
+      "grok-4.7",
+      "kimi-k2.7-code",
+      "glm-5.2",
+      "gpt-5.6-luna",
+      "mimo-v2.6-flash",
+      "longcat-2.0",
+      "glm-5.3-flash",
+      "qwen3.8-flash",
+      "qwen3.7-plus",
+      "hy3",
+      "gpt-6-luna",
+      "minimax-m3.1-flash",
+      "claude-haiku-5-5",
+      "mimo-v2.6-pro",
+      "minimax-m3",
+    ];
+    expect(provider["opencode-go"]?.models).toEqual(
+      Object.fromEntries(ids.map((id) => [id, { name: id }])),
+    );
+  });
+
   it("baseUrl account whose model is a tier model declares it once", () => {
     const credentials: OpencodeCredentials = {
       providerId: "groq",

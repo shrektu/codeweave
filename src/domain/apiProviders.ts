@@ -7,11 +7,13 @@ export const ApiProviderId = {
   zai: "zai",
   deepseek: "deepseek",
   moonshotai: "moonshotai",
+  opencodeGo: "opencode-go",
   custom: "custom",
 } as const;
 export type ApiProviderId = (typeof ApiProviderId)[keyof typeof ApiProviderId];
 
 export const ApiTier = {
+  flatRate: "flat_rate",
   free: "free",
   paid: "paid",
 } as const;
@@ -33,7 +35,11 @@ export interface ApiProviderInfo {
   readonly trainsOnData: boolean | typeof TRAINING_UNKNOWN;
   readonly defaultRotation: boolean;
   readonly keyEnvNames: readonly string[];
+  readonly accountHint?: string;
 }
+
+const OPENCODE_GO_HINT =
+  "API key from the OpenCode Console (Go, Go Plus or Go Teams). If Extra Usage is on there, a reached limit is billed to your balance and Codeweave does not rotate.";
 
 export const API_PROVIDERS: Readonly<Record<ApiProviderId, ApiProviderInfo>> = {
   [ApiProviderId.groq]: {
@@ -111,6 +117,16 @@ export const API_PROVIDERS: Readonly<Record<ApiProviderId, ApiProviderInfo>> = {
     trainsOnData: TRAINING_UNKNOWN,
     defaultRotation: false,
     keyEnvNames: ["MOONSHOT_API_KEY"],
+  },
+  [ApiProviderId.opencodeGo]: {
+    label: "OpenCode Go",
+    opencodeId: "opencode-go",
+    tier: ApiTier.flatRate,
+    freeModels: FreeModels.marked,
+    trainsOnData: TRAINING_UNKNOWN,
+    defaultRotation: true,
+    keyEnvNames: ["OPENCODE_API_KEY"],
+    accountHint: OPENCODE_GO_HINT,
   },
   [ApiProviderId.custom]: {
     label: "Custom OpenAI-compatible",

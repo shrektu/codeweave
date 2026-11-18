@@ -139,6 +139,42 @@ flow run without restarting the app.
 
 ![The Agents tab with an agent open](docs/screenshots/agent-editor.png)
 
+## OpenCode accounts
+
+OpenCode accounts are API-key accounts. The providers are Groq, Cerebras,
+OpenRouter, Google AI Studio, Mistral, Z.ai, DeepSeek, Kimi (Moonshot),
+OpenCode Go and Custom OpenAI-compatible. Keys are encrypted with the OS
+keychain (Electron safeStorage) and kept out of the account's config directory.
+
+Codeweave needs the `opencode` CLI 1.19.x on `PATH`:
+`npm i -g opencode-ai@1.19.5`. OpenCode 2.x (the installer build in
+`~/.opencode/bin`) is not supported yet: it dropped `serve --pure` and the HTTP
+API Codeweave uses.
+
+### OpenCode Go
+
+Subscribe in the OpenCode Console, copy the API key and add an OpenCode account
+with the provider "OpenCode Go". One provider covers Go, Go Plus and Go Teams.
+There is no base URL to enter: Codeweave uses OpenCode's built-in endpoint
+`https://opencode.ai/inference/go`. The models and the class defaults are listed
+in [docs/model-routing.md](docs/model-routing.md).
+
+- Limits are dollars of usage per 5 hours, week and month, enforced by
+  OpenCode. When a limit is hit the turn ends as a rate limit and Codeweave
+  rotates to the next account at the turn boundary, keeping the reset time when
+  OpenCode reports one.
+- If Extra Usage is on in the Console, a reached limit is billed to your
+  balance and nothing rotates.
+- Models gated by the Console privacy settings (DeepSeek, Muse Spark) must be
+  enabled there first.
+
+Rotation pool order: own subscription accounts, other subscriptions (Claude,
+Codex, Gemini), OpenCode Go, free API tiers, paid API keys. Only accounts with
+"Use in rotation" ticked take part.
+
+Go support is tested against a local mock of the Go endpoint with opencode
+1.19.5; it has not been run against a real subscription.
+
 ## Terminal
 
 A terminal docks at the bottom of the centre column. Toggle it with the

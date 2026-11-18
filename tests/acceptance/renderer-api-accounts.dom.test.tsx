@@ -255,6 +255,44 @@ it("custom_provider_requires_base_url", async () => {
   });
 });
 
+it("go_account_form_shows_key_hint_without_base_url", async () => {
+  const client = opencodeClient();
+  await openOpencodeForm(client);
+  expect(screen.queryByText(/API key from the OpenCode Console/)).toBeNull();
+
+  const option = screen.getByRole<HTMLOptionElement>("option", {
+    name: "OpenCode Go",
+  });
+  change("API provider", option.value);
+
+  expect(screen.queryByLabelText("Base URL")).toBeNull();
+  expect(
+    screen.getByText(/API key from the OpenCode Console \(Go, Go Plus or Go/),
+  ).toBeTruthy();
+  expect(field("Use in rotation").checked).toBe(true);
+
+  fillAccount("kimi-k2.7-code", FAKE_KEY_A);
+  submit();
+
+  await waitFor(() => {
+    expect(client.requests).toContainEqual({
+      method: "accounts/add",
+      params: {
+        label: "Groq main",
+        configDir: SUGGESTED_DIR,
+        provider: "opencode",
+        api: {
+          provider: "opencode-go",
+          model: "kimi-k2.7-code",
+          baseUrl: null,
+          rotation: true,
+        },
+        apiKey: FAKE_KEY_A,
+      },
+    });
+  });
+});
+
 it("missing_model_shows_validation_error", async () => {
   const client = opencodeClient();
   await openOpencodeForm(client);

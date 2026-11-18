@@ -23,12 +23,13 @@ describe("provider registry", () => {
       "GROQ_API_KEY",
       "MISTRAL_API_KEY",
       "MOONSHOT_API_KEY",
+      "OPENCODE_API_KEY",
       "OPENROUTER_API_KEY",
       "ZHIPU_API_KEY",
     ]);
   });
 
-  it("enables_rotation_by_default_only_for_free_providers", () => {
+  it("enables_rotation_by_default_only_for_free_and_flat_rate_providers", () => {
     expect(
       Object.entries(API_PROVIDERS)
         .filter(([, info]) => info.defaultRotation)
@@ -40,6 +41,7 @@ describe("provider registry", () => {
       "google",
       "groq",
       "mistral",
+      "opencode-go",
       "openrouter",
       "zai",
     ]);

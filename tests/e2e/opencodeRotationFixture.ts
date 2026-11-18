@@ -28,7 +28,23 @@ export const OPENCODE_ROUTING_SCENARIOS: Readonly<
   [OPENCODE_KEY_GROQ]: ChatScenario.ok,
 };
 
+export const OPENCODE_KEY_GO_A = "sk-test-fake-key-GO-A";
+export const OPENCODE_KEY_GO_B = "sk-test-fake-key-GO-B";
+export const OPENCODE_GO_KEYS = [OPENCODE_KEY_GO_A, OPENCODE_KEY_GO_B] as const;
+export const OPENCODE_GO_ROTATION_SCENARIOS: Readonly<
+  Record<string, ChatScenario>
+> = {
+  [OPENCODE_KEY_GO_A]: ChatScenario.toolThenGoLimit,
+  [OPENCODE_KEY_GO_B]: ChatScenario.ok,
+};
+export const OPENCODE_GO_ROUTING_SCENARIOS: Readonly<
+  Record<string, ChatScenario>
+> = {
+  [OPENCODE_KEY_GO_A]: ChatScenario.ok,
+};
+
 const OPENCODE_BINARY = "opencode";
+const GO_MODEL = "kimi-k2.7-code";
 const MOCK_MODEL = "mock-model";
 const CUSTOM_API_PROVIDER = "custom";
 
@@ -49,6 +65,28 @@ export const OPENCODE_ROUTING_ACCOUNT_SPEC: OpencodeAccountSpec = {
   apiKey: OPENCODE_KEY_GROQ,
   provider: ApiProviderId.groq,
   model: "openai/gpt-oss-120b",
+};
+
+export const OPENCODE_GO_ACCOUNT_SPECS: readonly OpencodeAccountSpec[] = [
+  {
+    label: "A",
+    apiKey: OPENCODE_KEY_GO_A,
+    provider: ApiProviderId.opencodeGo,
+    model: GO_MODEL,
+  },
+  {
+    label: "B",
+    apiKey: OPENCODE_KEY_GO_B,
+    provider: ApiProviderId.opencodeGo,
+    model: GO_MODEL,
+  },
+];
+
+export const OPENCODE_GO_ROUTING_ACCOUNT_SPEC: OpencodeAccountSpec = {
+  label: "GO",
+  apiKey: OPENCODE_KEY_GO_A,
+  provider: ApiProviderId.opencodeGo,
+  model: GO_MODEL,
 };
 
 export async function pointAccountsAtMock(

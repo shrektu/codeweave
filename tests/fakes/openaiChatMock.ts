@@ -9,6 +9,7 @@ import { z } from "zod";
 
 export const ChatScenario = {
   toolThen429: "tool-then-429",
+  toolThenGoLimit: "tool-then-go-limit",
   ok: "ok",
 } as const;
 export type ChatScenario = (typeof ChatScenario)[keyof typeof ChatScenario];
@@ -21,6 +22,8 @@ const HTTP_OK = 200;
 const HTTP_UNAUTHORIZED = 401;
 const HTTP_RATE_LIMITED = 429;
 const RETRY_AFTER_SECONDS = "120";
+const GO_RETRY_AFTER_SECONDS = "7200";
+const SESSION_HEADER = "x-opencode-session";
 const REPLY_TEXT = "done";
 const TITLE_TEXT = "Rotation test";
 const TOOL_NAME = "bash";
@@ -46,6 +49,7 @@ export interface ChatRecordedRequest {
   readonly model: string | null;
   readonly hasTools: boolean;
   readonly path: string;
+  readonly sessionId: string | null;
 }
 
 export interface ChatMockOptions {
@@ -140,6 +144,28 @@ function sendRateLimited(res: ServerResponse): void {
   );
 }
 
+function sendGoLimit(res: ServerResponse): void {
+  res.writeHead(HTTP_RATE_LIMITED, {
+    ...JSON_HEADERS,
+    "retry-after": GO_RETRY_AFTER_SECONDS,
+  });
+  res.end(
+    JSON.stringify({
+      type: "error",
+      error: {
+        type: "GoUsageLimitError",
+        message: "Go usage limit exceeded",
+      },
+      metadata: { workspace: "wrk_mock", limitName: "5 hour" },
+    }),
+  );
+}
+
+function sessionIdOf(req: IncomingMessage): string | null {
+  const header = req.headers[SESSION_HEADER];
+  return typeof header === "string" ? header : null;
+}
+
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
@@ -176,7 +202,13 @@ function createHandler(
     const path = (req.url ?? "").split("?")[0] ?? "";
     const key = bearerKey(req);
     const withTools = hasTools(raw);
-    requests.push({ key, model: modelOf(raw), hasTools: withTools, path });
+    requests.push({
+      key,
+      model: modelOf(raw),
+      hasTools: withTools,
+      path,
+      sessionId: sessionIdOf(req),
+    });
     const scenario = Object.hasOwn(options.scenarios, key)
       ? options.scenarios[key]
       : undefined;
@@ -197,6 +229,8 @@ function createHandler(
       sendText(res, REPLY_TEXT);
     } else if (seen === 0) {
       sendToolCall(res, options.toolCommand, sequence);
+    } else if (scenario === ChatScenario.toolThenGoLimit) {
+      sendGoLimit(res);
     } else {
       sendRateLimited(res);
     }
