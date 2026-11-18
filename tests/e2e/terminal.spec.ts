@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { _electron as electron, expect, test } from "@playwright/test";
-import type { Locator, Page } from "@playwright/test";
+import type { ElectronApplication, Locator, Page } from "@playwright/test";
 
 import { createCleanupStack } from "./rotationFixture";
 
@@ -13,6 +13,7 @@ const EXECUTABLE_ENV = "CODEWEAVE_E2E_EXECUTABLE";
 const USER_DATA_PREFIX = "codeweave-e2e-";
 const FOLDER_PREFIX = "codeweave-e2e-terminal-";
 const DISABLE_GPU_FLAG = "--disable-gpu";
+const GPU_COMPOSITING_ENABLED_PREFIX = "enabled";
 const SANDBOX_FLAGS =
   process.env.CI !== undefined && process.platform === "linux"
     ? ["--no-sandbox"]
@@ -42,6 +43,7 @@ const CURSOR_TEXTAREA = ".xterm-helper-textarea";
 const CURSOR_PAST_LINE_START = /^[1-9]/;
 
 interface Workspace {
+  readonly app: ElectronApplication;
   readonly page: Page;
   readonly folder: string;
 }
@@ -77,7 +79,7 @@ async function withTerminalApp(
     await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
       "Connected",
     );
-    await body({ page, folder });
+    await body({ app, page, folder });
   } finally {
     await cleanup.run();
   }
@@ -140,14 +142,18 @@ test("terminal_dom_renderer_shows_typed_command_output", async () => {
 });
 
 test("terminal_runs_commands_with_default_renderer", async () => {
-  await withTerminalApp([], async ({ page, folder }) => {
+  await withTerminalApp([], async ({ app, page, folder }) => {
     const host = await openTerminalInFolder(page);
-    const gpuAccelerated = await page.evaluate(
-      () => window.codeweave.gpuAccelerated,
+    const accelerated = await app.evaluate(
+      ({ app: electronApp }, enabledPrefix) =>
+        electronApp
+          .getGPUFeatureStatus()
+          .gpu_compositing.startsWith(enabledPrefix),
+      GPU_COMPOSITING_ENABLED_PREFIX,
     );
     await expect(host).toHaveAttribute(
       "data-renderer",
-      gpuAccelerated ? "webgl" : "dom",
+      accelerated ? "webgl" : "dom",
     );
 
     await waitForPrompt(host);

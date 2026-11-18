@@ -19,7 +19,8 @@ import electronUpdater from "electron-updater";
 import {
   CONNECT_MESSAGE_TYPE,
   GET_AVAILABLE_UPDATE_CHANNEL,
-  GPU_ACCELERATED_ARG,
+  GET_GPU_ACCELERATED_CHANNEL,
+  GPU_ACCELERATED_CHANNEL,
   OPEN_UPDATE_RELEASE_CHANNEL,
   PICK_FOLDER_CHANNEL,
   PORT_CHANNEL,
@@ -37,6 +38,11 @@ import {
   TEST_AGENT_ENV_VAR,
   TEST_UPDATE_FEED_ENV_VAR,
 } from "./backendArgs";
+import {
+  isGpuAccelerated,
+  watchGpuAcceleration,
+  type GpuStatusSource,
+} from "./gpuAcceleration";
 import { createSecretVault, handleVaultRequest } from "./secretVault";
 import {
   createBackendShutdownPort,
@@ -55,15 +61,19 @@ import { linuxWindowIcon } from "./windowIcon";
 Reflect.deleteProperty(process.env, RUN_ID_ENV);
 
 const RENDERER_INDEX_PATH = join(import.meta.dirname, "../renderer/index.html");
-const GPU_COMPOSITING_ENABLED_PREFIX = "enabled";
 const LINUX_PLATFORM = "linux";
 const WINDOW_WIDTH = 1440;
 const WINDOW_HEIGHT = 900;
 
-function isGpuAccelerated(): boolean {
-  return app
-    .getGPUFeatureStatus()
-    .gpu_compositing.startsWith(GPU_COMPOSITING_ENABLED_PREFIX);
+const gpuStatusSource: GpuStatusSource = {
+  compositingStatus: () => app.getGPUFeatureStatus().gpu_compositing,
+  onInfoUpdate: (listener) => {
+    app.on("gpu-info-update", listener);
+  },
+};
+
+function fromApp(event: IpcMainInvokeEvent): boolean {
+  return isAppUrl(event.senderFrame?.url ?? "", rendererEntry());
 }
 
 function rendererEntry(): string {
@@ -92,11 +102,15 @@ function logUpdateProblem(message: string, error?: unknown): void {
   }
 }
 
+function broadcast(channel: string, payload: unknown): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send(channel, payload);
+  }
+}
+
 function broadcastAvailableUpdate(version: string | null): void {
   const update: AvailableUpdate | null = version === null ? null : { version };
-  for (const window of BrowserWindow.getAllWindows()) {
-    window.webContents.send(UPDATE_AVAILABLE_CHANNEL, update);
-  }
+  broadcast(UPDATE_AVAILABLE_CHANNEL, update);
 }
 
 function createNotifier(): UpdateNotifier {
@@ -114,8 +128,6 @@ function createNotifier(): UpdateNotifier {
 }
 
 function registerUpdateHandlers(notifier: UpdateNotifier): void {
-  const fromApp = (event: IpcMainInvokeEvent): boolean =>
-    isAppUrl(event.senderFrame?.url ?? "", rendererEntry());
   ipcMain.handle(
     GET_AVAILABLE_UPDATE_CHANNEL,
     (event): AvailableUpdate | null => {
@@ -196,7 +208,6 @@ function createWindow(backend: UtilityProcess): void {
       sandbox: true,
       nodeIntegration: false,
       preload: join(import.meta.dirname, "../preload/index.cjs"),
-      additionalArguments: isGpuAccelerated() ? [GPU_ACCELERATED_ARG] : [],
     },
   });
   const rendererUrl = process.env.ELECTRON_RENDERER_URL;
@@ -254,6 +265,13 @@ if (app.requestSingleInstanceLock()) {
     registerUpdateHandlers(notifier);
     app.on("before-quit", () => {
       notifier.dispose();
+    });
+    ipcMain.handle(
+      GET_GPU_ACCELERATED_CHANNEL,
+      (event): boolean => fromApp(event) && isGpuAccelerated(gpuStatusSource),
+    );
+    watchGpuAcceleration(gpuStatusSource, (accelerated) => {
+      broadcast(GPU_ACCELERATED_CHANNEL, accelerated);
     });
     createWindow(startBackend(notifier));
   });

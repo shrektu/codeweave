@@ -100,6 +100,16 @@ it("hide_while_open_pending_detaches_late_terminal", async () => {
   expect(paramsOf(rig.client, "terminal/close")).toEqual([]);
 });
 
+it("forwards_gpu_acceleration_to_terminal_handle", () => {
+  const rig = setup();
+  const connection = connect(rig);
+
+  connection.setGpuAccelerated(true);
+
+  expect(rig.fake.terminals).toHaveLength(1);
+  expect(rig.fake.terminals[0]?.renderer).toBe("webgl");
+});
+
 it("close_while_open_pending_closes_late_terminal", async () => {
   const rig = setup();
   const connection = connect(rig);

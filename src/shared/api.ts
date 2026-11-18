@@ -3,7 +3,10 @@ export interface AvailableUpdate {
 }
 
 export interface CodeweaveApi {
-  gpuAccelerated: boolean;
+  isGpuAccelerated: () => boolean;
+  onGpuAcceleratedChanged: (
+    listener: (accelerated: boolean) => void,
+  ) => () => void;
   pickFolder: () => Promise<string | null>;
   getAvailableUpdate: () => Promise<AvailableUpdate | null>;
   onUpdateAvailable: (

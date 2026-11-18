@@ -15,6 +15,7 @@ export default defineConfig({
             "src/domain/**/*.test.ts",
             "src/backend/**/*.test.ts",
             "src/main/**/*.test.ts",
+            "src/preload/**/*.test.ts",
             "tests/acceptance/*.node.test.ts",
             "tests/fakes/*.node.test.ts",
           ],
