@@ -60,6 +60,7 @@ import { useAsyncAction } from "./useAsyncAction";
 import { useBackendStatus, type BackendStatus } from "./useBackendStatus";
 import { useElementSize } from "./useElementSize";
 import { useFlowsLoad, type FlowsSource } from "./useFlowsLoad";
+import { useGpuAccelerated } from "./useGpuAccelerated";
 
 type OpenDialog = "accounts" | "settings" | null;
 type CentreTab = "session" | "flow" | "agents";
@@ -555,12 +556,13 @@ export function App(): JSX.Element {
   };
   const backend = useBackendStatus(client);
   const dock = useTerminalDock();
+  const gpuAccelerated = useGpuAccelerated();
   const [columnRef, columnSize] = useElementSize<HTMLDivElement>();
   const effectSetting =
     state.snapshot?.settings.effectLevel ?? EffectSetting.auto;
 
   const level = chooseEffectLevel({
-    gpuAccelerated: window.codeweave.gpuAccelerated,
+    gpuAccelerated,
     measuredFps,
     manual: effectSetting === EffectSetting.auto ? undefined : effectSetting,
   });

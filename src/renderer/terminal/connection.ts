@@ -24,6 +24,7 @@ export type TerminalState =
 
 export interface TerminalConnection {
   setLevel(level: EffectLevel): void;
+  setGpuAccelerated(accelerated: boolean): void;
   stop(): void;
 }
 
@@ -139,6 +140,10 @@ class TerminalLink implements TerminalConnection {
 
   setLevel(level: EffectLevel): void {
     this.handle.setLevel(level);
+  }
+
+  setGpuAccelerated(accelerated: boolean): void {
+    this.handle.setGpuAccelerated(accelerated);
   }
 
   stop(): void {
@@ -260,6 +265,7 @@ class TerminalLink implements TerminalConnection {
 
 const NOOP_CONNECTION: TerminalConnection = {
   setLevel: () => undefined,
+  setGpuAccelerated: () => undefined,
   stop: () => undefined,
 };
 

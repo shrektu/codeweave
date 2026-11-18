@@ -3,12 +3,15 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type { AvailableUpdate, CodeweaveApi } from "../shared/api";
 import {
   GET_AVAILABLE_UPDATE_CHANNEL,
-  GPU_ACCELERATED_ARG,
+  GET_GPU_ACCELERATED_CHANNEL,
+  GPU_ACCELERATED_CHANNEL,
   OPEN_UPDATE_RELEASE_CHANNEL,
   PICK_FOLDER_CHANNEL,
   PORT_CHANNEL,
   UPDATE_AVAILABLE_CHANNEL,
 } from "../shared/constants";
+
+import { createGpuAccelerationState } from "./gpuAcceleration";
 
 function toAvailableUpdate(value: unknown): AvailableUpdate | null {
   if (
@@ -22,8 +25,18 @@ function toAvailableUpdate(value: unknown): AvailableUpdate | null {
   return null;
 }
 
+const gpuAcceleration = createGpuAccelerationState({
+  fetch: () => ipcRenderer.invoke(GET_GPU_ACCELERATED_CHANNEL),
+  subscribe: (handler) => {
+    ipcRenderer.on(GPU_ACCELERATED_CHANNEL, (_event, payload: unknown) => {
+      handler(payload);
+    });
+  },
+});
+
 const api: CodeweaveApi = {
-  gpuAccelerated: process.argv.includes(GPU_ACCELERATED_ARG),
+  isGpuAccelerated: () => gpuAcceleration.current(),
+  onGpuAcceleratedChanged: (listener) => gpuAcceleration.onChanged(listener),
   pickFolder: (): Promise<string | null> =>
     ipcRenderer.invoke(PICK_FOLDER_CHANNEL) as Promise<string | null>,
   getAvailableUpdate: async (): Promise<AvailableUpdate | null> =>

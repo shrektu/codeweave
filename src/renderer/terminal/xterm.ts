@@ -6,12 +6,12 @@ import { createContext } from "react";
 import type { EffectLevel } from "../effects";
 
 import {
-  chooseTerminalRenderer,
   levelOptions,
   readTerminalTheme,
   terminalOptions,
   type TerminalRenderer,
 } from "./options";
+import { createRendererSwitch } from "./rendererSwitch";
 import type { TerminalSize } from "./size";
 
 export interface TerminalCreateOptions {
@@ -26,6 +26,7 @@ export interface TerminalHandle {
   onRendererChange(listener: (renderer: TerminalRenderer) => void): () => void;
   fit(): TerminalSize | null;
   setLevel(level: EffectLevel): void;
+  setGpuAccelerated(accelerated: boolean): void;
   focus(): void;
   dispose(): void;
 }
@@ -35,7 +36,10 @@ export type TerminalFactory = (
   options: TerminalCreateOptions,
 ) => TerminalHandle;
 
-function attachWebgl(terminal: Terminal, onLoss: () => void): boolean {
+function attachWebgl(
+  terminal: Terminal,
+  onLoss: () => void,
+): (() => void) | null {
   try {
     const addon = new WebglAddon();
     addon.onContextLoss(() => {
@@ -43,48 +47,13 @@ function attachWebgl(terminal: Terminal, onLoss: () => void): boolean {
       onLoss();
     });
     terminal.loadAddon(addon);
-    return true;
+    return () => {
+      addon.dispose();
+    };
   } catch (error: unknown) {
     console.warn("WebGL renderer unavailable, using the DOM renderer", error);
-    return false;
+    return null;
   }
-}
-
-interface RendererState {
-  current(): TerminalRenderer;
-  subscribe(listener: (renderer: TerminalRenderer) => void): () => void;
-  clear(): void;
-}
-
-function trackRenderer(
-  terminal: Terminal,
-  gpuAccelerated: boolean,
-): RendererState {
-  const listeners = new Set<(renderer: TerminalRenderer) => void>();
-  let renderer: TerminalRenderer = "dom";
-  const fallBackToDom = (): void => {
-    renderer = "dom";
-    for (const listener of listeners) {
-      listener(renderer);
-    }
-  };
-  const wantsWebgl =
-    chooseTerminalRenderer({ gpuAccelerated, webglFailed: false }) === "webgl";
-  if (wantsWebgl && attachWebgl(terminal, fallBackToDom)) {
-    renderer = "webgl";
-  }
-  return {
-    current: () => renderer,
-    subscribe(listener): () => void {
-      listeners.add(listener);
-      return (): void => {
-        listeners.delete(listener);
-      };
-    },
-    clear: () => {
-      listeners.clear();
-    },
-  };
 }
 
 function fitTerminal(
@@ -106,7 +75,10 @@ export function createXtermTerminal(
   const fitAddon = new FitAddon();
   terminal.loadAddon(fitAddon);
   terminal.open(host);
-  const renderer = trackRenderer(terminal, gpuAccelerated);
+  const renderer = createRendererSwitch(
+    (onLoss) => attachWebgl(terminal, onLoss),
+    gpuAccelerated,
+  );
 
   return {
     get renderer(): TerminalRenderer {
@@ -126,11 +98,14 @@ export function createXtermTerminal(
     setLevel(next): void {
       Object.assign(terminal.options, levelOptions(next));
     },
+    setGpuAccelerated(accelerated): void {
+      renderer.setGpuAccelerated(accelerated);
+    },
     focus(): void {
       terminal.focus();
     },
     dispose(): void {
-      renderer.clear();
+      renderer.dispose();
       terminal.dispose();
     },
   };

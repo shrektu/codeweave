@@ -65,6 +65,18 @@ export function createFakeXtermFactory(): FakeXtermFactory {
       setLevel(next): void {
         this.levels.push(next);
       },
+      setGpuAccelerated(accelerated): void {
+        const next = chooseTerminalRenderer({
+          gpuAccelerated: accelerated,
+          webglFailed: false,
+        });
+        if (next !== this.renderer) {
+          this.renderer = next;
+          for (const listener of rendererListeners) {
+            listener(next);
+          }
+        }
+      },
       focus(): void {
         this.focused = true;
       },

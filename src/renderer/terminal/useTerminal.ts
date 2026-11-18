@@ -9,6 +9,7 @@ import {
 
 import type { EffectLevel } from "../effects";
 import { useServices } from "../services";
+import { useGpuAccelerated } from "../useGpuAccelerated";
 
 import {
   connectTerminal,
@@ -39,9 +40,10 @@ export function useTerminal(
   const factory = use(TerminalFactoryContext);
   const [attempt, setAttempt] = useState(0);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const gpuAccelerated = useGpuAccelerated();
   const connectionRef = useRef<TerminalConnection | null>(null);
   const createHandle = useEffectEvent((host: HTMLElement) =>
-    factory(host, { level, gpuAccelerated: window.codeweave.gpuAccelerated }),
+    factory(host, { level, gpuAccelerated }),
   );
 
   useEffect(() => {
@@ -68,6 +70,10 @@ export function useTerminal(
   useEffect(() => {
     connectionRef.current?.setLevel(level);
   }, [level]);
+
+  useEffect(() => {
+    connectionRef.current?.setGpuAccelerated(gpuAccelerated);
+  }, [gpuAccelerated]);
 
   const current = outcome?.cwd === cwd && outcome.attempt === attempt;
   return {

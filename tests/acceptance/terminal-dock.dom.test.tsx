@@ -29,7 +29,11 @@ import {
   renderWithServices,
   type FakeIpcClient,
 } from "../fakes/fakeIpcClient";
-import { makeCodeweaveApi } from "../fakes/fakeCodeweaveApi";
+import {
+  createFakeGpuAcceleration,
+  makeCodeweaveApi,
+  type FakeGpuAcceleration,
+} from "../fakes/fakeCodeweaveApi";
 
 const DOCK_STORAGE_KEY = "codeweave.terminalDock";
 const SESSION_CWD = "/home/user/project";
@@ -43,6 +47,7 @@ interface Rig {
   client: FakeIpcClient;
   fake: FakeXtermFactory;
   pickFolder: ReturnType<typeof vi.fn<() => Promise<string | null>>>;
+  gpu: FakeGpuAcceleration;
 }
 
 function setup(
@@ -53,7 +58,8 @@ function setup(
   const pickFolder = vi.fn<() => Promise<string | null>>(() =>
     Promise.resolve(PICKED_CWD),
   );
-  window.codeweave = makeCodeweaveApi({ gpuAccelerated, pickFolder });
+  const gpu = createFakeGpuAcceleration(gpuAccelerated);
+  window.codeweave = makeCodeweaveApi({ ...gpu.api, pickFolder });
   const client = createFakeIpcClient();
   client.respond("ping", { pong: true, backendPid: 1 });
   client.respond("sessions/snapshot", makeSnapshot(snapshot));
@@ -74,7 +80,7 @@ function setup(
     </TerminalFactoryContext>,
     client,
   );
-  return { client, fake, pickFolder };
+  return { client, fake, pickFolder, gpu };
 }
 
 function paramsOf<M extends RequestMethod>(
@@ -414,6 +420,38 @@ it("terminal_uses_dom_without_gpu", async () => {
   await openedTerminal(rig);
 
   expect(rendererOf()).toBe("dom");
+});
+
+it("open_terminal_switches_to_webgl_when_gpu_acceleration_is_reported", async () => {
+  const rig = setup({ session: makeSession() }, false);
+  await openDock();
+  const terminal = await openedTerminal(rig);
+  expect(rendererOf()).toBe("dom");
+
+  act(() => {
+    rig.gpu.set(true);
+  });
+
+  await waitFor(() => {
+    expect(rendererOf()).toBe("webgl");
+  });
+  expect(rig.fake.terminals).toEqual([terminal]);
+});
+
+it("open_terminal_falls_back_to_dom_when_gpu_acceleration_is_lost", async () => {
+  const rig = setup({ session: makeSession() }, true);
+  await openDock();
+  const terminal = await openedTerminal(rig);
+  expect(rendererOf()).toBe("webgl");
+
+  act(() => {
+    rig.gpu.set(false);
+  });
+
+  await waitFor(() => {
+    expect(rendererOf()).toBe("dom");
+  });
+  expect(rig.fake.terminals).toEqual([terminal]);
 });
 
 it("webgl_context_loss_falls_back_to_dom", async () => {
