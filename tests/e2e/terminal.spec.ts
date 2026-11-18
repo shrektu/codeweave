@@ -43,6 +43,8 @@ test.skip(
 );
 const STEP_TIMEOUT_MS = 30_000;
 const MARKER_POLL_INTERVAL_MS = 1000;
+const CURSOR_TEXTAREA = ".xterm-helper-textarea";
+const CURSOR_PAST_LINE_START = /^[1-9]/;
 
 interface Workspace {
   readonly page: Page;
@@ -101,17 +103,17 @@ async function openTerminalInFolder(page: Page): Promise<Locator> {
 }
 
 async function typeCommand(host: Locator, command: string): Promise<void> {
-  await host.locator(".xterm-helper-textarea").focus();
+  await host.locator(CURSOR_TEXTAREA).focus();
   await host.page().keyboard.type(command);
   await host.page().keyboard.press("Enter");
 }
 
 async function waitForPrompt(host: Locator): Promise<void> {
-  await expect
-    .poll(async () => (await host.locator(".xterm-rows").innerText()).trim(), {
-      timeout: STEP_TIMEOUT_MS,
-    })
-    .not.toBe("");
+  await expect(host.locator(CURSOR_TEXTAREA)).toHaveCSS(
+    "left",
+    CURSOR_PAST_LINE_START,
+    { timeout: STEP_TIMEOUT_MS },
+  );
 }
 
 async function exists(path: string): Promise<boolean> {
