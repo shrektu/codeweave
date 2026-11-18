@@ -118,6 +118,11 @@ export function createContained(
     stderr: child.stderr,
     async stop(graceMs: number): Promise<StopResult> {
       if (!hasExited(child)) {
+        try {
+          await ops.beforeStop?.();
+        } catch (error) {
+          console.error("preparing the container for stop failed", error);
+        }
         child.kill("SIGTERM");
         await Promise.race([exited, delay(graceMs)]);
       }

@@ -39,6 +39,7 @@ interface BuilderConfig {
   readonly win: {
     readonly target: string;
     readonly files?: readonly string[];
+    readonly asarUnpack?: readonly string[];
     readonly icon?: string;
   };
   readonly nsis: Readonly<Record<string, string | boolean>>;
@@ -150,7 +151,24 @@ describe("electron-builder native filters", () => {
       "node_modules/node-pty/prebuilds/${platform}-${arch}/**",
       "!node_modules/@anthropic-ai/claude-agent-sdk-*/**",
       "node_modules/@anthropic-ai/claude-agent-sdk-${platform}-${arch}/**",
+      "!node_modules/@koromix/koffi-*/**",
+      "node_modules/@koromix/koffi-${platform}-${arch}/**",
     ]);
+  });
+
+  it("ships_koffi_through_the_top_level_files_only_for_every_platform", () => {
+    const { win, linux, mac, files } = builderConfig();
+
+    expect(files).not.toContain("!node_modules/koffi/**");
+    expect(files).not.toContain("!node_modules/@koromix/**");
+    const sectionPatterns = [win, linux, mac].flatMap(
+      (section) => section.files ?? [],
+    );
+    expect(
+      sectionPatterns.filter(
+        (pattern) => pattern.includes("koffi") || pattern.includes("koromix"),
+      ),
+    ).toEqual([]);
   });
 
   it("linux_keeps_the_compiled_node_pty_build_release_directory", () => {
@@ -182,7 +200,11 @@ describe("electron-builder native filters", () => {
     const config = builderConfig();
 
     expect(config.mac.files).toBeUndefined();
-    expect(config.win.files).toBeUndefined();
+    expect(
+      (config.win.files ?? []).every((pattern) =>
+        pattern.startsWith("node_modules/"),
+      ),
+    ).toBe(true);
     expect(config.linux.files).toBeUndefined();
   });
 });

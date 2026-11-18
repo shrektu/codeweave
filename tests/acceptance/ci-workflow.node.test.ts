@@ -26,6 +26,7 @@ const LIST_PATTERNS = {
 interface WorkflowStep {
   readonly name?: string;
   readonly run?: string;
+  readonly if?: string;
   readonly env?: Readonly<Record<string, string>>;
 }
 
@@ -71,6 +72,14 @@ it("agy_ci_install_is_read_only", () => {
   expect(steps.flatMap((step) => Object.keys(step.env ?? {}))).not.toContain(
     AGY_AUTO_UPDATE_ENV,
   );
+});
+
+it("ci_verifies_the_packed_app_after_pack", () => {
+  const steps = workflowSteps();
+  const packIndex = steps.findIndex((step) => step.run === PACK_COMMAND);
+
+  expect(steps[packIndex + 1]?.run).toBe("node scripts/release/verify.ts");
+  expect(steps[packIndex + 1]?.if).toBeUndefined();
 });
 
 it("packed_app_terminal_spec_runs_on_every_os_after_pack", () => {

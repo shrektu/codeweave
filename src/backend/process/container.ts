@@ -3,6 +3,7 @@ import type { Readable, Writable } from "node:stream";
 export const ContainerKind = {
   systemdScope: "systemd-scope",
   envMarker: "env-marker",
+  jobObject: "job-object",
 } as const;
 export type ContainerKind = (typeof ContainerKind)[keyof typeof ContainerKind];
 
@@ -63,6 +64,7 @@ export type Launcher<T extends LaunchedProcess> = (
 export interface ContainerOps {
   members(): Promise<readonly number[]>;
   killMembers(): Promise<void>;
+  beforeStop?(): Promise<void>;
 }
 
 export interface Launched<T extends LaunchedProcess> {
@@ -81,8 +83,8 @@ export interface ProcessContainer {
 }
 
 export class ContainerUnavailableError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = "ContainerUnavailableError";
   }
 }

@@ -21,6 +21,8 @@ const UNPACKED_DIR = "app.asar.unpacked";
 const ANTHROPIC_SCOPE = join("node_modules", "@anthropic-ai");
 const SDK_PACKAGE = /^claude-agent-sdk-(?:linux|darwin|win32)-(?:x64|arm64)/;
 const SDK_PREFIX = "claude-agent-sdk-";
+const KOROMIX_SCOPE = join("node_modules", "@koromix");
+const KOFFI_PREFIX = "koffi-";
 const NODE_PTY_DIR = join("node_modules", "node-pty");
 const PTY_BINARY = "pty.node";
 const CONPTY_FILES = ["conpty.dll", "OpenConsole.exe"];
@@ -172,6 +174,24 @@ function sdkViolations(
     : [`${expected}: missing claude-agent-sdk package`, ...foreign];
 }
 
+function koffiViolations(
+  unpackedDir: string,
+  platform: NodeJS.Platform,
+  arch: Arch,
+): string[] {
+  const scopeDir = join(unpackedDir, KOROMIX_SCOPE);
+  const installed = (existsSync(scopeDir) ? readdirSync(scopeDir) : []).filter(
+    (name) => name.startsWith(KOFFI_PREFIX),
+  );
+  const expected = `${KOFFI_PREFIX}${platform}-${arch}`;
+  const foreign = installed
+    .filter((name) => name !== expected)
+    .map((name) => `${name}: foreign koffi package, expected only ${expected}`);
+  return installed.includes(expected)
+    ? foreign
+    : [`${expected}: missing koffi package`, ...foreign];
+}
+
 function nodePtyViolations(
   unpackedDir: string,
   platform: NodeJS.Platform,
@@ -222,6 +242,7 @@ export function checkPackagedApp(
   return [
     ...nativeViolations(root, files, arch),
     ...sdkViolations(unpackedDir, platform, arch),
+    ...koffiViolations(unpackedDir, platform, arch),
     ...nodePtyViolations(unpackedDir, platform, arch),
   ];
 }

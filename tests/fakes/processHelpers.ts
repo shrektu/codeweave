@@ -11,6 +11,7 @@ import { STOP_CONFIRM_TIMEOUT_MS } from "../../src/backend/constants";
 const execFileAsync = promisify(execFile);
 const ZOMBIE_STATE = "Z";
 const STAT_FIELDS_AFTER_COMM_OFFSET = 2;
+const PS_NO_MATCH_EXIT_CODE = 1;
 const SYSTEMD_PROBE_ARGS = [
   "--user",
   "--scope",
@@ -45,6 +46,53 @@ export async function isRunning(pid: number): Promise<boolean> {
     return !afterComm.startsWith(ZOMBIE_STATE);
   } catch (error) {
     if (isErrnoCode(error, "ENOENT")) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+export async function isAliveWin32(pid: number): Promise<boolean> {
+  const { stdout } = await execFileAsync("tasklist", [
+    "/FI",
+    `PID eq ${String(pid)}`,
+    "/NH",
+    "/FO",
+    "CSV",
+  ]);
+  return new RegExp(`^"[^"]*","${String(pid)}"`, "m").test(stdout);
+}
+
+export async function killTreeWin32(pid: number): Promise<void> {
+  try {
+    await execFileAsync("taskkill", ["/F", "/T", "/PID", String(pid)]);
+  } catch (error) {
+    if (await isAliveWin32(pid)) {
+      throw error;
+    }
+  }
+}
+
+export function isAlive(pid: number): Promise<boolean> {
+  return process.platform === "win32" ? isAliveWin32(pid) : isAlivePs(pid);
+}
+
+async function isAlivePs(pid: number): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync("ps", [
+      "-o",
+      "stat=",
+      "-p",
+      String(pid),
+    ]);
+    const state = stdout.trim();
+    return state !== "" && !state.startsWith(ZOMBIE_STATE);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      error.code === PS_NO_MATCH_EXIT_CODE
+    ) {
       return false;
     }
     throw error;
