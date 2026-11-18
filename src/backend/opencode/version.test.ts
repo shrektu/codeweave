@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ExecText } from "../exec";
 
+import { OpencodeGeneration } from "./constants";
 import {
-  OpencodeGeneration,
   UnsupportedOpencodeVersionError,
   createVersionProbe,
   formatOpencodeVersion,

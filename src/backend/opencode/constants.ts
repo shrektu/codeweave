@@ -70,6 +70,7 @@ export const OpencodeEnv = {
   stateHome: "XDG_STATE_HOME",
   config: "OPENCODE_CONFIG",
   serverPassword: "OPENCODE_SERVER_PASSWORD",
+  password: "OPENCODE_PASSWORD",
 } as const;
 
 export const OPENCODE_ISOLATION_FLAGS: readonly string[] = [
@@ -94,7 +95,7 @@ export const PURE_ARG = "--pure";
 export const LOOPBACK_HOST = "127.0.0.1";
 
 export const SERVER_USERNAME = "opencode";
-export const LISTENING_LINE_PREFIX = "opencode server listening on ";
+export const LISTENING_MARKER = "server listening on ";
 export const READY_TIMEOUT_MS = 15_000;
 export const LONG_RETRY_THRESHOLD_MS = 60_000;
 export const REQUEST_TIMEOUT_MS = 10_000;
@@ -151,3 +152,7 @@ export const VERSION_UNKNOWN_MESSAGE =
 export const HTTP_TOO_MANY_REQUESTS = 429;
 export const HTTP_UNAUTHORIZED = 401;
 export const HTTP_FORBIDDEN = 403;
+
+export const OpencodeGeneration = { v1: "v1", v2: "v2" } as const;
+export type OpencodeGeneration =
+  (typeof OpencodeGeneration)[keyof typeof OpencodeGeneration];

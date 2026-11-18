@@ -26,6 +26,7 @@ import {
   RUN_DIR_MODE,
   SECRET_FILE_MODE,
   SHARE_DISABLED,
+  OpencodeGeneration,
 } from "./constants";
 import { accountDirs, buildOpencodeLaunch } from "./launch";
 import type { ProvidersResponse } from "./protocol";
@@ -212,6 +213,7 @@ async function probeModels(
     cwd: deps.directory,
   });
   const launch = buildOpencodeLaunch({
+    generation: OpencodeGeneration.v1,
     executable,
     configDir: files.configDir,
     configFile: files.configFile,

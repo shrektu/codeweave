@@ -19,7 +19,8 @@ import {
   type ModelCatalogService,
 } from "./catalog";
 import { findFreePort } from "./port";
-import { OpencodeGeneration, type GenerationProbe } from "./version";
+import { OpencodeGeneration } from "./constants";
+import type { GenerationProbe } from "./version";
 
 const CAPABLE = {
   toolcall: true,

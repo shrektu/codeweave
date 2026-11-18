@@ -18,10 +18,8 @@ import type {
 } from "../../src/backend/agentAdapter";
 import { createOpencodeAdapter } from "../../src/backend/opencode/adapter";
 import { findFreePort } from "../../src/backend/opencode/port";
-import {
-  OpencodeGeneration,
-  type GenerationProbe,
-} from "../../src/backend/opencode/version";
+import { OpencodeGeneration } from "../../src/backend/opencode/constants";
+import type { GenerationProbe } from "../../src/backend/opencode/version";
 import type { OpencodeCredentials } from "../../src/backend/opencode/config";
 import {
   ContainerKind,

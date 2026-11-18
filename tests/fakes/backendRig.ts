@@ -14,7 +14,7 @@ import {
   PROBE_RUN_ID_PREFIX,
 } from "../../src/backend/constants";
 import type { LockKeyResolver } from "../../src/backend/locks";
-import { OpencodeGeneration } from "../../src/backend/opencode/version";
+import { OpencodeGeneration } from "../../src/backend/opencode/constants";
 import { createJsonStore, type JsonStore } from "../../src/backend/storage";
 import type {
   Contained,

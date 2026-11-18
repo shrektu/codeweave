@@ -21,9 +21,11 @@ import {
   PORT_ARG,
   PURE_ARG,
   SERVE_ARG,
+  OpencodeGeneration,
 } from "./constants";
 
 export interface OpencodeLaunchInput {
+  readonly generation: OpencodeGeneration;
   readonly executable: string;
   readonly configDir: string;
   readonly configFile: string;
@@ -55,12 +57,31 @@ function quoted(value: string): string {
   return `"${value}"`;
 }
 
+function passwordVariable(generation: OpencodeGeneration): string {
+  return generation === OpencodeGeneration.v2
+    ? OpencodeEnv.password
+    : OpencodeEnv.serverPassword;
+}
+
+function launchArgs(input: OpencodeLaunchInput): string[] {
+  const args = [
+    SERVE_ARG,
+    HOSTNAME_ARG,
+    LOOPBACK_HOST,
+    PORT_ARG,
+    String(input.port),
+  ];
+  return input.generation === OpencodeGeneration.v2
+    ? args
+    : [...args, PURE_ARG];
+}
+
 function launchEnv(input: OpencodeLaunchInput): Record<string, string> {
   return {
     ...input.env,
     ...accountDirs(input.configDir),
     [OpencodeEnv.config]: input.configFile,
-    [OpencodeEnv.serverPassword]: input.password,
+    [passwordVariable(input.generation)]: input.password,
     ...Object.fromEntries(
       OPENCODE_ISOLATION_FLAGS.map((flag) => [flag, FLAG_ENABLED]),
     ),
@@ -105,14 +126,7 @@ export function buildOpencodeLaunch(
   return {
     ...buildOpencodeCommand({
       executable: input.executable,
-      args: [
-        SERVE_ARG,
-        HOSTNAME_ARG,
-        LOOPBACK_HOST,
-        PORT_ARG,
-        String(input.port),
-        PURE_ARG,
-      ],
+      args: launchArgs(input),
       platform: input.platform,
       comSpec: input.comSpec,
     }),

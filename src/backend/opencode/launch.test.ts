@@ -8,10 +8,12 @@ import {
   buildOpencodeCommand,
   buildOpencodeLaunch,
 } from "./launch";
+import { OpencodeGeneration } from "./constants";
 
 const SERVER_SECRET = randomUUID();
 
 const BASE = {
+  generation: OpencodeGeneration.v1,
   configDir: "/home/jane/.oc-main",
   configFile: "/run/user/1000/codeweave-opencode-x/opencode.json",
   password: SERVER_SECRET,
@@ -48,6 +50,31 @@ describe("buildOpencodeLaunch", () => {
         XDG_STATE_HOME: join(BASE.configDir, "state"),
         OPENCODE_CONFIG: BASE.configFile,
         OPENCODE_SERVER_PASSWORD: SERVER_SECRET,
+        ...ISOLATION_ENV,
+      },
+    });
+  });
+
+  it("v2_launch_has_no_pure_flag_and_uses_opencode_password", () => {
+    expect(
+      buildOpencodeLaunch({
+        ...BASE,
+        generation: OpencodeGeneration.v2,
+        executable: "/usr/local/bin/opencode",
+        platform: "linux",
+      }),
+    ).toEqual({
+      command: "/usr/local/bin/opencode",
+      args: ["serve", "--hostname", "127.0.0.1", "--port", "4567"],
+      env: {
+        PATH: "/usr/bin",
+        HOME: join(BASE.configDir, "home"),
+        XDG_CONFIG_HOME: join(BASE.configDir, "config"),
+        XDG_DATA_HOME: join(BASE.configDir, "data"),
+        XDG_CACHE_HOME: join(BASE.configDir, "cache"),
+        XDG_STATE_HOME: join(BASE.configDir, "state"),
+        OPENCODE_CONFIG: BASE.configFile,
+        OPENCODE_PASSWORD: SERVER_SECRET,
         ...ISOLATION_ENV,
       },
     });

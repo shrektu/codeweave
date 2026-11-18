@@ -9,7 +9,7 @@ import {
   startBackend,
   type Backend,
 } from "../../src/backend/startup";
-import { OpencodeGeneration } from "../../src/backend/opencode/version";
+import { OpencodeGeneration } from "../../src/backend/opencode/constants";
 import { ContainerKind } from "../../src/backend/process/container";
 import type {
   ContainerOps,

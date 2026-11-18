@@ -12,6 +12,7 @@ import { DEFAULT_STOP_GRACE_MS } from "../constants";
 
 import { createOpencodeClient, type OpencodeClient } from "./client";
 import {
+  buildSessionConfig,
   createRunFiles,
   removeRunFiles,
   type OpencodeCredentials,
@@ -21,6 +22,7 @@ import {
   NEEDS_LOGIN_MESSAGE,
   READY_TIMEOUT_MS,
   STALE_GATE_GRACE_MS,
+  OpencodeGeneration,
 } from "./constants";
 import { OpencodeHandle } from "./handle";
 import { accountDirs, buildOpencodeLaunch } from "./launch";
@@ -76,9 +78,11 @@ async function spawnRun(
   const files = await createRunFiles({
     credentials: secrets.credentials,
     runtimeRoot: deps.runtimeRoot,
+    buildConfig: buildSessionConfig,
   });
   try {
     const launch = buildOpencodeLaunch({
+      generation: OpencodeGeneration.v1,
       executable: deps.executableFor(spec),
       configDir: spec.account.configDir,
       configFile: files.configFile,

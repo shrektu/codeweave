@@ -3,6 +3,7 @@ import { stripVTControlCharacters } from "node:util";
 import type { ExecText } from "../exec";
 
 import {
+  OpencodeGeneration,
   SUPPORTED_MAJOR_VERSION,
   VERSION_ARG,
   VERSION_PATTERN,
@@ -11,10 +12,6 @@ import {
   VERSION_UNKNOWN_MESSAGE,
 } from "./constants";
 import { buildOpencodeCommand } from "./launch";
-
-export const OpencodeGeneration = { v1: "v1" } as const;
-export type OpencodeGeneration =
-  (typeof OpencodeGeneration)[keyof typeof OpencodeGeneration];
 
 export interface OpencodeVersion {
   readonly major: number;
