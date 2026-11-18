@@ -127,7 +127,10 @@ async function isExecutableFile(path: string): Promise<boolean> {
   }
 }
 
-function isRunnableFileSync(path: string, platform: NodeJS.Platform): boolean {
+export function isRunnableFileSync(
+  path: string,
+  platform: NodeJS.Platform,
+): boolean {
   try {
     if (statSync(path, { throwIfNoEntry: false })?.isFile() !== true) {
       return false;

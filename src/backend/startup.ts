@@ -11,6 +11,7 @@ import {
   type EpochMillis,
   type WorktreeState,
 } from "../domain/types";
+import { EXECUTABLE_SETTING_LABELS } from "../shared/constants";
 import { IpcError, IpcErrorCode } from "../shared/protocol";
 
 import {
@@ -412,28 +413,26 @@ function createTerminals(
 
 interface ExecutableSpec {
   readonly binary: string;
-  readonly notFoundMessage: string;
+  readonly cliName: string;
 }
 
 const EXECUTABLE_SPECS: Readonly<Partial<Record<ProviderId, ExecutableSpec>>> =
   {
-    [ProviderId.claude]: {
-      binary: CLAUDE_BINARY,
-      notFoundMessage: "The Claude executable was not found",
-    },
-    [ProviderId.codex]: {
-      binary: CODEX_BINARY,
-      notFoundMessage: "The Codex executable was not found",
-    },
-    [ProviderId.gemini]: {
-      binary: AGY_BINARY,
-      notFoundMessage: "The agy executable was not found",
-    },
-    [ProviderId.opencode]: {
-      binary: OPENCODE_BINARY,
-      notFoundMessage: "The OpenCode executable was not found",
-    },
+    [ProviderId.claude]: { binary: CLAUDE_BINARY, cliName: "Claude" },
+    [ProviderId.codex]: { binary: CODEX_BINARY, cliName: "Codex" },
+    [ProviderId.gemini]: { binary: AGY_BINARY, cliName: "agy" },
+    [ProviderId.opencode]: { binary: OPENCODE_BINARY, cliName: "OpenCode" },
   };
+
+function notFoundMessage(
+  spec: ExecutableSpec,
+  label: string,
+  configured: string | null,
+): string {
+  return configured === null
+    ? `The ${spec.cliName} CLI was not found. Install it and restart Codeweave, or set its full path under Settings → ${label}.`
+    : `The ${spec.cliName} CLI was not found at "${configured}". Correct Settings → ${label}, or clear it so Codeweave searches PATH again.`;
+}
 
 export function createExecutableResolver(
   env: NodeJS.ProcessEnv,
@@ -455,7 +454,10 @@ export function createExecutableResolver(
         statSync(path, { throwIfNoEntry: false })?.isFile() === true,
     });
     if (found === null) {
-      throw new IpcError(IpcErrorCode.UNAVAILABLE, spec.notFoundMessage);
+      throw new IpcError(
+        IpcErrorCode.UNAVAILABLE,
+        notFoundMessage(spec, EXECUTABLE_SETTING_LABELS[provider], configured),
+      );
     }
     return found;
   };

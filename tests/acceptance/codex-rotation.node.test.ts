@@ -211,7 +211,8 @@ describe("session provider selection", () => {
       rig.call("session/start", { cwd: rig.cwd, provider: "codex" }),
     ).rejects.toMatchObject({
       code: IpcErrorCode.UNAVAILABLE,
-      message: "The Codex executable was not found",
+      message:
+        "The Codex CLI was not found. Install it and restart Codeweave, or set its full path under Settings → Codex executable.",
     });
 
     const view = await rig.call("session/start", {

@@ -67,6 +67,31 @@ pnpm install
 pnpm dev
 ```
 
+## Agent CLIs
+
+Codeweave runs your installed `claude`, `codex`, `agy` and `opencode` CLIs and
+finds them like this:
+
+- The app's own `PATH`.
+- On Linux and macOS also the `PATH` of your login shell. Codeweave reads it
+  once, when the app starts, by running `$SHELL -ilc` with a 3 second limit, so
+  a CLI that only your shell profile puts on `PATH` is found even when you start
+  Codeweave from the desktop menu, the Dock or Finder.
+- On Linux and macOS also the usual user directories that exist: `~/.local/bin`,
+  `~/.opencode/bin`, `~/.cargo/bin`, `~/.bun/bin`, `~/.npm-global/bin`,
+  `~/.volta/bin`, pnpm and fnm directories, and Homebrew
+  (`/opt/homebrew/bin`, `/usr/local/bin` on macOS,
+  `/home/linuxbrew/.linuxbrew/bin` on Linux).
+- On Windows only the app's `PATH`.
+
+To use a CLI from another place, set its full path under Settings → Claude
+executable, Codex executable, OpenCode executable or Gemini executable (agy).
+
+Restart Codeweave after installing a CLI into a new directory or after changing
+your shell's `PATH`. Agents and the integrated terminal run with the same
+`PATH` the lookup uses. Only `PATH` is taken from your shell; its other
+variables are not passed on.
+
 ## Agents
 
 Flow nodes run agents. An agent is defined in a Markdown file directly in the
@@ -161,6 +186,8 @@ above it, or focus the splitter and use the arrow keys, to resize it.
 - The shell is detected automatically: `$SHELL` on macOS and Linux, PowerShell
   on Windows. Set a different one under Settings → Terminal shell; leave it
   empty to detect again.
+- The shell gets the same `PATH` the agent CLI lookup uses (see
+  [Agent CLIs](#agent-clis)).
 - Hiding the dock keeps the shell running; showing it again replays the recent
   output. `Close` ends the shell. A shell that exits shows its exit code and a
   `Restart` button.

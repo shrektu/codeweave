@@ -3,9 +3,11 @@ import { useState, type JSX } from "react";
 import {
   EffectLevel,
   PermissionProfile,
+  ProviderId,
   UpdateChannel,
 } from "../../domain/types";
 import { parseTaskClass, TASK_CLASS_ORDER } from "../../domain/taskClass";
+import { EXECUTABLE_SETTING_LABELS } from "../../shared/constants";
 import type { ParamsMap } from "../../shared/protocol";
 import type { SettingsView } from "../../shared/views";
 import { PROFILE_OPTIONS } from "../profileOptions";
@@ -194,7 +196,7 @@ function SettingsForm({ settings }: { settings: SettingsView }): JSX.Element {
       <UpdatesFieldset settings={settings} onPatch={onPatch} />
       <ExecutableField
         id="claude-executable"
-        label="Claude executable"
+        label={EXECUTABLE_SETTING_LABELS[ProviderId.claude]}
         current={settings.claudeExecutable}
         onSave={(claudeExecutable) => {
           onPatch({ claudeExecutable });
@@ -202,7 +204,7 @@ function SettingsForm({ settings }: { settings: SettingsView }): JSX.Element {
       />
       <ExecutableField
         id="codex-executable"
-        label="Codex executable"
+        label={EXECUTABLE_SETTING_LABELS[ProviderId.codex]}
         current={settings.codexExecutable}
         onSave={(codexExecutable) => {
           onPatch({ codexExecutable });
@@ -210,7 +212,7 @@ function SettingsForm({ settings }: { settings: SettingsView }): JSX.Element {
       />
       <ExecutableField
         id="opencode-executable"
-        label="OpenCode executable"
+        label={EXECUTABLE_SETTING_LABELS[ProviderId.opencode]}
         current={settings.opencodeExecutable}
         onSave={(opencodeExecutable) => {
           onPatch({ opencodeExecutable });
@@ -218,7 +220,7 @@ function SettingsForm({ settings }: { settings: SettingsView }): JSX.Element {
       />
       <ExecutableField
         id="agy-executable"
-        label="Gemini executable (agy)"
+        label={EXECUTABLE_SETTING_LABELS[ProviderId.gemini]}
         current={settings.agyExecutable}
         onSave={(agyExecutable) => {
           onPatch({ agyExecutable });
