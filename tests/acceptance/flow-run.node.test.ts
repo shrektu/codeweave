@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it } from "vitest";
 
 import { IpcErrorCode, type ParamsMap } from "../../src/shared/protocol";
 import type { FlowRunView } from "../../src/shared/views";
@@ -21,6 +21,7 @@ import {
   type ScriptStep,
 } from "../fakes/fakeAcpAgent";
 import { agentDelta } from "../fakes/fakeCodexAppServer";
+import { settled } from "../fakes/settle";
 
 const TASK = "Add a login form";
 const END_TURN: ScriptStep = { type: "end", stopReason: "end_turn" };
@@ -274,7 +275,7 @@ async function untilStatus(
   rig: BackendRig,
   status: FlowRunView["status"],
 ): Promise<FlowRunView> {
-  return vi.waitFor(async () => {
+  return settled(async () => {
     const view = await flowRunOf(rig);
     expect(view.status).toBe(status);
     return view;
@@ -282,7 +283,7 @@ async function untilStatus(
 }
 
 async function answerHeldTurn(rig: BackendRig): Promise<void> {
-  const requestId = await vi.waitFor(async () => {
+  const requestId = await settled(async () => {
     const { permissions } = await rig.session();
     expect(permissions).toHaveLength(1);
     return permissions[0]?.requestId ?? "";
@@ -291,7 +292,7 @@ async function answerHeldTurn(rig: BackendRig): Promise<void> {
 }
 
 async function untilTurnHeld(rig: BackendRig): Promise<void> {
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect((await rig.session()).permissions).toHaveLength(1);
   });
 }
@@ -444,7 +445,7 @@ it("flow_run_rounds_exhausted_pauses_then_another_round_and_stop", async () => {
     decision: "another_round",
   });
   await expect(resumed).resolves.toMatchObject({ status: "running" });
-  const pausedAgain = await vi.waitFor(async () => {
+  const pausedAgain = await settled(async () => {
     const view = await flowRunOf(rig);
     expect(view.status).toBe("awaiting_decision");
     expect(view.round).toBe(3);
@@ -548,7 +549,7 @@ it("flow_run_gated_review_another_round_runs_build", async () => {
   const { runId } = await startFlow(rig, "gated-review");
   await untilStatus(rig, "awaiting_decision");
   await rig.call("flow/decide", { runId, decision: "approve" });
-  const exhausted = await vi.waitFor(async () => {
+  const exhausted = await settled(async () => {
     const view = await flowRunOf(rig);
     expect(view.decision?.reason).toBe("rounds_exhausted");
     return view;
@@ -683,7 +684,7 @@ it("flow_run_waits_through_scheduled_resume_before_handoff", async () => {
   );
 
   await startFlow(rig, "ask-review");
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect((await rig.session()).phase.phase).toBe("waiting");
   });
 
@@ -860,12 +861,12 @@ it("session_start_refused_until_stopped_flow_finishes", async () => {
     worktreeGate: gate.promise,
   });
   await startFlow(rig, "build-review");
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect(await sessionPhase(rig)).toBe("running");
   });
 
   const stopping = rig.call("flow/stop", {});
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect(await sessionPhase(rig)).toBe("stopped");
   });
   await expect(

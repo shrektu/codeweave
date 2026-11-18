@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { expect, vi } from "vitest";
+import { expect } from "vitest";
 
 import {
   startBackend,
@@ -13,6 +13,7 @@ import {
   PROBE_INTERVAL_MS,
   PROBE_RUN_ID_PREFIX,
 } from "../../src/backend/constants";
+import type { LockKeyResolver } from "../../src/backend/locks";
 import { createJsonStore, type JsonStore } from "../../src/backend/storage";
 import type {
   Contained,
@@ -56,7 +57,9 @@ import {
 } from "./fakeOpencodeServer";
 import { unsupportedLaunch } from "./fakeContainer";
 import { createFakeVault, type FakeVault } from "./fakeVault";
+import { resolvePathLockKey } from "./rigProcesses";
 import type { ScheduledTask } from "./rotationHarness";
+import { settled } from "./settle";
 
 
 export const RIG_NOW_MS = 1_700_000_000_000;
@@ -125,6 +128,8 @@ export interface BackendRigOptions {
   readonly parentEnv?: NodeJS.ProcessEnv;
   readonly opencodeConfig?: FakeOpencodeConfig;
   readonly catalogProbeTimeoutMs?: number;
+  readonly resolveLockKey?: LockKeyResolver;
+  readonly backendLockKeys?: true;
   readonly vault?: FakeVault;
   readonly postUpdaterConfig?: BackendDeps["postUpdaterConfig"];
   readonly probeStopResults?: ConstructorParameters<
@@ -360,6 +365,9 @@ function rigDeps(
     ...(options.catalogProbeTimeoutMs === undefined
       ? {}
       : { catalogProbeTimeoutMs: options.catalogProbeTimeoutMs }),
+    ...(options.backendLockKeys === true
+      ? {}
+      : { resolveLockKey: options.resolveLockKey ?? resolvePathLockKey }),
     schedule: scheduler(log.scheduled, log.probeTasks),
     newRunId: runIds(),
     resolveExecutable:
@@ -525,7 +533,7 @@ export function agentOf(rig: BackendRig, index = 0): FakeAcpAgent {
 }
 
 export async function turnEnded(rig: BackendRig): Promise<void> {
-  await vi.waitFor(async () => {
+  await settled(async () => {
     const view = await rig.session();
     expect(view.turnInFlight).toBe(false);
     expect(view.lastTurn).not.toBeNull();

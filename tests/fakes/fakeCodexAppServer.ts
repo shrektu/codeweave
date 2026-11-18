@@ -2,7 +2,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { vi } from "vitest";
 import { z } from "zod";
 
 import type {
@@ -10,9 +9,7 @@ import type {
   AgentStartResult,
   AgentStartSpec,
 } from "../../src/backend/agentAdapter";
-import { createAgentProcesses } from "../../src/backend/agentProcesses";
 import { createCodexAdapter } from "../../src/backend/codex/adapter";
-import { WorktreeLocks } from "../../src/backend/locks";
 import {
   ContainerKind,
   type Contained,
@@ -32,6 +29,8 @@ import {
   unsupportedLaunch,
   type FakeContained,
 } from "./fakeContainer";
+import { rigProcesses } from "./rigProcesses";
+import { settled } from "./settle";
 
 export type Json = Readonly<Record<string, unknown>>;
 
@@ -662,12 +661,6 @@ export function specFor(
   };
 }
 
-export function rigProcesses(
-  container: ScriptedCodexContainer,
-): ReturnType<typeof createAgentProcesses> {
-  return createAgentProcesses({ container, locks: new WorktreeLocks() });
-}
-
 export async function startCodexHandle(
   rig: CodexRig,
   profile: PermissionProfile = PermissionProfile.ask,
@@ -700,7 +693,7 @@ export function codexContainedOf(rig: CodexRig): FakeContained {
 export async function codexPermissionRequestOf(
   events: readonly AgentEvent[],
 ): Promise<Extract<AgentEvent, { type: "permission_request" }>> {
-  return vi.waitFor(() => {
+  return settled(() => {
     const found = events.find((event) => event.type === "permission_request");
     if (found === undefined) {
       throw new Error("no permission_request yet");

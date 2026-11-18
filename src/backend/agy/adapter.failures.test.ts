@@ -24,6 +24,7 @@ import {
   waitForEvent,
 } from "../../../tests/fakes/fakeAgy";
 import { settlesWithin } from "../../../tests/fakes/fakeCodexAppServer";
+import { settled } from "../../../tests/fakes/settle";
 import type { AgentEvent } from "../../domain/events";
 import { PermissionProfile } from "../../domain/types";
 import { TurnInProgressError } from "../agentAdapter";
@@ -160,7 +161,7 @@ describe("agy adapter respawn races with stop", () => {
     rig.container.scriptTurn(replyTurn(CONV, "late"));
     await handle.setProfile(PermissionProfile.plan);
     const prompt = handle.prompt("late", { model: null });
-    await vi.waitFor(() => {
+    await settled(() => {
       expect(rig.container.gatedSpawns()).toBe(1);
     });
 
@@ -192,7 +193,7 @@ describe("agy adapter respawn races with cancel", () => {
     rig.container.scriptTurn(replyTurn(CONV, "late"));
     await handle.setProfile(PermissionProfile.plan);
     const prompt = handle.prompt("late", { model: null });
-    await vi.waitFor(() => {
+    await settled(() => {
       expect(rig.container.gatedSpawns()).toBe(1);
     });
 
@@ -265,7 +266,7 @@ describe("agy adapter authentication failures", () => {
         message: "Antigravity login required",
       },
     ]);
-    await vi.waitFor(() => {
+    await settled(() => {
       expect(rig.container.runningCount()).toBe(0);
     });
   });

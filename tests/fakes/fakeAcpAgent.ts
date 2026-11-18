@@ -1,7 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { vi } from "vitest";
 
 import {
   PROTOCOL_VERSION,
@@ -28,13 +27,11 @@ import type {
   AgentStartResult,
   AgentStartSpec,
 } from "../../src/backend/agentAdapter";
-import { createAgentProcesses } from "../../src/backend/agentProcesses";
 import {
   createClaudeAcpAdapter,
   openAcpStream,
 } from "../../src/backend/claude/acpAdapter";
 import { buildAgentEnv } from "../../src/backend/env";
-import { WorktreeLocks } from "../../src/backend/locks";
 import {
   ContainerKind,
   type Contained,
@@ -55,6 +52,8 @@ import {
   unsupportedLaunch,
   type FakeContained,
 } from "./fakeContainer";
+import { rigProcesses } from "./rigProcesses";
+import { settled } from "./settle";
 
 export const AUTH_REQUIRED_CODE = -32000;
 export const SESSION_ID = "fake-session-1";
@@ -456,7 +455,7 @@ export async function createRig(
   rigDirs.push(cwd);
   const container = new ScriptedAcpContainer(stopResults);
   const adapter = createClaudeAcpAdapter({
-    processes: createAgentProcesses({ container, locks: new WorktreeLocks() }),
+    processes: rigProcesses(container),
     envFor: (spec: AgentStartSpec) =>
       buildAgentEnv({
         parent: { PATH: "/usr/bin", ELECTRON_RUN_AS_NODE: "0" },
@@ -517,7 +516,7 @@ export function containedOf(rig: AcpRig): FakeContained {
 export async function permissionRequestOf(
   events: readonly AgentEvent[],
 ): Promise<Extract<AgentEvent, { type: "permission_request" }>> {
-  return vi.waitFor(() => {
+  return settled(() => {
     const found = events.find((event) => event.type === "permission_request");
     if (found === undefined) {
       throw new Error("no permission_request yet");

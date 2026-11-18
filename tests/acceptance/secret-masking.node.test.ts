@@ -30,6 +30,7 @@ import {
 } from "../fakes/fakeAcpAgent";
 import { createFakeVault } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
+import { settled } from "../fakes/settle";
 
 const KEY = "sk-test-groq-0001";
 const KEY_HEAD = "sk-test-gr";
@@ -127,7 +128,7 @@ it("claude_session_masks_key_in_permission_request_command", async () => {
 
   await rig.call("session/prompt", { text: "go" });
 
-  const view = await vi.waitFor(async () => {
+  const view = await settled(async () => {
     const current = await rig.session();
     expect(current.permissions).toHaveLength(1);
     return current;
@@ -256,7 +257,7 @@ async function promptedOpencodeView(
   );
   await service.start({ cwd, profile: "ask" });
   await service.prompt("go");
-  return vi.waitFor(() => {
+  return settled(() => {
     const view = service.view();
     if (view === null) {
       throw new Error("no session");
@@ -382,7 +383,7 @@ const KEY_RETRY_WAIT_MS = 10_000;
 async function promptEchoing(rig: BackendRig, text: string): Promise<string> {
   agentOf(rig).enqueue([{ type: "text", messageId: "m1", text }, END_TURN]);
   await rig.call("session/prompt", { text: "go" });
-  await vi.waitFor(async () => {
+  await settled(async () => {
     const view = await rig.session();
     expect(view.turnInFlight).toBe(false);
     expect(view.lastTurn).not.toBeNull();
@@ -434,7 +435,7 @@ it("prompt_failure_log_is_masked", async () => {
   await service.start({ cwd, profile: "ask" });
 
   await service.prompt("go");
-  const view = await vi.waitFor(() => {
+  const view = await settled(() => {
     const current = service.view();
     expect(current?.lastTurn).not.toBeNull();
     return current;

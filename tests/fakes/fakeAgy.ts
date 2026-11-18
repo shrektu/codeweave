@@ -3,7 +3,6 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
-import { vi } from "vitest";
 import { z } from "zod";
 
 import type {
@@ -11,13 +10,11 @@ import type {
   AgentStartResult,
   AgentStartSpec,
 } from "../../src/backend/agentAdapter";
-import { createAgentProcesses } from "../../src/backend/agentProcesses";
 import { createAgyAdapter } from "../../src/backend/agy/adapter";
 import { writeAgyHookConfig } from "../../src/backend/agy/hookConfig";
 import { runHook } from "../../src/backend/agy/hookRun";
 import { fingerprintAgentsDir } from "../../src/backend/agy/workspaceGuard";
 import { buildAgentEnv } from "../../src/backend/env";
-import { WorktreeLocks } from "../../src/backend/locks";
 import {
   ContainerKind,
   type Contained,
@@ -33,6 +30,8 @@ import {
 } from "../../src/domain/types";
 
 import { FakeContained, unsupportedLaunch } from "./fakeContainer";
+import { rigProcesses } from "./rigProcesses";
+import { settled } from "./settle";
 
 export type Json = Readonly<Record<string, unknown>>;
 
@@ -773,7 +772,7 @@ export async function createAgyRig(
       });
     },
     fingerprintWorkspace: options.fingerprintWorkspace ?? fingerprintAgentsDir,
-    processes: createAgentProcesses({ container, locks: new WorktreeLocks() }),
+    processes: rigProcesses(container),
     container,
     envFor: (spec) =>
       buildAgentEnv({
@@ -845,7 +844,7 @@ export function waitForEvent(
   events: readonly AgentEvent[],
   type: AgentEvent["type"],
 ): Promise<AgentEvent> {
-  return vi.waitFor(() => {
+  return settled(() => {
     const found = events.find((event) => event.type === type);
     if (found === undefined) {
       throw new Error(`no ${type} event yet`);

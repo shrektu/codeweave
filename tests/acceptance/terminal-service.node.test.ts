@@ -17,6 +17,7 @@ import {
   type TerminalRigOptions,
 } from "../fakes/fakeTerminal";
 import { makeTempDir } from "../fakes/processHelpers";
+import { settled } from "../fakes/settle";
 
 const COLS = 100;
 const ROWS = 30;
@@ -374,7 +375,7 @@ it("no_terminal_data_for_the_old_id_after_retarget_starts", async () => {
   };
 
   const retargeting = rig.service.retarget(other);
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(rig.timers.activeCount()).toBe(1);
   });
   pty.emitData("dying output\n");

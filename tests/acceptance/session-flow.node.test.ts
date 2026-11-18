@@ -1,7 +1,8 @@
+import { realpath } from "node:fs/promises";
 import { MessageChannel, type MessagePort } from "node:worker_threads";
 import { join } from "node:path";
 
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi, type MockInstance } from "vitest";
 
 import { createConnectionRegistry } from "../../src/backend/connections";
 import { ContainerUnavailableError } from "../../src/backend/process/container";
@@ -23,6 +24,7 @@ import {
   DEFAULT_PERMISSION_OPTIONS,
   type ScriptStep,
 } from "../fakes/fakeAcpAgent";
+import { settled } from "../fakes/settle";
 
 const RATE_LIMIT_FAILURE: ScriptStep = {
   type: "fail",
@@ -32,10 +34,12 @@ const RATE_LIMIT_FAILURE: ScriptStep = {
 };
 const END_TURN: ScriptStep = { type: "end", stopReason: "end_turn" };
 const RESET_AFTER_COOLDOWN_SECONDS = 1_700_003_600;
+const GIT_FALLBACK_WARNING = "not a git worktree, locking on path";
 
 const ports: MessagePort[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const port of ports.splice(0)) {
     port.close();
   }
@@ -91,7 +95,7 @@ it("user_turn_settles_through_controller", async () => {
 
   await rig.call("session/prompt", { text: "go" });
 
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect((await rig.session()).phase).toEqual({
       phase: "waiting",
       accountId: ACCOUNT_A.id,
@@ -120,7 +124,7 @@ it("ask_permission_snapshot_and_exact_option_answer", async () => {
 
   await rig.call("session/prompt", { text: "test it" });
 
-  const pending = await vi.waitFor(async () => {
+  const pending = await settled(async () => {
     const { permissions } = await rig.session();
     expect(permissions).toHaveLength(1);
     return permissions;
@@ -217,7 +221,7 @@ it("ui_reconnect_restores_pending_permission", async () => {
     END_TURN,
   ]);
   await rig.call("session/prompt", { text: "list" });
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect((await rig.session()).permissions).toHaveLength(1);
   });
   const registry = createConnectionRegistry(rig.backend.handlers);
@@ -225,7 +229,7 @@ it("ui_reconnect_restores_pending_permission", async () => {
   ports.push(first.port1, first.port2);
   registry.connect(fromNodePort(first.port1));
   first.port2.close();
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(registry.size()).toBe(0);
   });
 
@@ -271,7 +275,7 @@ it("rotation_stops_a_before_spawning_b_with_context_package", async () => {
 
   await rig.call("session/prompt", { text: "make the tests pass" });
 
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(rig.container.agents).toHaveLength(2);
     expect(agentOf(rig, 1).prompts).toHaveLength(1);
   });
@@ -284,7 +288,7 @@ it("rotation_stops_a_before_spawning_b_with_context_package", async () => {
   expect(handoff).toContain("1. make the tests pass");
   expect(handoff).toContain("- Run tests\n  Status: completed");
   expect(handoff).toContain("Result: 12 passed");
-  await vi.waitFor(async () => {
+  await settled(async () => {
     const view = await rig.session();
     expect(view.phase).toEqual({ phase: "running", accountId: ACCOUNT_B.id });
     expect(view.turnInFlight).toBe(false);
@@ -308,7 +312,7 @@ it("accounts_changed_broadcast_marks_exhausted_account", async () => {
 
   await rig.call("session/prompt", { text: "go" });
 
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(rig.broadcastsOf("accounts/changed").at(-1)).toEqual({
       accounts: [
         {
@@ -342,7 +346,7 @@ it("exhausted_turn_records_rejected_limit", async () => {
 
   await rig.call("session/prompt", { text: "go" });
 
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect((await rig.session()).limits).toEqual([
       {
         accountId: ACCOUNT_A.id,
@@ -377,7 +381,7 @@ it("runtime_broadcast_on_needs_login", async () => {
 
   await rig.call("session/prompt", { text: "go" });
 
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(rig.broadcastsOf("accounts/changed").at(-1)).toEqual({
       accounts: [
         {
@@ -406,7 +410,7 @@ it("runtime_broadcast_on_new_session_resets", async () => {
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
   await rig.call("session/prompt", { text: "go" });
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(rig.broadcastsOf("accounts/changed")).toHaveLength(1);
   });
 
@@ -414,7 +418,7 @@ it("runtime_broadcast_on_new_session_resets", async () => {
   expect(rig.broadcastsOf("accounts/changed")).toHaveLength(1);
   await rig.call("session/start", startParams(rig));
 
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(rig.broadcastsOf("accounts/changed").at(-1)).toEqual({
       accounts: [
         {
@@ -462,7 +466,7 @@ it("context_package_names_command_from_tool_call_update", async () => {
 
   await rig.call("session/prompt", { text: "ship it" });
 
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(agentOf(rig, 1).prompts).toHaveLength(1);
   });
   const handoff = agentOf(rig, 1).prompts[0] ?? "";
@@ -498,4 +502,44 @@ it("session_start_unavailable_without_container", async () => {
     available: false,
     message: "No container here",
   });
+});
+
+function gitFallbackWarnings(spy: MockInstance<typeof console.warn>): number {
+  return spy.mock.calls.filter(
+    ([first]) =>
+      typeof first === "string" && first.includes(GIT_FALLBACK_WARNING),
+  ).length;
+}
+
+it("session_launch_uses_the_lock_resolver_from_backend_deps", async () => {
+  const recorded: string[] = [];
+  const rig = await open({
+    accounts: [ACCOUNT_A, ACCOUNT_B],
+    resolveLockKey: (cwd) => {
+      recorded.push(cwd);
+      return realpath(cwd);
+    },
+  });
+
+  await rig.call("session/start", startParams(rig));
+
+  expect(recorded).toEqual([rig.cwd]);
+});
+
+it("rig_session_start_makes_no_git_lock_lookup", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const rig = await open();
+
+  await rig.call("session/start", startParams(rig));
+
+  expect(gitFallbackWarnings(warn)).toBe(0);
+});
+
+it("backend_without_lock_resolver_falls_back_to_git_lookup", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const rig = await open({ accounts: [ACCOUNT_A], backendLockKeys: true });
+
+  await rig.call("session/start", startParams(rig));
+
+  expect(gitFallbackWarnings(warn)).toBe(1);
 });

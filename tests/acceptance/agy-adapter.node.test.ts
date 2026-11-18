@@ -34,6 +34,7 @@ import {
   responseDoneStep,
 } from "../fakes/fakeAgy";
 import { settlesWithin } from "../fakes/fakeCodexAppServer";
+import { settled } from "../fakes/settle";
 
 const CONV = "conv-1";
 const SETTLE_BOUND_MS = 2000;
@@ -524,7 +525,7 @@ describe("agy adapter cancel without a result and exits", () => {
     ]);
 
     await handle.prompt("work", { model: null });
-    await vi.waitFor(() => {
+    await settled(() => {
       expect(events.at(-1)).toEqual({ type: "process_exit" });
     });
 
@@ -752,7 +753,7 @@ describe("agy adapter stop and cancel racing a respawn", () => {
     rig.container.scriptTurn(replyTurn(CONV, "late"));
     await handle.setProfile(PermissionProfile.plan);
     const prompt = handle.prompt("late", { model: null });
-    await vi.waitFor(() => {
+    await settled(() => {
       expect(rig.container.gatedSpawns()).toBe(1);
     });
 
@@ -779,7 +780,7 @@ describe("agy adapter cancel racing a respawn", () => {
     rig.container.scriptTurn(replyTurn(CONV, "late"));
     await handle.setProfile(PermissionProfile.plan);
     const prompt = handle.prompt("late", { model: null });
-    await vi.waitFor(() => {
+    await settled(() => {
       expect(rig.container.gatedSpawns()).toBe(1);
     });
 

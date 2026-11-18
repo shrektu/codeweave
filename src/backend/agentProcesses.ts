@@ -1,4 +1,4 @@
-import { resolveLockKey, type Lease, type WorktreeLocks } from "./locks";
+import type { Lease, LockKeyResolver, WorktreeLocks } from "./locks";
 import type {
   Contained,
   ProcessContainer,
@@ -20,6 +20,7 @@ export interface AgentProcess {
 export interface AgentProcessesDeps {
   readonly container: ProcessContainer;
   readonly locks: WorktreeLocks;
+  readonly resolveLockKey: LockKeyResolver;
   readonly onFailure?: (failure: AgentFailure) => void;
 }
 
@@ -46,7 +47,7 @@ function settle(
 export function createAgentProcesses(deps: AgentProcessesDeps): AgentProcesses {
   return {
     async start(spec: SpawnSpec): Promise<AgentProcess> {
-      const lease = deps.locks.acquire(await resolveLockKey(spec.cwd));
+      const lease = deps.locks.acquire(await deps.resolveLockKey(spec.cwd));
       let contained: Contained;
       try {
         contained = await deps.container.spawn(spec);

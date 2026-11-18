@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it } from "vitest";
 import { z } from "zod";
 
 import type { ApiProviderId } from "../../src/domain/apiProviders";
@@ -19,6 +19,7 @@ import {
   OPENCODE_SESSION_ID,
   type OpencodeStep,
 } from "../fakes/fakeOpencodeServer";
+import { settled } from "../fakes/settle";
 
 const PROMPT_PATH = `/session/${OPENCODE_SESSION_ID}/prompt_async`;
 const GROQ_MODEL = "llama-3.3-70b-versatile";
@@ -85,8 +86,8 @@ async function startOpencode(
   });
 }
 
-async function settled(rig: BackendRig): Promise<SessionView> {
-  return vi.waitFor(async () => {
+async function turnSettled(rig: BackendRig): Promise<SessionView> {
+  return settled(async () => {
     const view = await rig.session();
     expect(view.turnInFlight).toBe(false);
     return view;
@@ -98,7 +99,7 @@ async function promptAndSettle(
   params: ParamsMap["session/prompt"],
 ): Promise<SessionView> {
   await rig.call("session/prompt", params);
-  return settled(rig);
+  return turnSettled(rig);
 }
 
 async function promptOn(
@@ -110,7 +111,7 @@ async function promptOn(
 }
 
 async function runningOn(rig: BackendRig, accountId: string): Promise<void> {
-  await vi.waitFor(async () => {
+  await settled(async () => {
     const view = await rig.session();
     expect(view.phase).toEqual({ phase: "running", accountId });
     expect(view.turnInFlight).toBe(false);
@@ -187,7 +188,7 @@ it("rotation routes the resend on the next account", async () => {
   const view = await rig.session();
 
   expect(promptedModels(rig, 0)).toEqual(["openai/gpt-oss-120b"]);
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(promptedModels(rig, 1)).toEqual(["qwen-3.8-27b"]);
   });
   expect(view.turns).toEqual([
@@ -222,7 +223,7 @@ it("agent model stays on its own provider after rotation", async () => {
   const view = await rig.session();
 
   expect(promptedModels(rig, 0)).toEqual(["openai/gpt-oss-20b"]);
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(promptedModels(rig, 1)).toEqual(["qwen-3.8-27b"]);
   });
   expect(view.turns).toEqual([
@@ -277,7 +278,7 @@ it("override for another provider falls back to routing", async () => {
   const view = await rig.session();
 
   expect(promptedModels(rig, 0)).toEqual(["openai/gpt-oss-20b"]);
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(promptedModels(rig, 1)).toEqual(["qwen-3.8-27b"]);
   });
   expect(view.turns).toEqual([

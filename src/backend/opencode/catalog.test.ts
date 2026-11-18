@@ -2,15 +2,15 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it } from "vitest";
 
 import {
   OPENCODE_RIG_EXECUTABLE,
   OPENCODE_RIG_PASSWORD,
   ScriptedOpencodeContainer,
 } from "../../../tests/fakes/fakeOpencodeServer";
-import { createAgentProcesses } from "../agentProcesses";
-import { WorktreeLocks } from "../locks";
+import { rigProcesses } from "../../../tests/fakes/rigProcesses";
+import { settled } from "../../../tests/fakes/settle";
 
 import {
   createModelCatalog,
@@ -83,7 +83,7 @@ async function catalogRig(
   const executable = { current: OPENCODE_RIG_EXECUTABLE };
   let runs = 0;
   const catalog = createModelCatalog({
-    processes: createAgentProcesses({ container, locks: new WorktreeLocks() }),
+    processes: rigProcesses(container),
     envFor: () => ({ PATH: "/usr/bin" }),
     resolveExecutable: resolve ?? (() => Promise.resolve(executable.current)),
     directory,
@@ -329,7 +329,7 @@ async function loadWhileProbeRuns(
   rig.container.config.providers = providers(["groq", [model("llama")]]);
   rig.container.config.delayedRoutes = new Map([["config", SLOW_WARM_UP_MS]]);
   const first = rig.catalog.load();
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(rig.container.servers).toHaveLength(1);
   });
   rig.executable.current = OTHER_EXECUTABLE;
