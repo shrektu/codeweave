@@ -28,6 +28,7 @@ export interface ProcessEntry {
   readonly pid: number;
   readonly ppid: number;
   readonly marker: string | null;
+  readonly identity?: string;
 }
 
 export interface ProcessTable {
@@ -48,6 +49,9 @@ const STAT_FIELDS_AFTER_COMM_OFFSET = 2;
 const STAT_PPID_INDEX = 1;
 const ENV_ENTRY_SEPARATOR = "\0";
 const ABSENT_PROCESS_CODE = "ESRCH";
+const DENIED_PROCESS_CODE = "EPERM";
+const ENVIRON_DENIED_CODES: readonly string[] = ["EACCES", DENIED_PROCESS_CODE];
+const STAT_START_TIME_INDEX = 19;
 const INIT_PID = 1;
 
 function errnoCode(error: unknown): string | undefined {
@@ -74,11 +78,22 @@ function instanceOf(marker: string): string {
   return separator < 0 ? "" : marker.slice(0, separator);
 }
 
-function parseParentPid(stat: string): number {
-  const fields = stat
+function statFields(stat: string): string[] {
+  return stat
     .slice(stat.lastIndexOf(")") + STAT_FIELDS_AFTER_COMM_OFFSET)
     .split(" ");
-  return Number(fields[STAT_PPID_INDEX]);
+}
+
+async function readEnviron(directory: string): Promise<string> {
+  try {
+    return await readFile(join(directory, "environ"), "utf8");
+  } catch (error) {
+    const code = errnoCode(error);
+    if (code !== undefined && ENVIRON_DENIED_CODES.includes(code)) {
+      return "";
+    }
+    throw error;
+  }
 }
 
 async function readEntry(
@@ -89,9 +104,15 @@ async function readEntry(
   try {
     const [stat, environ] = await Promise.all([
       readFile(join(directory, "stat"), "utf8"),
-      readFile(join(directory, "environ"), "utf8"),
+      readEnviron(directory),
     ]);
-    return { pid, ppid: parseParentPid(stat), marker: parseMarker(environ) };
+    const fields = statFields(stat);
+    return {
+      pid,
+      ppid: Number(fields[STAT_PPID_INDEX]),
+      marker: parseMarker(environ),
+      identity: fields[STAT_START_TIME_INDEX] ?? "",
+    };
   } catch (error) {
     if (isIgnorableProcError(error)) {
       return null;
@@ -114,6 +135,44 @@ export function createProcProcessTable(
       return entries.filter((entry) => entry !== null);
     },
   };
+}
+
+function depthOf(
+  pid: number,
+  parents: ReadonlyMap<number, number>,
+  members: ReadonlySet<number>,
+): number {
+  const seen = new Set([pid]);
+  let depth = 0;
+  for (
+    let parent = parents.get(pid);
+    parent !== undefined && members.has(parent) && !seen.has(parent);
+    parent = parents.get(parent)
+  ) {
+    seen.add(parent);
+    depth += 1;
+  }
+  return depth;
+}
+
+export function orderedMembers(
+  table: readonly ProcessEntry[],
+  roots: ReadonlySet<number>,
+): number[] {
+  const children = Map.groupBy(table, (entry) => entry.ppid);
+  const members = new Set<number>();
+  const pending = [...roots];
+  for (let pid = pending.pop(); pid !== undefined; pid = pending.pop()) {
+    if (!members.has(pid)) {
+      members.add(pid);
+      pending.push(...(children.get(pid) ?? []).map((entry) => entry.pid));
+    }
+  }
+  const parents = new Map(table.map((entry) => [entry.pid, entry.ppid]));
+  return [...members]
+    .map((pid) => ({ pid, depth: depthOf(pid, parents, members) }))
+    .toSorted((left, right) => right.depth - left.depth)
+    .map(({ pid }) => pid);
 }
 
 class EnvMarkerContainer implements ProcessContainer {
@@ -166,17 +225,18 @@ class EnvMarkerContainer implements ProcessContainer {
       ...this.selfAndAncestors(table),
       ...this.parentTree(table),
     ]);
-    const orphans = table.filter(
+    const holders = table.filter(
       (entry) =>
         entry.marker !== null &&
         stale.has(instanceOf(entry.marker)) &&
         !this.liveMarkers.has(entry.marker) &&
         !protectedPids.has(entry.pid),
     );
-    for (const orphan of orphans) {
-      this.killQuietly(orphan.pid);
-    }
-    return orphans.length;
+    const orphans = orderedMembers(
+      table,
+      new Set(holders.map((entry) => entry.pid)),
+    ).filter((pid) => !protectedPids.has(pid));
+    return orphans.filter((pid) => this.killQuietly(pid)).length;
   }
 
   private selfAndAncestors(table: readonly ProcessEntry[]): Set<number> {
@@ -208,18 +268,36 @@ class EnvMarkerContainer implements ProcessContainer {
   }
 
   private opsFor(marker: string, launched: LaunchedProcess): ContainerOps {
+    const remembered = new Map<number, string | undefined>();
     const members = async (): Promise<readonly number[]> => {
       const table = await this.deps.processTable.list();
-      const pids = new Set(
-        table.filter((entry) => entry.marker === marker).map((e) => e.pid),
-      );
-      if (launched.pid > 0 && !launched.hasExited()) {
-        pids.add(launched.pid);
+      const byPid = new Map(table.map((entry) => [entry.pid, entry]));
+      for (const [pid, identity] of remembered) {
+        if (byPid.get(pid)?.identity !== identity || !byPid.has(pid)) {
+          remembered.delete(pid);
+        }
       }
-      return [...pids];
+      const roots = new Set([
+        ...table.filter((entry) => entry.marker === marker).map((e) => e.pid),
+        ...remembered.keys(),
+      ]);
+      if (launched.pid > 0 && !launched.hasExited()) {
+        roots.add(launched.pid);
+      }
+      const ordered = orderedMembers(table, roots);
+      for (const pid of ordered) {
+        const entry = byPid.get(pid);
+        if (entry !== undefined) {
+          remembered.set(pid, entry.identity);
+        }
+      }
+      return ordered;
     };
     return {
       members,
+      beforeStop: async () => {
+        await members();
+      },
       killMembers: async () => {
         for (let round = 0; round < MARKER_KILL_MAX_ROUNDS; round += 1) {
           const pids = await members();
@@ -235,13 +313,18 @@ class EnvMarkerContainer implements ProcessContainer {
     };
   }
 
-  private killQuietly(pid: number): void {
+  private killQuietly(pid: number): boolean {
     try {
       this.deps.kill(pid, "SIGKILL");
+      return true;
     } catch (error) {
-      if (errnoCode(error) !== ABSENT_PROCESS_CODE) {
+      const code = errnoCode(error);
+      if (code === DENIED_PROCESS_CODE) {
+        console.warn(`kill denied for pid ${String(pid)}, skipping`);
+      } else if (code !== ABSENT_PROCESS_CODE) {
         throw error;
       }
+      return false;
     }
   }
 }

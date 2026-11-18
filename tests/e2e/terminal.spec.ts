@@ -22,6 +22,11 @@ const OUTPUT_TEXT = "cw-ok";
 const OUTPUT_COMMAND = IS_WINDOWS
   ? 'Write-Output ("cw-" + "ok")'
   : "printf 'cw-%s\\n' ok";
+const RUN_MARKER_ENV = "CODEWEAVE_RUN_ID";
+const PRINT_MARKER_COMMAND = IS_WINDOWS
+  ? `$env:${RUN_MARKER_ENV}`
+  : `echo $${RUN_MARKER_ENV}`;
+const RUN_MARKER_PATTERN = /[0-9a-f]{32}:[A-Za-z0-9_-]+/;
 const MARKER_FILE = "cw-marker.txt";
 const MARKER_COMMAND = IS_WINDOWS
   ? `Set-Content ${MARKER_FILE} ok`
@@ -134,6 +139,24 @@ test("terminal_dom_renderer_shows_typed_command_output", async () => {
     });
 
     await page.screenshot({ path: SCREENSHOT_PATH });
+  });
+});
+
+test("terminal_shell_carries_the_run_marker_on_windows_and_mac", async () => {
+  test.skip(
+    process.platform === "linux",
+    "The systemd scope container sets no run marker",
+  );
+  await withTerminalApp([DISABLE_GPU_FLAG], async ({ page }) => {
+    const host = await openTerminalInFolder(page);
+    await waitForPrompt(host);
+
+    await typeCommand(host, PRINT_MARKER_COMMAND);
+
+    await expect(host.locator(".xterm-rows")).toContainText(
+      RUN_MARKER_PATTERN,
+      { timeout: STEP_TIMEOUT_MS },
+    );
   });
 });
 

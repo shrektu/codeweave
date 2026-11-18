@@ -1,4 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import process from "node:process";
+
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   builderInvocation,
@@ -365,5 +371,77 @@ describe("childEnvironment", () => {
       CSC_FOR_PULL_REQUEST: "true",
     });
     expect(child).not.toHaveProperty("CSC_LINK");
+  });
+});
+
+const VERIFY_CLI = resolve(
+  import.meta.dirname,
+  "../../scripts/release/verify.ts",
+);
+const HEADER_SIZE = 4096;
+const ELF_MACHINE_OFFSET = 18;
+const ELF_X64 = 0x3e;
+const UNPACKED_MODULES =
+  "linux-unpacked/resources/app.asar.unpacked/node_modules";
+const verifyDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of verifyDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function elfX64(): Buffer {
+  const header = Buffer.alloc(HEADER_SIZE);
+  header.write("\x7fELF", 0, "latin1");
+  header[4] = 2;
+  header[5] = 1;
+  header.writeUInt16LE(ELF_X64, ELF_MACHINE_OFFSET);
+  return header;
+}
+
+function releaseDirWith(packages: readonly string[]): string {
+  const dir = mkdtempSync(join(tmpdir(), "release-verify-"));
+  verifyDirs.push(dir);
+  const files = [
+    "linux-unpacked/codeweave",
+    `${UNPACKED_MODULES}/node-pty/build/Release/pty.node`,
+    ...packages,
+  ];
+  for (const file of files) {
+    const target = join(dir, file);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, elfX64());
+  }
+  return dir;
+}
+
+const MATCHING_PACKAGES = [
+  `${UNPACKED_MODULES}/@anthropic-ai/claude-agent-sdk-linux-x64/claude`,
+  `${UNPACKED_MODULES}/@koromix/koffi-linux-x64/koffi.node`,
+];
+
+function runVerify(releaseDir: string): {
+  status: number | null;
+  stderr: string;
+} {
+  const { status, stderr } = spawnSync(
+    process.execPath,
+    [VERIFY_CLI, releaseDir],
+    { encoding: "utf8" },
+  );
+  return { status, stderr };
+}
+
+describe("release verify command", () => {
+  it("exits_zero_for_a_release_dir_without_violations", () => {
+    expect(runVerify(releaseDirWith(MATCHING_PACKAGES)).status).toBe(0);
+  });
+
+  it("exits_non_zero_and_names_the_violation_for_a_missing_koffi_package", () => {
+    const result = runVerify(releaseDirWith([MATCHING_PACKAGES[0] ?? ""]));
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("koffi-linux-x64: missing koffi package");
   });
 });

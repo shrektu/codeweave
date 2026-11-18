@@ -13,6 +13,24 @@ describe("execText", () => {
     );
   });
 
+  it("exec_passes_extra_env_on_top_of_the_process_env", async () => {
+    process.env.CODEWEAVE_EXEC_INHERITED = "from-parent";
+    try {
+      const stdout = await execText(
+        process.execPath,
+        [
+          "-e",
+          "console.log(process.env.CODEWEAVE_EXEC_INHERITED, process.env.CODEWEAVE_EXEC_EXTRA)",
+        ],
+        { env: { CODEWEAVE_EXEC_EXTRA: "from-options" } },
+      );
+
+      expect(stdout).toBe("from-parent from-options\n");
+    } finally {
+      delete process.env.CODEWEAVE_EXEC_INHERITED;
+    }
+  });
+
   it("exec_timeout_kills_the_hanging_child", async () => {
     const startedAt = Date.now();
 

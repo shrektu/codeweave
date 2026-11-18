@@ -25,6 +25,8 @@ const FAT_ENTRY_SIZE = 20;
 const FAT_FIRST_ENTRY = 8;
 const SDK_DIR = "app.asar.unpacked/node_modules/@anthropic-ai";
 
+const KOFFI_DIR = "app.asar.unpacked/node_modules/@koromix";
+
 const tempDirs: string[] = [];
 
 afterEach(() => {
@@ -96,8 +98,33 @@ function linuxApp(arch: "x64" | "arm64" = "x64"): string {
     `resources/${SDK_DIR}/claude-agent-sdk-linux-${arch}/claude`,
     elf(machine),
   );
+  put(
+    root,
+    `resources/${KOFFI_DIR}/koffi-linux-${arch}/koffi.node`,
+    elf(machine),
+  );
   put(root, "resources/app.asar.unpacked/node_modules/zod/index.js", "js");
   return join(root, "resources");
+}
+
+const MAC_PREBUILDS =
+  "Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/darwin-arm64";
+
+function macApp(): string {
+  const root = makeRoot();
+  put(root, "Contents/MacOS/Codeweave", macho(MACHO_ARM64));
+  put(root, `${MAC_PREBUILDS}/pty.node`, macho(MACHO_ARM64));
+  put(
+    root,
+    `Contents/Resources/${SDK_DIR}/claude-agent-sdk-darwin-arm64/claude`,
+    macho(MACHO_ARM64),
+  );
+  put(
+    root,
+    `Contents/Resources/${KOFFI_DIR}/koffi-darwin-arm64/koffi.node`,
+    macho(MACHO_ARM64),
+  );
+  return join(root, "Contents/Resources");
 }
 
 describe("binaryArch", () => {
@@ -190,6 +217,58 @@ describe("checkPackagedApp", () => {
     ).not.toEqual([]);
   });
 
+  it("reports_a_foreign_koffi_package", () => {
+    const resources = linuxApp();
+    put(resources, `${KOFFI_DIR}/koffi-win32-x64/koffi.node`, pe(PE_X64));
+
+    const violations = checkPackagedApp(resources, "linux", "x64");
+
+    expect(
+      violations.filter((line) => line.includes("koffi-win32-x64")),
+    ).not.toEqual([]);
+  });
+
+  it.each([
+    ["linux", "x64", linuxApp],
+    ["darwin", "arm64", macApp],
+    ["win32", "x64", windowsApp],
+  ] as const)(
+    "accepts_the_matching_koffi_package on %s",
+    (platform, arch, app) => {
+      expect(checkPackagedApp(app(), platform, arch)).toEqual([]);
+    },
+  );
+
+  it.each([
+    ["linux", "x64", linuxApp],
+    ["darwin", "arm64", macApp],
+    ["win32", "x64", windowsApp],
+  ] as const)(
+    "reports_a_missing_koffi_package on %s",
+    (platform, arch, app) => {
+      const resources = app();
+      rmSync(join(resources, KOFFI_DIR), { recursive: true });
+
+      const violations = checkPackagedApp(resources, platform, arch);
+
+      expect(violations).toHaveLength(1);
+      expect(violations[0]).toContain(`koffi-${platform}-${arch}`);
+      expect(violations[0]).toContain("missing koffi package");
+    },
+  );
+
+  it("reports_a_foreign_koffi_package_in_a_win32_app", () => {
+    const resources = windowsApp();
+    put(resources, `${KOFFI_DIR}/koffi-win32-arm64/koffi.node`, pe(PE_ARM64));
+
+    const violations = checkPackagedApp(resources, "win32", "x64").filter(
+      (line) => line.includes("foreign"),
+    );
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toContain("koffi-win32-arm64");
+  });
+
   it("musl_claude_agent_sdk_variant_in_a_linux_app_is_a_violation", () => {
     const resources = linuxApp();
     put(
@@ -230,6 +309,11 @@ describe("checkPackagedApp on mac and windows trees", () => {
       `Contents/Resources/${SDK_DIR}/claude-agent-sdk-darwin-arm64/claude`,
       macho(MACHO_ARM64),
     );
+    put(
+      root,
+      `Contents/Resources/${KOFFI_DIR}/koffi-darwin-arm64/koffi.node`,
+      macho(MACHO_ARM64),
+    );
 
     expect(
       checkPackagedApp(join(root, "Contents/Resources"), "darwin", "arm64"),
@@ -252,6 +336,11 @@ describe("checkPackagedApp on mac and windows trees", () => {
     put(
       root,
       `Contents/Resources/${SDK_DIR}/claude-agent-sdk-darwin-arm64/claude`,
+      macho(MACHO_ARM64),
+    );
+    put(
+      root,
+      `Contents/Resources/${KOFFI_DIR}/koffi-darwin-arm64/koffi.node`,
       macho(MACHO_ARM64),
     );
 
@@ -281,6 +370,7 @@ function windowsApp(): string {
     `resources/${SDK_DIR}/claude-agent-sdk-win32-x64/claude.exe`,
     pe(PE_X64),
   );
+  put(root, `resources/${KOFFI_DIR}/koffi-win32-x64/koffi.node`, pe(PE_X64));
   return join(root, "resources");
 }
 

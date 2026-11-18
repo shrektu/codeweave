@@ -11,6 +11,7 @@ const execFileAsync = promisify(execFile);
 
 export interface ExecOptions {
   readonly timeoutMs?: number;
+  readonly env?: Readonly<Record<string, string>>;
 }
 
 export type ExecText = (
@@ -25,6 +26,9 @@ export const execText: ExecText = async (file, args, options) => {
     maxBuffer: GIT_MAX_BUFFER_BYTES,
     timeout: options?.timeoutMs ?? EXEC_TIMEOUT_MS,
     killSignal: EXEC_KILL_SIGNAL,
+    ...(options?.env === undefined
+      ? {}
+      : { env: { ...process.env, ...options.env } }),
   });
   return stdout;
 };
