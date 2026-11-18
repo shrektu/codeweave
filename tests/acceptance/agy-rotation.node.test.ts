@@ -1,7 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { createExecutableResolver } from "../../src/backend/startup";
 import type { Account } from "../../src/domain/types";
@@ -20,6 +20,7 @@ import {
 } from "../fakes/backendRig";
 import { RIG_EXEC_PATH } from "../fakes/fakeAcpAgent";
 import { settlesWithin } from "../fakes/fakeCodexAppServer";
+import { settled } from "../fakes/settle";
 import {
   quotaFailureTurn,
   replyTurn,
@@ -37,7 +38,6 @@ import {
 const CONV = "conv-1";
 const FIVE_HOUR_RESET = 1_793_364_876;
 const WEEKLY_RESET = 1_793_614_882;
-const SETTLE_TIMEOUT_MS = 4000;
 const ABORT_SETTLE_MS = 2000;
 const CHANGED_MESSAGE =
   "Gemini workspace config (.agents) changed during this session; review it and start a new session";
@@ -87,12 +87,9 @@ async function geminiRig(
 }
 
 async function firstCycleDone(rig: BackendRig): Promise<void> {
-  await vi.waitFor(
-    () => {
-      expect(rig.probeTasks).toHaveLength(1);
-    },
-    { timeout: SETTLE_TIMEOUT_MS },
-  );
+  await settled(() => {
+    expect(rig.probeTasks).toHaveLength(1);
+  });
 }
 
 async function viewOf(rig: BackendRig, id: string): Promise<AccountView> {
@@ -176,7 +173,7 @@ describe("gemini quota rotation", () => {
 
     await rig.call("session/prompt", { text: "ship the release" });
 
-    await vi.waitFor(async () => {
+    await settled(async () => {
       const view = await rig.session();
       expect(view.phase).toEqual({
         phase: "running",
@@ -255,12 +252,9 @@ describe("gemini limit probe", () => {
 describe("gemini limit probe abort", () => {
   async function hangingProbeRig(): Promise<GeminiRig> {
     const geminiRigState = await geminiRig({ agyUsage: [{ kind: "hang" }] });
-    await vi.waitFor(
-      () => {
-        expect(geminiRigState.rig.agyContainer.probeSpawns()).toHaveLength(1);
-      },
-      { timeout: SETTLE_TIMEOUT_MS },
-    );
+    await settled(() => {
+      expect(geminiRigState.rig.agyContainer.probeSpawns()).toHaveLength(1);
+    });
     return geminiRigState;
   }
 

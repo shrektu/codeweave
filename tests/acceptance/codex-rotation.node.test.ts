@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { createExecutableResolver } from "../../src/backend/startup";
@@ -26,6 +26,7 @@ import {
   type RateLimitRead,
 } from "../fakes/fakeCodexAppServer";
 import { hostBinDirWith, hostResolverEnv } from "../fakes/processHelpers";
+import { settled } from "../fakes/settle";
 
 const RESET_AT = 1_700_003_600;
 const FIVE_HOUR_MINUTES = 300;
@@ -87,7 +88,7 @@ async function rotateCodexA(rig: BackendRig): Promise<string> {
     provider: "codex",
   });
   await rig.call("session/prompt", { text: "ship the release" });
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(rig.codexContainer.servers).toHaveLength(2);
     expect(rig.codexContainer.servers[1]?.methods() ?? []).toContain(
       "turn/start",
@@ -116,7 +117,7 @@ describe("codex rotation through the backend", () => {
     expect(handoff).toContain(
       "Side effect: do not re-run automatically; verify its effect first.",
     );
-    await vi.waitFor(async () => {
+    await settled(async () => {
       const view = await rig.session();
       expect(view.phase).toEqual({
         phase: "running",

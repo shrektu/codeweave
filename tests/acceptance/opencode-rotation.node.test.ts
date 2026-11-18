@@ -33,6 +33,7 @@ import {
   type OpencodeStep,
 } from "../fakes/fakeOpencodeServer";
 import { createFakeVault } from "../fakes/fakeVault";
+import { settled } from "../fakes/settle";
 
 const RATE_LIMITED: OpencodeStep = {
   type: "error",
@@ -46,6 +47,7 @@ const EXHAUSTED_TURN: readonly OpencodeStep[] = [
   { type: "idle" },
 ];
 const RESETS_AT = 1_700_000_120;
+const SLOW_RELAUNCH_MS = 1200;
 const PROMPT_PATH = `/session/${OPENCODE_SESSION_ID}/prompt_async`;
 const CODEX_RESET_AT = 1_700_003_600;
 const FIVE_HOUR_MINUTES = 300;
@@ -146,7 +148,7 @@ async function waitForPrompt(
   rig: BackendRig,
   serverIndex: number,
 ): Promise<string> {
-  return vi.waitFor(() => {
+  return settled(() => {
     const [first] = promptsTo(rig, serverIndex);
     if (first === undefined) {
       throw new Error(`server ${String(serverIndex)} has no prompt yet`);
@@ -171,7 +173,7 @@ async function exhaustCodexA(rig: BackendRig): Promise<void> {
 }
 
 async function runningOn(rig: BackendRig, accountId: string): Promise<void> {
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect((await rig.session()).phase).toEqual({
       phase: "running",
       accountId,
@@ -217,6 +219,20 @@ it("opencode_session_rotates_key_a_to_b", async () => {
   );
 });
 
+it("opencode_rotation_outlasts_slow_relaunch", async () => {
+  const rig = await openRig({});
+  await addApi(rig, { label: "Groq A", provider: "groq" });
+  const b = await addApi(rig, { label: "Cerebras B", provider: "cerebras" });
+  rig.opencodeContainer.scriptNextServer(EXHAUSTED_TURN);
+  await rig.call("session/start", { cwd: rig.cwd, provider: "opencode" });
+  rig.opencodeContainer.config.launchDelayMs = SLOW_RELAUNCH_MS;
+
+  await rig.call("session/prompt", { text: "ship the release" });
+
+  expect(await waitForPrompt(rig, 1)).toContain("1. ship the release");
+  await runningOn(rig, b.id);
+});
+
 it("paid_account_without_rotation_is_skipped", async () => {
   const rig = await openRig({});
   const a = await addApi(rig, { label: "Groq A", provider: "groq" });
@@ -233,7 +249,7 @@ it("paid_account_without_rotation_is_skipped", async () => {
   await rig.call("session/start", { cwd: rig.cwd, provider: "opencode" });
   await rig.call("session/prompt", { text: "go" });
 
-  await vi.waitFor(async () => {
+  await settled(async () => {
     const view = await rig.session();
     expect(view.phase).toMatchObject({ phase: "waiting" });
     expect(view.limits.map((limit) => limit.accountId).sort()).toEqual(
@@ -467,7 +483,7 @@ it("limit_probes_ignore_api_accounts", async () => {
   const rig = await openRig({ accounts: [ACCOUNT_CODEX_A] });
   const api = await addApi(rig, { label: "Groq A", provider: "groq" });
 
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(rig.probeTasks).toHaveLength(1);
   });
 
@@ -683,7 +699,7 @@ it("catalog_executable_change_mid_probe_returns_new_models", async () => {
   });
 
   const first = rig.call("models/catalog", {});
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(rig.opencodeContainer.servers).toHaveLength(1);
   });
   executable = RIG_OPENCODE_ALT_PATH;

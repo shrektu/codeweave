@@ -667,6 +667,7 @@ export interface FakeOpencodeConfig {
   delayedRoutes?: ReadonlyMap<Route["kind"], number>;
   providers?: unknown;
   assistantModel?: AssistantModel;
+  launchDelayMs?: number;
 }
 
 const StartupConfigSchema = z.looseObject({
@@ -718,6 +719,10 @@ export class ScriptedOpencodeContainer implements ProcessContainer {
   }
 
   async spawn(spec: SpawnSpec): Promise<Contained> {
+    const { launchDelayMs } = this.config;
+    if (launchDelayMs !== undefined) {
+      await new Promise((resolve) => setTimeout(resolve, launchDelayMs));
+    }
     const contained = new FakeContained(spec.runId, this.stopResults);
     this.specs.push(spec);
     this.contained.push(contained);

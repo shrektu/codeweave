@@ -33,13 +33,13 @@ import {
 } from "../fakes/fakeCodexAppServer";
 import type { FakeContained } from "../fakes/fakeContainer";
 import { hostBinDirWith, hostResolverEnv } from "../fakes/processHelpers";
+import { SETTLE_TIMEOUT_MS } from "../fakes/settle";
 
 const RESET_AT = 1_700_003_600;
 const FIVE_HOUR_MINUTES = 300;
 const PROBE_INTERVAL_MS = 300_000;
 const PROBE_TIMEOUT_MS = 15_000;
 const FAST_DELAY_MS = 30;
-const SETTLE_TIMEOUT_MS = 4000;
 const POLL_MS = 5;
 const POLL_ROUNDS = 400;
 const RPC_INVALID_REQUEST = -32600;
