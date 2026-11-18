@@ -1,4 +1,13 @@
+import { ProviderId } from "../domain/types";
+
 export const PROTOCOL_VERSION = 6;
+
+export const EXECUTABLE_SETTING_LABELS: Readonly<Record<ProviderId, string>> = {
+  [ProviderId.claude]: "Claude executable",
+  [ProviderId.codex]: "Codex executable",
+  [ProviderId.opencode]: "OpenCode executable",
+  [ProviderId.gemini]: "Gemini executable (agy)",
+};
 
 export const TERMINAL_MIN_COLS = 2;
 

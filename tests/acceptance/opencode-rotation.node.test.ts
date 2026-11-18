@@ -51,7 +51,8 @@ const CODEX_RESET_AT = 1_700_003_600;
 const FIVE_HOUR_MINUTES = 300;
 const FULL_PERCENT = 100;
 const LOW_PERCENT = 10;
-const OPENCODE_MISSING_MESSAGE = "The OpenCode executable was not found";
+const OPENCODE_MISSING_MESSAGE =
+  "The OpenCode CLI was not found. Install it and restart Codeweave, or set its full path under Settings → OpenCode executable.";
 const CUSTOM_OPENCODE_PATH = "/opt/custom/opencode";
 const USAGE_LIMIT_MESSAGE =
   "You've hit your usage limit. Try again at 3:14 PM.";
