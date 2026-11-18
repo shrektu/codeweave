@@ -126,6 +126,7 @@ describe("buildAgentEnv", () => {
     "ZHIPU_API_KEY",
     "DEEPSEEK_API_KEY",
     "MOONSHOT_API_KEY",
+    "OPENCODE_API_KEY",
     "OPENCODE_CONFIG",
     "OPENCODE_CONFIG_CONTENT",
     "opencode_permission",

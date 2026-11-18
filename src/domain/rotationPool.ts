@@ -9,6 +9,12 @@ function isRotatingApiOfTier(account: Account, tier: ApiTier): boolean {
   );
 }
 
+const API_TIER_ORDER: readonly ApiTier[] = [
+  ApiTier.flatRate,
+  ApiTier.free,
+  ApiTier.paid,
+];
+
 const SUBSCRIPTION_PROVIDERS: ReadonlySet<ProviderId> = new Set([
   ProviderId.claude,
   ProviderId.codex,
@@ -33,11 +39,8 @@ export function rotationPool(
   return [
     ...own,
     ...otherSubscriptions,
-    ...registered.filter((account) =>
-      isRotatingApiOfTier(account, ApiTier.free),
-    ),
-    ...registered.filter((account) =>
-      isRotatingApiOfTier(account, ApiTier.paid),
+    ...API_TIER_ORDER.flatMap((tier) =>
+      registered.filter((account) => isRotatingApiOfTier(account, tier)),
     ),
   ].map((account, order) => ({ ...account, order }));
 }

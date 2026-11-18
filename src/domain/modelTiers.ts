@@ -10,9 +10,22 @@ export interface ModelTier {
   readonly priceOutUsdPerMTok: number | null;
   readonly sourceUrl: string;
   readonly checkedOn: string;
+  readonly requestsPer5h?: number;
 }
 
 export const TIERS_CHECKED_ON = "2026-11-17";
+export const GO_TIERS_CHECKED_ON = "2026-11-18";
+export const GO_HEAVY_BELOW_REQUESTS = 500;
+export const GO_LIGHT_FROM_REQUESTS = 3000;
+
+export function classByAllowance(requestsPer5h: number): TaskClass {
+  if (requestsPer5h < GO_HEAVY_BELOW_REQUESTS) {
+    return TaskClass.heavy;
+  }
+  return requestsPer5h >= GO_LIGHT_FROM_REQUESTS
+    ? TaskClass.light
+    : TaskClass.standard;
+}
 
 const GROQ_SOURCE = "https://console.groq.com/docs/models";
 const CEREBRAS_OSS_SOURCE =
@@ -23,6 +36,79 @@ const GOOGLE_SOURCE = "https://aistudio.google.com/docs/pricing";
 const MISTRAL_SOURCE = "https://docs.mistral.ai/inference/pricing";
 const ZAI_SOURCE = "https://docs.z.ai/guides/overview/pricing";
 const DEEPSEEK_SOURCE = "https://api-docs.deepseek.com/quick_start/pricing";
+const GO_SOURCE = "https://opencode.ai/go";
+
+interface GoModel {
+  readonly modelId: string;
+  readonly requestsPer5h: number;
+  readonly priceIn: number;
+  readonly priceOut: number;
+}
+
+const GO_MODELS: readonly GoModel[] = [
+  { modelId: "kimi-k3", requestsPer5h: 98, priceIn: 3, priceOut: 15 },
+  { modelId: "kimi-k3.1-pro", requestsPer5h: 147, priceIn: 2, priceOut: 10 },
+  { modelId: "qwen3.8-max", requestsPer5h: 162, priceIn: 2, priceOut: 6 },
+  { modelId: "grok-4.7", requestsPer5h: 169, priceIn: 2, priceOut: 6 },
+  { modelId: "kimi-k2.7-code", requestsPer5h: 994, priceIn: 0.95, priceOut: 4 },
+  { modelId: "glm-5.2", requestsPer5h: 792, priceIn: 1.4, priceOut: 4.4 },
+  { modelId: "gpt-5.6-luna", requestsPer5h: 2050, priceIn: 0.2, priceOut: 1.2 },
+  {
+    modelId: "mimo-v2.6-flash",
+    requestsPer5h: 30100,
+    priceIn: 0.14,
+    priceOut: 0.28,
+  },
+  { modelId: "longcat-2.0", requestsPer5h: 11400, priceIn: 0.3, priceOut: 1.2 },
+  {
+    modelId: "glm-5.3-flash",
+    requestsPer5h: 6320,
+    priceIn: 0.15,
+    priceOut: 0.5,
+  },
+  {
+    modelId: "qwen3.8-flash",
+    requestsPer5h: 5400,
+    priceIn: 0.15,
+    priceOut: 0.47,
+  },
+  { modelId: "qwen3.7-plus", requestsPer5h: 4310, priceIn: 0.4, priceOut: 1.6 },
+  { modelId: "hy3", requestsPer5h: 4300, priceIn: 0.14, priceOut: 0.58 },
+  { modelId: "gpt-6-luna", requestsPer5h: 4230, priceIn: 0.1, priceOut: 0.5 },
+  {
+    modelId: "minimax-m3.1-flash",
+    requestsPer5h: 3880,
+    priceIn: 0.15,
+    priceOut: 0.6,
+  },
+  {
+    modelId: "claude-haiku-5-5",
+    requestsPer5h: 3850,
+    priceIn: 0.1,
+    priceOut: 0.5,
+  },
+  {
+    modelId: "mimo-v2.6-pro",
+    requestsPer5h: 3260,
+    priceIn: 0.435,
+    priceOut: 0.87,
+  },
+  { modelId: "minimax-m3", requestsPer5h: 3210, priceIn: 0.3, priceOut: 1.2 },
+];
+
+function goTier(model: GoModel): ModelTier {
+  return {
+    provider: ApiProviderId.opencodeGo,
+    modelId: model.modelId,
+    taskClass: classByAllowance(model.requestsPer5h),
+    free: false,
+    priceInUsdPerMTok: model.priceIn,
+    priceOutUsdPerMTok: model.priceOut,
+    requestsPer5h: model.requestsPer5h,
+    sourceUrl: GO_SOURCE,
+    checkedOn: GO_TIERS_CHECKED_ON,
+  };
+}
 
 export const MODEL_TIERS: readonly ModelTier[] = [
   {
@@ -175,4 +261,5 @@ export const MODEL_TIERS: readonly ModelTier[] = [
     sourceUrl: DEEPSEEK_SOURCE,
     checkedOn: TIERS_CHECKED_ON,
   },
+  ...GO_MODELS.map(goTier),
 ];

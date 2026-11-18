@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import type { ApiProviderId } from "./apiProviders";
+import { ApiProviderId } from "./apiProviders";
 import { rotationPool } from "./rotationPool";
 import { ProviderId, type Account } from "./types";
 
@@ -185,6 +185,43 @@ it("accounts_keep_all_other_fields", () => {
       rotation: true,
     },
   });
+});
+
+const WITH_GO: Account[] = [
+  api("paid-1", "deepseek", 0),
+  api("go-1", ApiProviderId.opencodeGo, 1),
+  subscription("claude-1", ProviderId.claude, 2),
+  api("free-1", "groq", 3),
+  subscription("codex-1", ProviderId.codex, 4),
+  api("go-off", ApiProviderId.opencodeGo, 5, false),
+  api("go-2", ApiProviderId.opencodeGo, 6),
+];
+
+it("subscription_session_lists_go_after_subscriptions_before_free_and_paid", () => {
+  expect(idsOf(rotationPool(ProviderId.claude, WITH_GO))).toEqual([
+    "claude-1",
+    "codex-1",
+    "go-1",
+    "go-2",
+    "free-1",
+    "paid-1",
+  ]);
+});
+
+it("opencode_session_lists_go_then_free_then_paid", () => {
+  expect(idsOf(rotationPool(ProviderId.opencode, WITH_GO))).toEqual([
+    "go-1",
+    "go-2",
+    "free-1",
+    "paid-1",
+  ]);
+});
+
+it("go_account_with_rotation_off_never_enters_any_pool", () => {
+  const registered = [api("go-off", ApiProviderId.opencodeGo, 0, false)];
+
+  expect(rotationPool(ProviderId.opencode, registered)).toEqual([]);
+  expect(rotationPool(ProviderId.claude, registered)).toEqual([]);
 });
 
 it("custom_provider_counts_as_free", () => {

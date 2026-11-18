@@ -167,6 +167,7 @@ export function ApiAccountFields({
   onBrowse,
 }: ApiAccountFieldsProps): JSX.Element {
   const isCustom = draft.provider === ApiProviderId.custom;
+  const hint = API_PROVIDERS[draft.provider].accountHint;
   return (
     <>
       <ProviderSelect draft={draft} onChange={onChange} />
@@ -206,6 +207,7 @@ export function ApiAccountFields({
           onChange({ ...draft, apiKey: event.target.value });
         }}
       />
+      {hint !== undefined && <p className="agent-hint">{hint}</p>}
       {vault?.available === false && (
         <p className="error">{vault.reason ?? VAULT_UNAVAILABLE_MESSAGE}</p>
       )}

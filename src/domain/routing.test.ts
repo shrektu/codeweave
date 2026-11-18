@@ -9,6 +9,7 @@ import {
 import type { ModelChoice } from "./modelChoice";
 import { MODEL_TIERS } from "./modelTiers";
 import {
+  isModelAllowed,
   resolveTaskClass,
   routeByClass,
   RouteSource,
@@ -136,6 +137,57 @@ describe("routeByClass accounts", () => {
 
     expect(route.model).toBe("deepseek-v4-pro");
     expect(route.servedClass).toBe("heavy");
+  });
+});
+
+describe("opencode go routing", () => {
+  const GO = ApiProviderId.opencodeGo;
+  const classes = [TaskClass.light, TaskClass.standard, TaskClass.heavy];
+
+  it("go_routes_each_class_to_its_band_default", () => {
+    const account = apiAccount(GO, "qwen4-max");
+
+    const routes = classes.map((taskClass) => routeByClass(account, taskClass));
+
+    expect(routes.map((route) => route.model)).toEqual([
+      "mimo-v2.6-flash",
+      "kimi-k2.7-code",
+      "kimi-k3",
+    ]);
+    expect(routes.map((route) => route.source)).toEqual([
+      "routed",
+      "routed",
+      "routed",
+    ]);
+  });
+
+  it("go_account_model_wins_inside_its_band", () => {
+    const standard = routeByClass(
+      apiAccount(GO, "glm-5.2"),
+      TaskClass.standard,
+    );
+    const heavy = routeByClass(apiAccount(GO, "qwen3.8-max"), TaskClass.heavy);
+    const light = routeByClass(apiAccount(GO, "glm-5.2"), TaskClass.light);
+
+    expect(standard.model).toBe("glm-5.2");
+    expect(standard.servedClass).toBe("standard");
+    expect(heavy.model).toBe("qwen3.8-max");
+    expect(heavy.servedClass).toBe("heavy");
+    expect(light.model).toBe("mimo-v2.6-flash");
+  });
+
+  it("go_account_allows_any_explicit_model", () => {
+    expect(
+      isModelAllowed(
+        {
+          provider: GO,
+          model: "kimi-k2.7-code",
+          baseUrl: null,
+          rotation: true,
+        },
+        "some-unlisted-model",
+      ),
+    ).toBe(true);
   });
 });
 

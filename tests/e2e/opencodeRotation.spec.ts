@@ -15,6 +15,9 @@ import { startOpenaiChatMock } from "../fakes/openaiChatMock";
 
 import {
   OPENCODE_ACCOUNT_SPECS,
+  OPENCODE_GO_ROUTING_ACCOUNT_SPEC,
+  OPENCODE_GO_ROUTING_SCENARIOS,
+  OPENCODE_KEY_GO_A,
   OPENCODE_KEY_GROQ,
   OPENCODE_KEYS,
   OPENCODE_ROUTING_ACCOUNT_SPEC,
@@ -50,6 +53,8 @@ const LIGHT_MODEL = "openai/gpt-oss-20b";
 const HEAVY_MODEL = "openai/gpt-oss-120b";
 const LIGHT_BADGE = `${LIGHT_MODEL} · light`;
 const HEAVY_BADGE = `${HEAVY_MODEL} · heavy`;
+const GO_LIGHT_MODEL = "mimo-v2.6-flash";
+const GO_LIGHT_BADGE = `${GO_LIGHT_MODEL} · light`;
 const SANDBOX_FLAGS =
   process.env.CI !== undefined && process.platform === "linux"
     ? ["--no-sandbox"]
@@ -225,13 +230,14 @@ async function seedRoutingAccount(
   root: string,
   userData: string,
   mockUrl: string,
+  spec: OpencodeAccountSpec = OPENCODE_ROUTING_ACCOUNT_SPEC,
 ): Promise<void> {
   const setup = await launchApp(root, userData);
   const page = await setup.firstWindow();
   await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
     "Connected",
   );
-  await addAccounts(page, userData, mockUrl, [OPENCODE_ROUTING_ACCOUNT_SPEC]);
+  await addAccounts(page, userData, mockUrl, [spec]);
   await setup.close();
   await pointAccountsAtMock(userData, mockUrl);
 }
@@ -286,6 +292,59 @@ test("composer classes route the real opencode", async () => {
         .map((request) => request.model),
     ).toEqual([LIGHT_MODEL, HEAVY_MODEL]);
     expect(await findKeyLeaks([userData], [OPENCODE_KEY_GROQ])).toEqual([]);
+  } finally {
+    await cleanup.run();
+  }
+});
+
+test("seeded go account routes a light turn", async () => {
+  opencodeBinaryOnPath();
+  const cleanup = createCleanupStack();
+  try {
+    const root = await mkdtemp(join(tmpdir(), WORKSPACE_PREFIX));
+    cleanup.add(() => rm(root, { recursive: true, force: true }));
+    const userData = join(root, "user-data");
+    const repo = join(root, "repo");
+    await createRepo(repo);
+    const mock = await startOpenaiChatMock({
+      scenarios: OPENCODE_GO_ROUTING_SCENARIOS,
+      toolCommand: ROTATION_COMMAND,
+    });
+    cleanup.add(() => mock.close());
+
+    await seedRoutingAccount(
+      root,
+      userData,
+      mock.url,
+      OPENCODE_GO_ROUTING_ACCOUNT_SPEC,
+    );
+
+    const app = await launchApp(root, userData);
+    cleanup.add(() => app.close());
+    await stubFolderDialog(app, repo);
+    const page = await app.firstWindow();
+    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
+      "Connected",
+    );
+    await page.getByRole("button", { name: "Choose folder…" }).click();
+
+    await sendWithClass(page, "light", "Say hello");
+    await expect(page.locator(".turn-badge").nth(0)).toContainText(
+      GO_LIGHT_BADGE,
+      { timeout: STEP_TIMEOUT_MS },
+    );
+    await expect(page.locator(".session-head .phase")).toContainText(
+      /Idle on GO/,
+      { timeout: STEP_TIMEOUT_MS },
+    );
+
+    expect(
+      mock
+        .requests()
+        .filter((request) => request.hasTools)
+        .map((request) => request.model),
+    ).toEqual([GO_LIGHT_MODEL]);
+    expect(await findKeyLeaks([userData], [OPENCODE_KEY_GO_A])).toEqual([]);
   } finally {
     await cleanup.run();
   }

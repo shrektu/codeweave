@@ -31,6 +31,13 @@ const GROQ_API: ApiAccount = {
   rotation: true,
 };
 
+const GO_API: ApiAccount = {
+  provider: "opencode-go",
+  model: "kimi-k2.7-code",
+  baseUrl: null,
+  rotation: true,
+};
+
 interface KeysFile {
   version: number;
   keys: Record<string, { ciphertext: string; hint: string }>;
@@ -81,6 +88,36 @@ it("api_key_account_add_stores_only_encrypted_key", async () => {
   expect(
     await readFile(join(rig.userData, ACCOUNTS_FILE), "utf8"),
   ).not.toContain(KEY);
+});
+
+it("go_account_is_added_and_its_key_stored", async () => {
+  const rig = await openRig({});
+
+  await expect(
+    rig.call("accounts/add", {
+      label: "Go main",
+      configDir: join(rig.userData, "accounts", "go-main"),
+      provider: "opencode",
+      api: GO_API,
+      apiKey: KEY,
+    }),
+  ).resolves.toMatchObject({
+    account: {
+      provider: "opencode",
+      api: GO_API,
+      hasKey: true,
+      keyHint: "0001",
+    },
+  });
+  const { accounts } = await rig.call("accounts/list", {});
+  expect(accounts.map((account) => account.api?.provider)).toEqual([
+    "opencode-go",
+  ]);
+  const stored = await readKeysFile(rig);
+  const [entry] = Object.values(stored.keys);
+  expect(Object.keys(stored.keys)).toHaveLength(1);
+  expect(entry?.hint).toBe("0001");
+  expect(JSON.stringify(stored)).not.toContain(KEY);
 });
 
 it.skipIf(process.platform === "win32")(

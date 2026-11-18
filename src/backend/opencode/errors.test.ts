@@ -105,6 +105,28 @@ describe("classifySessionError", () => {
     });
   });
 
+  it("go_limit_error_without_retry_after_is_a_rate_limit_without_reset", () => {
+    expect(
+      classifySessionError(
+        {
+          name: "APIError",
+          data: {
+            message: "Go usage limit exceeded",
+            statusCode: 429,
+            responseBody:
+              '{"type":"error","error":{"type":"GoUsageLimitError","message":"Go usage limit exceeded"},"metadata":{"workspace":"wrk_mock","limitName":"5 hour"}}',
+          },
+        },
+        NOW_MS,
+      ),
+    ).toEqual({
+      errorKind: "rate_limit",
+      aborted: false,
+      message: "Go usage limit exceeded",
+      resetsAt: null,
+    });
+  });
+
   it.each([401, 403])("status_%i_is_auth_required", (statusCode) => {
     expect(
       classifySessionError({ name: "APIError", data: { statusCode } }, NOW_MS),

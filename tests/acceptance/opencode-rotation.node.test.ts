@@ -744,6 +744,7 @@ it("catalog_probe_is_isolated_and_stopped", async () => {
     "groq",
     "mistral",
     "moonshotai",
+    "opencode-go",
     "openrouter",
     "zai",
   ]);
