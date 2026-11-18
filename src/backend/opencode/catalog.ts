@@ -18,6 +18,7 @@ import type { AgentProcesses } from "../agentProcesses";
 
 import { createOpencodeClient } from "./client";
 import {
+  CATALOG_UNAVAILABLE_V2_MESSAGE,
   CONFIG_FILE_NAME,
   FILE_REFERENCE_PREFIX,
   FILE_REFERENCE_SUFFIX,
@@ -208,12 +209,15 @@ async function probeModels(
   const runId = deps.newRunId();
   const password = deps.newPassword();
   const env = deps.envFor(startSpecFor(deps, files, executable, runId));
-  await deps.generationFor(executable, {
+  const generation = await deps.generationFor(executable, {
     env: { ...env, ...accountDirs(files.configDir) },
     cwd: deps.directory,
   });
+  if (generation === OpencodeGeneration.v2) {
+    throw new Error(CATALOG_UNAVAILABLE_V2_MESSAGE);
+  }
   const launch = buildOpencodeLaunch({
-    generation: OpencodeGeneration.v1,
+    generation,
     executable,
     configDir: files.configDir,
     configFile: files.configFile,

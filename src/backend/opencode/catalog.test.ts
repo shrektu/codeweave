@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 import {
   OPENCODE_RIG_EXECUTABLE,
@@ -427,6 +427,21 @@ it("unsupported_opencode_version_yields_its_message_without_a_process", async ()
   expect(generationFor.mock.calls[0]?.[0]).toBe(OPENCODE_RIG_EXECUTABLE);
   expect(generationFor.mock.calls[0]?.[1].env).toMatchObject({
     HOME: join(rig.directory, "account", "home"),
+  });
+  expect(rig.container.specs).toHaveLength(0);
+});
+
+it("catalog_on_2x_reports_the_interim_message_without_a_process", async () => {
+  const generationFor = vi.fn<GenerationProbe>(() =>
+    Promise.resolve(OpencodeGeneration.v2),
+  );
+  const rig = await catalogRig(undefined, { generationFor });
+
+  const result = await rig.catalog.load();
+
+  expect(result).toEqual({
+    models: [],
+    error: "The model catalog is not available on opencode 2.x yet.",
   });
   expect(rig.container.specs).toHaveLength(0);
 });

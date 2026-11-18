@@ -13,7 +13,7 @@ import {
 } from "./version";
 
 const HINT =
-  "Codeweave works with opencode 1.19.x (npm i -g opencode-ai@1.19.5).";
+  "Codeweave works with opencode 1.19.x (npm i -g opencode-ai@1.19.5) or 2.2.5 and newer (npm i -g @opencode/cli).";
 const OPTIONS: GenerationProbeOptions = {
   env: { HOME: "/acct/home" },
   cwd: "/work/session",
@@ -63,9 +63,19 @@ describe("generationOf", () => {
   });
 
   it.each([
+    [2, 2, 5],
+    [2, 3, 2],
+    [2, 10, 0],
+    [2, 2, 10],
+  ])("maps_%i.%i.%i_to_v2", (major, minor, patch) => {
+    expect(generationOf({ major, minor, patch })).toBe(OpencodeGeneration.v2);
+  });
+
+  it.each([
     [0, 9, 0],
     [2, 0, 0],
-    [2, 3, 2],
+    [2, 1, 9],
+    [2, 2, 4],
     [3, 0, 0],
   ])("rejects_%i.%i.%i", (major, minor, patch) => {
     expect(generationOf({ major, minor, patch })).toBeNull();
@@ -85,13 +95,22 @@ function probeOf(exec: ExecText): ReturnType<typeof createVersionProbe> {
 }
 
 describe("createVersionProbe", () => {
-  it("rejects_opencode_2x_and_3x_with_the_unsupported_message", async () => {
+  it("rejects_old_2x_and_3x_with_the_unsupported_message", async () => {
     await expect(
-      probeOf(printing("opencode v2.3.2\n"))(EXECUTABLE, OPTIONS),
-    ).rejects.toThrow(`OpenCode 2.3.2 is not supported. ${HINT}`);
+      probeOf(printing("opencode v2.2.4\n"))(EXECUTABLE, OPTIONS),
+    ).rejects.toThrow(`OpenCode 2.2.4 is not supported. ${HINT}`);
     await expect(
       probeOf(printing("3.0.0\n"))(EXECUTABLE, OPTIONS),
     ).rejects.toThrow(`OpenCode 3.0.0 is not supported. ${HINT}`);
+  });
+
+  it("accepts_2x_from_2_2_5_as_v2", async () => {
+    const generation = await probeOf(printing("opencode v2.2.5\n"))(
+      EXECUTABLE,
+      OPTIONS,
+    );
+
+    expect(generation).toBe(OpencodeGeneration.v2);
   });
 
   it("reports_an_undetectable_version_when_exec_rejects", async () => {
@@ -117,7 +136,9 @@ describe("createVersionProbe", () => {
       probeOf(printing("garbage\n"))(EXECUTABLE, OPTIONS),
     ).rejects.toThrow(`The OpenCode version could not be determined. ${HINT}`);
   });
+});
 
+describe("createVersionProbe command", () => {
   it("runs_the_version_command_with_the_env_and_a_timeout", async () => {
     const exec = printing("1.19.5\n");
 
@@ -162,13 +183,13 @@ describe("createVersionProbe", () => {
   });
 
   it("sees_an_in_place_upgrade_on_the_next_probe", async () => {
-    const probe = probeOf(printing("1.19.5\n", "opencode v2.3.2\n"));
+    const probe = probeOf(printing("1.19.5\n", "opencode v2.1.0\n"));
 
     const first = await probe(EXECUTABLE, OPTIONS);
 
     expect(first).toBe(OpencodeGeneration.v1);
     await expect(probe(EXECUTABLE, OPTIONS)).rejects.toThrow(
-      `OpenCode 2.3.2 is not supported. ${HINT}`,
+      `OpenCode 2.1.0 is not supported. ${HINT}`,
     );
   });
 });

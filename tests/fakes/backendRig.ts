@@ -56,6 +56,7 @@ import {
   ScriptedOpencodeContainer,
   type FakeOpencodeConfig,
 } from "./fakeOpencodeServer";
+import { ScriptedOpencodeV2Container } from "./fakeOpencodeV2Server";
 import { unsupportedLaunch } from "./fakeContainer";
 import { createFakeVault, type FakeVault } from "./fakeVault";
 import { resolvePathLockKey } from "./rigProcesses";
@@ -128,6 +129,7 @@ export interface BackendRigOptions {
   readonly now?: () => number;
   readonly parentEnv?: NodeJS.ProcessEnv;
   readonly opencodeConfig?: FakeOpencodeConfig;
+  readonly opencodeV2?: boolean;
   readonly catalogProbeTimeoutMs?: number;
   readonly resolveLockKey?: LockKeyResolver;
   readonly backendLockKeys?: true;
@@ -155,6 +157,7 @@ export interface BackendRig {
   readonly container: ScriptedAcpContainer;
   readonly codexContainer: ScriptedCodexContainer;
   readonly opencodeContainer: ScriptedOpencodeContainer;
+  readonly opencodeV2Container: ScriptedOpencodeV2Container;
   readonly agyContainer: ScriptedAgyContainer;
   readonly probeContainer: ScriptedCodexContainer;
   readonly probeTasks: ScheduledTask[];
@@ -323,7 +326,7 @@ interface RigLog {
 interface AgentContainers {
   readonly claude: ScriptedAcpContainer;
   readonly codex: ScriptedCodexContainer;
-  readonly opencode: ScriptedOpencodeContainer;
+  readonly opencode: ProcessContainer;
   readonly agy: ScriptedAgyContainer;
   readonly probe: ScriptedCodexContainer;
 }
@@ -363,7 +366,12 @@ function rigDeps(
     now: options.now ?? (() => RIG_NOW_MS),
     opencodeGeneration:
       options.opencodeGeneration ??
-      (() => Promise.resolve(OpencodeGeneration.v1)),
+      (() =>
+        Promise.resolve(
+          options.opencodeV2 === true
+            ? OpencodeGeneration.v2
+            : OpencodeGeneration.v1,
+        )),
     ...(options.postUpdaterConfig === undefined
       ? {}
       : { postUpdaterConfig: options.postUpdaterConfig }),
@@ -410,6 +418,7 @@ export async function createBackendRig(
   const codexContainer = new ScriptedCodexContainer();
   const opencodeContainer = new ScriptedOpencodeContainer([]);
   Object.assign(opencodeContainer.config, options.opencodeConfig);
+  const opencodeV2Container = new ScriptedOpencodeV2Container([]);
   const agyContainer = new ScriptedAgyContainer();
   for (const script of options.agyUsage ?? []) {
     agyContainer.scriptUsage(script);
@@ -450,7 +459,8 @@ export async function createBackendRig(
       {
         claude: container,
         codex: codexContainer,
-        opencode: opencodeContainer,
+        opencode:
+          options.opencodeV2 === true ? opencodeV2Container : opencodeContainer,
         agy: agyContainer,
         probe: probeContainer,
       },
@@ -473,6 +483,7 @@ export async function createBackendRig(
     container,
     codexContainer,
     opencodeContainer,
+    opencodeV2Container,
     agyContainer,
     probeContainer,
     probeStats,
@@ -516,7 +527,10 @@ export async function closeRigs(): Promise<void> {
   await Promise.all(rigs.map((rig) => rig.dispose()));
   await Promise.allSettled(
     rigs.flatMap((rig) =>
-      rig.opencodeContainer.servers.map((server) => server.close()),
+      [
+        ...rig.opencodeContainer.servers,
+        ...rig.opencodeV2Container.servers,
+      ].map((server) => server.close()),
     ),
   );
   await removeBackendRigDirs();

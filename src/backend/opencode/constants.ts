@@ -143,9 +143,14 @@ export const TOOL_KIND_FETCH = "fetch";
 export const VERSION_ARG = "--version";
 export const VERSION_PROBE_TIMEOUT_MS = 10_000;
 export const SUPPORTED_MAJOR_VERSION = 1;
+export const V2_MAJOR_VERSION = 2;
+export const V2_MINIMUM_VERSION = { major: 2, minor: 2, patch: 5 } as const;
 export const VERSION_PATTERN = /^(?:opencode\s+)?v?(\d+)\.(\d+)\.(\d+)/;
 export const VERSION_SUPPORT_HINT =
-  "Codeweave works with opencode 1.19.x (npm i -g opencode-ai@1.19.5).";
+  "Codeweave works with opencode 1.19.x (npm i -g opencode-ai@1.19.5) or 2.2.5 and newer (npm i -g @opencode/cli).";
+export const IDLE_POLL_MS = 50;
+export const CATALOG_UNAVAILABLE_V2_MESSAGE =
+  "The model catalog is not available on opencode 2.x yet.";
 export const VERSION_UNKNOWN_MESSAGE =
   "The OpenCode version could not be determined.";
 

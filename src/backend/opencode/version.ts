@@ -5,6 +5,8 @@ import type { ExecText } from "../exec";
 import {
   OpencodeGeneration,
   SUPPORTED_MAJOR_VERSION,
+  V2_MAJOR_VERSION,
+  V2_MINIMUM_VERSION,
   VERSION_ARG,
   VERSION_PATTERN,
   VERSION_PROBE_TIMEOUT_MS,
@@ -79,11 +81,19 @@ export function formatOpencodeVersion(version: OpencodeVersion): string {
   return `${String(version.major)}.${String(version.minor)}.${String(version.patch)}`;
 }
 
+function compareVersions(a: OpencodeVersion, b: OpencodeVersion): number {
+  return a.major - b.major || a.minor - b.minor || a.patch - b.patch;
+}
+
 export function generationOf(
   version: OpencodeVersion,
 ): OpencodeGeneration | null {
-  return version.major === SUPPORTED_MAJOR_VERSION
-    ? OpencodeGeneration.v1
+  if (version.major === SUPPORTED_MAJOR_VERSION) {
+    return OpencodeGeneration.v1;
+  }
+  return version.major === V2_MAJOR_VERSION &&
+    compareVersions(version, V2_MINIMUM_VERSION) >= 0
+    ? OpencodeGeneration.v2
     : null;
 }
 

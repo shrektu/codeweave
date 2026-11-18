@@ -1,68 +1,54 @@
-import { randomUUID } from "node:crypto";
 import {
   createServer,
   type IncomingMessage,
   type Server,
   type ServerResponse,
 } from "node:http";
-import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { expect } from "vitest";
 import { z } from "zod";
 
-import type {
-  AgentHandle,
-  AgentStartResult,
-  AgentStartSpec,
-} from "../../src/backend/agentAdapter";
-import { createOpencodeAdapter } from "../../src/backend/opencode/adapter";
-import { findFreePort } from "../../src/backend/opencode/port";
 import { OpencodeGeneration } from "../../src/backend/opencode/constants";
-import type { GenerationProbe } from "../../src/backend/opencode/version";
-import type { OpencodeCredentials } from "../../src/backend/opencode/config";
+import type { StopResult } from "../../src/backend/process/container";
+
 import {
-  ContainerKind,
-  type Contained,
-  type ProcessContainer,
-  type SpawnSpec,
-  type StopResult,
-} from "../../src/backend/process/container";
-import type { AgentEvent } from "../../src/domain/events";
-import {
-  PermissionProfile,
-  ProviderId,
-  type Account,
-  type ApiAccount,
-} from "../../src/domain/types";
+  OPENCODE_SESSION_ID,
+  ScriptedContainerBase,
+  basicAuthOf,
+  createRigOn,
+  firstServerOf,
+  readBody,
+  readRunStartup,
+  sendJson,
+  type BaseContainerConfig,
+  type Json,
+  type OpencodeRigOf,
+  type OpencodeRigOptions,
+  type OpencodeStartup,
+  type RecordedRequest,
+} from "./opencodeFakeCommon";
 
-import { FakeContained, unsupportedLaunch } from "./fakeContainer";
-import { rigProcesses } from "./rigProcesses";
-import { settled } from "./settle";
-
-export type Json = Readonly<Record<string, unknown>>;
-
-export const OPENCODE_SESSION_ID = "ses_fake";
-export const OPENCODE_RIG_PASSWORD = randomUUID();
-export const OPENCODE_RIG_NOW_MS = 1_700_000_000_000;
-export const OPENCODE_RIG_EXECUTABLE = "/usr/bin/opencode";
-export const OPENCODE_RIG_GRACE_MS = 25;
-export const OPENCODE_RIG_READY_TIMEOUT_MS = 400;
-export const OPENCODE_RIG_REQUEST_TIMEOUT_MS = 150;
-export const OPENCODE_RIG_WARM_UP_TIMEOUT_MS = 500;
-export const OPENCODE_RIG_CREDENTIALS: OpencodeCredentials = {
-  providerId: "groq",
-  model: "llama-3.3-70b",
-  baseUrl: null,
-  apiKey: "sk-test-A",
-};
+export {
+  OPENCODE_RIG_ACCOUNT_ID,
+  OPENCODE_RIG_CREDENTIALS,
+  OPENCODE_RIG_EXECUTABLE,
+  OPENCODE_RIG_GRACE_MS,
+  OPENCODE_RIG_NOW_MS,
+  OPENCODE_RIG_PASSWORD,
+  OPENCODE_RIG_READY_TIMEOUT_MS,
+  OPENCODE_RIG_REQUEST_TIMEOUT_MS,
+  OPENCODE_RIG_WARM_UP_TIMEOUT_MS,
+  OPENCODE_SESSION_ID,
+  disposeOpencodeRigs,
+  opencodePermissionRequestOf,
+  startOpencodeHandle,
+  type Json,
+  type OpencodeRigOptions,
+  type OpencodeStartup,
+  type RecordedRequest,
+} from "./opencodeFakeCommon";
 
 const REPLY_TIMEOUT_MS = 2000;
-const PORT_ARG = "--port";
 const CONFIG_ENV = "OPENCODE_CONFIG";
 const PASSWORD_ENV = "OPENCODE_SERVER_PASSWORD";
-const PERMISSION_MASK = 0o777;
-const FILE_REFERENCE = /^\{file:(.*)\}$/;
 const PERMISSIONS_ROUTE = /^\/session\/([^/]+)\/permissions\/([^/]+)$/;
 const MESSAGES_ROUTE = /^\/session\/([^/]+)\/message$/;
 const MESSAGES_ROUTE_RESULT: Route = { kind: "messages" };
@@ -117,14 +103,6 @@ export type OpencodeStep =
   | { readonly type: "slow_user_message"; readonly ms: number }
   | { readonly type: "wait_abort" }
   | { readonly type: "hang" };
-
-export interface RecordedRequest {
-  readonly method: string;
-  readonly path: string;
-  readonly query: Readonly<Record<string, string>>;
-  readonly body: unknown;
-  readonly authorized: boolean;
-}
 
 export interface PermissionReply {
   readonly sessionId: string;
@@ -316,23 +294,6 @@ function routeOf(method: string, path: string): Route {
   return method === "POST" ? postRouteOf(path) : UNKNOWN_ROUTE;
 }
 
-function readBody(request: IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    request.on("data", (chunk: Buffer) => chunks.push(chunk));
-    request.on("error", reject);
-    request.on("end", () => {
-      const text = Buffer.concat(chunks).toString();
-      resolve(text === "" ? null : (JSON.parse(text) as unknown));
-    });
-  });
-}
-
-function sendJson(response: ServerResponse, value: unknown): void {
-  response.writeHead(200, { "content-type": "application/json" });
-  response.end(JSON.stringify(value));
-}
-
 export class FakeOpencodeServer {
   providers: unknown = { providers: [], default: {} };
   assistantModel: AssistantModel | null = null;
@@ -458,8 +419,8 @@ export class FakeOpencodeServer {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     const method = request.method ?? "GET";
     const body = await readBody(request);
-    const expected = `Basic ${Buffer.from(`opencode:${this.password}`).toString("base64")}`;
-    const authorized = request.headers.authorization === expected;
+    const authorized =
+      request.headers.authorization === basicAuthOf(this.password);
     this.requests.push({
       method,
       path: url.pathname,
@@ -653,23 +614,11 @@ export class FakeOpencodeServer {
   }
 }
 
-export interface OpencodeStartup {
-  readonly configPath: string;
-  readonly config: unknown;
-  readonly keyFileContent: string;
-  readonly keyFileMode: number;
-  readonly runDirMode: number;
-}
-
-export interface FakeOpencodeConfig {
-  exitBeforeListening?: boolean;
-  silent?: boolean;
-  stderrText?: string;
+export interface FakeOpencodeConfig extends BaseContainerConfig {
   stalledRoutes?: readonly Route["kind"][];
   delayedRoutes?: ReadonlyMap<Route["kind"], number>;
   providers?: unknown;
   assistantModel?: AssistantModel;
-  launchDelayMs?: number;
 }
 
 const StartupConfigSchema = z.looseObject({
@@ -679,75 +628,36 @@ const StartupConfigSchema = z.looseObject({
   ),
 });
 
-function portOf(spec: SpawnSpec): number {
-  const index = spec.args.indexOf(PORT_ARG);
-  return Number(spec.args[index + 1]);
-}
-
-async function readStartup(
-  env: Readonly<Record<string, string>>,
-): Promise<OpencodeStartup> {
-  const configPath = env[CONFIG_ENV] ?? "";
-  const config = JSON.parse(await readFile(configPath, "utf8")) as unknown;
-  const [provider] = Object.values(StartupConfigSchema.parse(config).provider);
-  const keyPath =
-    FILE_REFERENCE.exec(provider?.options.apiKey ?? "")?.[1] ?? "";
-  return {
-    configPath,
-    config,
-    keyFileContent: await readFile(keyPath, "utf8"),
-    keyFileMode: (await stat(keyPath)).mode & PERMISSION_MASK,
-    runDirMode: (await stat(dirname(keyPath))).mode & PERMISSION_MASK,
-  };
-}
-
-export class ScriptedOpencodeContainer implements ProcessContainer {
-  readonly kind = ContainerKind.envMarker;
-  readonly launch = unsupportedLaunch;
-  readonly specs: SpawnSpec[] = [];
-  readonly servers: FakeOpencodeServer[] = [];
-  readonly contained: FakeContained[] = [];
-  readonly startups: OpencodeStartup[] = [];
-  readonly config: FakeOpencodeConfig = {};
-  private readonly stopResults: readonly StopResult[];
-  private readonly nextScripts: (readonly OpencodeStep[])[] = [];
-
+export class ScriptedOpencodeContainer extends ScriptedContainerBase<
+  FakeOpencodeServer,
+  OpencodeStep,
+  FakeOpencodeConfig
+> {
   constructor(stopResults: readonly StopResult[]) {
-    this.stopResults = stopResults;
+    super(stopResults, {});
   }
 
-  scriptNextServer(steps: readonly OpencodeStep[]): void {
-    this.nextScripts.push(steps);
+  protected passwordEnv(): string {
+    return PASSWORD_ENV;
   }
 
-  async spawn(spec: SpawnSpec): Promise<Contained> {
-    const { launchDelayMs } = this.config;
-    if (launchDelayMs !== undefined) {
-      await new Promise((resolve) => setTimeout(resolve, launchDelayMs));
-    }
-    const contained = new FakeContained(spec.runId, this.stopResults);
-    this.specs.push(spec);
-    this.contained.push(contained);
-    if (this.config.stderrText !== undefined) {
-      contained.stderr.write(this.config.stderrText);
-    }
-    if (this.config.exitBeforeListening === true) {
-      setImmediate(() => {
-        contained.emitExit(1);
-      });
-      return contained;
-    }
-    if (this.config.silent === true) {
-      return contained;
-    }
-    const startup = await readStartup(spec.env);
-    this.startups.push(startup);
-    const server = new FakeOpencodeServer(spec.env[PASSWORD_ENV] ?? "");
-    this.servers.push(server);
-    const script = this.nextScripts.shift();
-    if (script !== undefined) {
-      server.enqueue(script);
-    }
+  protected listeningLine(port: number): string {
+    return `opencode server listening on http://127.0.0.1:${String(port)}\n`;
+  }
+
+  protected readStartup(
+    env: Readonly<Record<string, string>>,
+  ): Promise<OpencodeStartup> {
+    return readRunStartup(env[CONFIG_ENV] ?? "", (config) => {
+      const [provider] = Object.values(
+        StartupConfigSchema.parse(config).provider,
+      );
+      return provider?.options.apiKey ?? "";
+    });
+  }
+
+  protected createServer(password: string): FakeOpencodeServer {
+    const server = new FakeOpencodeServer(password);
     if (this.config.providers !== undefined) {
       server.providers = this.config.providers;
     }
@@ -760,154 +670,22 @@ export class ScriptedOpencodeContainer implements ProcessContainer {
     this.config.delayedRoutes?.forEach((ms, kind) => {
       server.delay(kind, ms);
     });
-    const port = portOf(spec);
-    await server.listen(port);
-    contained.stdout.write(
-      `opencode server listening on http://127.0.0.1:${String(port)}\n`,
-    );
-    return contained;
-  }
-
-  sweepOrphans(): Promise<number> {
-    return Promise.resolve(0);
+    return server;
   }
 }
 
-export const OPENCODE_RIG_ACCOUNT_ID = "acc-opencode";
+export type OpencodeRig = OpencodeRigOf<ScriptedOpencodeContainer>;
 
-const rigRoots: string[] = [];
-const rigContainers: ScriptedOpencodeContainer[] = [];
-
-export async function disposeOpencodeRigs(): Promise<void> {
-  const containers = rigContainers.splice(0);
-  await Promise.allSettled(
-    containers.flatMap((container) =>
-      container.servers.map((server) => server.close()),
-    ),
-  );
-  await Promise.allSettled(
-    rigRoots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
-  );
-}
-
-export interface OpencodeRigOptions {
-  readonly credentials?: OpencodeCredentials | null;
-  readonly stopResults?: readonly StopResult[];
-  readonly readyTimeoutMs?: number;
-  readonly requestTimeoutMs?: number;
-  readonly warmUpTimeoutMs?: number;
-  readonly stopGraceMs?: number;
-  readonly staleGateGraceMs?: number;
-  readonly api?: ApiAccount;
-  readonly generationFor?: GenerationProbe;
-}
-
-export interface OpencodeRig {
-  readonly container: ScriptedOpencodeContainer;
-  readonly cwd: string;
-  readonly accountDir: string;
-  readonly runtimeRoot: string;
-  start(profile?: PermissionProfile, runId?: string): Promise<AgentStartResult>;
-}
-
-export async function createOpencodeRig(
+export function createOpencodeRig(
   options: OpencodeRigOptions = {},
 ): Promise<OpencodeRig> {
-  const root = await mkdtemp(join(tmpdir(), "codeweave-opencode-rig-"));
-  rigRoots.push(root);
-  const cwd = join(root, "work");
-  const accountDir = join(root, "account");
-  const runtimeRoot = join(root, "runtime");
-  await Promise.all([cwd, accountDir, runtimeRoot].map((dir) => mkdir(dir)));
-  const container = new ScriptedOpencodeContainer(options.stopResults ?? []);
-  rigContainers.push(container);
-  const credentials =
-    options.credentials === undefined
-      ? OPENCODE_RIG_CREDENTIALS
-      : options.credentials;
-  const adapter = createOpencodeAdapter({
-    processes: rigProcesses(container),
-    envFor: () => ({ PATH: "/usr/bin" }),
-    executableFor: () => OPENCODE_RIG_EXECUTABLE,
-    credentialsFor: () => Promise.resolve(credentials),
-    generationFor:
-      options.generationFor ?? (() => Promise.resolve(OpencodeGeneration.v1)),
-    runtimeRoot,
-    platform: "linux",
-    fetchImpl: fetch,
-    now: () => OPENCODE_RIG_NOW_MS,
-    freePort: findFreePort,
-    newPassword: () => OPENCODE_RIG_PASSWORD,
-    stopGraceMs: options.stopGraceMs ?? OPENCODE_RIG_GRACE_MS,
-    staleGateGraceMs: options.staleGateGraceMs ?? OPENCODE_RIG_GRACE_MS,
-    readyTimeoutMs: options.readyTimeoutMs ?? OPENCODE_RIG_READY_TIMEOUT_MS,
-    requestTimeoutMs:
-      options.requestTimeoutMs ?? OPENCODE_RIG_REQUEST_TIMEOUT_MS,
-    warmUpTimeoutMs: options.warmUpTimeoutMs ?? OPENCODE_RIG_WARM_UP_TIMEOUT_MS,
-  });
-  const account: Account = {
-    id: OPENCODE_RIG_ACCOUNT_ID,
-    provider: ProviderId.opencode,
-    label: "OpenCode",
-    configDir: accountDir,
-    order: 0,
-    api: options.api,
-  };
-  return {
-    container,
-    cwd,
-    accountDir,
-    runtimeRoot,
-    start: (profile = PermissionProfile.ask, runId = "run-1") =>
-      adapter.start(specFor(account, cwd, profile, runId)),
-  };
-}
-
-function specFor(
-  account: Account,
-  cwd: string,
-  profile: PermissionProfile,
-  runId: string,
-): AgentStartSpec {
-  return {
-    account,
-    cwd,
-    profile,
-    runId,
-    executable: OPENCODE_RIG_EXECUTABLE,
-  };
-}
-
-export async function startOpencodeHandle(
-  rig: OpencodeRig,
-  profile: PermissionProfile = PermissionProfile.ask,
-): Promise<{ handle: AgentHandle; events: AgentEvent[] }> {
-  const result = await rig.start(profile);
-  expect(result).toMatchObject({ ok: true });
-  if (!result.ok) {
-    throw new Error(result.message);
-  }
-  const events: AgentEvent[] = [];
-  result.handle.subscribe((event) => events.push(event));
-  return { handle: result.handle, events };
+  return createRigOn(
+    new ScriptedOpencodeContainer(options.stopResults ?? []),
+    options,
+    OpencodeGeneration.v1,
+  );
 }
 
 export function opencodeServerOf(rig: OpencodeRig): FakeOpencodeServer {
-  const server = rig.container.servers[0];
-  if (server === undefined) {
-    throw new Error("no opencode server was spawned");
-  }
-  return server;
-}
-
-export async function opencodePermissionRequestOf(
-  events: readonly AgentEvent[],
-): Promise<Extract<AgentEvent, { type: "permission_request" }>> {
-  return settled(() => {
-    const found = events.find((event) => event.type === "permission_request");
-    if (found === undefined) {
-      throw new Error("no permission_request yet");
-    }
-    return found;
-  });
+  return firstServerOf(rig.container);
 }

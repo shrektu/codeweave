@@ -10,11 +10,14 @@ import {
   disposeOpencodeRigs,
   type OpencodeRig,
 } from "../fakes/fakeOpencodeServer";
+import { createOpencodeV2Rig } from "../fakes/fakeOpencodeV2Server";
 
-const UNSUPPORTED_MESSAGE =
-  "OpenCode 2.3.2 is not supported. Codeweave works with opencode 1.19.x (npm i -g opencode-ai@1.19.5).";
-const UNDETECTABLE_MESSAGE =
-  "The OpenCode version could not be determined. Codeweave works with opencode 1.19.x (npm i -g opencode-ai@1.19.5).";
+const SUPPORT_HINT =
+  "Codeweave works with opencode 1.19.x (npm i -g opencode-ai@1.19.5) or 2.2.5 and newer (npm i -g @opencode/cli).";
+const UNSUPPORTED_MESSAGE = `OpenCode 2.1.0 is not supported. ${SUPPORT_HINT}`;
+const COLOURED_VERSION_OUTPUT =
+  "\u001b[1mopencode\u001b[0m \u001b[2mv\u001b[0m\u001b[1m2.3.2\u001b[0m\n";
+const UNDETECTABLE_MESSAGE = `The OpenCode version could not be determined. ${SUPPORT_HINT}`;
 
 afterEach(disposeOpencodeRigs);
 
@@ -35,7 +38,7 @@ it("refuses_the_second_start_after_opencode_was_upgraded_in_place", async () => 
   const exec = vi
     .fn<ExecText>()
     .mockResolvedValueOnce("1.19.5\n")
-    .mockResolvedValueOnce("opencode v2.3.2\n");
+    .mockResolvedValueOnce("opencode v2.1.0\n");
   const rig = await createOpencodeRig({
     generationFor: createVersionProbe({ exec, platform: "linux" }),
   });
@@ -64,8 +67,35 @@ it("probes_the_version_in_the_session_directory", async () => {
   expect(exec.mock.calls[0]?.[2]).toMatchObject({ cwd: rig.cwd });
 });
 
-it("fails_the_start_with_the_unsupported_version_message_on_opencode_2x", async () => {
-  const rig = await rigPrinting(printing("opencode v2.3.2\n"));
+it("starts_on_opencode_2_2_5_with_the_2x_launch", async () => {
+  const rig = await createOpencodeV2Rig({
+    generationFor: createVersionProbe({
+      exec: printing("opencode v2.2.5\n"),
+      platform: "linux",
+    }),
+  });
+
+  const result = await rig.start();
+
+  expect(result.ok).toBe(true);
+  expect(rig.container.specs[0]?.args).not.toContain("--pure");
+});
+
+it("starts_on_opencode_2x_when_the_version_is_printed_in_colour", async () => {
+  const rig = await createOpencodeV2Rig({
+    generationFor: createVersionProbe({
+      exec: printing(COLOURED_VERSION_OUTPUT),
+      platform: "linux",
+    }),
+  });
+
+  const result = await rig.start();
+
+  expect(result.ok).toBe(true);
+});
+
+it("fails_the_start_with_the_unsupported_version_message_on_opencode_2_1", async () => {
+  const rig = await rigPrinting(printing("opencode v2.1.0\n"));
 
   const result = await rig.start();
 
