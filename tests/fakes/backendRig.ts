@@ -14,6 +14,7 @@ import {
   PROBE_RUN_ID_PREFIX,
 } from "../../src/backend/constants";
 import type { LockKeyResolver } from "../../src/backend/locks";
+import { OpencodeGeneration } from "../../src/backend/opencode/version";
 import { createJsonStore, type JsonStore } from "../../src/backend/storage";
 import type {
   Contained,
@@ -130,6 +131,7 @@ export interface BackendRigOptions {
   readonly catalogProbeTimeoutMs?: number;
   readonly resolveLockKey?: LockKeyResolver;
   readonly backendLockKeys?: true;
+  readonly opencodeGeneration?: BackendDeps["opencodeGeneration"];
   readonly vault?: FakeVault;
   readonly postUpdaterConfig?: BackendDeps["postUpdaterConfig"];
   readonly probeStopResults?: ConstructorParameters<
@@ -359,6 +361,9 @@ function rigDeps(
     homeDir: "/home/jane",
     platform: options.platform ?? "linux",
     now: options.now ?? (() => RIG_NOW_MS),
+    opencodeGeneration:
+      options.opencodeGeneration ??
+      (() => Promise.resolve(OpencodeGeneration.v1)),
     ...(options.postUpdaterConfig === undefined
       ? {}
       : { postUpdaterConfig: options.postUpdaterConfig }),

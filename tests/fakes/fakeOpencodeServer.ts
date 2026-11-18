@@ -18,6 +18,10 @@ import type {
 } from "../../src/backend/agentAdapter";
 import { createOpencodeAdapter } from "../../src/backend/opencode/adapter";
 import { findFreePort } from "../../src/backend/opencode/port";
+import {
+  OpencodeGeneration,
+  type GenerationProbe,
+} from "../../src/backend/opencode/version";
 import type { OpencodeCredentials } from "../../src/backend/opencode/config";
 import {
   ContainerKind,
@@ -797,6 +801,7 @@ export interface OpencodeRigOptions {
   readonly stopGraceMs?: number;
   readonly staleGateGraceMs?: number;
   readonly api?: ApiAccount;
+  readonly generationFor?: GenerationProbe;
 }
 
 export interface OpencodeRig {
@@ -827,6 +832,8 @@ export async function createOpencodeRig(
     envFor: () => ({ PATH: "/usr/bin" }),
     executableFor: () => OPENCODE_RIG_EXECUTABLE,
     credentialsFor: () => Promise.resolve(credentials),
+    generationFor:
+      options.generationFor ?? (() => Promise.resolve(OpencodeGeneration.v1)),
     runtimeRoot,
     platform: "linux",
     fetchImpl: fetch,

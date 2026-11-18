@@ -3,7 +3,11 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { accountDirs, buildOpencodeLaunch } from "./launch";
+import {
+  accountDirs,
+  buildOpencodeCommand,
+  buildOpencodeLaunch,
+} from "./launch";
 
 const SERVER_SECRET = randomUUID();
 
@@ -95,6 +99,55 @@ describe("buildOpencodeLaunch direct execution", () => {
     expect(shimOnLinux.command).toBe("/opt/opencode.cmd");
     expect(exe).not.toHaveProperty("windowsVerbatimArguments");
     expect(shimOnLinux).not.toHaveProperty("windowsVerbatimArguments");
+  });
+});
+
+describe("buildOpencodeCommand", () => {
+  it("windows_shim_is_wrapped_in_comspec_with_verbatim_arguments", () => {
+    expect(
+      buildOpencodeCommand({
+        executable: "C:\\tools\\opencode.cmd",
+        args: ["--version"],
+        platform: "win32",
+        comSpec: "C:\\Windows\\System32\\cmd.exe",
+      }),
+    ).toEqual({
+      command: "C:\\Windows\\System32\\cmd.exe",
+      args: ["/d", "/s", "/c", '""C:\\tools\\opencode.cmd" --version"'],
+      windowsVerbatimArguments: true,
+    });
+  });
+
+  it("windows_shim_without_comspec_falls_back_to_cmd_exe", () => {
+    expect(
+      buildOpencodeCommand({
+        executable: "C:\\tools\\opencode.bat",
+        args: ["--version"],
+        platform: "win32",
+      }).command,
+    ).toBe("cmd.exe");
+  });
+
+  it("other_executables_run_directly_without_the_verbatim_flag", () => {
+    const exe = buildOpencodeCommand({
+      executable: "C:\\bin\\opencode.exe",
+      args: ["--version"],
+      platform: "win32",
+    });
+    const posix = buildOpencodeCommand({
+      executable: "/opt/opencode.cmd",
+      args: ["--version"],
+      platform: "linux",
+    });
+
+    expect(exe).toEqual({
+      command: "C:\\bin\\opencode.exe",
+      args: ["--version"],
+    });
+    expect(posix).toEqual({
+      command: "/opt/opencode.cmd",
+      args: ["--version"],
+    });
   });
 });
 

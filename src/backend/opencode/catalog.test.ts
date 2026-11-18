@@ -19,6 +19,7 @@ import {
   type ModelCatalogService,
 } from "./catalog";
 import { findFreePort } from "./port";
+import { OpencodeGeneration, type GenerationProbe } from "./version";
 
 const CAPABLE = {
   toolcall: true,
@@ -86,6 +87,7 @@ async function catalogRig(
     processes: rigProcesses(container),
     envFor: () => ({ PATH: "/usr/bin" }),
     resolveExecutable: resolve ?? (() => Promise.resolve(executable.current)),
+    generationFor: () => Promise.resolve(OpencodeGeneration.v1),
     directory,
     platform: "linux",
     fetchImpl: fetch,
@@ -409,6 +411,34 @@ it("unresolvable_executable_yields_empty_list_with_message", async () => {
     error: "The OpenCode executable was not found",
   });
   expect(rig.container.specs).toHaveLength(0);
+});
+
+it("unsupported_opencode_version_yields_its_message_without_a_process", async () => {
+  const message = "OpenCode 2.3.2 is not supported. hint";
+  const generationFor = vi.fn<GenerationProbe>(() =>
+    Promise.reject(new Error(message)),
+  );
+  const rig = await catalogRig(undefined, { generationFor });
+
+  const result = await rig.catalog.load();
+
+  expect(result).toEqual({ models: [], error: message });
+  expect(generationFor.mock.calls[0]?.[0]).toBe(OPENCODE_RIG_EXECUTABLE);
+  expect(generationFor.mock.calls[0]?.[1].env).toMatchObject({
+    HOME: join(rig.directory, "account", "home"),
+  });
+  expect(rig.container.specs).toHaveLength(0);
+});
+
+it("probes_the_version_in_the_catalog_directory", async () => {
+  const generationFor = vi.fn<GenerationProbe>(() =>
+    Promise.resolve(OpencodeGeneration.v1),
+  );
+  const rig = await catalogRig(undefined, { generationFor });
+
+  await rig.catalog.load();
+
+  expect(generationFor.mock.calls[0]?.[1].cwd).toBe(rig.directory);
 });
 
 it("probe_serves_on_loopback_with_isolated_directories", async () => {

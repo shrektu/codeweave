@@ -29,6 +29,7 @@ import {
 } from "./constants";
 import { accountDirs, buildOpencodeLaunch } from "./launch";
 import type { ProvidersResponse } from "./protocol";
+import type { GenerationProbe } from "./version";
 import { watchProcess } from "./watch";
 
 export const CATALOG_DIR_NAME = "opencode-catalog";
@@ -65,6 +66,7 @@ export interface ModelCatalogDeps {
   readonly processes: AgentProcesses;
   readonly envFor: (spec: AgentStartSpec) => Record<string, string>;
   readonly resolveExecutable: () => Promise<string>;
+  readonly generationFor: GenerationProbe;
   readonly directory: string;
   readonly platform: NodeJS.Platform;
   readonly comSpec?: string;
@@ -204,13 +206,18 @@ async function probeModels(
   const files = await writeCatalogFiles(deps.directory);
   const runId = deps.newRunId();
   const password = deps.newPassword();
+  const env = deps.envFor(startSpecFor(deps, files, executable, runId));
+  await deps.generationFor(executable, {
+    env: { ...env, ...accountDirs(files.configDir) },
+    cwd: deps.directory,
+  });
   const launch = buildOpencodeLaunch({
     executable,
     configDir: files.configDir,
     configFile: files.configFile,
     password,
     port: await deps.freePort(),
-    env: deps.envFor(startSpecFor(deps, files, executable, runId)),
+    env,
     platform: deps.platform,
     comSpec: deps.comSpec,
   });

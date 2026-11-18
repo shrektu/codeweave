@@ -12,6 +12,8 @@ import {
   startBackend,
   type Backend,
 } from "../../src/backend/startup";
+import { execText } from "../../src/backend/exec";
+import { createVersionProbe } from "../../src/backend/opencode/version";
 import { createProcessContainer } from "../../src/backend/process/select";
 import { inspectWorktree } from "../../src/backend/worktree";
 import { FREE_MODEL_MARKER } from "../../src/domain/modelChoice";
@@ -156,6 +158,10 @@ async function openRig(
     },
     newRunId: () => randomUUID(),
     resolveExecutable: createExecutableResolver(process.env, process.platform),
+    opencodeGeneration: createVersionProbe({
+      exec: execText,
+      platform: process.platform,
+    }),
     inspectWorktree,
   });
   cleanup.add(() => backend.shutdown());

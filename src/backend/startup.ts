@@ -63,6 +63,7 @@ import {
   type OpencodeCredentials,
 } from "./opencode/config";
 import { findFreePort } from "./opencode/port";
+import type { GenerationProbe } from "./opencode/version";
 import {
   ContainerUnavailableError,
   type ProcessContainer,
@@ -106,6 +107,7 @@ export interface BackendDeps {
     configured: string | null,
   ) => string;
   readonly inspectWorktree: (cwd: string) => Promise<WorktreeState>;
+  readonly opencodeGeneration: GenerationProbe;
   readonly catalogProbeTimeoutMs?: number;
   readonly ptyLauncher?: PtyLauncherFactory;
   readonly resolveLockKey?: LockKeyResolver;
@@ -352,6 +354,7 @@ function createAdapter(
       envFor,
       executableFor: (spec) => spec.executable,
       credentialsFor: createCredentialsFor(keyStore),
+      generationFor: deps.opencodeGeneration,
       runtimeRoot: defaultRuntimeRoot(deps.parentEnv),
       platform: deps.platform,
       ...comSpecOf(deps),
@@ -379,6 +382,7 @@ function createCatalog(
         ProviderId.opencode,
         (await store.readSettings()).opencodeExecutable,
       ),
+    generationFor: deps.opencodeGeneration,
     directory: join(deps.args.userData, CATALOG_DIR_NAME),
     platform: deps.platform,
     ...comSpecOf(deps),

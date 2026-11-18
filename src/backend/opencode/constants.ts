@@ -139,6 +139,15 @@ export const TOOL_KIND_READ = "read";
 export const TOOL_KIND_SEARCH = "search";
 export const TOOL_KIND_FETCH = "fetch";
 
+export const VERSION_ARG = "--version";
+export const VERSION_PROBE_TIMEOUT_MS = 10_000;
+export const SUPPORTED_MAJOR_VERSION = 1;
+export const VERSION_PATTERN = /^(?:opencode\s+)?v?(\d+)\.(\d+)\.(\d+)/;
+export const VERSION_SUPPORT_HINT =
+  "Codeweave works with opencode 1.19.x (npm i -g opencode-ai@1.19.5).";
+export const VERSION_UNKNOWN_MESSAGE =
+  "The OpenCode version could not be determined.";
+
 export const HTTP_TOO_MANY_REQUESTS = 429;
 export const HTTP_UNAUTHORIZED = 401;
 export const HTTP_FORBIDDEN = 403;

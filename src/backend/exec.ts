@@ -12,6 +12,8 @@ const execFileAsync = promisify(execFile);
 export interface ExecOptions {
   readonly timeoutMs?: number;
   readonly env?: Readonly<Record<string, string>>;
+  readonly windowsVerbatimArguments?: boolean;
+  readonly cwd?: string;
 }
 
 export type ExecText = (
@@ -29,6 +31,10 @@ export const execText: ExecText = async (file, args, options) => {
     ...(options?.env === undefined
       ? {}
       : { env: { ...process.env, ...options.env } }),
+    ...(options?.cwd === undefined ? {} : { cwd: options.cwd }),
+    ...(options?.windowsVerbatimArguments === undefined
+      ? {}
+      : { windowsVerbatimArguments: options.windowsVerbatimArguments }),
   });
   return stdout;
 };

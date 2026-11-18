@@ -25,6 +25,7 @@ import {
 import { OpencodeHandle } from "./handle";
 import { accountDirs, buildOpencodeLaunch } from "./launch";
 import { createRedactor, type Redactor } from "./redact";
+import type { GenerationProbe } from "./version";
 import { watchProcess, type ProcessWatch } from "./watch";
 
 export interface OpencodeAdapterDeps {
@@ -34,6 +35,7 @@ export interface OpencodeAdapterDeps {
   readonly credentialsFor: (
     account: Account,
   ) => Promise<OpencodeCredentials | null>;
+  readonly generationFor: GenerationProbe;
   readonly runtimeRoot: string;
   readonly platform: NodeJS.Platform;
   readonly comSpec?: string;
@@ -71,11 +73,6 @@ async function spawnRun(
   secrets: RunSecrets,
 ): Promise<LaunchedRun> {
   const port = await deps.freePort();
-  await Promise.all(
-    Object.values(accountDirs(spec.account.configDir)).map((dir) =>
-      mkdir(dir, { recursive: true }),
-    ),
-  );
   const files = await createRunFiles({
     credentials: secrets.credentials,
     runtimeRoot: deps.runtimeRoot,
@@ -207,6 +204,14 @@ async function startWithCredentials(
   };
   let run: LaunchedRun;
   try {
+    const dirs = accountDirs(startSpec.account.configDir);
+    await Promise.all(
+      Object.values(dirs).map((dir) => mkdir(dir, { recursive: true })),
+    );
+    await deps.generationFor(deps.executableFor(startSpec), {
+      env: { ...deps.envFor(startSpec), ...dirs },
+      cwd: startSpec.cwd,
+    });
     run = await spawnRun(deps, startSpec, secrets);
   } catch (error) {
     return failure(secrets.redact(messageOf(error)));

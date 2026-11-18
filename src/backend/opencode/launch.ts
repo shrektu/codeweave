@@ -67,18 +67,22 @@ function launchEnv(input: OpencodeLaunchInput): Record<string, string> {
   };
 }
 
-export function buildOpencodeLaunch(
-  input: OpencodeLaunchInput,
-): OpencodeLaunch {
-  const env = launchEnv(input);
-  const args = [
-    SERVE_ARG,
-    HOSTNAME_ARG,
-    LOOPBACK_HOST,
-    PORT_ARG,
-    String(input.port),
-    PURE_ARG,
-  ];
+export interface OpencodeCommandInput {
+  readonly executable: string;
+  readonly args: readonly string[];
+  readonly platform: NodeJS.Platform;
+  readonly comSpec?: string | undefined;
+}
+
+export interface OpencodeCommand {
+  readonly command: string;
+  readonly args: string[];
+  readonly windowsVerbatimArguments?: boolean;
+}
+
+export function buildOpencodeCommand(
+  input: OpencodeCommandInput,
+): OpencodeCommand {
   if (
     input.platform === WINDOWS_PLATFORM &&
     WINDOWS_SHIM_PATTERN.test(input.executable)
@@ -87,11 +91,31 @@ export function buildOpencodeLaunch(
       command: input.comSpec ?? WINDOWS_CMD_FALLBACK,
       args: [
         ...WINDOWS_CMD_ARGS,
-        `"${quoted(input.executable)} ${args.join(" ")}"`,
+        `"${quoted(input.executable)} ${input.args.join(" ")}"`,
       ],
-      env,
       windowsVerbatimArguments: true,
     };
   }
-  return { command: input.executable, args, env };
+  return { command: input.executable, args: [...input.args] };
+}
+
+export function buildOpencodeLaunch(
+  input: OpencodeLaunchInput,
+): OpencodeLaunch {
+  return {
+    ...buildOpencodeCommand({
+      executable: input.executable,
+      args: [
+        SERVE_ARG,
+        HOSTNAME_ARG,
+        LOOPBACK_HOST,
+        PORT_ARG,
+        String(input.port),
+        PURE_ARG,
+      ],
+      platform: input.platform,
+      comSpec: input.comSpec,
+    }),
+    env: launchEnv(input),
+  };
 }
