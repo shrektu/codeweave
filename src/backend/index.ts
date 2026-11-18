@@ -11,8 +11,16 @@ import {
 
 import { parseBackendArgs } from "./args";
 import { locateClaudeAcpEntry } from "./claude/launch";
+import { LOGIN_SHELL_PATH_TIMEOUT_MS } from "./constants";
 import type { ConnectionRegistry } from "./connections";
+import {
+  isDirectory,
+  passwdShell,
+  readLoginShellPath,
+  resolveLaunchEnv,
+} from "./launchEnv";
 import { createProcessContainer } from "./process/select";
+import { isRunnableFileSync } from "./terminal/shell";
 import { createParentPortVault } from "./secrets/vault";
 import {
   createBackendRegistry,
@@ -23,36 +31,56 @@ import { inspectWorktree } from "./worktree";
 
 let connections: ConnectionRegistry | null = null;
 
-const ready = startBackend({
-  args: parseBackendArgs(process.argv),
-  vault: createParentPortVault(process.parentPort),
-  broadcast: (event, payload) => {
-    connections?.broadcast(event, payload);
-  },
-  createContainer: (instanceId) =>
-    createProcessContainer(process.platform, undefined, instanceId),
-  execPath: process.execPath,
-  adapterEntry: locateClaudeAcpEntry(),
-  parentEnv: process.env,
-  homeDir: homedir(),
+const args = parseBackendArgs(process.argv);
+const vault = createParentPortVault(process.parentPort);
+
+const ready = resolveLaunchEnv({
+  env: process.env,
   platform: process.platform,
-  now: () => Date.now(),
-  schedule: (atMillis, run) => {
-    const timer = setTimeout(run, Math.max(0, atMillis - Date.now()));
-    return () => {
-      clearTimeout(timer);
-    };
-  },
-  newRunId: () => randomUUID(),
-  resolveExecutable: createExecutableResolver(process.env, process.platform),
-  inspectWorktree,
-  postUpdaterConfig: (message) => {
-    process.parentPort.postMessage(message);
-  },
-}).then((backend) => {
-  connections = createBackendRegistry(backend);
-  return { backend, registry: connections };
-});
+  homeDir: homedir(),
+  userShell: passwdShell(),
+  readShellPath: (shell) =>
+    readLoginShellPath(shell, {
+      env: process.env,
+      cwd: homedir(),
+      timeoutMs: LOGIN_SHELL_PATH_TIMEOUT_MS,
+    }),
+  isDirectory,
+  isExecutable: (path) => isRunnableFileSync(path, process.platform),
+})
+  .then((env) =>
+    startBackend({
+      args,
+      vault,
+      broadcast: (event, payload) => {
+        connections?.broadcast(event, payload);
+      },
+      createContainer: (instanceId) =>
+        createProcessContainer(process.platform, undefined, instanceId),
+      execPath: process.execPath,
+      adapterEntry: locateClaudeAcpEntry(),
+      parentEnv: env,
+      homeDir: homedir(),
+      platform: process.platform,
+      now: () => Date.now(),
+      schedule: (atMillis, run) => {
+        const timer = setTimeout(run, Math.max(0, atMillis - Date.now()));
+        return () => {
+          clearTimeout(timer);
+        };
+      },
+      newRunId: () => randomUUID(),
+      resolveExecutable: createExecutableResolver(env, process.platform),
+      inspectWorktree,
+      postUpdaterConfig: (message) => {
+        process.parentPort.postMessage(message);
+      },
+    }),
+  )
+  .then((backend) => {
+    connections = createBackendRegistry(backend);
+    return { backend, registry: connections };
+  });
 
 ready.catch((error: unknown) => {
   console.error("backend failed to start", error);

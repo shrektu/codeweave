@@ -48,9 +48,23 @@ describe("createExecutableResolver", () => {
   });
 
   it.each([
-    [ProviderId.claude, "The Claude executable was not found"],
-    [ProviderId.codex, "The Codex executable was not found"],
-  ])("missing_%s_binary_is_unavailable", async (provider, message) => {
+    [
+      ProviderId.claude,
+      "The Claude CLI was not found. Install it and restart Codeweave, or set its full path under Settings → Claude executable.",
+    ],
+    [
+      ProviderId.codex,
+      "The Codex CLI was not found. Install it and restart Codeweave, or set its full path under Settings → Codex executable.",
+    ],
+    [
+      ProviderId.gemini,
+      "The agy CLI was not found. Install it and restart Codeweave, or set its full path under Settings → Gemini executable (agy).",
+    ],
+    [
+      ProviderId.opencode,
+      "The OpenCode CLI was not found. Install it and restart Codeweave, or set its full path under Settings → OpenCode executable.",
+    ],
+  ])("missing_%s_cli_names_the_settings_field", async (provider, message) => {
     const dir = await binDirWith("unrelated");
     const resolve = createExecutableResolver({ PATH: dir }, "linux");
 
@@ -59,14 +73,15 @@ describe("createExecutableResolver", () => {
     );
   });
 
-  it("missing_configured_path_is_unavailable_for_that_provider", async () => {
+  it("missing_configured_path_names_the_path_and_field", async () => {
     const dir = await binDirWith("codex");
+    const gone = join(dir, "gone");
     const resolve = createExecutableResolver({ PATH: dir }, "linux");
 
-    expect(() => resolve(ProviderId.codex, join(dir, "gone"))).toThrow(
+    expect(() => resolve(ProviderId.codex, gone)).toThrow(
       expect.objectContaining({
         code: IpcErrorCode.UNAVAILABLE,
-        message: "The Codex executable was not found",
+        message: `The Codex CLI was not found at "${gone}". Correct Settings → Codex executable, or clear it so Codeweave searches PATH again.`,
       }),
     );
   });
@@ -80,18 +95,6 @@ describe("createExecutableResolver", () => {
 
     expect(resolve(ProviderId.opencode, null)).toBe(
       hostExecutable(dir, "opencode"),
-    );
-  });
-
-  it("missing_opencode_binary_is_unavailable", async () => {
-    const dir = await binDirWith("unrelated");
-    const resolve = createExecutableResolver({ PATH: dir }, "linux");
-
-    expect(() => resolve(ProviderId.opencode, null)).toThrow(
-      expect.objectContaining({
-        code: IpcErrorCode.UNAVAILABLE,
-        message: "The OpenCode executable was not found",
-      }),
     );
   });
 
@@ -119,17 +122,6 @@ describe("createExecutableResolver", () => {
     expect(resolve(ProviderId.gemini, null)).toBe(hostExecutable(dir, "agy"));
   });
 
-  it("missing_agy_binary_is_unavailable", async () => {
-    const dir = await binDirWith("unrelated");
-    const resolve = createExecutableResolver({ PATH: dir }, "linux");
-
-    expect(() => resolve(ProviderId.gemini, null)).toThrow(
-      expect.objectContaining({
-        code: IpcErrorCode.UNAVAILABLE,
-        message: "The agy executable was not found",
-      }),
-    );
-  });
 });
 
 const STORED_KEY = "sk-test-credentials-0001";

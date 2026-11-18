@@ -1,3 +1,5 @@
+import { posix } from "node:path";
+
 import { PROVIDER_KEY_ENV_NAMES } from "../domain/apiProviders";
 import type { ToolCallStatus } from "../domain/events";
 
@@ -154,3 +156,33 @@ export const DIFF_MAX_PATCH_CHARS = 64_000;
 export const DIFF_CONTEXT_LINES = 3;
 export const DIFF_TIMEOUT_MS = 500;
 export const DIFF_MAX_EDIT_LENGTH = 20_000;
+export const ABSENT_PROCESS_ERRNO_CODE = "ESRCH";
+export const LOGIN_SHELL_PATH_ARGS: readonly string[] = ["-ilc"];
+export const LOGIN_SHELL_PATH_MARKER = "__CODEWEAVE_PATH__";
+export const LOGIN_SHELL_PATH_COMMAND =
+  "printf '__CODEWEAVE_%s__%s__CODEWEAVE_%s__' PATH \"$PATH\" PATH";
+export const LOGIN_SHELL_PATH_TIMEOUT_MS = 3000;
+export const USER_BIN_DIRS: readonly string[] = [
+  ".local/bin",
+  ".opencode/bin",
+  ".cargo/bin",
+  ".bun/bin",
+  ".npm-global/bin",
+  ".volta/bin",
+];
+export const LINUX_USER_BIN_DIRS: readonly string[] = [
+  ".local/share/pnpm",
+  ".local/share/fnm/aliases/default/bin",
+];
+export const LINUXBREW_ACCOUNT_DIR = "/home/linuxbrew";
+export const LINUX_SYSTEM_BIN_DIRS: readonly string[] = [
+  posix.join(LINUXBREW_ACCOUNT_DIR, ".linuxbrew", "bin"),
+];
+export const MACOS_USER_BIN_DIRS: readonly string[] = [
+  "Library/pnpm",
+  "Library/Application Support/fnm/aliases/default/bin",
+];
+export const MACOS_SYSTEM_BIN_DIRS: readonly string[] = [
+  "/opt/homebrew/bin",
+  "/usr/local/bin",
+];

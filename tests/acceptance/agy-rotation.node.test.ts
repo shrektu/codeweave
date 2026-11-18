@@ -333,7 +333,8 @@ describe("agy executable", () => {
       rig.call("session/start", { cwd: rig.cwd, provider: "gemini" }),
     ).rejects.toMatchObject({
       code: IpcErrorCode.UNAVAILABLE,
-      message: "The agy executable was not found",
+      message:
+        "The agy CLI was not found. Install it and restart Codeweave, or set its full path under Settings → Gemini executable (agy).",
     });
 
     const view = await rig.call("session/start", {

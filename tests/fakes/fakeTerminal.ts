@@ -384,7 +384,9 @@ function connectClient(
   };
 }
 
-export async function createBackendTerminalRig(): Promise<BackendTerminalRig> {
+export async function createBackendTerminalRig(
+  parentEnv: NodeJS.ProcessEnv = rigParentEnv(process.platform),
+): Promise<BackendTerminalRig> {
   const userData = await makeTempDir();
   const cwd = await makeTempDir();
   const container = new FakeLaunchContainer();
@@ -400,7 +402,7 @@ export async function createBackendTerminalRig(): Promise<BackendTerminalRig> {
     createContainer: () => Promise.resolve(container),
     execPath: "/usr/bin/node",
     adapterEntry: "/opt/adapter/entry.js",
-    parentEnv: rigParentEnv(process.platform),
+    parentEnv,
     homeDir: "/home/jane",
     platform: process.platform,
     now: () => 0,
