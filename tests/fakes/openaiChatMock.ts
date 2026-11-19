@@ -27,6 +27,7 @@ const SESSION_HEADER = "x-opencode-session";
 const REPLY_TEXT = "done";
 const TITLE_TEXT = "Rotation test";
 const TOOL_NAME = "bash";
+const SHELL_TOOL_NAME = "shell";
 const TOOL_DESCRIPTION = "Record the side effect";
 const MODEL_NAME = "mock-model";
 const CHUNK_OBJECT = "chat.completion.chunk";
@@ -41,7 +42,13 @@ const USAGE = {
 
 const RequestBodySchema = z.looseObject({
   model: z.string().optional(),
-  tools: z.array(z.unknown()).default([]),
+  tools: z
+    .array(
+      z.looseObject({
+        function: z.looseObject({ name: z.string() }).optional(),
+      }),
+    )
+    .default([]),
 });
 
 export interface ChatRecordedRequest {
@@ -100,12 +107,24 @@ function sendText(res: ServerResponse, text: string): void {
   sendStream(res, { role: "assistant", content: text }, "stop");
 }
 
+function offersShell(raw: string): boolean {
+  const parsed = RequestBodySchema.safeParse(JSON.parse(raw || "{}"));
+  return (
+    parsed.success &&
+    parsed.data.tools.some((tool) => tool.function?.name === SHELL_TOOL_NAME)
+  );
+}
+
 function sendToolCall(
   res: ServerResponse,
   toolCommand: string,
   sequence: number,
+  useShell: boolean,
 ): void {
-  const args = { command: toolCommand, description: TOOL_DESCRIPTION };
+  const toolName = useShell ? SHELL_TOOL_NAME : TOOL_NAME;
+  const args = useShell
+    ? { command: toolCommand }
+    : { command: toolCommand, description: TOOL_DESCRIPTION };
   sendStream(
     res,
     {
@@ -115,7 +134,7 @@ function sendToolCall(
           index: 0,
           id: `call_${String(sequence)}`,
           type: "function",
-          function: { name: TOOL_NAME, arguments: JSON.stringify(args) },
+          function: { name: toolName, arguments: JSON.stringify(args) },
         },
       ],
     },
@@ -228,7 +247,7 @@ function createHandler(
     if (scenario === ChatScenario.ok) {
       sendText(res, REPLY_TEXT);
     } else if (seen === 0) {
-      sendToolCall(res, options.toolCommand, sequence);
+      sendToolCall(res, options.toolCommand, sequence, offersShell(raw));
     } else if (scenario === ChatScenario.toolThenGoLimit) {
       sendGoLimit(res);
     } else {

@@ -1,31 +1,7 @@
 import { API_PROVIDERS } from "../../domain/apiProviders";
-import {
-  ERROR_KIND_RATE_LIMIT,
-  MS_PER_SECOND,
-  RATE_LIMIT_STATUS_REJECTED,
-} from "../../domain/constants";
+import { ERROR_KIND_RATE_LIMIT, MS_PER_SECOND } from "../../domain/constants";
 import type { AgentEvent } from "../../domain/events";
-import {
-  PermissionProfile,
-  type EpochMillis,
-  type EpochSeconds,
-} from "../../domain/types";
-import {
-  InvalidOptionError,
-  TurnInProgressError,
-  UnknownPermissionError,
-  type AgentHandle,
-  type AgentStartSpec,
-  type TurnOptions,
-} from "../agentAdapter";
-import type { AgentProcess } from "../agentProcesses";
-import {
-  STOP_REASON_CANCELLED,
-  STOP_REASON_END_TURN,
-} from "../codex/constants";
 import { withTimeout } from "../codex/handshake";
-import { PROCESS_EXITED_MESSAGE } from "../constants";
-import type { StopResult } from "../process/container";
 
 import {
   OpencodeHttpError,
@@ -34,35 +10,32 @@ import {
 } from "./client";
 import {
   LONG_RETRY_THRESHOLD_MS,
-  OpencodeAgent,
   OpencodeEventType,
-  OpencodePermissionResponse,
   OpencodeRole,
   SESSION_BUSY_MESSAGE,
-  STREAM_CLOSED_MESSAGE,
   TURN_FAILED_MESSAGE,
 } from "./constants";
-import { removeKeyFile, removeRunFiles, type RunFiles } from "./config";
+import { removeKeyFile } from "./config";
 import { classifySessionError, type SessionErrorClass } from "./errors";
 import {
   createEventMapper,
   SessionScope,
   type OpencodeEventMapper,
 } from "./events";
+import {
+  OpencodeHandleBase,
+  agentFor,
+  messageOf,
+  rateLimitEvents,
+  turnEnd,
+  type HandleBaseInit,
+} from "./handleBase";
 import type { OpencodeEvent, SessionErrorInfo } from "./protocol";
-import type { Redactor } from "./redact";
-import type { ProcessWatch } from "./watch";
 
-type Listener = (event: AgentEvent) => void;
 type EventOf<T extends OpencodeEvent["type"]> = Extract<
   OpencodeEvent,
   { type: T }
 >;
-
-interface PendingPermission {
-  readonly sessionId: string;
-  readonly optionIds: ReadonlySet<string>;
-}
 
 interface ActiveTurn {
   readonly done: PromiseWithResolvers<undefined>;
@@ -75,15 +48,8 @@ interface ActiveTurn {
   droppedError: { readonly info: SessionErrorInfo | undefined } | null;
 }
 
-export interface OpencodeHandleInit {
-  readonly spec: AgentStartSpec;
-  readonly agentProcess: AgentProcess;
-  readonly watch: ProcessWatch;
-  readonly files: RunFiles;
+export interface OpencodeHandleInit extends HandleBaseInit {
   readonly client: OpencodeClient;
-  readonly redact: Redactor;
-  readonly now: () => EpochMillis;
-  readonly stopGraceMs: number;
   readonly staleGateGraceMs: number;
 }
 
@@ -100,47 +66,6 @@ function newTurn(): ActiveTurn {
   };
 }
 
-function agentFor(profile: PermissionProfile): OpencodeAgent {
-  return profile === PermissionProfile.plan
-    ? OpencodeAgent.plan
-    : OpencodeAgent.build;
-}
-
-const PERMISSION_RESPONSES: readonly string[] = Object.values(
-  OpencodePermissionResponse,
-);
-
-function isPermissionResponse(
-  value: string,
-): value is OpencodePermissionResponse {
-  return PERMISSION_RESPONSES.includes(value);
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function rateLimitEvents(
-  resetsAt: EpochSeconds | null,
-  message: string,
-): AgentEvent[] {
-  return [
-    {
-      type: "rate_limit",
-      status: RATE_LIMIT_STATUS_REJECTED,
-      resetsAt,
-      rateLimitType: null,
-      utilization: null,
-    },
-    {
-      type: "turn_error",
-      errorKind: ERROR_KIND_RATE_LIMIT,
-      rpcCode: null,
-      message,
-    },
-  ];
-}
-
 function latestId(a: string | null, b: string | null): string | null {
   if (a === null || b === null) {
     return a ?? b;
@@ -148,33 +73,22 @@ function latestId(a: string | null, b: string | null): string | null {
   return a > b ? a : b;
 }
 
-export class OpencodeHandle implements AgentHandle {
-  readonly accountId: string;
-  readonly runId: string;
+export class OpencodeHandle extends OpencodeHandleBase<
+  ActiveTurn,
+  OpencodeEvent
+> {
   private readonly ctx: OpencodeHandleInit;
-  private readonly listeners = new Set<Listener>();
-  private readonly pending = new Map<string, PendingPermission>();
   private readonly idleWaiters = new Set<() => void>();
-  private readonly streamAbort = new AbortController();
   private busy = false;
   private staleBefore: { readonly after: string | null } | null = null;
   private lastMessageId: string | null = null;
   private mapper: OpencodeEventMapper | null = null;
-  private profile: PermissionProfile;
-  private sessionId = "";
-  private unavailable: string | null = null;
-  private stopping = false;
-  private exited = false;
-  private turn: ActiveTurn | null = null;
-  private finalizing: Promise<void> | null = null;
 
   constructor(ctx: OpencodeHandleInit) {
+    super(ctx, (...reply) => ctx.client.replyPermission(...reply));
     this.ctx = ctx;
-    this.accountId = ctx.spec.account.id;
-    this.runId = ctx.spec.runId;
-    this.profile = ctx.spec.profile;
-    void ctx.watch.exited.then(() => {
-      this.handleExit();
+    this.wakeHooks.push(() => {
+      this.releaseIdleWaiters();
     });
   }
 
@@ -183,89 +97,35 @@ export class OpencodeHandle implements AgentHandle {
     const stream = await watch.untilExit(
       client.events(this.streamAbort.signal),
     );
-    void this.consume(stream);
+    this.consume(stream);
     await watch.untilExit(client.warmUp());
     await removeKeyFile(files);
     this.sessionId = await watch.untilExit(client.createSession());
     this.mapper = createEventMapper(this.sessionId, spec.cwd);
   }
 
-  subscribe(listener: Listener): () => void {
-    this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
+  protected override createTurn(): ActiveTurn {
+    return newTurn();
   }
 
-  async prompt(text: string, options: TurnOptions): Promise<void> {
-    if (this.turn !== null) {
-      throw new TurnInProgressError(this.runId);
-    }
-    const turn = newTurn();
-    this.turn = turn;
-    try {
-      if (await this.ensureIdle(turn)) {
-        await this.sendPrompt(turn, text, options.model);
-      }
-      await turn.done.promise;
-    } finally {
-      this.settle(turn);
-      this.turn = this.turn === turn ? null : this.turn;
-    }
+  protected override needsCancelFallback(turn: ActiveTurn): boolean {
+    return this.staleBefore !== null && turn.sent;
   }
 
-  answerPermission(requestId: string, optionId: string): void {
-    const request = this.pending.get(requestId);
-    if (request === undefined) {
-      throw new UnknownPermissionError(requestId);
-    }
-    if (!request.optionIds.has(optionId) || !isPermissionResponse(optionId)) {
-      throw new InvalidOptionError(requestId, optionId);
-    }
-    this.pending.delete(requestId);
-    void this.reply(request.sessionId, requestId, optionId);
+  protected override interruptQuietly(): Promise<void> {
+    return this.abortQuietly();
   }
 
-  setProfile(profile: PermissionProfile): Promise<void> {
-    this.profile = profile;
-    return Promise.resolve();
+  protected override dispatch(event: OpencodeEvent): void {
+    this.onEvent(event);
   }
 
-  async cancel(): Promise<void> {
-    const turn = this.turn;
-    if (turn === null || turn.terminal || this.unavailable !== null) {
-      return;
-    }
-    turn.cancelled = true;
-    this.releaseIdleWaiters();
-    if (this.staleBefore !== null && turn.sent && turn.fallback === null) {
-      turn.fallback = setTimeout(() => {
-        this.endCancelled(turn);
-      }, this.ctx.stopGraceMs);
-    }
-    await this.abortQuietly();
+  protected override settle(turn: ActiveTurn): void {
+    this.clearGateTimer(turn);
+    super.settle(turn);
   }
 
-  async stop(graceMs: number): Promise<StopResult> {
-    this.stopping = true;
-    this.releaseIdleWaiters();
-    await this.rejectPending();
-    if (
-      this.turn !== null &&
-      !this.turn.terminal &&
-      this.unavailable === null
-    ) {
-      this.turn.cancelled = true;
-      await this.abortQuietly();
-    }
-    this.streamAbort.abort();
-    const result = await this.ctx.agentProcess.stop(graceMs);
-    this.handleExit();
-    await this.finalize();
-    return result;
-  }
-
-  private async ensureIdle(turn: ActiveTurn): Promise<boolean> {
+  protected override async ensureIdle(turn: ActiveTurn): Promise<boolean> {
     if (await this.idleAfterWait(turn)) {
       return true;
     }
@@ -345,7 +205,7 @@ export class OpencodeHandle implements AgentHandle {
         };
   }
 
-  private async sendPrompt(
+  protected override async sendPrompt(
     turn: ActiveTurn,
     text: string,
     model: string | null,
@@ -375,31 +235,6 @@ export class OpencodeHandle implements AgentHandle {
         this.busy = false;
       }
       this.failTurn(turn, this.ctx.redact(messageOf(error)));
-    }
-  }
-
-  private async consume(stream: AsyncIterable<OpencodeEvent>): Promise<void> {
-    try {
-      for await (const event of stream) {
-        this.onEvent(event);
-      }
-      this.streamLost();
-    } catch (error) {
-      if (!this.streamAbort.signal.aborted) {
-        console.error(`opencode event stream failed: ${this.runId}`, error);
-        this.streamLost();
-      }
-    }
-  }
-
-  private streamLost(): void {
-    if (this.stopping || this.exited) {
-      return;
-    }
-    this.unavailable = STREAM_CLOSED_MESSAGE;
-    this.releaseIdleWaiters();
-    if (this.turn !== null) {
-      this.failTurn(this.turn, STREAM_CLOSED_MESSAGE);
     }
   }
 
@@ -525,20 +360,11 @@ export class OpencodeHandle implements AgentHandle {
     if (request?.type !== "permission_request") {
       return;
     }
+    const live = !this.stopping && this.turn !== null && !this.turn.terminal;
     const sessionId = event.properties.sessionID ?? this.sessionId;
-    if (this.stopping || this.turn === null || this.turn.terminal) {
-      void this.reply(
-        sessionId,
-        request.requestId,
-        OpencodePermissionResponse.reject,
-      );
-      return;
+    if (this.permissions.admit(request, sessionId, live)) {
+      this.emit(request);
     }
-    this.pending.set(request.requestId, {
-      sessionId,
-      optionIds: new Set(request.options.map((option) => option.optionId)),
-    });
-    this.emit(request);
   }
 
   private onStatus(
@@ -580,7 +406,7 @@ export class OpencodeHandle implements AgentHandle {
     }
     if (!turn.terminal) {
       turn.terminal = true;
-      this.emit(this.turnEnd(turn.cancelled));
+      this.emit(turnEnd(turn.cancelled));
     }
     this.settle(turn);
   }
@@ -594,7 +420,7 @@ export class OpencodeHandle implements AgentHandle {
     const cancelled = classified.aborted && (turn.cancelled || this.stopping);
     this.conclude(
       turn,
-      cancelled ? [this.turnEnd(true)] : this.errorEvents(classified),
+      cancelled ? [turnEnd(true)] : this.errorEvents(classified),
     );
   }
 
@@ -613,130 +439,12 @@ export class OpencodeHandle implements AgentHandle {
     ];
   }
 
-  private turnEnd(cancelled: boolean): AgentEvent {
-    return {
-      type: "turn_end",
-      stopReason: cancelled ? STOP_REASON_CANCELLED : STOP_REASON_END_TURN,
-    };
-  }
-
-  private conclude(turn: ActiveTurn, events: readonly AgentEvent[]): void {
-    turn.terminal = true;
-    events.forEach((event) => {
-      this.emit(event);
-    });
-    turn.fallback = setTimeout(() => {
-      this.settle(turn);
-    }, this.ctx.stopGraceMs);
-  }
-
-  private failTurn(turn: ActiveTurn, message: string): void {
-    if (turn.settled) {
-      return;
-    }
-    if (!turn.terminal) {
-      turn.terminal = true;
-      this.emit(
-        this.stopping
-          ? this.turnEnd(true)
-          : { type: "turn_error", errorKind: null, rpcCode: null, message },
-      );
-    }
-    this.settle(turn);
-  }
-
-  private endCancelled(turn: ActiveTurn): void {
-    if (turn.settled) {
-      return;
-    }
-    if (!turn.terminal) {
-      turn.terminal = true;
-      this.emit(this.turnEnd(true));
-    }
-    this.settle(turn);
-  }
-
-  private settle(turn: ActiveTurn): void {
-    if (turn.settled) {
-      return;
-    }
-    turn.settled = true;
-    this.clearGateTimer(turn);
-    if (turn.fallback !== null) {
-      clearTimeout(turn.fallback);
-    }
-    turn.done.resolve(undefined);
-  }
-
-  private reply(
-    sessionId: string,
-    permissionId: string,
-    response: OpencodePermissionResponse,
-  ): Promise<void> {
-    return this.ctx.client
-      .replyPermission(sessionId, permissionId, response)
-      .catch((error: unknown) => {
-        console.warn(`opencode permission reply failed: ${this.runId}`, error);
-      });
-  }
-
-  private async rejectPending(): Promise<void> {
-    const requests = [...this.pending];
-    this.pending.clear();
-    await Promise.all(
-      requests.map(([id, request]) =>
-        this.reply(request.sessionId, id, OpencodePermissionResponse.reject),
-      ),
-    );
-  }
-
   private abortQuietly(): Promise<void> {
     return withTimeout(
       this.ctx.client.abort(this.sessionId),
       this.ctx.stopGraceMs,
     ).catch((error: unknown) => {
       console.warn(`opencode abort failed: ${this.runId}`, error);
-    });
-  }
-
-  private handleExit(): void {
-    if (this.exited) {
-      return;
-    }
-    this.exited = true;
-    this.unavailable = PROCESS_EXITED_MESSAGE;
-    this.releaseIdleWaiters();
-    this.streamAbort.abort();
-    this.pending.clear();
-    if (this.turn !== null) {
-      this.failTurn(this.turn, PROCESS_EXITED_MESSAGE);
-    }
-    if (!this.stopping) {
-      void this.finalize();
-    }
-  }
-
-  private finalize(): Promise<void> {
-    this.finalizing ??= removeRunFiles(this.ctx.files)
-      .catch((error: unknown) => {
-        console.error(
-          `opencode run files cleanup failed: ${this.runId}`,
-          error,
-        );
-      })
-      .then(() => {
-        this.emit({ type: "process_exit" });
-      });
-    return this.finalizing;
-  }
-
-  private emit(event: AgentEvent): void {
-    [...this.listeners].forEach((listener) => {
-      try {
-        listener(event);
-      } catch (error) {
-        console.error(`opencode event listener failed: ${this.runId}`, error);
-      }
     });
   }
 }

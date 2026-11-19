@@ -4,27 +4,35 @@ import type { Account, EpochMillis } from "../../domain/types";
 import {
   AgentStartFailure,
   type AgentAdapter,
+  type AgentHandle,
   type AgentStartResult,
   type AgentStartSpec,
 } from "../agentAdapter";
 import type { AgentProcess, AgentProcesses } from "../agentProcesses";
 import { DEFAULT_STOP_GRACE_MS } from "../constants";
 
-import { createOpencodeClient, type OpencodeClient } from "./client";
+import { createOpencodeClient, type OpencodeClientOptions } from "./client";
 import {
+  buildSessionConfig,
   createRunFiles,
   removeRunFiles,
   type OpencodeCredentials,
+  type RunFilesInput,
   type RunFiles,
 } from "./config";
 import {
   NEEDS_LOGIN_MESSAGE,
   READY_TIMEOUT_MS,
   STALE_GATE_GRACE_MS,
+  OpencodeGeneration,
 } from "./constants";
 import { OpencodeHandle } from "./handle";
 import { accountDirs, buildOpencodeLaunch } from "./launch";
 import { createRedactor, type Redactor } from "./redact";
+import { createOpencodeV2Client } from "./v2/client";
+import { buildV2SessionConfig } from "./v2/config";
+import { OpencodeV2Handle } from "./v2/handle";
+import type { GenerationProbe } from "./version";
 import { watchProcess, type ProcessWatch } from "./watch";
 
 export interface OpencodeAdapterDeps {
@@ -34,6 +42,7 @@ export interface OpencodeAdapterDeps {
   readonly credentialsFor: (
     account: Account,
   ) => Promise<OpencodeCredentials | null>;
+  readonly generationFor: GenerationProbe;
   readonly runtimeRoot: string;
   readonly platform: NodeJS.Platform;
   readonly comSpec?: string;
@@ -49,11 +58,66 @@ export interface OpencodeAdapterDeps {
 }
 
 interface LaunchedRun {
+  readonly generation: OpencodeGeneration;
   readonly agentProcess: AgentProcess;
   readonly files: RunFiles;
   readonly watch: ProcessWatch;
   readonly redact: Redactor;
 }
+
+type OpencodeRunHandle = AgentHandle & { open(): Promise<void> };
+
+interface HandleContext {
+  readonly deps: OpencodeAdapterDeps;
+  readonly startSpec: AgentStartSpec;
+  readonly run: LaunchedRun;
+  readonly credentials: OpencodeCredentials;
+  readonly clientOptions: OpencodeClientOptions;
+}
+
+interface GenerationDriver {
+  readonly buildConfig: RunFilesInput["buildConfig"];
+  readonly createHandle: (context: HandleContext) => OpencodeRunHandle;
+}
+
+const GENERATION_DRIVERS: Readonly<
+  Record<OpencodeGeneration, GenerationDriver>
+> = {
+  [OpencodeGeneration.v1]: {
+    buildConfig: buildSessionConfig,
+    createHandle: ({ deps, startSpec, run, clientOptions }) =>
+      new OpencodeHandle({
+        spec: startSpec,
+        agentProcess: run.agentProcess,
+        watch: run.watch,
+        files: run.files,
+        client: createOpencodeClient(clientOptions),
+        redact: run.redact,
+        now: deps.now,
+        stopGraceMs: deps.stopGraceMs ?? DEFAULT_STOP_GRACE_MS,
+        staleGateGraceMs: deps.staleGateGraceMs ?? STALE_GATE_GRACE_MS,
+      }),
+  },
+  [OpencodeGeneration.v2]: {
+    buildConfig: buildV2SessionConfig,
+    createHandle: ({ deps, startSpec, run, credentials, clientOptions }) =>
+      new OpencodeV2Handle({
+        spec: startSpec,
+        agentProcess: run.agentProcess,
+        watch: run.watch,
+        files: run.files,
+        client: createOpencodeV2Client(clientOptions),
+        redact: run.redact,
+        now: deps.now,
+        stopGraceMs: deps.stopGraceMs ?? DEFAULT_STOP_GRACE_MS,
+        readyTimeoutMs: deps.readyTimeoutMs ?? READY_TIMEOUT_MS,
+        defaultModel: {
+          id: credentials.model,
+          providerID: credentials.providerId,
+        },
+      }),
+  },
+};
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -69,19 +133,17 @@ async function spawnRun(
   deps: OpencodeAdapterDeps,
   spec: AgentStartSpec,
   secrets: RunSecrets,
+  generation: OpencodeGeneration,
 ): Promise<LaunchedRun> {
   const port = await deps.freePort();
-  await Promise.all(
-    Object.values(accountDirs(spec.account.configDir)).map((dir) =>
-      mkdir(dir, { recursive: true }),
-    ),
-  );
   const files = await createRunFiles({
     credentials: secrets.credentials,
     runtimeRoot: deps.runtimeRoot,
+    buildConfig: GENERATION_DRIVERS[generation].buildConfig,
   });
   try {
     const launch = buildOpencodeLaunch({
+      generation,
       executable: deps.executableFor(spec),
       configDir: spec.account.configDir,
       configFile: files.configFile,
@@ -102,6 +164,7 @@ async function spawnRun(
         : { windowsVerbatimArguments: launch.windowsVerbatimArguments }),
     });
     return {
+      generation,
       agentProcess,
       files,
       watch: watchProcess(agentProcess.contained),
@@ -119,7 +182,7 @@ function failure(message: string): AgentStartResult {
 
 async function abortStart(
   run: LaunchedRun,
-  handle: OpencodeHandle | null,
+  handle: OpencodeRunHandle | null,
   error: unknown,
   graceMs: number,
 ): Promise<AgentStartResult> {
@@ -135,43 +198,25 @@ async function abortStart(
   return failure(tail === "" ? message : `${message}\n${run.redact(tail)}`);
 }
 
-function newHandle(
-  deps: OpencodeAdapterDeps,
-  startSpec: AgentStartSpec,
-  run: LaunchedRun,
-  client: OpencodeClient,
-): OpencodeHandle {
-  return new OpencodeHandle({
-    spec: startSpec,
-    agentProcess: run.agentProcess,
-    watch: run.watch,
-    files: run.files,
-    client,
-    redact: run.redact,
-    now: deps.now,
-    stopGraceMs: deps.stopGraceMs ?? DEFAULT_STOP_GRACE_MS,
-    staleGateGraceMs: deps.staleGateGraceMs ?? STALE_GATE_GRACE_MS,
-  });
-}
-
 async function connectRun(
   deps: OpencodeAdapterDeps,
   startSpec: AgentStartSpec,
   run: LaunchedRun,
-  password: string,
+  secrets: RunSecrets,
 ): Promise<AgentStartResult> {
-  let handle: OpencodeHandle | null = null;
+  let handle: OpencodeRunHandle | null = null;
   try {
     const baseUrl = await run.watch.listening(
       deps.readyTimeoutMs ?? READY_TIMEOUT_MS,
     );
-    handle = newHandle(
+    handle = GENERATION_DRIVERS[run.generation].createHandle({
       deps,
       startSpec,
       run,
-      createOpencodeClient({
+      credentials: secrets.credentials,
+      clientOptions: {
         baseUrl,
-        password,
+        password: secrets.password,
         directory: startSpec.cwd,
         fetchImpl: deps.fetchImpl,
         ...(deps.requestTimeoutMs === undefined
@@ -180,8 +225,8 @@ async function connectRun(
         ...(deps.warmUpTimeoutMs === undefined
           ? {}
           : { warmUpTimeoutMs: deps.warmUpTimeoutMs }),
-      }),
-    );
+      },
+    });
     await handle.open();
     return { ok: true, handle };
   } catch (error) {
@@ -207,11 +252,19 @@ async function startWithCredentials(
   };
   let run: LaunchedRun;
   try {
-    run = await spawnRun(deps, startSpec, secrets);
+    const dirs = accountDirs(startSpec.account.configDir);
+    await Promise.all(
+      Object.values(dirs).map((dir) => mkdir(dir, { recursive: true })),
+    );
+    const generation = await deps.generationFor(deps.executableFor(startSpec), {
+      env: { ...deps.envFor(startSpec), ...dirs },
+      cwd: startSpec.cwd,
+    });
+    run = await spawnRun(deps, startSpec, secrets, generation);
   } catch (error) {
     return failure(secrets.redact(messageOf(error)));
   }
-  return connectRun(deps, startSpec, run, password);
+  return connectRun(deps, startSpec, run, secrets);
 }
 
 export function createOpencodeAdapter(deps: OpencodeAdapterDeps): AgentAdapter {

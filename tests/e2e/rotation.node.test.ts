@@ -11,6 +11,8 @@ import type {
   ProcessContainer,
   SpawnSpec,
 } from "../../src/backend/process/container";
+import { execText } from "../../src/backend/exec";
+import { createVersionProbe } from "../../src/backend/opencode/version";
 import { createProcessContainer } from "../../src/backend/process/select";
 import {
   createExecutableResolver,
@@ -146,6 +148,10 @@ async function openRig(
     },
     newRunId: () => randomUUID(),
     resolveExecutable: createExecutableResolver(process.env, process.platform),
+    opencodeGeneration: createVersionProbe({
+      exec: execText,
+      platform: process.platform,
+    }),
     inspectWorktree,
   });
   cleanup.add(() => backend.shutdown());

@@ -4,7 +4,7 @@ import { PROCESS_EXITED_MESSAGE, STDERR_TAIL_CHARS } from "../constants";
 import { withTimeout } from "../codex/handshake";
 import type { Contained } from "../process/container";
 
-import { LISTENING_LINE_PREFIX, READY_TIMEOUT_MESSAGE } from "./constants";
+import { LISTENING_MARKER, READY_TIMEOUT_MESSAGE } from "./constants";
 
 export class ProcessExitedError extends Error {
   constructor() {
@@ -25,8 +25,9 @@ export function watchProcess(contained: Contained): ProcessWatch {
   const url = Promise.withResolvers<string>();
   let stderrText = "";
   createInterface({ input: contained.stdout }).on("line", (line) => {
-    if (line.startsWith(LISTENING_LINE_PREFIX)) {
-      url.resolve(line.slice(LISTENING_LINE_PREFIX.length).trim());
+    const markerAt = line.indexOf(LISTENING_MARKER);
+    if (markerAt !== -1) {
+      url.resolve(line.slice(markerAt + LISTENING_MARKER.length).trim());
     }
   });
   contained.stderr.on("data", (chunk: Buffer) => {

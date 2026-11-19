@@ -12,8 +12,11 @@ import {
   startBackend,
   type Backend,
 } from "../../src/backend/startup";
+import { execText } from "../../src/backend/exec";
+import { createVersionProbe } from "../../src/backend/opencode/version";
 import { createProcessContainer } from "../../src/backend/process/select";
 import { inspectWorktree } from "../../src/backend/worktree";
+import { ApiProviderId } from "../../src/domain/apiProviders";
 import { FREE_MODEL_MARKER } from "../../src/domain/modelChoice";
 import {
   PermissionProfile,
@@ -75,6 +78,10 @@ const PID_PATTERN = /^\d+$/;
 const NUL = "\0";
 const VANISHED_PROCESS_CODES: readonly string[] = ["ENOENT", "ESRCH"];
 const CONSOLE_METHODS = ["log", "info", "warn", "error", "debug"] as const;
+const CATALOG_PROVIDERS = [
+  ApiProviderId.groq,
+  ApiProviderId.opencodeGo,
+] as const;
 const ENV_ALLOW_LIST = [
   "PATH",
   "HOME",
@@ -156,6 +163,10 @@ async function openRig(
     },
     newRunId: () => randomUUID(),
     resolveExecutable: createExecutableResolver(process.env, process.platform),
+    opencodeGeneration: createVersionProbe({
+      exec: execText,
+      platform: process.platform,
+    }),
     inspectWorktree,
   });
   cleanup.add(() => backend.shutdown());
@@ -453,6 +464,31 @@ describe("rejected model with the real opencode CLI and a local chat mock", () =
       expect(rig.mock.requests().filter((request) => request.hasTools)).toEqual(
         [],
       );
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
+describe("model catalog with the real opencode CLI", () => {
+  it(
+    "model_catalog_loads_from_the_real_opencode_cli",
+    async () => {
+      const rig = await openRig();
+
+      const catalog = await rig.backend.handlers["models/catalog"]({});
+
+      expect(catalog.error).toBeNull();
+      for (const providerId of CATALOG_PROVIDERS) {
+        const models = catalog.models.filter(
+          (model) => model.providerId === providerId,
+        );
+        expect(models.length).toBeGreaterThan(0);
+        expect(models.some((model) => model.contextWindow !== null)).toBe(true);
+      }
+      const serialized = JSON.stringify(catalog);
+      for (const key of OPENCODE_KEYS) {
+        expect(serialized).not.toContain(key);
+      }
     },
     TEST_TIMEOUT_MS,
   );

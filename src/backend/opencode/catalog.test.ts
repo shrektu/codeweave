@@ -2,23 +2,29 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 import {
   OPENCODE_RIG_EXECUTABLE,
   OPENCODE_RIG_PASSWORD,
   ScriptedOpencodeContainer,
 } from "../../../tests/fakes/fakeOpencodeServer";
+import { ScriptedOpencodeV2Container } from "../../../tests/fakes/fakeOpencodeV2Server";
+import type { RigContainer } from "../../../tests/fakes/opencodeFakeCommon";
 import { rigProcesses } from "../../../tests/fakes/rigProcesses";
 import { settled } from "../../../tests/fakes/settle";
 
 import {
   createModelCatalog,
   toCatalogModels,
+  toCatalogModelsV2,
   type ModelCatalogDeps,
   type ModelCatalogService,
 } from "./catalog";
 import { findFreePort } from "./port";
+import { OpencodeGeneration } from "./constants";
+import type { V2Model } from "./v2/protocol";
+import type { GenerationProbe } from "./version";
 
 const CAPABLE = {
   toolcall: true,
@@ -52,7 +58,7 @@ function providers(
 }
 
 const roots: string[] = [];
-const containers: ScriptedOpencodeContainer[] = [];
+const containers: RigContainer[] = [];
 
 afterEach(async () => {
   await Promise.allSettled(
@@ -65,20 +71,22 @@ afterEach(async () => {
   );
 });
 
-interface CatalogRig {
+interface CatalogRig<
+  Container extends RigContainer = ScriptedOpencodeContainer,
+> {
   readonly catalog: ModelCatalogService;
-  readonly container: ScriptedOpencodeContainer;
+  readonly container: Container;
   readonly executable: { current: string };
   readonly directory: string;
 }
 
-async function catalogRig(
+async function catalogRigOn<Container extends RigContainer>(
+  container: Container,
   resolve?: () => Promise<string>,
   overrides: Partial<ModelCatalogDeps> = {},
-): Promise<CatalogRig> {
+): Promise<CatalogRig<Container>> {
   const directory = await mkdtemp(join(tmpdir(), "codeweave-catalog-"));
   roots.push(directory);
-  const container = new ScriptedOpencodeContainer([]);
   containers.push(container);
   const executable = { current: OPENCODE_RIG_EXECUTABLE };
   let runs = 0;
@@ -86,6 +94,7 @@ async function catalogRig(
     processes: rigProcesses(container),
     envFor: () => ({ PATH: "/usr/bin" }),
     resolveExecutable: resolve ?? (() => Promise.resolve(executable.current)),
+    generationFor: () => Promise.resolve(OpencodeGeneration.v1),
     directory,
     platform: "linux",
     fetchImpl: fetch,
@@ -101,6 +110,47 @@ async function catalogRig(
     ...overrides,
   });
   return { catalog, container, executable, directory };
+}
+
+function catalogRig(
+  resolve?: () => Promise<string>,
+  overrides: Partial<ModelCatalogDeps> = {},
+): Promise<CatalogRig> {
+  return catalogRigOn(new ScriptedOpencodeContainer([]), resolve, overrides);
+}
+
+function catalogRigV2(
+  models: readonly Record<string, unknown>[],
+): Promise<CatalogRig<ScriptedOpencodeV2Container>> {
+  const container = new ScriptedOpencodeV2Container([]);
+  container.config.models = models;
+  return catalogRigOn(container, undefined, {
+    generationFor: () => Promise.resolve(OpencodeGeneration.v2),
+  });
+}
+
+function v2Model(
+  id: string,
+  extra: Readonly<Record<string, unknown>> = {},
+): Record<string, unknown> {
+  return {
+    id,
+    modelID: id,
+    providerID: "opencode-go",
+    type: "chat",
+    name: `Name ${id}`,
+    capabilities: {
+      tools: true,
+      input: ["text", "image"],
+      output: ["text"],
+      temperature: false,
+    },
+    cost: [{ input: 1, output: 2, cache: { read: 0.1, write: 1 } }],
+    limit: { context: 1000, output: 100 },
+    status: "active",
+    enabled: true,
+    ...extra,
+  };
 }
 
 it("zero_cost_model_is_free_even_on_a_paid_provider", () => {
@@ -409,6 +459,257 @@ it("unresolvable_executable_yields_empty_list_with_message", async () => {
     error: "The OpenCode executable was not found",
   });
   expect(rig.container.specs).toHaveLength(0);
+});
+
+it("unsupported_opencode_version_yields_its_message_without_a_process", async () => {
+  const message = "OpenCode 2.3.2 is not supported. hint";
+  const generationFor = vi.fn<GenerationProbe>(() =>
+    Promise.reject(new Error(message)),
+  );
+  const rig = await catalogRig(undefined, { generationFor });
+
+  const result = await rig.catalog.load();
+
+  expect(result).toEqual({ models: [], error: message });
+  expect(generationFor.mock.calls[0]?.[0]).toBe(OPENCODE_RIG_EXECUTABLE);
+  expect(generationFor.mock.calls[0]?.[1].env).toMatchObject({
+    HOME: join(rig.directory, "account", "home"),
+  });
+  expect(rig.container.specs).toHaveLength(0);
+});
+
+const PLACEHOLDER_KEY = "catalog-placeholder-key";
+
+function v2Entry(providerID: string, extra: Partial<V2Model> = {}): V2Model {
+  return {
+    id: "m",
+    providerID,
+    name: "M",
+    capabilities: { tools: true, input: ["text"], output: ["text"] },
+    ...extra,
+  };
+}
+
+it("2x_cost_tiers_use_the_first_tier_and_empty_means_null", () => {
+  const result = toCatalogModelsV2([
+    v2Entry("deepseek", {
+      id: "tiered",
+      cost: [
+        { input: 3, output: 15 },
+        { input: 6, output: 30 },
+      ],
+    }),
+    v2Entry("deepseek", { id: "no-tiers", cost: [] }),
+  ]);
+
+  const prices = result.map((item) => [
+    item.modelId,
+    item.costIn,
+    item.costOut,
+  ]);
+  expect(prices).toEqual([
+    ["tiered", 3, 15],
+    ["no-tiers", null, null],
+  ]);
+});
+
+it("2x_zero_cost_model_is_free_on_a_paid_provider", () => {
+  const [first] = toCatalogModelsV2([
+    v2Entry("deepseek", { cost: [{ input: 0, output: 0 }] }),
+  ]);
+
+  expect(first).toMatchObject({ free: true, trainsOnData: "unknown" });
+});
+
+it("lists_2x_models_with_prices_and_context", async () => {
+  const rig = await catalogRigV2([
+    v2Model("kimi-k3", {
+      name: "Kimi K3",
+      cost: [{ input: 3, output: 15, cache: { read: 0.3, write: 3 } }],
+      limit: { context: 1_048_576, output: 1_048_576 },
+    }),
+    v2Model("beam-free", { cost: [{ input: 0, output: 0 }] }),
+  ]);
+
+  const result = await rig.catalog.load();
+
+  expect(result).toEqual({
+    models: [
+      {
+        providerId: "opencode-go",
+        modelId: "kimi-k3",
+        name: "Kimi K3",
+        contextWindow: 1_048_576,
+        costIn: 3,
+        costOut: 15,
+        free: false,
+        trainsOnData: "unknown",
+      },
+      {
+        providerId: "opencode-go",
+        modelId: "beam-free",
+        name: "Name beam-free",
+        contextWindow: 1000,
+        costIn: 0,
+        costOut: 0,
+        free: true,
+        trainsOnData: "unknown",
+      },
+    ],
+    error: null,
+  });
+  expect(rig.container.contained[0]?.stopCalls).toHaveLength(1);
+});
+
+it("starts_the_2x_catalog_server_without_pure_and_with_the_2x_config", async () => {
+  const rig = await catalogRigV2([v2Model("kimi-k3")]);
+
+  await rig.catalog.load();
+
+  const [spec] = rig.container.specs;
+  const server = rig.container.servers[0];
+  const keyFile = join(rig.directory, "run", "api-key");
+  const providerIds = [
+    "groq",
+    "cerebras",
+    "openrouter",
+    "google",
+    "mistral",
+    "zai",
+    "deepseek",
+    "moonshotai",
+    "opencode-go",
+  ];
+  expect(spec?.args.slice(0, 4)).toEqual([
+    "serve",
+    "--hostname",
+    "127.0.0.1",
+    "--port",
+  ]);
+  expect(spec?.args).toHaveLength(5);
+  expect(rig.container.startups[0]?.config).toEqual({
+    update: "disable",
+    share: "disabled",
+    policies: [
+      { action: "provider.use", resource: "*", effect: "deny" },
+      ...providerIds.map((id) => ({
+        action: "provider.use",
+        resource: id,
+        effect: "allow",
+      })),
+    ],
+    providers: Object.fromEntries(
+      providerIds.map((id) => [
+        id,
+        { settings: { apiKey: `{file:${keyFile}}` } },
+      ]),
+    ),
+  });
+  expect(server?.warmUps).toEqual([
+    { directory: rig.directory, keyFileContent: PLACEHOLDER_KEY },
+  ]);
+  expect(server?.requestsTo("GET", "/api/model")).toMatchObject([
+    { query: { "location[directory]": rig.directory }, authorized: true },
+  ]);
+});
+
+it("drops_2x_models_without_tools_or_text", async () => {
+  const capable = v2Model("kept").capabilities as Record<string, unknown>;
+  const rig = await catalogRigV2([
+    v2Model("kept"),
+    v2Model("no-tools", { capabilities: { ...capable, tools: false } }),
+    v2Model("no-text-input", {
+      capabilities: { ...capable, input: ["image"] },
+    }),
+    v2Model("no-text-output", {
+      capabilities: { ...capable, output: ["audio"] },
+    }),
+  ]);
+
+  const result = await rig.catalog.load();
+
+  expect(result.error).toBeNull();
+  expect(result.models.map((item) => item.modelId)).toEqual(["kept"]);
+});
+
+it("drops_2x_models_of_unknown_providers", async () => {
+  const rig = await catalogRigV2([
+    v2Model("big-pickle", { providerID: "opencode" }),
+    v2Model("llama", { providerID: "groq" }),
+    v2Model("azure-gpt", { providerID: "azure" }),
+  ]);
+
+  const result = await rig.catalog.load();
+
+  expect(result.error).toBeNull();
+  expect(result.models.map((item) => item.providerId)).toEqual(["groq"]);
+});
+
+it("2x_model_without_cost_or_limit_has_null_values", async () => {
+  const bare = v2Model("paid-bare", { providerID: "deepseek" });
+  delete bare.cost;
+  delete bare.limit;
+  const rig = await catalogRigV2([
+    bare,
+    v2Model("empty-tiers", { providerID: "deepseek", cost: [] }),
+  ]);
+
+  const result = await rig.catalog.load();
+
+  expect(result.error).toBeNull();
+  expect(result.models).toMatchObject([
+    { modelId: "paid-bare", contextWindow: null, costIn: null, free: false },
+    { modelId: "empty-tiers", costIn: null, costOut: null, free: false },
+  ]);
+});
+
+it("malformed_2x_model_entry_is_skipped", async () => {
+  const rig = await catalogRigV2([
+    { id: 7 },
+    v2Model("broken", { capabilities: "yes" }),
+    v2Model("ok"),
+  ]);
+
+  const result = await rig.catalog.load();
+
+  expect(result.error).toBeNull();
+  expect(result.models.map((item) => item.modelId)).toEqual(["ok"]);
+});
+
+it("placeholder_key_never_leaves_the_2x_catalog", async () => {
+  const methods = ["log", "info", "warn", "error", "debug"] as const;
+  const spies = methods.map((method) =>
+    vi.spyOn(console, method).mockImplementation(() => undefined),
+  );
+  try {
+    const ok = await (await catalogRigV2([v2Model("kimi-k3")])).catalog.load();
+    const failedRig = await catalogRigV2([v2Model("kimi-k3")]);
+    failedRig.container.config.exitBeforeListening = true;
+    const failed = await failedRig.catalog.load();
+
+    const output = JSON.stringify([
+      ok,
+      failed,
+      spies.map((spy) => spy.mock.calls),
+    ]);
+    expect(ok.models).toHaveLength(1);
+    expect(output).not.toContain(PLACEHOLDER_KEY);
+  } finally {
+    for (const spy of spies) {
+      spy.mockRestore();
+    }
+  }
+});
+
+it("probes_the_version_in_the_catalog_directory", async () => {
+  const generationFor = vi.fn<GenerationProbe>(() =>
+    Promise.resolve(OpencodeGeneration.v1),
+  );
+  const rig = await catalogRig(undefined, { generationFor });
+
+  await rig.catalog.load();
+
+  expect(generationFor.mock.calls[0]?.[1].cwd).toBe(rig.directory);
 });
 
 it("probe_serves_on_loopback_with_isolated_directories", async () => {

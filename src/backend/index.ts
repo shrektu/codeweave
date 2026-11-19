@@ -13,12 +13,14 @@ import { parseBackendArgs } from "./args";
 import { locateClaudeAcpEntry } from "./claude/launch";
 import { LOGIN_SHELL_PATH_TIMEOUT_MS } from "./constants";
 import type { ConnectionRegistry } from "./connections";
+import { execText } from "./exec";
 import {
   isDirectory,
   passwdShell,
   readLoginShellPath,
   resolveLaunchEnv,
 } from "./launchEnv";
+import { createVersionProbe } from "./opencode/version";
 import { createProcessContainer } from "./process/select";
 import { isRunnableFileSync } from "./terminal/shell";
 import { createParentPortVault } from "./secrets/vault";
@@ -72,6 +74,11 @@ const ready = resolveLaunchEnv({
       newRunId: () => randomUUID(),
       resolveExecutable: createExecutableResolver(env, process.platform),
       inspectWorktree,
+      opencodeGeneration: createVersionProbe({
+        exec: execText,
+        platform: process.platform,
+        ...(env.ComSpec === undefined ? {} : { comSpec: env.ComSpec }),
+      }),
       postUpdaterConfig: (message) => {
         process.parentPort.postMessage(message);
       },
