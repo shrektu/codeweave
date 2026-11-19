@@ -321,7 +321,10 @@ async function probeModels(
   };
   const budgetMs = deps.probeTimeoutMs ?? CATALOG_PROBE_TIMEOUT_MS;
   try {
-    return await withDeadline(query(), budgetMs - (Date.now() - startedAt));
+    return await withDeadline(
+      query(),
+      Math.max(0, budgetMs - (Date.now() - startedAt)),
+    );
   } finally {
     const stopped = await agentProcess.stop(deps.stopGraceMs);
     if (!stopped.ok) {

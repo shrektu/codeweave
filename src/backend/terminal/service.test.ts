@@ -17,6 +17,8 @@ const COLS = 80;
 const ROWS = 24;
 const FIRST_ID = "term-1";
 const SECOND_ID = "term-2";
+const SHARED_LOCK_KEY = "shared-lock-key";
+const UNRESOLVABLE_FOLDER = "unresolvable";
 const rigs: TerminalRig[] = [];
 
 afterEach(async () => {
@@ -501,6 +503,35 @@ describe("retarget", () => {
     expect(rig.service.view()).toBeNull();
     expect(rig.spawnAt(0).pty.kills).toEqual(["SIGHUP"]);
     expect(payloadsOf(rig.events, "terminal/changed").at(-1)).toBeNull();
+  });
+
+  it("retarget_keeps_the_terminal_when_the_resolver_maps_both_folders_to_one_key", async () => {
+    const rig = newRig({
+      resolveLockKey: () => Promise.resolve(SHARED_LOCK_KEY),
+    });
+    await openIn(rig);
+
+    await rig.service.retarget(await rig.folder("elsewhere"));
+
+    expect(rig.service.view()?.status).toBe("running");
+    expect(rig.spawnAt(0).pty.kills).toEqual([]);
+  });
+
+  it("retarget_rejects_when_the_target_folder_cannot_be_resolved", async () => {
+    const unresolvable = new Error("target cannot be resolved");
+    const rig = newRig({
+      resolveLockKey: (cwd) =>
+        cwd.endsWith(UNRESOLVABLE_FOLDER)
+          ? Promise.reject(unresolvable)
+          : Promise.resolve(cwd),
+    });
+    await openIn(rig);
+    const target = await rig.folder(UNRESOLVABLE_FOLDER);
+
+    await expect(rig.service.retarget(target)).rejects.toThrow(unresolvable);
+
+    expect(rig.service.view()?.status).toBe("running");
+    expect(rig.spawnAt(0).pty.kills).toEqual([]);
   });
 
   it("retarget_without_a_terminal_does_nothing", async () => {

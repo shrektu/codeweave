@@ -1,4 +1,4 @@
-import { chmod, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { afterEach, expect, it, vi } from "vitest";
@@ -8,6 +8,7 @@ import {
   TERMINAL_LOW_WATERMARK_CHARS,
   TERMINAL_REPLAY_MAX_CHARS,
 } from "../../src/backend/constants";
+import { resolveLockKey } from "../../src/backend/locks";
 import { createShellDetector } from "../../src/backend/terminal/shell";
 import { IpcError } from "../../src/shared/protocol";
 import {
@@ -16,13 +17,14 @@ import {
   type TerminalRig,
   type TerminalRigOptions,
 } from "../fakes/fakeTerminal";
-import { makeTempDir } from "../fakes/processHelpers";
+import { makeTempDir, runGit } from "../fakes/processHelpers";
 import { settled } from "../fakes/settle";
 
 const COLS = 100;
 const ROWS = 30;
 const FIRST_ID = "term-1";
 const rigs: TerminalRig[] = [];
+const repos: string[] = [];
 
 function newRig(options: TerminalRigOptions = {}): TerminalRig {
   const rig = createTerminalRig(options);
@@ -32,6 +34,10 @@ function newRig(options: TerminalRigOptions = {}): TerminalRig {
 
 afterEach(async () => {
   await Promise.all(rigs.splice(0).map((rig) => rig.dispose()));
+  await Promise.all(
+    repos.splice(0).map((repo) => rm(repo, { recursive: true, force: true })),
+  );
+  vi.restoreAllMocks();
 });
 
 function payloadsOf(events: readonly RecordedEvent[], name: string): unknown[] {
@@ -216,6 +222,28 @@ it("retarget_keeps_the_terminal_in_the_same_folder_and_closes_it_elsewhere", asy
   expect(pty.kills).toEqual(["SIGHUP"]);
   expect(rig.service.view()).toBeNull();
   expect(payloadsOf(rig.events, "terminal/changed").at(-1)).toBeNull();
+});
+
+it("retarget_with_the_git_resolver_treats_subfolders_of_one_repository_as_the_same_folder", async () => {
+  vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const repo = await makeTempDir();
+  repos.push(repo);
+  await runGit(repo, ["init", "--quiet"]);
+  const first = join(repo, "packages", "app");
+  const second = join(repo, "packages", "web");
+  await mkdir(first, { recursive: true });
+  await mkdir(second, { recursive: true });
+  const rig = newRig({ resolveLockKey });
+  await rig.service.open({ cwd: first, cols: COLS, rows: ROWS });
+  const { pty } = rig.spawnAt(0);
+
+  await rig.service.retarget(second);
+  const viewInsideRepository = rig.service.view();
+  await rig.service.retarget(await rig.folder("outside"));
+
+  expect(viewInsideRepository?.status).toBe("running");
+  expect(pty.kills).toEqual(["SIGHUP"]);
+  expect(rig.service.view()).toBeNull();
 });
 
 it("shutdown_stops_the_terminal", async () => {
