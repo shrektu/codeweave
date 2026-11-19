@@ -6,7 +6,11 @@ import { createInterface } from "node:readline";
 import type { Readable } from "node:stream";
 import { promisify } from "node:util";
 
+import { vi } from "vitest";
+
 import { STOP_CONFIRM_TIMEOUT_MS } from "../../src/backend/constants";
+
+import { SETTLE_TIMEOUT_MS } from "./settle";
 
 const execFileAsync = promisify(execFile);
 const ZOMBIE_STATE = "Z";
@@ -52,8 +56,18 @@ export async function isRunning(pid: number): Promise<boolean> {
   }
 }
 
-export async function isAliveWin32(pid: number): Promise<boolean> {
-  const { stdout } = await execFileAsync("tasklist", [
+export type RunCommand = (
+  file: string,
+  args: readonly string[],
+) => Promise<{ readonly stdout: string }>;
+
+export interface TreeKillDeps {
+  readonly run: RunCommand;
+  readonly timeoutMs: number;
+}
+
+async function isListedWin32(pid: number, run: RunCommand): Promise<boolean> {
+  const { stdout } = await run("tasklist", [
     "/FI",
     `PID eq ${String(pid)}`,
     "/NH",
@@ -63,14 +77,38 @@ export async function isAliveWin32(pid: number): Promise<boolean> {
   return new RegExp(`^"[^"]*","${String(pid)}"`, "m").test(stdout);
 }
 
-export async function killTreeWin32(pid: number): Promise<void> {
+export function isAliveWin32(pid: number): Promise<boolean> {
+  return isListedWin32(pid, execFileAsync);
+}
+
+export async function killTreeWith(
+  pid: number,
+  deps: TreeKillDeps,
+): Promise<void> {
   try {
-    await execFileAsync("taskkill", ["/F", "/T", "/PID", String(pid)]);
+    await deps.run("taskkill", ["/F", "/T", "/PID", String(pid)]);
   } catch (error) {
-    if (await isAliveWin32(pid)) {
-      throw error;
-    }
+    await vi
+      .waitFor(
+        async () => {
+          if (await isListedWin32(pid, deps.run)) {
+            throw new Error(`process ${String(pid)} is still listed`);
+          }
+        },
+        { timeout: deps.timeoutMs },
+      )
+      .catch((pollError: unknown) => {
+        console.warn(`taskkill ${String(pid)} did not settle`, pollError);
+        throw error;
+      });
   }
+}
+
+export function killTreeWin32(pid: number): Promise<void> {
+  return killTreeWith(pid, {
+    run: execFileAsync,
+    timeoutMs: SETTLE_TIMEOUT_MS,
+  });
 }
 
 export function isAlive(pid: number): Promise<boolean> {

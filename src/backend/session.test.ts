@@ -66,6 +66,9 @@ interface SetupOptions {
   readonly startGateFor?: Readonly<Record<string, Promise<void>>>;
   readonly stopResultFor?: Readonly<Record<string, StopResult>>;
   readonly onSubscribe?: (accountId: string) => void;
+  readonly appendGate?: Promise<void>;
+  readonly appendError?: Error;
+  readonly stopGates?: readonly Promise<void>[];
 }
 
 const tempDirs: string[] = [];
@@ -82,6 +85,7 @@ function fakeHandle(
   spec: AgentStartSpec,
   options: SetupOptions,
   log: string[],
+  stopGates: Promise<void>[],
 ): AgentHandle {
   const listeners = new Set<(event: AgentEvent) => void>();
   return {
@@ -107,7 +111,7 @@ function fakeHandle(
     cancel: () => Promise.resolve(),
     stop: async () => {
       log.push(`stop:${spec.runId}`);
-      await options.stopGate;
+      await (stopGates.shift() ?? options.stopGate);
       return (
         options.stopResultFor?.[spec.account.id] ??
         options.stopResult ?? { ok: true }
@@ -124,19 +128,36 @@ async function setup(options: SetupOptions): Promise<Setup> {
   await store.writeAccounts(options.accounts ?? [ACCOUNT_A]);
   const log: string[] = [];
   const specs: AgentStartSpec[] = [];
+  const stopGates = [...(options.stopGates ?? [])];
+  const observeAppends =
+    options.appendGate !== undefined || options.appendError !== undefined;
+  const sessionStore: JsonStore = observeAppends
+    ? {
+        ...store,
+        appendSwitchLog: async (entry) => {
+          log.push("append:start");
+          await options.appendGate;
+          if (options.appendError !== undefined) {
+            throw options.appendError;
+          }
+          await store.appendSwitchLog(entry);
+          log.push("append:done");
+        },
+      }
+    : store;
   const adapter: AgentAdapter = {
     start: async (spec) => {
       specs.push(spec);
       log.push(`start:${spec.runId}`);
       await options.startGate;
       await options.startGateFor?.[spec.account.id];
-      return { ok: true, handle: fakeHandle(spec, options, log) };
+      return { ok: true, handle: fakeHandle(spec, options, log, stopGates) };
     },
   };
   let runs = 0;
   const service = createSessionService({
     adapter,
-    store,
+    store: sessionStore,
     broadcast: () => undefined,
     now: () => NOW_MS,
     schedule: () => () => undefined,
@@ -500,4 +521,140 @@ it("rotation_skips_target_blocked_by_a_running_probe", async () => {
     });
   });
   expect(rig.specs.map((spec) => spec.account.id)).toEqual(["acc-a", "acc-c"]);
+});
+
+function nextMacrotask(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+}
+
+async function shutdownStoppedPhase(rig: Setup): Promise<void> {
+  await vi.waitFor(() => {
+    expect(rig.service.view()?.phase).toEqual({ phase: "stopped" });
+  });
+  await nextMacrotask();
+}
+
+function shutdownTracked(rig: Setup): Promise<void> {
+  return rig.service.shutdown().then(() => {
+    rig.log.push("shutdown:done");
+  });
+}
+
+it("shutdown_waits_for_in_flight_switch_log_append", async () => {
+  const gate = Promise.withResolvers<undefined>();
+  const rig = await setup({
+    accounts: [ACCOUNT_A, ACCOUNT_B],
+    events: { "acc-a": [RATE_LIMITED] },
+    appendGate: gate.promise,
+  });
+  await rig.service.start({ cwd: rig.cwd });
+  await rig.service.prompt("go");
+  await vi.waitFor(() => {
+    expect(rig.log).toContain("append:start");
+  });
+
+  const shutdown = shutdownTracked(rig);
+  try {
+    await shutdownStoppedPhase(rig);
+    expect(rig.log).not.toContain("shutdown:done");
+  } finally {
+    gate.resolve(undefined);
+  }
+  await shutdown;
+
+  expect(rig.log.slice(-2)).toEqual(["append:done", "shutdown:done"]);
+});
+
+it("shutdown_waits_for_halt_log_append", async () => {
+  const gate = Promise.withResolvers<undefined>();
+  const rig = await setup({
+    events: { "acc-a": [RATE_LIMITED] },
+    appendGate: gate.promise,
+  });
+  await rig.service.start({ cwd: rig.cwd });
+  await rig.service.prompt("go");
+  await vi.waitFor(() => {
+    expect(rig.log).toContain("append:start");
+  });
+
+  const shutdown = shutdownTracked(rig);
+  try {
+    await shutdownStoppedPhase(rig);
+    expect(rig.log).not.toContain("shutdown:done");
+  } finally {
+    gate.resolve(undefined);
+  }
+  await shutdown;
+
+  expect(rig.log.slice(-2)).toEqual(["append:done", "shutdown:done"]);
+});
+
+it("shutdown_resolves_when_in_flight_switch_log_append_fails", async () => {
+  const gate = Promise.withResolvers<undefined>();
+  const rig = await setup({
+    accounts: [ACCOUNT_A, ACCOUNT_B],
+    events: { "acc-a": [RATE_LIMITED] },
+    appendGate: gate.promise,
+    appendError: new Error("disk full"),
+  });
+  await rig.service.start({ cwd: rig.cwd });
+  await rig.service.prompt("go");
+  await vi.waitFor(() => {
+    expect(rig.log).toContain("append:start");
+  });
+
+  const shutdown = shutdownTracked(rig);
+  try {
+    await shutdownStoppedPhase(rig);
+  } finally {
+    gate.resolve(undefined);
+  }
+  await shutdown;
+
+  expect(rig.service.view()?.phase).toEqual({ phase: "stopped" });
+});
+
+it("shutdown_waits_for_launch_started_during_close", async () => {
+  const chainStop = Promise.withResolvers<undefined>();
+  const closeStop = Promise.withResolvers<undefined>();
+  const launchGate = Promise.withResolvers<undefined>();
+  const rig = await setup({
+    accounts: [ACCOUNT_A, ACCOUNT_B],
+    events: { "acc-a": [RATE_LIMITED] },
+    stopGates: [chainStop.promise, closeStop.promise],
+    startGateFor: { "acc-b": launchGate.promise },
+  });
+  await rig.service.start({ cwd: rig.cwd });
+  await rig.service.prompt("go");
+  const stopsOfRunOne = (): string[] =>
+    rig.log.filter((entry) => entry === "stop:run-1");
+  await vi.waitFor(() => {
+    expect(stopsOfRunOne()).toHaveLength(1);
+  });
+
+  const shutdown = shutdownTracked(rig);
+  try {
+    await vi.waitFor(() => {
+      expect(stopsOfRunOne()).toHaveLength(2);
+    });
+    chainStop.resolve(undefined);
+    await vi.waitFor(() => {
+      expect(rig.log).toContain("start:run-2");
+    });
+    closeStop.resolve(undefined);
+    await shutdownStoppedPhase(rig);
+    expect(rig.log).not.toContain("shutdown:done");
+  } finally {
+    chainStop.resolve(undefined);
+    closeStop.resolve(undefined);
+    launchGate.resolve(undefined);
+  }
+  await shutdown;
+
+  expect(rig.log.indexOf("stop:run-2")).toBeGreaterThan(-1);
+  expect(rig.log.indexOf("stop:run-2")).toBeLessThan(
+    rig.log.indexOf("shutdown:done"),
+  );
 });
