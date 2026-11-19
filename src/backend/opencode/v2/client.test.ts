@@ -80,6 +80,48 @@ describe("v2 client requests", () => {
 
     await expect(client.warmUp()).resolves.toBeUndefined();
   });
+});
+
+describe("v2 client catalog and session creation", () => {
+  it("models_requests_the_model_list_and_skips_invalid_entries", async () => {
+    const valid = {
+      id: "kimi-k3",
+      providerID: "opencode-go",
+      name: "Kimi K3",
+      capabilities: { tools: true, input: ["text"], output: ["text"] },
+      cost: [{ input: 3, output: 15 }],
+      limit: { context: 1000 },
+      settings: { apiKey: "sk-test-fake" },
+    };
+    const { client, requests } = harness(() =>
+      Response.json({ data: [{ id: "no-caps" }, valid, "junk"] }),
+    );
+
+    const models = await client.models();
+
+    expect(models).toEqual([
+      {
+        id: "kimi-k3",
+        providerID: "opencode-go",
+        name: "Kimi K3",
+        capabilities: { tools: true, input: ["text"], output: ["text"] },
+        cost: [{ input: 3, output: 15 }],
+        limit: { context: 1000 },
+      },
+    ]);
+    expect(JSON.stringify(models)).not.toContain("sk-test-fake");
+    expect(requests).toEqual([
+      {
+        method: "GET",
+        pathname: "/api/model",
+        search: `?location%5Bdirectory%5D=${encodeURIComponent(DIRECTORY)}`,
+        directory: DIRECTORY,
+        body: undefined,
+        authorization: AUTHORIZATION,
+        contentType: null,
+      },
+    ]);
+  });
 
   it("create_session_posts_the_location_and_agent", async () => {
     const { client, requests } = harness(() =>

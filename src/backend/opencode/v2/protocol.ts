@@ -14,6 +14,24 @@ export const InterruptResponseSchema = z.looseObject({
   interrupted: z.boolean(),
 });
 
+export const V2ModelSchema = z.object({
+  id: z.string().min(1),
+  providerID: z.string(),
+  name: z.string(),
+  capabilities: z.object({
+    tools: z.boolean(),
+    input: z.array(z.string()),
+    output: z.array(z.string()),
+  }),
+  cost: z.array(z.object({ input: z.number(), output: z.number() })).optional(),
+  limit: z.object({ context: z.number() }).optional(),
+});
+export type V2Model = z.infer<typeof V2ModelSchema>;
+
+export const ModelListResponseSchema = z.looseObject({
+  data: z.array(z.unknown()),
+});
+
 export const ExecutionErrorSchema = z.looseObject({
   type: z.string(),
   message: z.string(),

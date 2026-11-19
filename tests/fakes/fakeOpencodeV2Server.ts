@@ -34,6 +34,7 @@ const REPLY_TIMEOUT_MS = 2000;
 const CONFIG_ENV = "OPENCODE_CONFIG";
 const PASSWORD_ENV = "OPENCODE_PASSWORD";
 const PROVIDER_PATH = "/api/provider";
+const MODEL_PATH = "/api/model";
 const SESSION_PATH = "/api/session";
 const ACTIVE_PATH = "/api/session/active";
 const EVENT_PATH = "/api/event";
@@ -49,6 +50,7 @@ const RUNNING_STATE = { type: "running" };
 const NO_CONTENT = 204;
 const NOT_FOUND = 404;
 const DIRECTORY_QUERY = "location[directory]";
+const FAKE_MODEL_BASE_URL = "https://opencode.ai/inference/go/openai/v1";
 
 export interface FakeV2Error {
   readonly type: string;
@@ -155,7 +157,8 @@ function apiKeyReferenceOf(config: unknown): string {
 
 type V2Route =
   | {
-      readonly kind: "provider" | "active" | "events" | "create" | "unknown";
+      readonly kind:
+        "provider" | "models" | "active" | "events" | "create" | "unknown";
     }
   | { readonly kind: "reply"; readonly match: RegExpExecArray }
   | { readonly kind: "action"; readonly action: string };
@@ -163,6 +166,7 @@ type V2Route =
 const UNKNOWN_ROUTE: V2Route = { kind: "unknown" };
 const GET_ROUTES = new Map<string, V2Route>([
   [PROVIDER_PATH, { kind: "provider" }],
+  [MODEL_PATH, { kind: "models" }],
   [ACTIVE_PATH, { kind: "active" }],
   [EVENT_PATH, { kind: "events" }],
 ]);
@@ -341,14 +345,20 @@ export class FakeOpencodeV2Server implements ScriptedServer<OpencodeV2Step> {
   private readonly http: Server;
   private readonly password: string;
   private readonly configPath: string;
+  private readonly models: readonly Json[];
   private readonly reached = Promise.withResolvers<undefined>();
   private readonly released = Promise.withResolvers<undefined>();
   private turnInterrupt = Promise.withResolvers<undefined>();
   private active = false;
 
-  constructor(password: string, configPath: string) {
+  constructor(
+    password: string,
+    configPath: string,
+    models: readonly Json[] = [],
+  ) {
     this.password = password;
     this.configPath = configPath;
+    this.models = models;
     this.http = createServer((request, response) => {
       this.handle(request, response).catch((error: unknown) => {
         console.error("fake opencode v2 handler failed", error);
@@ -454,6 +464,9 @@ export class FakeOpencodeV2Server implements ScriptedServer<OpencodeV2Step> {
       case "provider":
         await this.warmUp(url, response);
         return;
+      case "models":
+        await this.listModels(url, response);
+        return;
       case "active":
         sendJson(response, {
           data: this.active ? { [OPENCODE_SESSION_ID]: RUNNING_STATE } : {},
@@ -479,14 +492,28 @@ export class FakeOpencodeV2Server implements ScriptedServer<OpencodeV2Step> {
 
   private async warmUp(url: URL, response: ServerResponse): Promise<void> {
     const directory = url.searchParams.get(DIRECTORY_QUERY) ?? undefined;
+    const keyFileContent = await this.readKeyFile();
+    this.warmUps.push({ directory, keyFileContent });
+    sendJson(response, { location: { directory }, data: [] });
+  }
+
+  private async listModels(url: URL, response: ServerResponse): Promise<void> {
+    const directory = url.searchParams.get(DIRECTORY_QUERY) ?? undefined;
+    const apiKey = (await this.readKeyFile()) ?? "";
+    sendJson(response, {
+      location: { directory },
+      data: this.models.map((model) => ({
+        ...model,
+        settings: { apiKey, baseURL: FAKE_MODEL_BASE_URL },
+      })),
+    });
+  }
+
+  private async readKeyFile(): Promise<string | null> {
     const config = JSON.parse(
       await readFile(this.configPath, "utf8"),
     ) as unknown;
-    const keyFileContent = await readOptionalFile(
-      keyPathOf(apiKeyReferenceOf(config)),
-    );
-    this.warmUps.push({ directory, keyFileContent });
-    sendJson(response, { location: { directory }, data: [] });
+    return readOptionalFile(keyPathOf(apiKeyReferenceOf(config)));
   }
 
   private async sessionAction(
@@ -627,7 +654,9 @@ export class FakeOpencodeV2Server implements ScriptedServer<OpencodeV2Step> {
   }
 }
 
-export type FakeOpencodeV2Config = BaseContainerConfig;
+export interface FakeOpencodeV2Config extends BaseContainerConfig {
+  models?: readonly Json[];
+}
 
 export class ScriptedOpencodeV2Container extends ScriptedContainerBase<
   FakeOpencodeV2Server,
@@ -656,7 +685,11 @@ export class ScriptedOpencodeV2Container extends ScriptedContainerBase<
     password: string,
     env: Readonly<Record<string, string>>,
   ): FakeOpencodeV2Server {
-    return new FakeOpencodeV2Server(password, env[CONFIG_ENV] ?? "");
+    return new FakeOpencodeV2Server(
+      password,
+      env[CONFIG_ENV] ?? "",
+      this.config.models,
+    );
   }
 }
 

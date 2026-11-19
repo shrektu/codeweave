@@ -149,8 +149,6 @@ export const VERSION_PATTERN = /^(?:opencode\s+)?v?(\d+)\.(\d+)\.(\d+)/;
 export const VERSION_SUPPORT_HINT =
   "Codeweave works with opencode 1.19.x (npm i -g opencode-ai@1.19.5) or 2.2.5 and newer (npm i -g @opencode/cli).";
 export const IDLE_POLL_MS = 50;
-export const CATALOG_UNAVAILABLE_V2_MESSAGE =
-  "The model catalog is not available on opencode 2.x yet.";
 export const VERSION_UNKNOWN_MESSAGE =
   "The OpenCode version could not be determined.";
 

@@ -8,6 +8,7 @@ import {
 
 export const OpencodeV2Path = {
   provider: "/api/provider",
+  models: "/api/model",
   session: "/api/session",
   activeSessions: "/api/session/active",
   event: "/api/event",

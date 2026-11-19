@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   ActiveSessionsSchema,
   InterruptResponseSchema,
+  ModelListResponseSchema,
   SessionCreatedResponseSchema,
+  V2ModelSchema,
   parseOpencodeV2Event,
 } from "./protocol";
 
@@ -229,6 +231,43 @@ describe("response schemas", () => {
     expect(
       ActiveSessionsSchema.parse({ data: { ses_1: { type: "running" } } }).data,
     ).toEqual({ ses_1: { type: "running" } });
+  });
+
+  it("model_schema_strips_settings_and_keeps_the_listed_fields", () => {
+    const parsed = V2ModelSchema.parse({
+      id: "kimi-k3",
+      providerID: "opencode-go",
+      name: "Kimi K3",
+      capabilities: { tools: true, input: ["text"], output: ["text"] },
+      settings: { apiKey: "sk-test-fake" },
+    });
+
+    expect(parsed).toEqual({
+      id: "kimi-k3",
+      providerID: "opencode-go",
+      name: "Kimi K3",
+      capabilities: { tools: true, input: ["text"], output: ["text"] },
+    });
+  });
+
+  it("model_schema_rejects_entries_without_id_or_capabilities", () => {
+    const base = { id: "m", providerID: "p", name: "M" };
+
+    expect(V2ModelSchema.safeParse(base).success).toBe(false);
+    expect(
+      V2ModelSchema.safeParse({
+        providerID: "p",
+        name: "M",
+        capabilities: { tools: true, input: [], output: [] },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("model_list_keeps_unknown_entries_unparsed", () => {
+    expect(ModelListResponseSchema.parse({ data: [1, "x"] }).data).toEqual([
+      1,
+      "x",
+    ]);
   });
 
   it("interrupt_reads_the_flag", () => {

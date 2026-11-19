@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { OpencodeCredentials } from "../config";
 
-import { buildV2SessionConfig } from "./config";
+import { buildV2CatalogConfig, buildV2SessionConfig } from "./config";
 
 const KEY_FILE = "/run/user/1000/codeweave-opencode-x/api-key";
 
@@ -23,6 +23,24 @@ const CUSTOM: OpencodeCredentials = {
 const ASKED = ["shell", "edit", "webfetch", "external_directory"].map(
   (action) => ({ action, resource: "*", effect: "ask" }),
 );
+
+describe("buildV2CatalogConfig", () => {
+  it("denies_every_provider_then_allows_and_configures_each_id", () => {
+    expect(buildV2CatalogConfig(KEY_FILE, ["groq", "mistral"])).toEqual({
+      update: "disable",
+      share: "disabled",
+      policies: [
+        { action: "provider.use", resource: "*", effect: "deny" },
+        { action: "provider.use", resource: "groq", effect: "allow" },
+        { action: "provider.use", resource: "mistral", effect: "allow" },
+      ],
+      providers: {
+        groq: { settings: { apiKey: `{file:${KEY_FILE}}` } },
+        mistral: { settings: { apiKey: `{file:${KEY_FILE}}` } },
+      },
+    });
+  });
+});
 
 describe("buildV2SessionConfig", () => {
   it("built_in_provider_config_matches_the_2x_shape", () => {

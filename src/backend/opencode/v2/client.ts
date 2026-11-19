@@ -17,9 +17,12 @@ import { OpencodeV2Path, QUERY_LOCATION_DIRECTORY } from "./constants";
 import {
   ActiveSessionsSchema,
   InterruptResponseSchema,
+  ModelListResponseSchema,
   SessionCreatedResponseSchema,
+  V2ModelSchema,
   parseOpencodeV2Event,
   type OpencodeV2Event,
+  type V2Model,
 } from "./protocol";
 
 export interface V2ModelRef {
@@ -29,6 +32,7 @@ export interface V2ModelRef {
 
 export interface OpencodeV2Client {
   warmUp(): Promise<void>;
+  models(): Promise<V2Model[]>;
   createSession(agent: OpencodeAgent): Promise<string>;
   prompt(sessionId: string, text: string): Promise<void>;
   switchAgent(sessionId: string, agent: OpencodeAgent): Promise<void>;
@@ -134,6 +138,17 @@ export function createOpencodeV2Client(
         query: { [QUERY_LOCATION_DIRECTORY]: options.directory },
         timeoutMs: warmUpTimeoutMs,
       }),
+    async models() {
+      const body = await sendForJson(send, {
+        method: "GET",
+        path: OpencodeV2Path.models,
+        query: { [QUERY_LOCATION_DIRECTORY]: options.directory },
+      });
+      return ModelListResponseSchema.parse(body).data.flatMap((raw) => {
+        const parsed = V2ModelSchema.safeParse(raw);
+        return parsed.success ? [parsed.data] : [];
+      });
+    },
     async createSession(agent) {
       const body = await sendForJson(send, {
         method: "POST",

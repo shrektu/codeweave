@@ -62,6 +62,39 @@ function providerConfig(
   };
 }
 
+export interface OpencodeV2CatalogConfig {
+  readonly update: typeof UPDATE_DISABLED;
+  readonly share: typeof SHARE_DISABLED;
+  readonly policies: readonly OpencodeV2Rule[];
+  readonly providers: Readonly<Record<string, OpencodeV2ProviderConfig>>;
+}
+
+export function buildV2CatalogConfig(
+  keyFile: string,
+  providerIds: readonly string[],
+): OpencodeV2CatalogConfig {
+  const apiKey = `${FILE_REFERENCE_PREFIX}${keyFile}${FILE_REFERENCE_SUFFIX}`;
+  return {
+    update: UPDATE_DISABLED,
+    share: SHARE_DISABLED,
+    policies: [
+      {
+        action: POLICY_PROVIDER_USE,
+        resource: RESOURCE_WILDCARD,
+        effect: OpencodeV2Effect.deny,
+      },
+      ...providerIds.map((id) => ({
+        action: POLICY_PROVIDER_USE,
+        resource: id,
+        effect: OpencodeV2Effect.allow,
+      })),
+    ],
+    providers: Object.fromEntries(
+      providerIds.map((id) => [id, { settings: { apiKey } }]),
+    ),
+  };
+}
+
 export function buildV2SessionConfig(
   input: SessionConfigInput,
 ): OpencodeV2SessionConfig {

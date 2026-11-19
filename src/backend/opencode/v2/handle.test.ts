@@ -59,6 +59,7 @@ function createClient(
       return Promise.resolve();
     },
     isActive: () => Promise.resolve(calls.active.current),
+    models: () => Promise.resolve([]),
     events: () => Promise.resolve(readable),
   };
 }
