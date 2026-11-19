@@ -16,7 +16,7 @@ import {
   TERMINAL_TYPE,
 } from "../constants";
 import { inheritedEnv } from "../env";
-import { resolveLockKey } from "../locks";
+import type { LockKeyResolver } from "../locks";
 import type {
   ContainerOps,
   Launched,
@@ -40,6 +40,7 @@ export interface TerminalServiceDeps {
   readonly parentEnv: NodeJS.ProcessEnv;
   readonly newRunId: () => string;
   readonly schedule: ScheduleTimer;
+  readonly resolveLockKey: LockKeyResolver;
 }
 
 export interface TerminalService {
@@ -93,10 +94,14 @@ async function assertDirectory(cwd: string): Promise<void> {
   );
 }
 
-async function isSameFolder(current: string, target: string): Promise<boolean> {
-  const targetKey = await resolveLockKey(target);
+async function isSameFolder(
+  resolveKey: LockKeyResolver,
+  current: string,
+  target: string,
+): Promise<boolean> {
+  const targetKey = await resolveKey(target);
   try {
-    return (await resolveLockKey(current)) === targetKey;
+    return (await resolveKey(current)) === targetKey;
   } catch (error) {
     console.warn(`terminal folder cannot be resolved: ${current}`, error);
     return false;
@@ -161,7 +166,10 @@ class TerminalController implements TerminalService {
   retarget(cwd: string): Promise<void> {
     return this.serialized(async () => {
       const session = this.current;
-      if (session !== null && !(await isSameFolder(session.cwd, cwd))) {
+      if (
+        session !== null &&
+        !(await isSameFolder(this.deps.resolveLockKey, session.cwd, cwd))
+      ) {
         await this.discard(session);
       }
     });

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { MessageChannel, type MessagePort } from "node:worker_threads";
 
 import type { ConnectionRegistry } from "../../src/backend/connections";
+import type { LockKeyResolver } from "../../src/backend/locks";
 import {
   createBackendRegistry,
   startBackend,
@@ -46,6 +47,7 @@ import {
 import { unsupportedLaunch } from "./fakeContainer";
 import { createFakeVault } from "./fakeVault";
 import { makeTempDir } from "./processHelpers";
+import { resolvePathLockKey } from "./rigProcesses";
 
 export const FAKE_SHELL: ShellCommand = {
   command: "/bin/fake-shell",
@@ -215,6 +217,7 @@ export interface TerminalRigOptions {
   readonly setting?: string | null;
   readonly detectShell?: (setting: string | null) => Promise<ShellCommand>;
   readonly launchFailure?: Error;
+  readonly resolveLockKey?: LockKeyResolver;
 }
 
 export interface TerminalRig {
@@ -291,6 +294,7 @@ export function createTerminalRig(
       return `term-${String(runCounter)}`;
     },
     schedule: timers.schedule,
+    resolveLockKey: options.resolveLockKey ?? resolvePathLockKey,
   });
   return {
     service,
@@ -411,6 +415,7 @@ export async function createBackendTerminalRig(
     resolveExecutable: () => "/usr/bin/claude",
     inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),
     ptyLauncher: fakeLauncherFactory(spawns, undefined),
+    resolveLockKey: resolvePathLockKey,
   });
   const wired = createBackendRegistry(backend);
   registry = wired;

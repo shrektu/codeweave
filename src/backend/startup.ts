@@ -397,8 +397,10 @@ function createTerminals(
   deps: BackendDeps,
   container: ProcessContainer | null,
   store: JsonStore,
+  resolveLockKey: LockKeyResolver,
 ): TerminalService {
   return createTerminalService({
+    resolveLockKey,
     container,
     launcher: deps.ptyLauncher ?? createPtyLauncher,
     broadcast: deps.broadcast,
@@ -503,10 +505,9 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
   const probes = createProbes(deps, container, store, (accountId) =>
     sessions.isInUse(accountId),
   );
+  const lockKeyResolver = deps.resolveLockKey ?? resolveLockKey;
   const processes =
-    container === null
-      ? null
-      : createProcesses(container, deps.resolveLockKey ?? resolveLockKey);
+    container === null ? null : createProcesses(container, lockKeyResolver);
   const sessions: SessionService = createSessionService({
     adapter: createAdapter(deps, container, processes, keyStore),
     store,
@@ -524,7 +525,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     hasKey: (accountId) => keyStore.hint(accountId) !== null,
     secrets: createSecretSource(keyStore),
   });
-  const terminals = createTerminals(deps, container, store);
+  const terminals = createTerminals(deps, container, store, lockKeyResolver);
   const flowRuns = createFlowRunService({
     sessions,
     listFlows,

@@ -20,6 +20,7 @@ import {
   PROCESS_TEST_TIMEOUT_MS,
   WAIT_TIMEOUT_MS,
 } from "../fakes/processHelpers";
+import { resolvePathLockKey } from "../fakes/rigProcesses";
 
 const DataPayloadSchema = z.looseObject({ data: z.string() });
 const COLS = 100;
@@ -73,6 +74,7 @@ async function createHarness(
     detectShell: createShellDetector(process.platform, process.env),
     platform: process.platform,
     parentEnv: process.env,
+    resolveLockKey: resolvePathLockKey,
     newRunId: () => randomUUID(),
     schedule: (run, delayMs) => {
       const timer = setTimeout(run, delayMs);
