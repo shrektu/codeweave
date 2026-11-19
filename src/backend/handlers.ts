@@ -116,9 +116,12 @@ export function createHandlers({
         await flowRuns.stop();
         return { stopped: true };
       }
+      const live = sessions.isLive();
       const phase = sessions.view()?.phase.phase;
       await sessions.stop();
-      return { stopped: phase !== undefined && phase !== "stopped" };
+      return {
+        stopped: live || (phase !== undefined && phase !== "stopped"),
+      };
     },
     "permission/answer": ({ requestId, optionId }) => {
       sessions.answerPermission(requestId, optionId);

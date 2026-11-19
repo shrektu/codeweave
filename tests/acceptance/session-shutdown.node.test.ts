@@ -1,5 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 
+import { SESSION_START_STOPPED_MESSAGE } from "../../src/backend/constants";
+import { IpcErrorCode } from "../../src/shared/protocol";
 import {
   ACCOUNT_A,
   ACCOUNT_B,
@@ -129,4 +131,103 @@ it("dispose_waits_for_launch_started_during_close", async () => {
     }
   }
   await disposing;
+});
+
+async function firstSpawnEntered(rig: BackendRig): Promise<void> {
+  await settled(() => {
+    expect(
+      rig.order.filter((entry) => entry.startsWith("spawn:")),
+    ).toHaveLength(1);
+  });
+}
+
+function stopCallCounts(rig: BackendRig): number[] {
+  return rig.container.contained.map((contained) => contained.stopCalls.length);
+}
+
+async function livePhases(rig: BackendRig): Promise<string[]> {
+  const { session } = await rig.call("sessions/snapshot", {});
+  return session === null || session.phase.phase === "stopped"
+    ? []
+    : [session.phase.phase];
+}
+
+const START_STOPPED = {
+  code: IpcErrorCode.CONFLICT,
+  message: SESSION_START_STOPPED_MESSAGE,
+};
+
+it("stop_during_initial_start_stops_the_launching_agent", async () => {
+  const gate = Promise.withResolvers<undefined>();
+  const rig = await openRig({ accounts: [ACCOUNT_A], spawnGate: gate.promise });
+  const starting = rig.call("session/start", startParams(rig));
+  const outcome = starting.catch((error: unknown) => error);
+  await firstSpawnEntered(rig);
+
+  const stopping = rig.call("session/stop", {});
+  gate.resolve(undefined);
+  const result = await stopping;
+
+  expect(stopCallCounts(rig)).toEqual([1]);
+  expect(result).toEqual({ stopped: true });
+  expect(await outcome).toMatchObject(START_STOPPED);
+  await nextMacrotask();
+  expect(await livePhases(rig)).toEqual([]);
+  expect((await rig.call("sessions/snapshot", {})).session).toBeNull();
+  expect(rig.broadcastsOf("session/changed")).toEqual([]);
+});
+
+it("shutdown_during_initial_start_stops_the_launching_agent", async () => {
+  const gate = Promise.withResolvers<undefined>();
+  const rig = await openRig({ accounts: [ACCOUNT_A], spawnGate: gate.promise });
+  const starting = rig.call("session/start", startParams(rig));
+  const outcome = starting.catch((error: unknown) => error);
+  await firstSpawnEntered(rig);
+
+  const disposing = rig.dispose();
+  gate.resolve(undefined);
+  await disposing;
+
+  expect(stopCallCounts(rig)).toEqual([1]);
+  expect(await outcome).toMatchObject(START_STOPPED);
+  await nextMacrotask();
+  expect(await livePhases(rig)).toEqual([]);
+});
+
+it("stop_waits_for_the_interrupted_start", async () => {
+  const gate = Promise.withResolvers<undefined>();
+  const rig = await openRig({ accounts: [ACCOUNT_A], spawnGate: gate.promise });
+  const starting = rig.call("session/start", startParams(rig));
+  const outcome = starting.catch((error: unknown) => error);
+  await firstSpawnEntered(rig);
+
+  const state = { stopped: false };
+  const stopping = rig.call("session/stop", {}).then(() => {
+    state.stopped = true;
+  });
+  await nextMacrotask();
+  const resolvedWhileHeld = state.stopped;
+  gate.resolve(undefined);
+  await stopping;
+
+  expect(resolvedWhileHeld).toBe(false);
+  expect(await outcome).toMatchObject(START_STOPPED);
+});
+
+it("start_after_interrupted_start_runs_normally", async () => {
+  const gate = Promise.withResolvers<undefined>();
+  const rig = await openRig({ accounts: [ACCOUNT_A], spawnGate: gate.promise });
+  const starting = rig.call("session/start", startParams(rig));
+  const outcome = starting.catch((error: unknown) => error);
+  await firstSpawnEntered(rig);
+  const stopping = rig.call("session/stop", {});
+  gate.resolve(undefined);
+  await stopping;
+  const interrupted = await outcome;
+
+  await rig.call("session/start", startParams(rig));
+
+  expect((await rig.session()).phase.phase).toBe("running");
+  expect(stopCallCounts(rig)).toEqual([1, 0]);
+  expect(interrupted).toMatchObject(START_STOPPED);
 });
