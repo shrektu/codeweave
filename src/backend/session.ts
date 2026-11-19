@@ -21,7 +21,11 @@ import {
   type AgentStartResult,
 } from "./agentAdapter";
 import type { ConnectionRegistry } from "./connections";
-import { CONTAINER_UNAVAILABLE_MESSAGE } from "./constants";
+import {
+  CONTAINER_UNAVAILABLE_MESSAGE,
+  SESSION_START_STOPPED_MESSAGE,
+} from "./constants";
+import { createInFlight } from "./inFlight";
 import { exhaustedOnly, SessionRun } from "./sessionRun";
 import { observeViews } from "./sessionViews";
 import type { JsonStore } from "./storage";
@@ -111,6 +115,12 @@ interface CreatedRun {
   readonly initial: Account;
 }
 
+interface StartToken {
+  cancelled: boolean;
+}
+
+const isCancelled = (token: StartToken): boolean => token.cancelled;
+
 interface RunWiring {
   readonly runtimeOf: (accountId: string) => AccountRuntime;
   readonly reserved: Set<string>;
@@ -180,7 +190,8 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
   const observed: SessionServiceDeps = { ...deps, broadcast: views.broadcast };
   let run: SessionRun | null = null;
   let opening: SessionRun | null = null;
-  let starting = false;
+  let pending: StartToken | null = null;
+  const starts = createInFlight();
   const reserved = new Set<string>();
   let lastSignature = runtimeSignature(undefined);
   const listeners = new Set<() => void>();
@@ -261,20 +272,72 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       throw error;
     }
   };
+  const startStopped = (): IpcError =>
+    new IpcError(IpcErrorCode.CONFLICT, SESSION_START_STOPPED_MESSAGE);
+  const abandon = async (created: SessionRun): Promise<never> => {
+    await created.discard();
+    if (created.hasAgents()) {
+      run = created;
+    }
+    throw startStopped();
+  };
+  const launchOpened = async (
+    created: CreatedRun,
+    token: StartToken,
+  ): Promise<AgentStartResult> => {
+    if (isCancelled(token)) {
+      return abandon(created.run);
+    }
+    return created.run.begin(created.initial);
+  };
   const beginRun = async (
     params: ParamsMap["session/start"],
+    token: StartToken,
   ): Promise<{ created: CreatedRun; result: AgentStartResult }> => {
     const loginFailures = new Set<string>();
     let created = await openRun(params, loginFailures);
-    let result = await created.run.begin(created.initial);
+    let result = await launchOpened(created, token);
     while (isRetryable(result, created.initial)) {
       if (isLoginFailure(result, created.initial)) {
         loginFailures.add(created.initial.id);
       }
       created = await reopen(params, loginFailures, created, result);
-      result = await created.run.begin(created.initial);
+      result = await launchOpened(created, token);
     }
     return { created, result };
+  };
+  const runStart = async (
+    params: ParamsMap["session/start"],
+    token: StartToken,
+  ): Promise<SessionRun> => {
+    try {
+      await releasePrevious();
+      if (isCancelled(token)) {
+        throw startStopped();
+      }
+      const { created, result } = await beginRun(params, token);
+      if (isCancelled(token)) {
+        await abandon(created.run);
+      }
+      if (!result.ok) {
+        throw startError(created.initial, result, (text) =>
+          created.run.maskText(text),
+        );
+      }
+      run = created.run;
+      return created.run;
+    } finally {
+      opening = null;
+      pending = null;
+    }
+  };
+  const interruptStart = async (): Promise<void> => {
+    if (pending === null) {
+      return;
+    }
+    pending.cancelled = true;
+    opening?.markClosed();
+    await starts.settled();
   };
   const releasePrevious = async (): Promise<void> => {
     await run?.close();
@@ -292,27 +355,16 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
           deps.containerStatus.message ?? CONTAINER_UNAVAILABLE_MESSAGE,
         );
       }
-      if (starting || run?.isLive() === true) {
+      if (pending !== null || run?.isLive() === true) {
         throw new IpcError(
           IpcErrorCode.CONFLICT,
           "A session is already running",
         );
       }
-      starting = true;
-      try {
-        await releasePrevious();
-        const { created, result } = await beginRun(params);
-        if (!result.ok) {
-          throw startError(created.initial, result, (text) =>
-            created.run.maskText(text),
-          );
-        }
-        run = created.run;
-      } finally {
-        opening = null;
-        starting = false;
-      }
-      const view = run.view();
+      const token: StartToken = { cancelled: false };
+      pending = token;
+      const started = await starts.track(() => runStart(params, token));
+      const view = started.view();
       observed.broadcast("session/changed", view);
       checkRuntime();
       return view;
@@ -322,6 +374,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       return Promise.resolve();
     },
     stop: async () => {
+      await interruptStart();
       await run?.close();
       checkRuntime();
     },
@@ -332,7 +385,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       };
     },
     onViewChanged: views.listen,
-    isLive: () => starting || (run?.isLive() ?? false),
+    isLive: () => pending !== null || (run?.isLive() ?? false),
     isSettled: () => run?.isSettled() ?? false,
     answerPermission: (requestId, optionId) => {
       requireRun().answerPermission(requestId, optionId);
@@ -346,6 +399,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       run?.setAccounts(next);
     },
     shutdown: async () => {
+      await interruptStart();
       await run?.close();
     },
   };

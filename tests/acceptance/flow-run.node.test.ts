@@ -923,3 +923,30 @@ it("flow_run_with_prototype_named_node_ids", async () => {
   expect(view.round).toBe(1);
   expect(view.failure).toBeNull();
 });
+
+it("flow_stop_during_node_session_start_stops_the_agent", async () => {
+  const gate = Promise.withResolvers<undefined>();
+  const rig = await openFlowRig({
+    accounts: [ACCOUNT_A, ACCOUNT_B],
+    spawnGate: gate.promise,
+  });
+  const starting = rig.call("flow/start", flowStartParams(rig, "ask-review"));
+  const outcome = Promise.allSettled([starting]);
+  await settled(() => {
+    expect(
+      rig.order.filter((entry) => entry.startsWith("spawn:")),
+    ).toHaveLength(1);
+  });
+
+  const stopping = rig.call("flow/stop", {});
+  gate.resolve(undefined);
+  await expect(stopping).resolves.toEqual({ stopped: true });
+  await outcome;
+
+  const view = await untilStatus(rig, "stopped");
+  expect(view.status).toBe("stopped");
+  expect(
+    rig.container.contained.map((contained) => contained.stopCalls.length),
+  ).toEqual([1]);
+  expect((await rig.call("sessions/snapshot", {})).session).toBeNull();
+});

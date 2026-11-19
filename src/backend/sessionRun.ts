@@ -307,7 +307,16 @@ export class SessionRun {
     this.deliver(began.record, optionId);
   }
 
+  markClosed(): void {
+    this.closed = true;
+  }
+
   async close(): Promise<void> {
+    await this.discard();
+    this.publish();
+  }
+
+  async discard(): Promise<void> {
     this.closed = true;
     await this.launching.settled();
     await Promise.all(
@@ -326,7 +335,6 @@ export class SessionRun {
       ...this.state,
       permissions: expireAll(this.state.permissions),
     };
-    this.publish();
   }
 
   private publish(): void {

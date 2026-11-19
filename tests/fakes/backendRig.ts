@@ -120,6 +120,7 @@ export interface BackendRigOptions {
   readonly stopResults?: ConstructorParameters<typeof ScriptedAcpContainer>[0];
   readonly platform?: NodeJS.Platform;
   readonly worktreeGate?: Promise<void>;
+  readonly spawnGate?: Promise<void>;
   readonly worktree?: WorktreeState;
   readonly resolveExecutable?: BackendDeps["resolveExecutable"];
   readonly agyUsage?: readonly UsageScript[];
@@ -253,6 +254,7 @@ function recordingContainer(
   probe: { container: ScriptedCodexContainer; stats: ProbeStats },
   rig: Pick<BackendRig, "order" | "sweeps" | "contained">,
   agyCommands: readonly string[],
+  spawnGate?: Promise<void>,
 ): ProcessContainer {
   return {
     kind: claude.kind,
@@ -264,6 +266,7 @@ function recordingContainer(
           : spawnProbe(probe.container, probe.stats, spec);
       }
       rig.order.push(`spawn:${spec.runId}`);
+      await spawnGate;
       const target = targetOf(spec, { claude, ...others }, agyCommands);
       const contained = await target.spawn(spec);
       rig.contained.push(contained);
@@ -354,6 +357,7 @@ function rigDeps(
               { container: containers.probe, stats: log.probeStats },
               log,
               options.agyExecutables ?? [],
+              options.spawnGate,
             ),
           )
         : Promise.reject(options.containerError);

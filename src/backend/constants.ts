@@ -119,6 +119,8 @@ export const CODEX_CONFIG_FILE_NAME = "config.toml";
 export const CODEX_FILE_CREDENTIAL_STORE_CONFIG =
   'cli_auth_credentials_store = "file"\n';
 export const SESSION_CLOSED_MESSAGE = "The session is closed";
+export const SESSION_START_STOPPED_MESSAGE =
+  "The session was stopped before it started";
 export const FILE_URL_PREFIX = "file://";
 export const ACP_KINDS_READ: readonly string[] = ["read", "search"];
 export const ACP_KINDS_EDIT: readonly string[] = ["edit", "delete", "move"];

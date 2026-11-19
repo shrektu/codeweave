@@ -8,7 +8,10 @@ import type { AgentEvent } from "../domain/events";
 import { ProviderId, type Account } from "../domain/types";
 import { IpcError, IpcErrorCode } from "../shared/protocol";
 
+import { settled } from "../../tests/fakes/settle";
+
 import type { AgentAdapter, AgentHandle, AgentStartSpec } from "./agentAdapter";
+import { SESSION_START_STOPPED_MESSAGE } from "./constants";
 import { StopFailureReason, type StopResult } from "./process/container";
 import {
   createSessionService,
@@ -40,6 +43,11 @@ const RATE_LIMITED: AgentEvent = {
   rpcCode: null,
   message: "usage limit reached",
 };
+const ACCOUNTS_READ = "accounts:read";
+const START_STOPPED = {
+  code: IpcErrorCode.CONFLICT,
+  message: SESSION_START_STOPPED_MESSAGE,
+};
 const STOP_FAILED: StopResult = {
   ok: false,
   reason: StopFailureReason.notEmptyAfterTimeout,
@@ -52,6 +60,7 @@ interface Setup {
   readonly log: string[];
   readonly cwd: string;
   readonly specs: AgentStartSpec[];
+  readonly broadcasts: unknown[];
 }
 
 interface SetupOptions {
@@ -69,6 +78,7 @@ interface SetupOptions {
   readonly appendGate?: Promise<void>;
   readonly appendError?: Error;
   readonly stopGates?: readonly Promise<void>[];
+  readonly accountsGate?: Promise<void>;
 }
 
 const tempDirs: string[] = [];
@@ -129,9 +139,10 @@ async function setup(options: SetupOptions): Promise<Setup> {
   const log: string[] = [];
   const specs: AgentStartSpec[] = [];
   const stopGates = [...(options.stopGates ?? [])];
+  const broadcasts: unknown[] = [];
   const observeAppends =
     options.appendGate !== undefined || options.appendError !== undefined;
-  const sessionStore: JsonStore = observeAppends
+  const appendObserved: JsonStore = observeAppends
     ? {
         ...store,
         appendSwitchLog: async (entry) => {
@@ -145,6 +156,17 @@ async function setup(options: SetupOptions): Promise<Setup> {
         },
       }
     : store;
+  const sessionStore: JsonStore =
+    options.accountsGate === undefined
+      ? appendObserved
+      : {
+          ...appendObserved,
+          readAccounts: async () => {
+            log.push(ACCOUNTS_READ);
+            await options.accountsGate;
+            return appendObserved.readAccounts();
+          },
+        };
   const adapter: AgentAdapter = {
     start: async (spec) => {
       specs.push(spec);
@@ -158,7 +180,11 @@ async function setup(options: SetupOptions): Promise<Setup> {
   const service = createSessionService({
     adapter,
     store: sessionStore,
-    broadcast: () => undefined,
+    broadcast: (event, payload) => {
+      if (event === "session/changed") {
+        broadcasts.push(payload);
+      }
+    },
     now: () => NOW_MS,
     schedule: () => () => undefined,
     inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),
@@ -176,7 +202,7 @@ async function setup(options: SetupOptions): Promise<Setup> {
     secrets: () => [],
   });
   services.push(service);
-  return { service, store, log, cwd, specs };
+  return { service, store, log, cwd, specs, broadcasts };
 }
 
 async function haltedSession(options: SetupOptions): Promise<Setup> {
@@ -657,4 +683,202 @@ it("shutdown_waits_for_launch_started_during_close", async () => {
   expect(rig.log.indexOf("stop:run-2")).toBeLessThan(
     rig.log.indexOf("shutdown:done"),
   );
+});
+
+function startOutcome(rig: Setup): Promise<unknown> {
+  return rig.service.start({ cwd: rig.cwd }).catch((error: unknown) => error);
+}
+
+function expectNothingLeft(rig: Setup): void {
+  expect(rig.service.view()).toBeNull();
+  expect(rig.service.isLive()).toBe(false);
+  expect(rig.service.isInUse(ACCOUNT_A.id)).toBe(false);
+  expect(rig.broadcasts).toEqual([]);
+}
+
+it("stop_during_initial_launch_halts_agent_and_rejects_start", async () => {
+  const gate = Promise.withResolvers<undefined>();
+  const rig = await setup({ events: {}, startGate: gate.promise });
+  const outcome = startOutcome(rig);
+  await settled(() => {
+    expect(rig.specs).toHaveLength(1);
+  });
+
+  const stopping = rig.service.stop();
+  gate.resolve(undefined);
+  await stopping;
+
+  expect(rig.log).toEqual(["start:run-1", "stop:run-1"]);
+  expect(await outcome).toMatchObject(START_STOPPED);
+  expectNothingLeft(rig);
+});
+
+it("shutdown_during_initial_launch_halts_agent_and_rejects_start", async () => {
+  const gate = Promise.withResolvers<undefined>();
+  const rig = await setup({ events: {}, startGate: gate.promise });
+  const outcome = startOutcome(rig);
+  await settled(() => {
+    expect(rig.specs).toHaveLength(1);
+  });
+
+  const shutdown = rig.service.shutdown();
+  gate.resolve(undefined);
+  await shutdown;
+
+  expect(rig.log).toEqual(["start:run-1", "stop:run-1"]);
+  expect(await outcome).toMatchObject(START_STOPPED);
+  expectNothingLeft(rig);
+});
+
+it("stop_during_launch_reservation_halts_the_agent", async () => {
+  const gate = Promise.withResolvers<undefined>();
+  const entered = Promise.withResolvers<undefined>();
+  const rig = await setup({
+    events: {},
+    beforeLaunch: () => {
+      entered.resolve(undefined);
+      return gate.promise;
+    },
+  });
+  const outcome = startOutcome(rig);
+  await entered.promise;
+
+  const stopping = rig.service.stop();
+  gate.resolve(undefined);
+  await stopping;
+
+  expect(rig.log).toEqual(["start:run-1", "stop:run-1"]);
+  expect(await outcome).toMatchObject(START_STOPPED);
+  expectNothingLeft(rig);
+});
+
+it("stop_while_previous_session_is_released_starts_nothing", async () => {
+  const gate = Promise.withResolvers<undefined>();
+  const rig = await haltedSession({
+    events: { "acc-a": [NEEDS_LOGIN] },
+    stopGate: gate.promise,
+    accountsGate: Promise.resolve(),
+  });
+  const readsBefore = rig.log.filter((entry) => entry === ACCOUNTS_READ);
+  const outcome = startOutcome(rig);
+  await settled(() => {
+    expect(rig.log).toContain("stop:run-1");
+  });
+
+  const stopping = rig.service.stop();
+  gate.resolve(undefined);
+  await stopping;
+
+  expect(rig.specs).toHaveLength(1);
+  expect(rig.log.filter((entry) => entry === ACCOUNTS_READ)).toEqual(
+    readsBefore,
+  );
+  expect(await outcome).toMatchObject(START_STOPPED);
+  expect(rig.service.isLive()).toBe(false);
+});
+
+it("stop_while_accounts_are_read_starts_nothing", async () => {
+  const gate = Promise.withResolvers<undefined>();
+  const rig = await setup({ events: {}, accountsGate: gate.promise });
+  const outcome = startOutcome(rig);
+  await settled(() => {
+    expect(rig.log).toContain(ACCOUNTS_READ);
+  });
+
+  const stopping = rig.service.stop();
+  gate.resolve(undefined);
+  await stopping;
+
+  expect(rig.specs).toEqual([]);
+  expect(await outcome).toMatchObject(START_STOPPED);
+  expectNothingLeft(rig);
+});
+
+it("stop_during_start_retry_never_launches_the_next_account", async () => {
+  const gate = Promise.withResolvers<undefined>();
+  const entered = Promise.withResolvers<undefined>();
+  const state = { blocked: false };
+  const rig = await setup({
+    accounts: [ACCOUNT_A, ACCOUNT_B],
+    events: {},
+    isBlocked: (accountId) => accountId === ACCOUNT_A.id && state.blocked,
+    beforeLaunch: async (accountId) => {
+      if (accountId !== ACCOUNT_A.id) {
+        return;
+      }
+      entered.resolve(undefined);
+      await gate.promise;
+      state.blocked = true;
+      throw new ProbeStillRunningError();
+    },
+  });
+  const outcome = startOutcome(rig);
+  await entered.promise;
+
+  const stopping = rig.service.stop();
+  gate.resolve(undefined);
+  await stopping;
+
+  expect(rig.specs).toEqual([]);
+  expect(await outcome).toMatchObject(START_STOPPED);
+  expectNothingLeft(rig);
+});
+
+it("start_after_interrupted_start_launches_normally", async () => {
+  const gate = Promise.withResolvers<undefined>();
+  const rig = await setup({ events: {}, startGate: gate.promise });
+  const outcome = startOutcome(rig);
+  await settled(() => {
+    expect(rig.specs).toHaveLength(1);
+  });
+  const stopping = rig.service.stop();
+  gate.resolve(undefined);
+  await stopping;
+  await outcome;
+
+  const view = await rig.service.start({ cwd: rig.cwd });
+
+  expect(view.phase).toEqual({ phase: "running", accountId: ACCOUNT_A.id });
+  expect(rig.log).toEqual(["start:run-1", "stop:run-1", "start:run-2"]);
+});
+
+it("concurrent_stop_and_shutdown_during_start_halt_the_agent_once", async () => {
+  const gate = Promise.withResolvers<undefined>();
+  const rig = await setup({ events: {}, startGate: gate.promise });
+  const outcome = startOutcome(rig);
+  await settled(() => {
+    expect(rig.specs).toHaveLength(1);
+  });
+
+  const stopping = rig.service.stop();
+  const shutdown = rig.service.shutdown();
+  gate.resolve(undefined);
+  await Promise.all([stopping, shutdown]);
+
+  expect(rig.log.filter((entry) => entry === "stop:run-1")).toHaveLength(1);
+  expect(await outcome).toMatchObject(START_STOPPED);
+});
+
+it("interrupted_start_with_surviving_agent_stays_in_use", async () => {
+  const gate = Promise.withResolvers<undefined>();
+  const rig = await setup({
+    events: {},
+    startGate: gate.promise,
+    stopResult: STOP_FAILED,
+  });
+  const outcome = startOutcome(rig);
+  await settled(() => {
+    expect(rig.specs).toHaveLength(1);
+  });
+
+  const stopping = rig.service.stop();
+  gate.resolve(undefined);
+  await stopping;
+
+  expect(await outcome).toMatchObject(START_STOPPED);
+  expect(rig.service.isInUse(ACCOUNT_A.id)).toBe(true);
+  await expect(rig.service.start({ cwd: rig.cwd })).rejects.toMatchObject({
+    code: IpcErrorCode.CONFLICT,
+    message: "The previous agent is still running",
+  });
 });
