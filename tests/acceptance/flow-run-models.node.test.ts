@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it } from "vitest";
 import { z } from "zod";
 
 import type { Account } from "../../src/domain/types";
@@ -17,6 +17,7 @@ import {
 import type { ScriptStep } from "../fakes/fakeAcpAgent";
 import { agentDelta } from "../fakes/fakeCodexAppServer";
 import { OPENCODE_SESSION_ID } from "../fakes/fakeOpencodeServer";
+import { settled } from "../fakes/settle";
 
 const PINNED_MODEL = "claude-sonnet-4-5";
 const END_TURN: ScriptStep = { type: "end", stopReason: "end_turn" };
@@ -102,7 +103,7 @@ async function openFlowRig(accounts: readonly Account[]): Promise<BackendRig> {
 
 async function startAndFinish(rig: BackendRig, flowId: string): Promise<void> {
   await rig.call("flow/start", { cwd: rig.cwd, flowId, task: "Add a form" });
-  await vi.waitFor(async () => {
+  await settled(async () => {
     const { flowRun } = await rig.call("sessions/snapshot", {});
     expect(flowRun?.status).toBe("done");
   });

@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it } from "vitest";
 
 import { ProviderId } from "../../src/domain/types";
 import type { AccountView } from "../../src/shared/views";
@@ -18,6 +18,7 @@ import {
   OPENCODE_SESSION_ID,
   type OpencodeStep,
 } from "../fakes/fakeOpencodeServer";
+import { settled } from "../fakes/settle";
 
 const RATE_LIMIT_FAILURE: ScriptStep = {
   type: "fail",
@@ -68,7 +69,7 @@ it("claude_session_switches_to_codex_subscription_before_api", async () => {
 
   await rig.call("session/prompt", { text: "ship the release" });
 
-  await vi.waitFor(async () => {
+  await settled(async () => {
     const view = await rig.session();
     expect(view.phase).toEqual({
       phase: "running",
@@ -96,7 +97,7 @@ it("opencode_session_pool_never_contains_subscriptions", async () => {
   await rig.call("session/start", { cwd: rig.cwd, provider: "opencode" });
   await rig.call("session/prompt", { text: "go" });
 
-  await vi.waitFor(async () => {
+  await settled(async () => {
     const view = await rig.session();
     expect(view.phase).toMatchObject({ phase: "waiting" });
     expect(view.limits.map((limit) => limit.accountId)).toEqual([free.id]);

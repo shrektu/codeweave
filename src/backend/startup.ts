@@ -50,7 +50,7 @@ import { createHandlers } from "./handlers";
 import { recordInstance } from "./instance";
 import type { IpcHandlers } from "./ipcServer";
 import { createLimitProbeService, type LimitProbeService } from "./limitProbe";
-import { WorktreeLocks } from "./locks";
+import { resolveLockKey, WorktreeLocks, type LockKeyResolver } from "./locks";
 import { createOpencodeAdapter } from "./opencode/adapter";
 import {
   CATALOG_DIR_NAME,
@@ -108,6 +108,7 @@ export interface BackendDeps {
   readonly inspectWorktree: (cwd: string) => Promise<WorktreeState>;
   readonly catalogProbeTimeoutMs?: number;
   readonly ptyLauncher?: PtyLauncherFactory;
+  readonly resolveLockKey?: LockKeyResolver;
   readonly postUpdaterConfig?: PostUpdaterConfig;
 }
 
@@ -260,10 +261,14 @@ function createProbes(
   });
 }
 
-function createProcesses(container: ProcessContainer): AgentProcesses {
+function createProcesses(
+  container: ProcessContainer,
+  resolveLockKey: LockKeyResolver,
+): AgentProcesses {
   return createAgentProcesses({
     container,
     locks: new WorktreeLocks(),
+    resolveLockKey,
     onFailure: (failure) => {
       console.error(
         `agent ${failure.runId} left processes behind: ${failure.survivors.join(",")}`,
@@ -498,7 +503,10 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
   const probes = createProbes(deps, container, store, (accountId) =>
     sessions.isInUse(accountId),
   );
-  const processes = container === null ? null : createProcesses(container);
+  const processes =
+    container === null
+      ? null
+      : createProcesses(container, deps.resolveLockKey ?? resolveLockKey);
   const sessions: SessionService = createSessionService({
     adapter: createAdapter(deps, container, processes, keyStore),
     store,

@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it } from "vitest";
 
 import { IpcErrorCode } from "../../src/shared/protocol";
 import {
@@ -17,6 +17,7 @@ import {
   type ScriptStep,
 } from "../fakes/fakeAcpAgent";
 import type { FakeContained } from "../fakes/fakeContainer";
+import { settled } from "../fakes/settle";
 
 const RATE_LIMIT_FAILURE: ScriptStep = {
   type: "fail",
@@ -52,7 +53,7 @@ function containedOf(rig: BackendRig, index: number): FakeContained {
 }
 
 async function pendingRequestId(rig: BackendRig): Promise<string> {
-  return vi.waitFor(async () => {
+  return settled(async () => {
     const [pending] = (await rig.session()).permissions;
     if (pending === undefined) {
       throw new Error("no pending permission yet");
@@ -77,7 +78,7 @@ it("session_prompt_rejected_while_switching", async () => {
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
   await rig.call("session/prompt", { text: "go" });
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect((await rig.session()).phase).toEqual({
       phase: "switching",
       from: ACCOUNT_A.id,
@@ -90,7 +91,7 @@ it("session_prompt_rejected_while_switching", async () => {
   ).rejects.toMatchObject({ code: IpcErrorCode.SESSION_BUSY });
 
   gate.resolve(undefined);
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect((await rig.session()).phase).toEqual({
       phase: "running",
       accountId: ACCOUNT_B.id,
@@ -154,13 +155,13 @@ it("agent_crash_mid_turn_marks_session_failed_and_releases_lock", async () => {
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([{ type: "hang" }]);
   await rig.call("session/prompt", { text: "work" });
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect((await rig.session()).turnInFlight).toBe(true);
   });
 
   rig.container.contained[0]?.emitExit(1);
 
-  await vi.waitFor(async () => {
+  await settled(async () => {
     const view = await rig.session();
     expect(view.phase).toEqual({
       phase: "failed",
@@ -199,7 +200,7 @@ it("start_after_halt_stops_old_agent_first", async () => {
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([NEEDS_LOGIN_FAILURE]);
   await rig.call("session/prompt", { text: "go" });
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect((await rig.session()).phase).toEqual({ phase: "halted" });
   });
   await rig.call("accounts/add", {
@@ -223,7 +224,7 @@ it("prompt_rejected_while_rotation_chain_busy", async () => {
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
   await rig.call("session/prompt", { text: "go" });
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect((await rig.session()).phase.phase).toBe("waiting");
   });
   rig.container.holdStops();
@@ -231,7 +232,7 @@ it("prompt_rejected_while_rotation_chain_busy", async () => {
 
   rig.scheduled[0]?.run();
   try {
-    await vi.waitFor(() => {
+    await settled(() => {
       expect(containedOf(rig, 1).stopCalls).toHaveLength(1);
     });
     const view = await rig.session();
@@ -246,7 +247,7 @@ it("prompt_rejected_while_rotation_chain_busy", async () => {
     containedOf(rig, 1).resolveHeldStops();
   }
 
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect((await rig.session()).phase.phase).toBe("waiting");
   });
 });
@@ -257,7 +258,7 @@ it("account_remove_rejected_while_switching", async () => {
   containedOf(rig, 0).holdStops();
   agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
   await rig.call("session/prompt", { text: "go" });
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(containedOf(rig, 0).stopCalls).toHaveLength(1);
   });
 
@@ -269,7 +270,7 @@ it("account_remove_rejected_while_switching", async () => {
     containedOf(rig, 0).resolveHeldStops();
   }
 
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect((await rig.session()).phase).toEqual({
       phase: "running",
       accountId: ACCOUNT_B.id,
@@ -287,7 +288,7 @@ it("shutdown_stops_all_containers", async () => {
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
   await rig.call("session/prompt", { text: "go" });
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect((await rig.session()).phase.phase).toBe("switching");
   });
 
@@ -295,7 +296,7 @@ it("shutdown_stops_all_containers", async () => {
   gate.resolve(undefined);
   await shuttingDown;
 
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(rig.container.contained.map((item) => item.stopCalls)).toEqual([
       [AGENT_STOP_GRACE_MS],
       [AGENT_STOP_GRACE_MS],
@@ -344,7 +345,7 @@ it("accounts_added_during_a_session_are_used_for_the_next_switch", async () => {
 
   await rig.call("session/prompt", { text: "go" });
 
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect((await rig.session()).phase).toEqual({
       phase: "running",
       accountId: account.id,

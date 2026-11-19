@@ -33,7 +33,7 @@ import {
 } from "../fakes/fakeCodexAppServer";
 import type { FakeContained } from "../fakes/fakeContainer";
 import { hostBinDirWith, hostResolverEnv } from "../fakes/processHelpers";
-import { SETTLE_TIMEOUT_MS } from "../fakes/settle";
+import { settled } from "../fakes/settle";
 
 const RESET_AT = 1_700_003_600;
 const FIVE_HOUR_MINUTES = 300;
@@ -95,12 +95,9 @@ async function viewOf(rig: BackendRig, id: string): Promise<AccountView> {
 }
 
 async function cyclesDone(rig: BackendRig, count: number): Promise<void> {
-  await vi.waitFor(
-    () => {
-      expect(rig.probeTasks).toHaveLength(count);
-    },
-    { timeout: SETTLE_TIMEOUT_MS },
-  );
+  await settled(() => {
+    expect(rig.probeTasks).toHaveLength(count);
+  });
 }
 
 function probedHomes(rig: BackendRig, skip = 0): (string | undefined)[] {
@@ -340,7 +337,7 @@ it("probe_runs_after_account_added", async () => {
     provider: "codex",
   });
 
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect(probedHomes(rig)).toContain(configDir);
     expect((await viewOf(rig, account.id)).limit).toMatchObject({
       accountId: account.id,
@@ -359,7 +356,7 @@ it("probe_runs_after_account_removed", async () => {
 
   await rig.call("accounts/remove", { id: ACCOUNT_CODEX_B.id });
 
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(probedHomes(rig, firstPass)).toEqual([ACCOUNT_CODEX_A.configDir]);
   });
   expect((await accountsOf(rig)).map((account) => account.id)).toEqual([
@@ -372,7 +369,7 @@ it("session_launch_waits_for_probe_release", async () => {
     accounts: [ACCOUNT_CODEX_A, ACCOUNT_CODEX_B],
     probeConfig: HANGING_CONFIG,
   });
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(rig.probeContainer.contained).toHaveLength(1);
   });
   const probe = probeProcess(rig, 0);
@@ -382,7 +379,7 @@ it("session_launch_waits_for_probe_release", async () => {
     cwd: rig.cwd,
     provider: "codex",
   });
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(probe.stopCalls).toEqual([AGENT_STOP_GRACE_MS]);
   });
   await sleep(POLL_MS);
@@ -538,7 +535,7 @@ it("probe_waits_for_initial_launch_reservation", async () => {
     provider: "codex",
   });
   try {
-    await vi.waitFor(() => {
+    await settled(() => {
       expect(rig.codexContainer.spawnRequests).toBe(1);
     });
     runNextPass(rig);
@@ -561,7 +558,7 @@ it("probe_skips_account_with_live_agent_after_halt", async () => {
   rig.codexContainer.scriptNext([UNAUTHORIZED_FAIL]);
   await rig.call("session/start", { cwd: rig.cwd, provider: "codex" });
   await rig.call("session/prompt", { text: "go" });
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect((await rig.session()).phase).toEqual({ phase: "halted" });
   });
 
@@ -585,7 +582,7 @@ it("shutdown_waits_for_probe_process_stop", async () => {
   const closing = rig.dispose().then(() => {
     closed = true;
   });
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(probe.stopCalls).toEqual([AGENT_STOP_GRACE_MS]);
   });
   await sleep(POLL_MS);
@@ -639,7 +636,7 @@ it("probe_exhausted_overrides_expired_own_exhaustion", async () => {
   rig.codexContainer.scriptNext([USAGE_LIMIT_FAIL]);
   await rig.call("session/start", { cwd: rig.cwd, provider: "codex" });
   await rig.call("session/prompt", { text: "go" });
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(rig.codexContainer.servers[1]?.methods() ?? []).toContain(
       "turn/start",
     );
@@ -652,7 +649,7 @@ it("probe_exhausted_overrides_expired_own_exhaustion", async () => {
     EXHAUSTED_LATER_CONFIG,
   );
   runNextPass(rig);
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect((await viewOf(rig, ACCOUNT_CODEX_A.id)).limit).toMatchObject({
       status: "rejected",
       resetsAt: LATER_RESET_AT,
@@ -661,7 +658,7 @@ it("probe_exhausted_overrides_expired_own_exhaustion", async () => {
 
   await rig.call("session/prompt", { text: "again" });
 
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect((await rig.session()).phase).toEqual({
       phase: "running",
       accountId: ACCOUNT_CODEX_C.id,
@@ -715,13 +712,13 @@ it.each(PUBLISH_WINDOW_HOPS)(
       gatedConfig(gate.promise),
     );
     runNextPass(rig);
-    await vi.waitFor(() => {
+    await settled(() => {
       expect(rig.probeContainer.contained).toHaveLength(firstPass + 1);
     });
     const probe = probeProcess(rig, firstPass);
     probe.holdStops();
     gate.resolve(undefined);
-    await vi.waitFor(() => {
+    await settled(() => {
       expect(probe.stopCalls).toHaveLength(1);
     });
     release = () => {
@@ -763,7 +760,7 @@ it("probe_skips_account_whose_closed_launch_left_survivors", async () => {
   const gate = Promise.withResolvers<undefined>();
   rig.codexContainer.spawnGate = gate.promise;
   await rig.call("session/prompt", { text: "go" });
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(rig.codexContainer.spawnRequests).toBe(2);
   });
 
@@ -807,7 +804,7 @@ it("session_start_moves_on_when_initial_probe_stop_leaves_survivors", async () =
       [ACCOUNT_CODEX_A.configDir]: [STOP_SURVIVORS],
     },
   });
-  await vi.waitFor(() => {
+  await settled(() => {
     expect(rig.probeContainer.contained).toHaveLength(1);
   });
 
@@ -839,7 +836,7 @@ it("rotation_skips_target_blocked_by_unstopped_probe", async () => {
 
   await rig.call("session/prompt", { text: "go" });
 
-  await vi.waitFor(async () => {
+  await settled(async () => {
     expect((await rig.session()).phase).toEqual({
       phase: "running",
       accountId: ACCOUNT_CODEX_C.id,

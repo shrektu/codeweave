@@ -8,7 +8,7 @@ import {
 import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { expect, vi } from "vitest";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import type {
@@ -16,8 +16,6 @@ import type {
   AgentStartResult,
   AgentStartSpec,
 } from "../../src/backend/agentAdapter";
-import { createAgentProcesses } from "../../src/backend/agentProcesses";
-import { WorktreeLocks } from "../../src/backend/locks";
 import { createOpencodeAdapter } from "../../src/backend/opencode/adapter";
 import { findFreePort } from "../../src/backend/opencode/port";
 import type { OpencodeCredentials } from "../../src/backend/opencode/config";
@@ -37,6 +35,8 @@ import {
 } from "../../src/domain/types";
 
 import { FakeContained, unsupportedLaunch } from "./fakeContainer";
+import { rigProcesses } from "./rigProcesses";
+import { settled } from "./settle";
 
 export type Json = Readonly<Record<string, unknown>>;
 
@@ -823,7 +823,7 @@ export async function createOpencodeRig(
       ? OPENCODE_RIG_CREDENTIALS
       : options.credentials;
   const adapter = createOpencodeAdapter({
-    processes: createAgentProcesses({ container, locks: new WorktreeLocks() }),
+    processes: rigProcesses(container),
     envFor: () => ({ PATH: "/usr/bin" }),
     executableFor: () => OPENCODE_RIG_EXECUTABLE,
     credentialsFor: () => Promise.resolve(credentials),
@@ -898,7 +898,7 @@ export function opencodeServerOf(rig: OpencodeRig): FakeOpencodeServer {
 export async function opencodePermissionRequestOf(
   events: readonly AgentEvent[],
 ): Promise<Extract<AgentEvent, { type: "permission_request" }>> {
-  return vi.waitFor(() => {
+  return settled(() => {
     const found = events.find((event) => event.type === "permission_request");
     if (found === undefined) {
       throw new Error("no permission_request yet");

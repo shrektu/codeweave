@@ -110,6 +110,7 @@ function createAgents(): ReturnType<typeof createAgentProcesses> {
   return createAgentProcesses({
     container: createSystemdScopeContainer({ instanceId: TEST_INSTANCE_ID }),
     locks: new WorktreeLocks(),
+    resolveLockKey,
   });
 }
 
@@ -214,6 +215,7 @@ describe("worktree lock lifecycle", () => {
     const agents = createAgentProcesses({
       container,
       locks: new WorktreeLocks(),
+      resolveLockKey,
     });
     const first = await agents.start(specFor(KEEP_ALIVE_SCRIPT));
     const firstContained = container.spawned[0];
@@ -244,6 +246,7 @@ describe("worktree lock lifecycle", () => {
     const agents = createAgentProcesses({
       container,
       locks: new WorktreeLocks(),
+      resolveLockKey,
       onFailure: (failure) => failures.push(failure),
     });
     const agent = await agents.start(specFor(KEEP_ALIVE_SCRIPT));
@@ -287,6 +290,7 @@ describe("systemd container call timeouts", () => {
         spawnChild: idleChild,
       }),
       locks: new WorktreeLocks(),
+      resolveLockKey,
       onFailure: (failure) => failures.push(failure),
     });
     const agent = await agents.start(specFor(KEEP_ALIVE_SCRIPT));
@@ -325,6 +329,7 @@ describe("systemd container teardown", () => {
           .mockRejectedValue(dying),
       }),
       locks: new WorktreeLocks(),
+      resolveLockKey,
       onFailure: (failure) => failures.push(failure),
     });
     const agent = await agents.start(specFor(KEEP_ALIVE_SCRIPT));

@@ -18,6 +18,8 @@ export interface Lease {
   release(): void;
 }
 
+export type LockKeyResolver = (cwd: string) => Promise<string>;
+
 export async function resolveLockKey(cwd: string): Promise<string> {
   try {
     const top = await execText(GIT_BINARY, [
