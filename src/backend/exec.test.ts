@@ -1,3 +1,6 @@
+import { realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
+
 import { describe, expect, it } from "vitest";
 
 import { execText } from "./exec";
@@ -29,6 +32,18 @@ describe("execText", () => {
     } finally {
       delete process.env.CODEWEAVE_EXEC_INHERITED;
     }
+  });
+
+  it("exec_runs_the_command_in_the_given_directory", async () => {
+    const directory = realpathSync(tmpdir());
+
+    const stdout = await execText(
+      process.execPath,
+      ["-e", "process.stdout.write(process.cwd())"],
+      { cwd: directory },
+    );
+
+    expect(realpathSync(stdout)).toBe(directory);
   });
 
   it("exec_timeout_kills_the_hanging_child", async () => {

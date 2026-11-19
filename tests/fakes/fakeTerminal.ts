@@ -10,6 +10,7 @@ import {
   startBackend,
   type Backend,
 } from "../../src/backend/startup";
+import { OpencodeGeneration } from "../../src/backend/opencode/constants";
 import { ContainerKind } from "../../src/backend/process/container";
 import type {
   ContainerOps,
@@ -414,6 +415,7 @@ export async function createBackendTerminalRig(
     newRunId: () => `run-${String(spawns.length + 1)}`,
     resolveExecutable: () => "/usr/bin/claude",
     inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),
+    opencodeGeneration: () => Promise.resolve(OpencodeGeneration.v1),
     ptyLauncher: fakeLauncherFactory(spawns, undefined),
     resolveLockKey: resolvePathLockKey,
   });

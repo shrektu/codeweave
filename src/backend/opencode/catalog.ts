@@ -16,7 +16,7 @@ import type { CatalogModel, ModelCatalog } from "../../shared/views";
 import type { AgentStartSpec } from "../agentAdapter";
 import type { AgentProcesses } from "../agentProcesses";
 
-import { createOpencodeClient } from "./client";
+import { createOpencodeClient, type OpencodeClientOptions } from "./client";
 import {
   CONFIG_FILE_NAME,
   FILE_REFERENCE_PREFIX,
@@ -26,10 +26,16 @@ import {
   RUN_DIR_MODE,
   SECRET_FILE_MODE,
   SHARE_DISABLED,
+  OpencodeGeneration,
 } from "./constants";
 import { accountDirs, buildOpencodeLaunch } from "./launch";
 import type { ProvidersResponse } from "./protocol";
-import { watchProcess } from "./watch";
+import { createOpencodeV2Client } from "./v2/client";
+import { buildV2CatalogConfig } from "./v2/config";
+import { TEXT_CONTENT_TYPE } from "./v2/constants";
+import type { V2Model } from "./v2/protocol";
+import type { GenerationProbe } from "./version";
+import { watchProcess, type ProcessWatch } from "./watch";
 
 export const CATALOG_DIR_NAME = "opencode-catalog";
 export const CATALOG_RUN_ID_PREFIX = "catalog-";
@@ -61,10 +67,19 @@ const ModelSchema = z.object({
 });
 type RegistryModel = z.infer<typeof ModelSchema>;
 
+interface PricedModel {
+  readonly id: string;
+  readonly name: string;
+  readonly cost?:
+    { readonly input: number; readonly output: number } | undefined;
+  readonly limit?: { readonly context: number } | undefined;
+}
+
 export interface ModelCatalogDeps {
   readonly processes: AgentProcesses;
   readonly envFor: (spec: AgentStartSpec) => Record<string, string>;
   readonly resolveExecutable: () => Promise<string>;
+  readonly generationFor: GenerationProbe;
   readonly directory: string;
   readonly platform: NodeJS.Platform;
   readonly comSpec?: string;
@@ -84,6 +99,7 @@ export interface ModelCatalogService {
 
 interface CatalogFiles {
   readonly configDir: string;
+  readonly keyFile: string;
   readonly configFile: string;
 }
 
@@ -98,7 +114,7 @@ function isUsableModel(model: RegistryModel): boolean {
 
 function toCatalogModel(
   providerId: ApiProviderId,
-  model: RegistryModel,
+  model: PricedModel,
 ): CatalogModel {
   const info = API_PROVIDERS[providerId];
   const costIn = model.cost?.input ?? null;
@@ -133,9 +149,29 @@ export function toCatalogModels(response: ProvidersResponse): CatalogModel[] {
   });
 }
 
-function catalogConfig(keyFile: string): Record<string, unknown> {
+function isUsableV2Model(model: V2Model): boolean {
+  const { tools, input, output } = model.capabilities;
+  return (
+    tools &&
+    input.includes(TEXT_CONTENT_TYPE) &&
+    output.includes(TEXT_CONTENT_TYPE)
+  );
+}
+
+export function toCatalogModelsV2(models: readonly V2Model[]): CatalogModel[] {
+  return models.flatMap((model) => {
+    const providerId = PROVIDER_BY_OPENCODE_ID.get(model.providerID);
+    return providerId !== undefined && isUsableV2Model(model)
+      ? [toCatalogModel(providerId, { ...model, cost: model.cost?.[0] })]
+      : [];
+  });
+}
+
+function catalogConfig(
+  keyFile: string,
+  ids: readonly string[],
+): Record<string, unknown> {
   const apiKey = `${FILE_REFERENCE_PREFIX}${keyFile}${FILE_REFERENCE_SUFFIX}`;
-  const ids = CATALOG_PROVIDER_IDS.map((id) => API_PROVIDERS[id].opencodeId);
   return {
     enabled_providers: ids,
     autoupdate: false,
@@ -146,7 +182,34 @@ function catalogConfig(keyFile: string): Record<string, unknown> {
   };
 }
 
-async function writeCatalogFiles(directory: string): Promise<CatalogFiles> {
+interface CatalogDriver {
+  readonly buildConfig: (keyFile: string, ids: readonly string[]) => object;
+  readonly fetchModels: (
+    options: OpencodeClientOptions,
+    watch: ProcessWatch,
+  ) => Promise<CatalogModel[]>;
+}
+
+const CATALOG_DRIVERS: Readonly<Record<OpencodeGeneration, CatalogDriver>> = {
+  [OpencodeGeneration.v1]: {
+    buildConfig: catalogConfig,
+    async fetchModels(options, watch) {
+      const client = createOpencodeClient(options);
+      await watch.untilExit(client.warmUp());
+      return toCatalogModels(await watch.untilExit(client.providers()));
+    },
+  },
+  [OpencodeGeneration.v2]: {
+    buildConfig: buildV2CatalogConfig,
+    async fetchModels(options, watch) {
+      const client = createOpencodeV2Client(options);
+      await watch.untilExit(client.warmUp());
+      return toCatalogModelsV2(await watch.untilExit(client.models()));
+    },
+  },
+};
+
+async function prepareCatalogFiles(directory: string): Promise<CatalogFiles> {
   const configDir = join(directory, CATALOG_ACCOUNT_DIR);
   const runDir = join(directory, CATALOG_RUN_DIR);
   await Promise.all(
@@ -155,12 +218,19 @@ async function writeCatalogFiles(directory: string): Promise<CatalogFiles> {
     ),
   );
   const keyFile = join(runDir, KEY_FILE_NAME);
-  const configFile = join(runDir, CONFIG_FILE_NAME);
   await writeFile(keyFile, CATALOG_PLACEHOLDER_KEY, { mode: SECRET_FILE_MODE });
-  await writeFile(configFile, JSON.stringify(catalogConfig(keyFile)), {
+  return { configDir, keyFile, configFile: join(runDir, CONFIG_FILE_NAME) };
+}
+
+async function writeCatalogConfig(
+  files: CatalogFiles,
+  generation: OpencodeGeneration,
+): Promise<void> {
+  const ids = CATALOG_PROVIDER_IDS.map((id) => API_PROVIDERS[id].opencodeId);
+  const config = CATALOG_DRIVERS[generation].buildConfig(files.keyFile, ids);
+  await writeFile(files.configFile, JSON.stringify(config), {
     mode: SECRET_FILE_MODE,
   });
-  return { configDir, configFile };
 }
 
 function startSpecFor(
@@ -201,16 +271,23 @@ async function probeModels(
   executable: string,
 ): Promise<CatalogModel[]> {
   const startedAt = Date.now();
-  const files = await writeCatalogFiles(deps.directory);
+  const files = await prepareCatalogFiles(deps.directory);
   const runId = deps.newRunId();
   const password = deps.newPassword();
+  const env = deps.envFor(startSpecFor(deps, files, executable, runId));
+  const generation = await deps.generationFor(executable, {
+    env: { ...env, ...accountDirs(files.configDir) },
+    cwd: deps.directory,
+  });
+  await writeCatalogConfig(files, generation);
   const launch = buildOpencodeLaunch({
+    generation,
     executable,
     configDir: files.configDir,
     configFile: files.configFile,
     password,
     port: await deps.freePort(),
-    env: deps.envFor(startSpecFor(deps, files, executable, runId)),
+    env,
     platform: deps.platform,
     comSpec: deps.comSpec,
   });
@@ -229,17 +306,18 @@ async function probeModels(
     const baseUrl = await watch.listening(
       deps.readyTimeoutMs ?? READY_TIMEOUT_MS,
     );
-    const client = createOpencodeClient({
-      baseUrl,
-      password,
-      directory: deps.directory,
-      fetchImpl: deps.fetchImpl,
-      ...(deps.requestTimeoutMs === undefined
-        ? {}
-        : { requestTimeoutMs: deps.requestTimeoutMs }),
-    });
-    await watch.untilExit(client.warmUp());
-    return toCatalogModels(await watch.untilExit(client.providers()));
+    return CATALOG_DRIVERS[generation].fetchModels(
+      {
+        baseUrl,
+        password,
+        directory: deps.directory,
+        fetchImpl: deps.fetchImpl,
+        ...(deps.requestTimeoutMs === undefined
+          ? {}
+          : { requestTimeoutMs: deps.requestTimeoutMs }),
+      },
+      watch,
+    );
   };
   const budgetMs = deps.probeTimeoutMs ?? CATALOG_PROBE_TIMEOUT_MS;
   try {

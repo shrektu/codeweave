@@ -70,6 +70,12 @@ jobs:
       - name: Install OpenCode CLI (Linux)
         if: runner.os == 'Linux'
         run: npm i -g opencode-ai@1.19.5
+      - name: Install OpenCode 2 CLI (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          npm i --prefix "$RUNNER_TEMP/opencode-2" @opencode/cli@2.2.5
+          echo "OPENCODE_2_BIN_DIR=$RUNNER_TEMP/opencode-2/node_modules/.bin" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/opencode-2/node_modules/.bin/opencode" --version
       - name: Install keyring (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -95,3 +101,8 @@ jobs:
         run: |
           openssl rand -hex 16 | tr -d '\n' | gnome-keyring-daemon --unlock --components=secrets
           xvfb-run --auto-servernum pnpm e2e:rotation
+          export PATH="$OPENCODE_2_BIN_DIR:$PATH"
+          opencode --version | grep -Fx 'opencode v2.2.5'
+          "${SHELL:-/bin/bash}" -ilc 'opencode --version' | grep -Fx 'opencode v2.2.5'
+          CODEWEAVE_ROTATION_E2E=1 xvfb-run --auto-servernum pnpm exec vitest run --project rotation tests/e2e/opencodeRotation.node.test.ts tests/e2e/agyRotation.node.test.ts
+          xvfb-run --auto-servernum pnpm exec playwright test --config playwright.rotation.config.ts opencodeRotation.spec.ts

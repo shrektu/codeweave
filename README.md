@@ -146,10 +146,12 @@ OpenRouter, Google AI Studio, Mistral, Z.ai, DeepSeek, Kimi (Moonshot),
 OpenCode Go and Custom OpenAI-compatible. Keys are encrypted with the OS
 keychain (Electron safeStorage) and kept out of the account's config directory.
 
-Codeweave needs the `opencode` CLI 1.19.x on `PATH`:
-`npm i -g opencode-ai@1.19.5`. OpenCode 2.x (the installer build in
-`~/.opencode/bin`) is not supported yet: it dropped `serve --pure` and the HTTP
-API Codeweave uses.
+Codeweave needs the `opencode` CLI on `PATH`. Two generations are supported:
+1.19.x (`npm i -g opencode-ai@1.19.5`) and 2.2.5 or newer
+(`npm i -g @opencode/cli`). Codeweave runs `opencode --version` at each start
+to pick the matching driver and refuses any other version with a message. The
+HTTP API of OpenCode 2.x is marked experimental upstream; Codeweave is tested
+with 2.2.5 and 2.3.2.
 
 ### OpenCode Go
 

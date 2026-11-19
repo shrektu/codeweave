@@ -85,7 +85,7 @@ const TOOL_STATUSES: Readonly<Record<string, ToolCallStatus>> = {
   [OpencodeToolStatus.error]: "failed",
 };
 
-const PERMISSION_OPTIONS = [
+export const PERMISSION_OPTIONS = [
   {
     optionId: OpencodePermissionResponse.once,
     name: OPTION_NAME_ALLOW_ONCE,

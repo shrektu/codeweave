@@ -79,7 +79,7 @@ export interface OpencodeClient {
   providers(): Promise<ProvidersResponse>;
 }
 
-interface RequestInput {
+export interface RequestInput {
   readonly method: string;
   readonly path: string;
   readonly body?: unknown;
@@ -122,8 +122,9 @@ function sessionPath(sessionId: string, ...segments: string[]): string {
   ].join("/");
 }
 
-function createSender(
+export function createSender(
   options: OpencodeClientOptions,
+  baseQuery: Readonly<Record<string, string>>,
 ): (input: RequestInput) => Promise<Response> {
   const authorization = `Basic ${Buffer.from(
     `${SERVER_USERNAME}:${options.password}`,
@@ -132,8 +133,7 @@ function createSender(
 
   return async (input) => {
     const url = new URL(input.path, options.baseUrl);
-    url.searchParams.set(QUERY_DIRECTORY, options.directory);
-    Object.entries(input.query ?? {}).forEach(([key, value]) => {
+    Object.entries({ ...baseQuery, ...input.query }).forEach(([key, value]) => {
       url.searchParams.set(key, value);
     });
     const signal = signalFor(input, timeoutMs);
@@ -160,7 +160,7 @@ function createSender(
 export function createOpencodeClient(
   options: OpencodeClientOptions,
 ): OpencodeClient {
-  const send = createSender(options);
+  const send = createSender(options, { [QUERY_DIRECTORY]: options.directory });
   const warmUpTimeoutMs = options.warmUpTimeoutMs ?? WARM_UP_TIMEOUT_MS;
 
   async function sendAndDiscard(input: RequestInput): Promise<void> {

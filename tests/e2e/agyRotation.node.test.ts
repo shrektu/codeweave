@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { locateClaudeAcpEntry } from "../../src/backend/claude/launch";
+import { execText } from "../../src/backend/exec";
+import { createVersionProbe } from "../../src/backend/opencode/version";
 import { createProcessContainer } from "../../src/backend/process/select";
 import {
   createExecutableResolver,
@@ -128,6 +130,10 @@ async function startBackendFor(
     },
     newRunId: () => randomUUID(),
     resolveExecutable: createExecutableResolver(process.env, process.platform),
+    opencodeGeneration: createVersionProbe({
+      exec: execText,
+      platform: process.platform,
+    }),
     inspectWorktree,
   });
   cleanup.add(() => backend.shutdown());

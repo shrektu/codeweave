@@ -168,6 +168,7 @@ describe("run files", () => {
     const files = await createRunFiles({
       credentials: BUILT_IN,
       runtimeRoot,
+      buildConfig: buildSessionConfig,
     });
 
     expect(files.dir.startsWith(runtimeRoot)).toBe(true);
@@ -180,12 +181,25 @@ describe("run files", () => {
     });
   });
 
+  it("run_files_hold_the_config_from_the_given_builder", async () => {
+    const files = await createRunFiles({
+      credentials: BUILT_IN,
+      runtimeRoot: await newRoot(),
+      buildConfig: (input) => ({ marker: input.keyFilePath }),
+    });
+
+    expect(
+      JSON.parse(await readFile(files.configFile, "utf8")) as unknown,
+    ).toEqual({ marker: files.keyFile });
+  });
+
   it.skipIf(process.platform === "win32")(
     "are_private_to_the_owner",
     async () => {
       const files = await createRunFiles({
         credentials: BUILT_IN,
         runtimeRoot: await newRoot(),
+        buildConfig: buildSessionConfig,
       });
 
       expect((await stat(files.dir)).mode & 0o777).toBe(0o700);
@@ -198,6 +212,7 @@ describe("run files", () => {
     const files = await createRunFiles({
       credentials: BUILT_IN,
       runtimeRoot: await newRoot(),
+      buildConfig: buildSessionConfig,
     });
 
     await removeKeyFile(files);
@@ -210,6 +225,7 @@ describe("run files", () => {
     const files = await createRunFiles({
       credentials: BUILT_IN,
       runtimeRoot: await newRoot(),
+      buildConfig: buildSessionConfig,
     });
 
     await removeRunFiles(files);
@@ -221,8 +237,16 @@ describe("run files", () => {
   it("two_runs_never_share_a_directory", async () => {
     const runtimeRoot = await newRoot();
 
-    const first = await createRunFiles({ credentials: BUILT_IN, runtimeRoot });
-    const second = await createRunFiles({ credentials: CUSTOM, runtimeRoot });
+    const first = await createRunFiles({
+      credentials: BUILT_IN,
+      runtimeRoot,
+      buildConfig: buildSessionConfig,
+    });
+    const second = await createRunFiles({
+      credentials: CUSTOM,
+      runtimeRoot,
+      buildConfig: buildSessionConfig,
+    });
 
     expect(first.dir).not.toBe(second.dir);
     expect(await readFile(second.keyFile, "utf8")).toBe("sk-test-B");
@@ -232,7 +256,11 @@ describe("run files", () => {
     const missing = join(await newRoot(), "absent");
 
     await expect(
-      createRunFiles({ credentials: BUILT_IN, runtimeRoot: missing }),
+      createRunFiles({
+        credentials: BUILT_IN,
+        runtimeRoot: missing,
+        buildConfig: buildSessionConfig,
+      }),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 });

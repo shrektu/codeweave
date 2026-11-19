@@ -174,7 +174,7 @@ export function opencodeBinaryOnPath(): string {
     .find((candidate) => isExecutable(candidate));
   if (found === undefined) {
     throw new Error(
-      "the opencode CLI is not on PATH; install it with `npm i -g opencode-ai@1.19.5`",
+      "the opencode CLI is not on PATH; install it with `npm i -g opencode-ai@1.19.5` or `npm i -g @opencode/cli@2.2.5`",
     );
   }
   return found;

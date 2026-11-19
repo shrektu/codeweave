@@ -56,6 +56,7 @@ export interface RunFiles {
 export interface RunFilesInput {
   readonly credentials: OpencodeCredentials;
   readonly runtimeRoot: string;
+  readonly buildConfig: (input: SessionConfigInput) => object;
 }
 
 const ASKED_PERMISSIONS = {
@@ -78,7 +79,7 @@ function providerConfig(input: SessionConfigInput): OpencodeProviderConfig {
   };
 }
 
-function declaredModels(
+export function declaredModels(
   credentials: OpencodeCredentials,
 ): Record<string, { readonly name: string }> {
   const routed = MODEL_TIERS.filter(
@@ -132,7 +133,7 @@ export async function createRunFiles(input: RunFilesInput): Promise<RunFiles> {
       mode: SECRET_FILE_MODE,
       flag: "wx",
     });
-    const config = buildSessionConfig({
+    const config = input.buildConfig({
       credentials: input.credentials,
       keyFilePath: files.keyFile,
     });
