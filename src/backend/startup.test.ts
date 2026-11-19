@@ -142,6 +142,7 @@ const GROQ_API: ApiAccount = {
   model: "llama-3.3-70b-versatile",
   baseUrl: null,
   rotation: true,
+  auth: "api_key",
 };
 
 async function credentialsRig(): Promise<{
@@ -195,6 +196,7 @@ it("credentials_for_custom_provider_keep_the_base_url", async () => {
         model: "local-model",
         baseUrl: "http://127.0.0.1:9000/v1",
         rotation: false,
+        auth: "api_key",
       }),
     ),
   ).toEqual({

@@ -43,6 +43,7 @@ const GROQ_API: ApiAccount = {
   model: "llama-3.3-70b-versatile",
   baseUrl: null,
   rotation: true,
+  auth: "api_key",
 };
 const NOW_MS = 1_700_000_000_000;
 const GRACE_MS = 10;

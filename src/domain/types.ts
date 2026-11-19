@@ -1,4 +1,4 @@
-import type { ApiProviderId } from "./apiProviders";
+import type { ApiAuth, ApiProviderId } from "./apiProviders";
 
 export const ProviderId = {
   claude: "claude",
@@ -53,6 +53,7 @@ export interface ApiAccount {
   readonly model: string;
   readonly baseUrl: string | null;
   readonly rotation: boolean;
+  readonly auth: ApiAuth;
 }
 
 export interface Account {

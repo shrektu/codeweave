@@ -131,6 +131,7 @@ const OPENCODE_ACCOUNT = makeAccount({
     model: "openai/gpt-oss-120b",
     baseUrl: null,
     rotation: true,
+    auth: "api_key",
   },
 });
 

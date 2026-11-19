@@ -11,6 +11,7 @@ import { join } from "node:path";
 
 import { z } from "zod";
 
+import { ApiAuth } from "../domain/apiProviders";
 import { TaskClass, TaskClassSchema } from "../domain/taskClass";
 import {
   EffectLevel,
@@ -19,6 +20,7 @@ import {
   SwitchReason,
   UpdateChannel,
   type Account,
+  type ApiAccount,
   type SwitchLogEntry,
 } from "../domain/types";
 import { ApiAccountSchema } from "../shared/views";
@@ -97,6 +99,19 @@ function parseSwitchLogLine(
 }
 
 export type AccountsFile = z.infer<typeof AccountsFileSchema>;
+
+function storedApi({ auth, ...rest }: ApiAccount): object {
+  return auth === ApiAuth.apiKey ? rest : { ...rest, auth };
+}
+
+function withoutDefaultAuth(file: AccountsFile): object {
+  return {
+    ...file,
+    accounts: file.accounts.map(({ api, ...rest }) =>
+      api === undefined ? rest : { ...rest, api: storedApi(api) },
+    ),
+  };
+}
 export type SettingsFile = z.infer<typeof SettingsFileSchema>;
 
 const DEFAULT_SETTINGS: SettingsFile = {
@@ -195,10 +210,14 @@ export function createJsonStore(dir: string): JsonStore {
     file: string,
     schema: z.ZodType<T>,
     value: T,
+    serialise: (parsed: T) => unknown = (parsed) => parsed,
   ): Promise<void> {
     await readValidated(file, schema);
     await mkdir(dir, { recursive: true });
-    await writeAtomic(file, JSON.stringify(schema.parse(value), null, 2));
+    await writeAtomic(
+      file,
+      JSON.stringify(serialise(schema.parse(value)), null, 2),
+    );
   }
 
   return {
@@ -207,10 +226,15 @@ export function createJsonStore(dir: string): JsonStore {
       return file?.accounts ?? [];
     },
     writeAccounts: (accounts) =>
-      writeJson(accountsPath, AccountsFileSchema, {
-        version: STORAGE_VERSION,
-        accounts: [...accounts],
-      }),
+      writeJson(
+        accountsPath,
+        AccountsFileSchema,
+        {
+          version: STORAGE_VERSION,
+          accounts: [...accounts],
+        },
+        withoutDefaultAuth,
+      ),
     async readSettings(): Promise<SettingsFile> {
       return (
         (await readValidated(settingsPath, SettingsFileSchema)) ??

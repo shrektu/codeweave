@@ -10,8 +10,19 @@ import {
   sep,
 } from "node:path";
 
-import { ProviderId, type Account } from "../domain/types";
-import { IpcError, IpcErrorCode, type ParamsMap } from "../shared/protocol";
+import { ApiAuth } from "../domain/apiProviders";
+import { ProviderId, type Account, type ApiAccount } from "../domain/types";
+import {
+  OPENCODE_ACCOUNT_DATA_DIR,
+  OPENCODE_DATA_SUBDIR,
+} from "../shared/constants";
+import {
+  API_KEY_REQUIRED_MESSAGE,
+  CONSOLE_LOGIN_WITH_KEY_MESSAGE,
+  IpcError,
+  IpcErrorCode,
+  type ParamsMap,
+} from "../shared/protocol";
 import type {
   AccountRuntimeView,
   AccountView,
@@ -69,6 +80,9 @@ interface AccountsServiceParts {
 }
 
 const PARENT_SEGMENT = "..";
+const OPENCODE_DATA_PATH = [OPENCODE_ACCOUNT_DATA_DIR, OPENCODE_DATA_SUBDIR];
+const CONSOLE_LOGIN_NO_KEY_MESSAGE =
+  "This account signs in with the OpenCode Console and holds no API key";
 const SECOND_GEMINI_MESSAGE =
   "Only one Gemini account is supported: agy keeps a single Google login per user";
 const UNMANAGED_GEMINI_DIR_MESSAGE =
@@ -210,12 +224,35 @@ async function persistWithKey(
   }
 }
 
+function validatedKey(
+  api: ApiAccount,
+  apiKey: string | undefined,
+): string | undefined {
+  if (api.auth === ApiAuth.consoleLogin) {
+    if (apiKey !== undefined) {
+      throw new IpcError(
+        IpcErrorCode.VALIDATION,
+        CONSOLE_LOGIN_WITH_KEY_MESSAGE,
+      );
+    }
+    return undefined;
+  }
+  if (apiKey === undefined) {
+    throw new IpcError(IpcErrorCode.VALIDATION, API_KEY_REQUIRED_MESSAGE);
+  }
+  return apiKey;
+}
+
 async function addAccount(
   parts: AccountsServiceParts,
   params: ParamsMap["accounts/add"],
 ): Promise<{ account: AccountView }> {
   const { repository } = parts;
   const directory = absoluteConfigDir(params.configDir);
+  const apiKey =
+    params.provider === ProviderId.opencode
+      ? validatedKey(params.api, params.apiKey)
+      : undefined;
   const accounts = await repository.readSorted();
   if (params.provider === ProviderId.gemini) {
     assertGeminiAllowed(accounts, directory, parts.userData);
@@ -242,7 +279,12 @@ async function addAccount(
     await writeCodexConfig(directory);
   }
   if (params.provider === ProviderId.opencode) {
-    await persistWithKey(parts, accounts, account, params.apiKey);
+    if (apiKey === undefined) {
+      await mkdir(join(directory, ...OPENCODE_DATA_PATH), { recursive: true });
+      await repository.persist([...accounts, account]);
+    } else {
+      await persistWithKey(parts, accounts, account, apiKey);
+    }
   } else {
     await repository.persist([...accounts, account]);
   }
@@ -264,6 +306,9 @@ async function setAccountKey(
       IpcErrorCode.VALIDATION,
       "Only API key accounts hold a key",
     );
+  }
+  if (account.api?.auth === ApiAuth.consoleLogin) {
+    throw new IpcError(IpcErrorCode.VALIDATION, CONSOLE_LOGIN_NO_KEY_MESSAGE);
   }
   await keyStore.set(id, apiKey);
   await repository.publish();

@@ -29,6 +29,7 @@ const GROQ_API: ApiAccount = {
   model: "llama-3.3-70b-versatile",
   baseUrl: null,
   rotation: true,
+  auth: "api_key",
 };
 
 const GO_API: ApiAccount = {
@@ -36,6 +37,7 @@ const GO_API: ApiAccount = {
   model: "kimi-k2.7-code",
   baseUrl: null,
   rotation: true,
+  auth: "api_key",
 };
 
 interface KeysFile {

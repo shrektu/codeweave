@@ -1,3 +1,4 @@
+import { ApiAuth } from "../domain/apiProviders";
 import { MS_PER_SECOND } from "../domain/constants";
 import { rotationPool } from "../domain/rotationPool";
 import {
@@ -134,7 +135,9 @@ function canStartWith(
   account: Account,
 ): boolean {
   const keyed =
-    account.provider !== ProviderId.opencode || deps.hasKey(account.id);
+    account.provider !== ProviderId.opencode ||
+    account.api?.auth === ApiAuth.consoleLogin ||
+    deps.hasKey(account.id);
   return (
     keyed &&
     !wiring.loginFailures.has(account.id) &&

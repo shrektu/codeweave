@@ -198,6 +198,7 @@ async function openGroqFlowRig(): Promise<BackendRig> {
       model: "llama-3.3-70b-versatile",
       baseUrl: null,
       rotation: true,
+      auth: "api_key",
     },
     apiKey: "sk-test-groq-a-0001",
   });

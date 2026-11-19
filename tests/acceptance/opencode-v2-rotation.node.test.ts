@@ -47,6 +47,7 @@ async function addAccount(
       model: "llama-3.3-70b",
       baseUrl: null,
       rotation: true,
+      auth: "api_key",
     },
     apiKey: `sk-test-${provider}-0001`,
   });

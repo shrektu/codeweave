@@ -52,6 +52,7 @@ async function addFreeApi(rig: BackendRig): Promise<AccountView> {
       model: GROQ_MODEL,
       baseUrl: null,
       rotation: true,
+      auth: "api_key",
     },
     apiKey: "sk-test-groq-f-0001",
   });

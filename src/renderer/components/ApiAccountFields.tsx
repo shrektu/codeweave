@@ -1,6 +1,10 @@
 import { useEffect, useState, type JSX } from "react";
 
-import { API_PROVIDERS, ApiProviderId } from "../../domain/apiProviders";
+import {
+  API_PROVIDERS,
+  ApiAuth,
+  ApiProviderId,
+} from "../../domain/apiProviders";
 import type { ParamsMap } from "../../shared/protocol";
 import type { VaultStatus } from "../../shared/vault";
 import type { CatalogModel } from "../../shared/views";
@@ -67,6 +71,7 @@ export function toApiParams(
       baseUrl:
         draft.provider === ApiProviderId.custom ? draft.baseUrl.trim() : null,
       rotation: draft.rotation,
+      auth: ApiAuth.apiKey,
     },
     apiKey: draft.apiKey,
   };

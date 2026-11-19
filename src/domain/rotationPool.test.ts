@@ -24,7 +24,13 @@ function api(
     label: id,
     configDir: `/cfg/${id}`,
     order,
-    api: { provider, model: "model-x", baseUrl: null, rotation },
+    api: {
+      provider,
+      model: "model-x",
+      baseUrl: null,
+      rotation,
+      auth: "api_key",
+    },
   };
 }
 
@@ -183,6 +189,7 @@ it("accounts_keep_all_other_fields", () => {
       model: "model-x",
       baseUrl: null,
       rotation: true,
+      auth: "api_key",
     },
   });
 });

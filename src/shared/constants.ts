@@ -9,6 +9,12 @@ export const EXECUTABLE_SETTING_LABELS: Readonly<Record<ProviderId, string>> = {
   [ProviderId.gemini]: "Gemini executable (agy)",
 };
 
+export const OPENCODE_ACCOUNT_DATA_DIR = "data";
+
+export const OPENCODE_DATA_SUBDIR = "opencode";
+
+export const OPENCODE_DB_FILE_NAME = "opencode.db";
+
 export const TERMINAL_MIN_COLS = 2;
 
 export const TERMINAL_MAX_COLS = 1000;

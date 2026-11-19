@@ -23,6 +23,7 @@ const ACCOUNT: Account = {
     model: "llama-3.3-70b-versatile",
     baseUrl: null,
     rotation: true,
+    auth: "api_key",
   },
 };
 

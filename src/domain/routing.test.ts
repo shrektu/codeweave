@@ -25,7 +25,7 @@ function apiAccount(provider: ApiProviderId, model: string): Account {
     label: "Account",
     configDir: "/tmp/acc",
     order: 0,
-    api: { provider, model, baseUrl: null, rotation: true },
+    api: { provider, model, baseUrl: null, rotation: true, auth: "api_key" },
   };
 }
 
@@ -184,6 +184,7 @@ describe("opencode go routing", () => {
           model: "kimi-k2.7-code",
           baseUrl: null,
           rotation: true,
+          auth: "api_key",
         },
         "some-unlisted-model",
       ),

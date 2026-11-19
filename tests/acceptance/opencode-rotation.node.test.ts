@@ -110,6 +110,7 @@ async function addApi(rig: BackendRig, spec: ApiSpec): Promise<AccountView> {
       model: spec.model ?? GROQ_MODEL,
       baseUrl: null,
       rotation: spec.rotation ?? true,
+      auth: "api_key",
     },
     apiKey: keyOf(spec.label),
   });
@@ -128,6 +129,7 @@ function keylessAccount(id: string, order: number): Account {
       model: GROQ_MODEL,
       baseUrl: null,
       rotation: true,
+      auth: "api_key",
     },
   };
 }
@@ -761,6 +763,7 @@ it("catalog_probe_is_isolated_and_stopped", async () => {
     "groq",
     "mistral",
     "moonshotai",
+    "opencode",
     "opencode-go",
     "openrouter",
     "zai",

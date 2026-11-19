@@ -173,6 +173,7 @@ describe("session provider selection", () => {
         model: "llama-3.3-70b-versatile",
         baseUrl: null,
         rotation: false,
+        auth: "api_key",
       },
       apiKey: "sk-test-groq-off-0001",
     });

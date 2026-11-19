@@ -290,6 +290,7 @@ it("api_key_account_add_removes_the_stored_key_when_persisting_fails", async () 
         model: "llama-3.3-70b-versatile",
         baseUrl: null,
         rotation: true,
+        auth: "api_key",
       },
       apiKey: "sk-test-groq-0001",
     }),

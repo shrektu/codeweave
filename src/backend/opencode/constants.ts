@@ -1,3 +1,5 @@
+import { OPENCODE_ACCOUNT_DATA_DIR } from "../../shared/constants";
+
 export const OpencodePath = {
   config: "/config",
   providers: "/config/providers",
@@ -84,7 +86,7 @@ export const OPENCODE_ISOLATION_FLAGS: readonly string[] = [
 
 export const ACCOUNT_HOME_DIR = "home";
 export const ACCOUNT_CONFIG_DIR = "config";
-export const ACCOUNT_DATA_DIR = "data";
+export const ACCOUNT_DATA_DIR = OPENCODE_ACCOUNT_DATA_DIR;
 export const ACCOUNT_CACHE_DIR = "cache";
 export const ACCOUNT_STATE_DIR = "state";
 
