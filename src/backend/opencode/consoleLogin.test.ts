@@ -130,7 +130,7 @@ describe("probeConsoleLogin process contract", () => {
       PATH: "/usr/bin",
       OPENCODE_DB: join(CONFIG_DIR, "data", "opencode", "opencode.db"),
       XDG_DATA_HOME: join(CONFIG_DIR, "data"),
-      HOME: join(CONFIG_DIR, "home"),
+      OPENCODE_TEST_HOME: join(CONFIG_DIR, "home"),
       OPENCODE_DISABLE_AUTOUPDATE: "1",
     });
   });

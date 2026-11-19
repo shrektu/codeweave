@@ -162,7 +162,8 @@ it("console_login_go_account_launches_keyless_with_the_account_db", async () => 
   const [spec] = rig.opencodeV2Container.specs;
   expect(spec?.env.OPENCODE_DB).toBe(dbPathOf(configDir));
   expect(spec?.env.XDG_DATA_HOME).toBe(join(configDir, "data"));
-  expect(spec?.env.HOME).toBe(join(configDir, "home"));
+  expect(spec?.env.OPENCODE_TEST_HOME).toBe(join(configDir, "home"));
+  expect(spec?.env.HOME).not.toBe(join(configDir, "home"));
   const [startup] = rig.opencodeV2Container.startups;
   expect(startup?.keyFileContent).toBeNull();
   expect(startup?.runDirEntries).not.toContain(KEY_FILE_NAME);

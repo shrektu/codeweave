@@ -66,7 +66,7 @@ export const OpencodeErrorName = {
 } as const;
 
 export const OpencodeEnv = {
-  home: "HOME",
+  testHome: "OPENCODE_TEST_HOME",
   configHome: "XDG_CONFIG_HOME",
   dataHome: "XDG_DATA_HOME",
   cacheHome: "XDG_CACHE_HOME",

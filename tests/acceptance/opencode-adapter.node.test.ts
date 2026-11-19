@@ -112,7 +112,7 @@ describe("opencode adapter: launch and secrets", () => {
     expect(spec?.args.slice(5)).toEqual(["--pure"]);
     expect(spec?.env).toEqual({
       PATH: "/usr/bin",
-      HOME: join(rig.accountDir, "home"),
+      OPENCODE_TEST_HOME: join(rig.accountDir, "home"),
       XDG_CONFIG_HOME: join(rig.accountDir, "config"),
       XDG_DATA_HOME: join(rig.accountDir, "data"),
       XDG_CACHE_HOME: join(rig.accountDir, "cache"),

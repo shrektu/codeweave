@@ -504,7 +504,7 @@ it("unsupported_opencode_version_yields_its_message_without_a_process", async ()
   expect(result).toEqual({ models: [], error: message });
   expect(generationFor.mock.calls[0]?.[0]).toBe(OPENCODE_RIG_EXECUTABLE);
   expect(generationFor.mock.calls[0]?.[1].env).toMatchObject({
-    HOME: join(rig.directory, "account", "home"),
+    OPENCODE_TEST_HOME: join(rig.directory, "account", "home"),
   });
   expect(rig.container.specs).toHaveLength(0);
 });
@@ -756,7 +756,7 @@ it("probe_serves_on_loopback_with_isolated_directories", async () => {
   const [spec] = rig.container.specs;
   expect(spec?.cwd).toBe(rig.directory);
   expect(spec?.env).toMatchObject({
-    HOME: join(rig.directory, "account", "home"),
+    OPENCODE_TEST_HOME: join(rig.directory, "account", "home"),
     XDG_DATA_HOME: join(rig.directory, "account", "data"),
     OPENCODE_DISABLE_MODELS_FETCH: "1",
   });
