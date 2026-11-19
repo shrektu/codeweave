@@ -1,8 +1,9 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 import {
   OPENCODE_RIG_EXECUTABLE,
@@ -13,6 +14,7 @@ import { rigProcesses } from "../../../tests/fakes/rigProcesses";
 import { settled } from "../../../tests/fakes/settle";
 
 import {
+  CATALOG_PROBE_TIMEOUT_MESSAGE,
   createModelCatalog,
   toCatalogModels,
   type ModelCatalogDeps,
@@ -51,10 +53,13 @@ function providers(
   };
 }
 
+const SHORT_PROBE_BUDGET_MS = 20;
+const SLOW_LAUNCH_MS = 80;
 const roots: string[] = [];
 const containers: ScriptedOpencodeContainer[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.allSettled(
     containers
       .splice(0)
@@ -380,6 +385,32 @@ it("probe_past_deadline_reports_error_and_stops_process", async () => {
     error: "model catalog probe timed out",
   });
   expect(rig.container.contained[0]?.stopCalls).toHaveLength(1);
+});
+
+it("probe_whose_launch_outlasts_the_budget_times_out_without_a_timer_warning", async () => {
+  const emitWarning = vi.spyOn(process, "emitWarning");
+  const rig = await catalogRig(undefined, {
+    probeTimeoutMs: SHORT_PROBE_BUDGET_MS,
+    freePort: async () => {
+      await sleep(SLOW_LAUNCH_MS);
+      return findFreePort();
+    },
+  });
+  rig.container.config.providers = providers(["groq", [model("llama")]]);
+  rig.container.config.delayedRoutes = new Map([["config", 400]]);
+
+  const result = await rig.catalog.load();
+
+  expect(result).toEqual({
+    models: [],
+    error: CATALOG_PROBE_TIMEOUT_MESSAGE,
+  });
+  expect(rig.container.contained[0]?.stopCalls).toHaveLength(1);
+  expect(
+    emitWarning.mock.calls.filter(
+      (call: readonly unknown[]) => call[1] === "TimeoutNegativeWarning",
+    ),
+  ).toEqual([]);
 });
 
 it("failed_probe_reports_error_and_is_retried_next_time", async () => {
