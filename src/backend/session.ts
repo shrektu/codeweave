@@ -61,6 +61,7 @@ import {
   type AgentStartResult,
 } from "./agentAdapter";
 import type { ConnectionRegistry } from "./connections";
+import { createInFlight } from "./inFlight";
 import {
   CONTAINER_UNAVAILABLE_MESSAGE,
   PROCESS_EXITED_MESSAGE,
@@ -221,7 +222,8 @@ class SessionRun {
   private readonly handles = new Map<string, AgentHandle>();
   private readonly retired = new WeakSet<AgentHandle>();
   private readonly deciding = new Set<string>();
-  private readonly launching = new Set<Promise<unknown>>();
+  private readonly launching = createInFlight();
+  private readonly logging = createInFlight();
   private current: AgentHandle | null = null;
   private detector: RateLimitDetector | null = null;
   private activeTurns = 0;
@@ -309,7 +311,7 @@ class SessionRun {
   }
 
   isSettled(): boolean {
-    const idle = this.activeTurns === 0 && this.launching.size === 0;
+    const idle = this.activeTurns === 0 && this.launching.size() === 0;
     return idle && this.phase().phase === "running" && !this.controller.busy();
   }
 
@@ -382,7 +384,7 @@ class SessionRun {
 
   async close(): Promise<void> {
     this.closed = true;
-    await Promise.allSettled([...this.launching]);
+    await this.launching.settled();
     await Promise.all(
       [...this.handles.keys()].map((accountId) =>
         this.stopAgent(accountId).catch((error: unknown) => {
@@ -393,6 +395,7 @@ class SessionRun {
       ),
     );
     this.controller.dispose();
+    await Promise.all([this.launching.settled(), this.logging.settled()]);
     this.failure = null;
     this.state = {
       ...this.state,
@@ -406,11 +409,7 @@ class SessionRun {
   }
 
   private launch(account: Account): Promise<AgentStartResult> {
-    const pending = this.spawnAgent(account);
-    this.launching.add(pending);
-    return pending.finally(() => {
-      this.launching.delete(pending);
-    });
+    return this.launching.track(() => this.spawnAgent(account));
   }
 
   private async spawnAgent(account: Account): Promise<AgentStartResult> {
@@ -520,9 +519,11 @@ class SessionRun {
     });
   }
 
-  private async logSwitch(entry: SwitchLogEntry): Promise<void> {
-    await this.deps.store.appendSwitchLog(entry);
-    this.deps.broadcast("switchLog/appended", entry);
+  private logSwitch(entry: SwitchLogEntry): Promise<void> {
+    return this.logging.track(async () => {
+      await this.deps.store.appendSwitchLog(entry);
+      this.deps.broadcast("switchLog/appended", entry);
+    });
   }
 
   private async userTurn(accountId: string, text: string): Promise<void> {
