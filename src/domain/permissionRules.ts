@@ -9,6 +9,49 @@ export const UNPARSEABLE_SUBSTRINGS: readonly string[] = [
   "\r",
 ];
 export const ENV_ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
+export const ENV_COMMAND = "env";
+export const RISKY_ENV_NAME_PATTERN = /^(LD_|DYLD_|GIT_)/;
+export const RISKY_ENV_NAMES: readonly string[] = [
+  "PATH",
+  "PAGER",
+  "MANPAGER",
+  "EDITOR",
+  "VISUAL",
+  "BASH_ENV",
+  "ENV",
+  "SHELLOPTS",
+  "BASHOPTS",
+  "PS4",
+  "PROMPT_COMMAND",
+  "IFS",
+  "NODE_OPTIONS",
+  "PERL5OPT",
+  "RUBYOPT",
+  "PYTHONSTARTUP",
+];
+export const REDIRECT_OPERATORS: readonly string[] = [
+  ">",
+  ">>",
+  ">|",
+  "&>",
+  ">&",
+  "<",
+  "<&",
+  "<>",
+];
+export const FD_DUPLICATION_OPERATORS: readonly string[] = [">&", "<&"];
+export const INPUT_REDIRECT_OPERATORS: readonly string[] = ["<"];
+export const FD_TARGET_PATTERN = /^(\d+|-)$/;
+export const HARMLESS_WRITE_TARGETS: readonly string[] = [
+  "/dev/null",
+  "/dev/stdout",
+  "/dev/stderr",
+];
+export const NETWORK_DEVICE_PREFIXES: readonly string[] = [
+  "/dev/tcp/",
+  "/dev/udp/",
+];
+export const FD_PREFIX_PATTERN = /^\d+$/;
 export const UNRESOLVED_PATH_PREFIX = "~";
 export const VARIABLE_MARKER = "$";
 

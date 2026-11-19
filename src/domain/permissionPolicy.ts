@@ -12,6 +12,9 @@ import {
   DASH_PREFIX,
   DOWNLOAD_COMMANDS,
   ENV_ASSIGNMENT_PATTERN,
+  ENV_COMMAND,
+  FD_DUPLICATION_OPERATORS,
+  FD_TARGET_PATTERN,
   FIND_COMMAND,
   FIND_ASK_FLAGS,
   FIND_FILES0_FLAG,
@@ -35,9 +38,12 @@ import {
   GIT_READ_SUBCOMMANDS,
   GIT_SAFE_GLOBAL_OPTIONS,
   GLOB_CHAR_PATTERN,
+  HARMLESS_WRITE_TARGETS,
   HEADS_PREFIX_PATTERN,
+  INPUT_REDIRECT_OPERATORS,
   INTERPRETER_COMMANDS,
   MIGRATION_COMMANDS,
+  NETWORK_DEVICE_PREFIXES,
   NON_COMMAND_WORDS,
   OPAQUE_COMMANDS,
   PIPE_OPERATOR,
@@ -46,6 +52,8 @@ import {
   READ_ONLY_COMMANDS,
   READ_ONLY_FORBIDDEN_FLAGS,
   REFS_PREFIX_PATTERN,
+  RISKY_ENV_NAME_PATTERN,
+  RISKY_ENV_NAMES,
   REASON_GIT_PUSH,
   REASON_MIGRATION,
   REASON_PIPE_TO_SHELL,
@@ -68,6 +76,11 @@ import {
   WRAPPER_SPECS,
   type WrapperSpec,
 } from "./permissionRules";
+import {
+  bindRedirections,
+  fdRedirectionFlags,
+  type Redirection,
+} from "./shellRedirects";
 import { PermissionProfile } from "./types";
 
 export interface PermissionQuery {
@@ -89,6 +102,7 @@ interface Segment {
   readonly words: readonly string[];
   readonly pipedFromPrevious: boolean;
   readonly leadingGlob: boolean;
+  readonly redirections: readonly Redirection[];
 }
 
 interface ScopedContext extends PermissionContext {
@@ -112,6 +126,7 @@ interface OptionScan {
 interface Unwrapped {
   readonly words: readonly string[];
   readonly uncertain: boolean;
+  readonly assigns: boolean;
   readonly writes: boolean;
   readonly chdir: boolean;
 }
@@ -170,23 +185,34 @@ function decideWrite(profile: PermissionProfile): PermissionDecision {
   }
 }
 
-function splitSegments(tokens: readonly ParseEntry[]): Segment[] | null {
+function splitSegments(
+  tokens: readonly ParseEntry[],
+  fdFlags: readonly boolean[],
+): Segment[] | null {
+  const bound = bindRedirections(tokens, fdFlags);
+  if (bound === null) {
+    return null;
+  }
   const segments: Segment[] = [];
   let words: string[] = [];
+  let redirections: Redirection[] = [];
   let pipedFromPrevious = false;
   let nextPiped = false;
   let leadingGlob = false;
   const close = (): void => {
-    if (words.length > 0) {
-      segments.push({ words, pipedFromPrevious, leadingGlob });
+    if (words.length > 0 || redirections.length > 0) {
+      segments.push({ words, pipedFromPrevious, leadingGlob, redirections });
     }
     words = [];
+    redirections = [];
     leadingGlob = false;
     pipedFromPrevious = nextPiped;
   };
-  for (const token of tokens) {
+  for (const token of bound) {
     if (typeof token === "string") {
       words.push(token);
+    } else if ("target" in token) {
+      redirections.push(token);
     } else if ("pattern" in token) {
       words.push(token.pattern);
       leadingGlob ||= GLOB_CHAR_PATTERN.test(token.pattern.charAt(0));
@@ -308,29 +334,43 @@ function isTrustedExecutable(word: string): boolean {
   );
 }
 
+function isRelaxedAssignment(word: string, atStart: boolean): boolean {
+  const name = word.slice(0, word.indexOf(LONG_VALUE_SEPARATOR));
+  return (
+    atStart &&
+    !RISKY_ENV_NAME_PATTERN.test(name) &&
+    !RISKY_ENV_NAMES.includes(name)
+  );
+}
+
 function unwrap(words: readonly string[]): Unwrapped {
   let rest = words;
+  let atStart = true;
   let uncertain = false;
+  let assigns = false;
   let writes = false;
   let chdir = false;
   for (;;) {
     const first = rest[0];
     if (first === undefined) {
-      return { words: rest, uncertain, writes, chdir };
+      return { words: rest, uncertain, assigns, writes, chdir };
     }
     if (ENV_ASSIGNMENT_PATTERN.test(first)) {
       rest = rest.slice(1);
-      uncertain = true;
+      const relaxed = isRelaxedAssignment(first, atStart);
+      assigns ||= relaxed;
+      uncertain ||= !relaxed;
       continue;
     }
     const spec = RUNTIME_WORD_PATTERN.test(first)
       ? undefined
       : WRAPPER_SPECS.get(baseName(first));
     if (spec === undefined) {
-      return { words: rest, uncertain, writes, chdir };
+      return { words: rest, uncertain, assigns, writes, chdir };
     }
     const scan = scanWrapperOptions(spec, rest.slice(1));
     rest = scan.rest;
+    atStart &&= baseName(first) === ENV_COMMAND;
     uncertain ||=
       scan.uncertain || spec.injectsArgs || !isTrustedExecutable(first);
     writes ||= scan.writes;
@@ -710,7 +750,12 @@ function decideFind(
 ): PermissionDecision {
   const nested = findExecCommands(args).map((words) => {
     const inner = decideSegmentWords(
-      { words, pipedFromPrevious: false, leadingGlob: false },
+      {
+        words,
+        pipedFromPrevious: false,
+        leadingGlob: false,
+        redirections: [],
+      },
       [],
       PermissionProfile.ask,
       ctx,
@@ -759,7 +804,44 @@ function decideSegmentWords(
     decideCommand(first, args, profile, ctx),
     needsConfirmation ? ASK : ALLOW,
     unwrapped.writes ? mostRestrictive([ASK, decideWrite(profile)]) : ALLOW,
+    unwrapped.assigns ? decideAssigns(first, profile) : ALLOW,
   ]);
+}
+
+function decideAssigns(
+  command: string,
+  profile: PermissionProfile,
+): PermissionDecision {
+  const name = baseName(command);
+  return name === "git" ||
+    name === FIND_COMMAND ||
+    SHELL_COMMANDS.includes(name)
+    ? ASK
+    : decideWrite(profile);
+}
+
+function decideRedirection(
+  redirection: Redirection,
+  profile: PermissionProfile,
+  ctx: ScopedContext,
+): PermissionDecision {
+  const { op, target } = redirection;
+  if (
+    isUnseenExpansion(target) ||
+    NETWORK_DEVICE_PREFIXES.some((prefix) => target.startsWith(prefix))
+  ) {
+    return mostRestrictive([ASK, decideWrite(profile)]);
+  }
+  if (
+    INPUT_REDIRECT_OPERATORS.includes(op) ||
+    (FD_DUPLICATION_OPERATORS.includes(op) && FD_TARGET_PATTERN.test(target)) ||
+    HARMLESS_WRITE_TARGETS.includes(target)
+  ) {
+    return ALLOW;
+  }
+  return isInsideWorktree(target, ctx.worktreeRoot, ctx.cwdUnresolved)
+    ? decideWrite(profile)
+    : mostRestrictive([ASK, decideWrite(profile)]);
 }
 
 function decideSegment(
@@ -768,7 +850,12 @@ function decideSegment(
   profile: PermissionProfile,
   ctx: ScopedContext,
 ): PermissionDecision {
-  const decision = decideSegmentWords(segment, upstream, profile, ctx);
+  const decision = mostRestrictive([
+    decideSegmentWords(segment, upstream, profile, ctx),
+    ...segment.redirections.map((redirection) =>
+      decideRedirection(redirection, profile, ctx),
+    ),
+  ]);
   return segment.leadingGlob || segment.words.some(isUnseenExpansion)
     ? mostRestrictive([ASK, decision])
     : decision;
@@ -815,9 +902,14 @@ function decideExecute(
   ) {
     return ASK;
   }
-  const segments = splitSegments(
-    parse(command, (key) => `${VARIABLE_MARKER}${key}`),
-  );
+  const fdFlags = fdRedirectionFlags(command);
+  const segments =
+    fdFlags === null
+      ? null
+      : splitSegments(
+          parse(command, (key) => `${VARIABLE_MARKER}${key}`),
+          fdFlags,
+        );
   if (segments === null || segments.length === 0) {
     return ASK;
   }
