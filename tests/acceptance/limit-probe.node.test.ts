@@ -31,8 +31,13 @@ import {
   type FakeCodexConfig,
   type TurnStep,
 } from "../fakes/fakeCodexAppServer";
+import { usageBucket, usageGroup, type UsageScript } from "../fakes/fakeAgy";
 import type { FakeContained } from "../fakes/fakeContainer";
-import { hostBinDirWith, hostResolverEnv } from "../fakes/processHelpers";
+import {
+  hostBinDirWith,
+  hostResolverEnv,
+  makeTempDir,
+} from "../fakes/processHelpers";
 import { settled } from "../fakes/settle";
 
 const RESET_AT = 1_700_003_600;
@@ -271,6 +276,275 @@ it("probe_read_failure_reports_no_limit", async () => {
     limit: null,
   });
   expect(probeProcess(rig, 0).stopCalls).toEqual([AGENT_STOP_GRACE_MS]);
+});
+
+const WEEK_RESET = 1_700_600_000;
+const EXTRA_RESET = 1_700_007_200;
+const SPARK_ID = "codex_bengalfox";
+const SPARK_NAME = "GPT-5.3-Codex-Spark";
+const WEEK_MINUTES = 10_080;
+const RPC_BACKEND_FAILURE = -32603;
+const RPC_OVERLOADED = -32001;
+
+const MAIN_SNAPSHOT = rateSnapshot(
+  rateWindow(25, FIVE_HOUR_MINUTES, RESET_AT),
+  rateWindow(60, WEEK_MINUTES, WEEK_RESET),
+);
+const ALL_WINDOWS_RESPONSE = rateLimitsResponse(MAIN_SNAPSHOT, true, {
+  codex: MAIN_SNAPSHOT,
+  [SPARK_ID]: rateSnapshot(
+    rateWindow(5, FIVE_HOUR_MINUTES, EXTRA_RESET),
+    null,
+    null,
+    SPARK_ID,
+    SPARK_NAME,
+  ),
+});
+const ALL_WINDOWS = [
+  {
+    id: "five_hour",
+    scope: null,
+    period: "five_hour",
+    utilization: 0.25,
+    resetsAt: RESET_AT,
+    exhausted: false,
+  },
+  {
+    id: "seven_day",
+    scope: null,
+    period: "seven_day",
+    utilization: 0.6,
+    resetsAt: WEEK_RESET,
+    exhausted: false,
+  },
+  {
+    id: `${SPARK_ID}:five_hour`,
+    scope: SPARK_NAME,
+    period: "five_hour",
+    utilization: 0.05,
+    resetsAt: EXTRA_RESET,
+    exhausted: false,
+  },
+];
+const ACCOUNT_API_KEY: Account = {
+  id: "api-key",
+  provider: "opencode",
+  label: "Key account",
+  configDir: "/cfg/api-key",
+  order: 3,
+  api: {
+    provider: "openrouter",
+    model: "m",
+    baseUrl: null,
+    rotation: false,
+    auth: "api_key",
+  },
+};
+
+it("probe_reports_every_codex_window", async () => {
+  const rig = await openRig({
+    accounts: [ACCOUNT_CODEX_A],
+    probeConfig: {
+      rateLimitReads: [{ kind: "ok", response: ALL_WINDOWS_RESPONSE }],
+    },
+  });
+
+  await cyclesDone(rig, 1);
+
+  expect(await viewOf(rig, ACCOUNT_CODEX_A.id)).toMatchObject({
+    limitAvailability: "reported",
+    limit: {
+      status: "allowed",
+      resetsAt: WEEK_RESET,
+      rateLimitType: "seven_day",
+      utilization: 0.6,
+      windows: ALL_WINDOWS,
+    },
+  });
+});
+
+it("api_key_account_reports_unsupported", async () => {
+  const rig = await openRig({
+    accounts: [ACCOUNT_CLAUDE_C, ACCOUNT_API_KEY, ACCOUNT_CODEX_A],
+    probeConfig: ALLOWED_CONFIG,
+  });
+
+  await cyclesDone(rig, 1);
+
+  expect((await viewOf(rig, ACCOUNT_CLAUDE_C.id)).limitAvailability).toBe(
+    "unsupported",
+  );
+  expect((await viewOf(rig, ACCOUNT_API_KEY.id)).limitAvailability).toBe(
+    "unsupported",
+  );
+  expect((await viewOf(rig, ACCOUNT_CODEX_A.id)).limitAvailability).toBe(
+    "reported",
+  );
+});
+
+it("probed_account_is_pending_before_the_first_result", async () => {
+  const rig = await openRig({
+    accounts: [ACCOUNT_CODEX_A],
+    probeConfig: HANGING_CONFIG,
+  });
+
+  expect(await viewOf(rig, ACCOUNT_CODEX_A.id)).toMatchObject({
+    limitAvailability: "pending",
+    limit: null,
+  });
+});
+
+it("no_limits_probe_reports_unsupported", async () => {
+  const rig = await openRig({
+    accounts: [ACCOUNT_CODEX_A],
+    probeConfig: {
+      rateLimitReads: [
+        { kind: "error", code: RPC_INVALID_REQUEST, message: "api key" },
+      ],
+    },
+  });
+
+  await cyclesDone(rig, 1);
+
+  expect(await viewOf(rig, ACCOUNT_CODEX_A.id)).toMatchObject({
+    limitAvailability: "unsupported",
+    limit: null,
+  });
+});
+
+it("first_probe_failure_reports_failed", async () => {
+  const rig = await openRig({
+    accounts: [ACCOUNT_CODEX_A],
+    probeConfig: {
+      rateLimitReads: [
+        { kind: "error", code: RPC_BACKEND_FAILURE, message: "backend down" },
+      ],
+    },
+  });
+
+  await cyclesDone(rig, 1);
+
+  expect(await viewOf(rig, ACCOUNT_CODEX_A.id)).toMatchObject({
+    runtime: { status: "ready" },
+    limitAvailability: "failed",
+    limit: null,
+  });
+});
+
+it("probe_failure_keeps_last_windows", async () => {
+  const rig = await openRig({
+    accounts: [ACCOUNT_CODEX_A],
+    probeConfig: {
+      rateLimitReads: [
+        { kind: "ok", response: ALL_WINDOWS_RESPONSE },
+        { kind: "error", code: RPC_OVERLOADED, message: "overloaded" },
+      ],
+    },
+  });
+  await cyclesDone(rig, 1);
+
+  runNextPass(rig);
+  await cyclesDone(rig, 2);
+
+  expect(await viewOf(rig, ACCOUNT_CODEX_A.id)).toMatchObject({
+    limitAvailability: "reported",
+    limit: { utilization: 0.6, windows: ALL_WINDOWS },
+  });
+});
+
+const GEMINI_RESET_WEEK = "2026-11-02T10:21:22Z";
+const GEMINI_RESET_FIVE_HOUR = "2026-10-30T12:54:36Z";
+const GEMINI_WEEK_EPOCH = 1_793_614_882;
+const GEMINI_FIVE_HOUR_EPOCH = 1_793_364_876;
+
+const THREE_GROUPS: UsageScript = {
+  kind: "ok",
+  groups: [
+    usageGroup("Gemini Models", [
+      usageBucket("gemini-weekly", "weekly", 0.75, GEMINI_RESET_WEEK),
+      usageBucket("gemini-5h", "5h", 0.5, GEMINI_RESET_FIVE_HOUR),
+    ]),
+    usageGroup("Claude and GPT models", [
+      usageBucket("claude-weekly", "weekly", 0.875, GEMINI_RESET_WEEK),
+      usageBucket("claude-5h", "5h", 0, GEMINI_RESET_FIVE_HOUR),
+    ]),
+    usageGroup("Gemini 4 Argon", [
+      usageBucket("argon-weekly", "weekly", 0.25, GEMINI_RESET_WEEK),
+    ]),
+  ],
+};
+
+const GEMINI_WINDOWS = [
+  {
+    id: "Gemini Models/gemini-weekly/weekly",
+    scope: "weekly limit",
+    period: "seven_day",
+    utilization: 0.25,
+    resetsAt: GEMINI_WEEK_EPOCH,
+    exhausted: false,
+  },
+  {
+    id: "Gemini Models/gemini-5h/5h",
+    scope: "5h limit",
+    period: "five_hour",
+    utilization: 0.5,
+    resetsAt: GEMINI_FIVE_HOUR_EPOCH,
+    exhausted: false,
+  },
+  {
+    id: "Claude and GPT models/claude-weekly/weekly",
+    scope: "weekly limit",
+    period: "seven_day",
+    utilization: 0.125,
+    resetsAt: GEMINI_WEEK_EPOCH,
+    exhausted: false,
+  },
+  {
+    id: "Claude and GPT models/claude-5h/5h",
+    scope: "5h limit",
+    period: "five_hour",
+    utilization: 1,
+    resetsAt: GEMINI_FIVE_HOUR_EPOCH,
+    exhausted: true,
+  },
+  {
+    id: "Gemini 4 Argon/argon-weekly/weekly",
+    scope: "weekly limit",
+    period: "seven_day",
+    utilization: 0.75,
+    resetsAt: GEMINI_WEEK_EPOCH,
+    exhausted: false,
+  },
+];
+
+it("probe_reports_every_agy_bucket", async () => {
+  const userData = await makeTempDir();
+  const gemini: Account = {
+    id: "gemini-a",
+    provider: "gemini",
+    label: "Gemini",
+    configDir: join(userData, "accounts", "gemini-a"),
+    order: 0,
+  };
+  const rig = await openRig({
+    userData,
+    accounts: [gemini],
+    agyUsage: [THREE_GROUPS],
+  });
+
+  await cyclesDone(rig, 1);
+
+  expect(await viewOf(rig, gemini.id)).toMatchObject({
+    runtime: { status: "ready" },
+    limitAvailability: "reported",
+    limit: {
+      status: "allowed",
+      resetsAt: GEMINI_FIVE_HOUR_EPOCH,
+      rateLimitType: "five_hour",
+      utilization: 0.5,
+      windows: GEMINI_WINDOWS,
+    },
+  });
 });
 
 it("probes_run_one_at_a_time", async () => {

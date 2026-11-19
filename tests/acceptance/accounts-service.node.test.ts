@@ -48,6 +48,7 @@ async function setup(): Promise<Harness> {
     broadcast,
     runtimeOf: () => ({ status: "ready" }),
     limitOf: () => null,
+    availabilityOf: () => "pending",
     isInUse: (id) => inUse.has(id),
   });
   return { service, store, userData, broadcast, inUse };
@@ -113,6 +114,7 @@ it("accounts_add_creates_default_config_dir_and_broadcasts", async () => {
     keyHint: null,
     runtime: { status: "ready" },
     limit: null,
+    limitAvailability: "pending",
   });
   expect(await store.readAccounts()).toEqual([
     { id: account.id, provider: "claude", label: "Work", configDir, order: 0 },

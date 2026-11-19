@@ -25,26 +25,40 @@ const AGY_ALLOWED: AgyLimits = {
   buckets: [
     {
       id: "gemini-5h",
+      name: null,
+      group: "Gemini Models",
       window: "5h",
       remainingFraction: 0.25,
       resetsAt: AGY_FIVE_HOUR_RESET,
     },
   ],
+  others: [],
 };
 const AGY_EXHAUSTED: AgyLimits = {
   buckets: [
     {
       id: "gemini-5h",
+      name: null,
+      group: "Gemini Models",
       window: "5h",
       remainingFraction: 0,
       resetsAt: AGY_FIVE_HOUR_RESET,
     },
   ],
+  others: [],
 };
 const AGY_EXHAUSTED_WITHOUT_RESET: AgyLimits = {
   buckets: [
-    { id: "gemini-5h", window: "5h", remainingFraction: 0, resetsAt: null },
+    {
+      id: "gemini-5h",
+      name: null,
+      group: "Gemini Models",
+      window: "5h",
+      remainingFraction: 0,
+      resetsAt: null,
+    },
   ],
+  others: [],
 };
 
 const ALLOWED: RateLimitState = {
@@ -52,18 +66,21 @@ const ALLOWED: RateLimitState = {
   secondary: null,
   rateLimitReachedType: null,
   ordinaryUsageAllowed: true,
+  extra: [],
 };
 const EXHAUSTED: RateLimitState = {
   primary: { usedPercent: 100, windowDurationMins: 300, resetsAt: RESET_AT },
   secondary: null,
   rateLimitReachedType: "rate_limit_reached",
   ordinaryUsageAllowed: false,
+  extra: [],
 };
 const EXHAUSTED_WITHOUT_RESET: RateLimitState = {
   primary: { usedPercent: 100, windowDurationMins: 300, resetsAt: null },
   secondary: null,
   rateLimitReachedType: "rate_limit_reached",
   ordinaryUsageAllowed: false,
+  extra: [],
 };
 
 function account(
@@ -187,6 +204,16 @@ it("start_probes_codex_accounts_in_order_and_skips_others", async () => {
     resetsAt: RESET_AT,
     rateLimitType: "five_hour",
     utilization: 0.5,
+    windows: [
+      {
+        id: "five_hour",
+        scope: null,
+        period: "five_hour",
+        utilization: 0.5,
+        resetsAt: RESET_AT,
+        exhausted: false,
+      },
+    ],
     observedAt: NOW_MS,
   });
   expect(rig.service.limitOf(CODEX_B.id)).toBeNull();
@@ -246,6 +273,60 @@ it("failed_probe_keeps_the_previous_entry", async () => {
 
   expect(rig.service.limitOf(CODEX_A.id)).toMatchObject({ utilization: 0.5 });
   expect(rig.changes.count).toBe(1);
+});
+
+it("first_failed_probe_notifies_listeners", async () => {
+  const rig = setup([CODEX_A]);
+  rig.results.set(CODEX_A.id, [{ kind: "failed" }]);
+
+  rig.service.start();
+  await passes(rig, 1);
+
+  expect(rig.service.availabilityOf(CODEX_A)).toBe("failed");
+  expect(rig.service.limitOf(CODEX_A.id)).toBeNull();
+  expect(rig.service.runtimeOf(CODEX_A.id)).toBeNull();
+  expect(rig.changes.count).toBe(1);
+});
+
+it("needs_login_entry_survives_a_failed_probe", async () => {
+  const rig = setup([CODEX_A]);
+  rig.results.set(CODEX_A.id, [{ kind: "needs_login" }, { kind: "failed" }]);
+  rig.service.start();
+  await passes(rig, 1);
+
+  rig.tasks[0]?.run();
+  await passes(rig, 2);
+
+  expect(rig.service.runtimeOf(CODEX_A.id)).toEqual({ status: "needs_login" });
+  expect(rig.service.availabilityOf(CODEX_A)).toBe("pending");
+});
+
+it("unreadable_probe_clears_limit_and_runtime_and_reports_failed", async () => {
+  const rig = setup([CODEX_A]);
+  rig.results.set(CODEX_A.id, [limits(EXHAUSTED), { kind: "unreadable" }]);
+  rig.service.start();
+  await passes(rig, 1);
+
+  rig.tasks[0]?.run();
+  await passes(rig, 2);
+
+  expect(rig.service.limitOf(CODEX_A.id)).toBeNull();
+  expect(rig.service.runtimeOf(CODEX_A.id)).toBeNull();
+  expect(rig.service.availabilityOf(CODEX_A)).toBe("failed");
+});
+
+it("availability_follows_probe_state_and_account_kind", async () => {
+  const rig = setup([CODEX_A, CODEX_B, CLAUDE_C]);
+  rig.results.set(CODEX_A.id, [limits(ALLOWED)]);
+  rig.results.set(CODEX_B.id, [{ kind: "no_limits" }]);
+
+  expect(rig.service.availabilityOf(CODEX_A)).toBe("pending");
+  rig.service.start();
+  await passes(rig, 1);
+
+  expect(rig.service.availabilityOf(CODEX_A)).toBe("reported");
+  expect(rig.service.availabilityOf(CODEX_B)).toBe("unsupported");
+  expect(rig.service.availabilityOf(CLAUDE_C)).toBe("unsupported");
 });
 
 it("removed_accounts_lose_their_entries", async () => {
@@ -407,6 +488,16 @@ it("gemini_accounts_use_the_agy_probe_and_codex_the_codex_probe", async () => {
     resetsAt: AGY_FIVE_HOUR_RESET,
     rateLimitType: "five_hour",
     utilization: 0.75,
+    windows: [
+      {
+        id: "Gemini Models/gemini-5h/5h",
+        scope: "Gemini Models",
+        period: "five_hour",
+        utilization: 0.75,
+        resetsAt: AGY_FIVE_HOUR_RESET,
+        exhausted: false,
+      },
+    ],
     observedAt: NOW_MS,
   });
   expect(rig.service.runtimeOf(GEMINI_G.id)).toBeNull();

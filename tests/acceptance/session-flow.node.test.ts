@@ -325,6 +325,7 @@ it("accounts_changed_broadcast_marks_exhausted_account", async () => {
             resetsAt: RESET_AFTER_COOLDOWN_SECONDS,
           },
           limit: null,
+          limitAvailability: "unsupported",
         },
         {
           ...ACCOUNT_B,
@@ -333,6 +334,7 @@ it("accounts_changed_broadcast_marks_exhausted_account", async () => {
           keyHint: null,
           runtime: { status: "ready" },
           limit: null,
+          limitAvailability: "unsupported",
         },
       ],
     });
@@ -354,10 +356,73 @@ it("exhausted_turn_records_rejected_limit", async () => {
         resetsAt: RESET_AFTER_COOLDOWN_SECONDS,
         rateLimitType: null,
         utilization: null,
+        windows: [],
         observedAt: RIG_NOW_MS,
       },
     ]);
   });
+});
+
+const WEEK_RESET_SECONDS = 1_700_600_000;
+
+function claudeLimitMeta(
+  rateLimitType: string,
+  utilization: number,
+  resetsAt: number,
+): ScriptStep {
+  return {
+    type: "usage_update",
+    meta: {
+      "_claude/rateLimit": {
+        status: "allowed",
+        resetsAt,
+        rateLimitType,
+        utilization,
+      },
+    },
+  };
+}
+
+it("claude_live_windows_accumulate", async () => {
+  const rig = await open();
+  await rig.call("session/start", startParams(rig));
+  agentOf(rig).enqueue([
+    claudeLimitMeta("five_hour", 0.3, RESET_AFTER_COOLDOWN_SECONDS),
+    claudeLimitMeta("seven_day", 0.6, WEEK_RESET_SECONDS),
+    END_TURN,
+  ]);
+
+  await rig.call("session/prompt", { text: "go" });
+  await turnEnded(rig);
+
+  expect((await rig.session()).limits).toEqual([
+    {
+      accountId: ACCOUNT_A.id,
+      status: "allowed",
+      resetsAt: WEEK_RESET_SECONDS,
+      rateLimitType: "seven_day",
+      utilization: 0.6,
+      windows: [
+        {
+          id: "five_hour",
+          scope: null,
+          period: "five_hour",
+          utilization: 0.3,
+          resetsAt: RESET_AFTER_COOLDOWN_SECONDS,
+          exhausted: false,
+        },
+        {
+          id: "seven_day",
+          scope: null,
+          period: "seven_day",
+          utilization: 0.6,
+          resetsAt: WEEK_RESET_SECONDS,
+          exhausted: false,
+        },
+      ],
+      observedAt: RIG_NOW_MS,
+    },
+  ]);
 });
 
 it("runtime_broadcast_only_on_change", async () => {
@@ -391,6 +456,7 @@ it("runtime_broadcast_on_needs_login", async () => {
           keyHint: null,
           runtime: { status: "needs_login" },
           limit: null,
+          limitAvailability: "unsupported",
         },
         {
           ...ACCOUNT_B,
@@ -399,6 +465,7 @@ it("runtime_broadcast_on_needs_login", async () => {
           keyHint: null,
           runtime: { status: "ready" },
           limit: null,
+          limitAvailability: "unsupported",
         },
       ],
     });
@@ -428,6 +495,7 @@ it("runtime_broadcast_on_new_session_resets", async () => {
           keyHint: null,
           runtime: { status: "ready" },
           limit: null,
+          limitAvailability: "unsupported",
         },
         {
           ...ACCOUNT_B,
@@ -436,6 +504,7 @@ it("runtime_broadcast_on_new_session_resets", async () => {
           keyHint: null,
           runtime: { status: "ready" },
           limit: null,
+          limitAvailability: "unsupported",
         },
       ],
     });

@@ -21,6 +21,8 @@ export const RateLimitWindowSchema = z.looseObject({
 export type RateLimitWindow = z.infer<typeof RateLimitWindowSchema>;
 
 export const RateLimitSnapshotSchema = z.looseObject({
+  limitId: z.string().nullish(),
+  limitName: z.string().nullish(),
   primary: RateLimitWindowSchema.nullish(),
   secondary: RateLimitWindowSchema.nullish(),
   rateLimitReachedType: z.string().nullish(),
@@ -30,6 +32,7 @@ export type RateLimitSnapshot = z.infer<typeof RateLimitSnapshotSchema>;
 export const RateLimitsReadResponseSchema = z.looseObject({
   ordinaryUsageAllowed: z.boolean().nullish(),
   rateLimits: RateLimitSnapshotSchema,
+  rateLimitsByLimitId: z.record(z.string(), RateLimitSnapshotSchema).nullish(),
 });
 export type RateLimitsReadResponse = z.infer<
   typeof RateLimitsReadResponseSchema

@@ -1,3 +1,5 @@
+import type { LimitWindow } from "./limitWindows";
+
 export type ToolCallStatus = "pending" | "in_progress" | "completed" | "failed";
 
 export const FileChange = {
@@ -76,6 +78,7 @@ export type AgentEvent =
       readonly resetsAt: unknown;
       readonly rateLimitType: unknown;
       readonly utilization: unknown;
+      readonly windows?: readonly LimitWindow[];
     }
   | { readonly type: "api_retry" }
   | { readonly type: "model"; readonly model: string }

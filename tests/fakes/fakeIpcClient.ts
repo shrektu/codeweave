@@ -137,6 +137,7 @@ export function makeAccount(overrides: Partial<AccountView> = {}): AccountView {
     keyHint: null,
     runtime: { status: "ready" },
     limit: null,
+    limitAvailability: "pending",
     ...overrides,
   };
 }
@@ -148,6 +149,7 @@ export function makeLimit(overrides: Partial<LimitView> = {}): LimitView {
     resetsAt: null,
     rateLimitType: "five_hour",
     utilization: 0.5,
+    windows: [],
     observedAt: 0,
     ...overrides,
   };

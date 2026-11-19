@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { API_PROVIDERS, ApiAuth } from "../domain/apiProviders";
 import type { RotationPorts } from "../domain/rotation";
 import {
+  LimitAvailability,
   PermissionProfile,
   ProviderId,
   type Account,
@@ -195,6 +196,7 @@ const NO_PROBES: LimitProbeService = {
   release: () => Promise.resolve(),
   isBlocked: () => false,
   limitOf: () => null,
+  availabilityOf: () => LimitAvailability.failed,
   runtimeOf: () => null,
   onChanged: () => () => undefined,
   dispose: () => Promise.resolve(),

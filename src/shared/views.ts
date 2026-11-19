@@ -17,6 +17,7 @@ import { TaskClass, TaskClassSchema } from "../domain/taskClass";
 import {
   EdgeKind,
   EffectLevel,
+  LimitAvailability,
   PermissionProfile,
   ProviderId,
   SwitchReason,
@@ -36,12 +37,23 @@ export const AccountRuntimeViewSchema = z.discriminatedUnion("status", [
 ]);
 export type AccountRuntimeView = z.infer<typeof AccountRuntimeViewSchema>;
 
+export const LimitWindowViewSchema = z.strictObject({
+  id: z.string(),
+  scope: z.string().nullable(),
+  period: z.string().nullable(),
+  utilization: z.number().nullable(),
+  resetsAt: z.number().nullable(),
+  exhausted: z.boolean(),
+});
+export type LimitWindowView = z.infer<typeof LimitWindowViewSchema>;
+
 export const LimitViewSchema = z.strictObject({
   accountId: z.string(),
   status: z.string(),
   resetsAt: z.number().nullable(),
   rateLimitType: z.string().nullable(),
   utilization: z.number().nullable(),
+  windows: z.array(LimitWindowViewSchema),
   observedAt: z.number(),
 });
 export type LimitView = z.infer<typeof LimitViewSchema>;
@@ -72,6 +84,7 @@ export const AccountViewSchema = z.strictObject({
   keyHint: z.string().nullable(),
   runtime: AccountRuntimeViewSchema,
   limit: LimitViewSchema.nullable(),
+  limitAvailability: z.enum(LimitAvailability),
 });
 export type AccountView = z.infer<typeof AccountViewSchema>;
 

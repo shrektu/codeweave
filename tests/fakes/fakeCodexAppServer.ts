@@ -139,10 +139,12 @@ export function rateSnapshot(
   primary: Json | null,
   secondary: Json | null,
   rateLimitReachedType: string | null = null,
+  limitId = "codex",
+  limitName: string | null = null,
 ): Json {
   return {
-    limitId: "codex",
-    limitName: null,
+    limitId,
+    limitName,
     normalModelSlug: null,
     primary,
     secondary,
@@ -157,11 +159,12 @@ export function rateSnapshot(
 export function rateLimitsResponse(
   rateLimits: Json,
   ordinaryUsageAllowed: boolean | null = true,
+  rateLimitsByLimitId: Json | null = null,
 ): Json {
   return {
     ordinaryUsageAllowed,
     rateLimits,
-    rateLimitsByLimitId: null,
+    rateLimitsByLimitId,
     rateLimitResetCredits: null,
     accountId: null,
     rateLimitUpsell: null,

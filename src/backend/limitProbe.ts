@@ -6,7 +6,12 @@ import {
   type LimitSnapshot,
 } from "../domain/rateLimit";
 import type { AccountRuntime, RotationPorts } from "../domain/rotation";
-import { ProviderId, type Account, type EpochMillis } from "../domain/types";
+import {
+  LimitAvailability,
+  ProviderId,
+  type Account,
+  type EpochMillis,
+} from "../domain/types";
 import type { LimitView } from "../shared/views";
 
 import { toAgyRateLimitEvent, type AgyProbeResult } from "./agy/usage";
@@ -46,6 +51,7 @@ export interface LimitProbeService {
   isBlocked(accountId: string): boolean;
   limitOf(accountId: string): LimitView | null;
   runtimeOf(accountId: string): AccountRuntime | null;
+  availabilityOf(account: Account): LimitAvailability;
   onChanged(listener: () => void): () => void;
   dispose(): Promise<void>;
 }
@@ -60,6 +66,7 @@ export class ProbeStillRunningError extends Error {
 interface ProbeEntry {
   readonly limit: LimitView | null;
   readonly runtime: AccountRuntime | null;
+  readonly availability: LimitAvailability;
 }
 
 interface InFlightProbe {
@@ -72,16 +79,32 @@ const PROBED_PROVIDERS: readonly ProviderId[] = [
   ProviderId.codex,
   ProviderId.gemini,
 ];
-const EMPTY_ENTRY: ProbeEntry = { limit: null, runtime: null };
+const PENDING_ENTRY: ProbeEntry = {
+  limit: null,
+  runtime: null,
+  availability: LimitAvailability.pending,
+};
+const UNSUPPORTED_ENTRY: ProbeEntry = {
+  limit: null,
+  runtime: null,
+  availability: LimitAvailability.unsupported,
+};
+const FAILED_ENTRY: ProbeEntry = {
+  limit: null,
+  runtime: null,
+  availability: LimitAvailability.failed,
+};
 const NEEDS_LOGIN_ENTRY: ProbeEntry = {
   limit: null,
   runtime: { status: "needs_login" },
+  availability: LimitAvailability.pending,
 };
 
 type ProbeOutcome<Limits> =
   | { readonly kind: "limits"; readonly limits: Limits }
   | {
-      readonly kind: "needs_login" | "no_limits" | "failed" | "unstopped";
+      readonly kind:
+        "needs_login" | "no_limits" | "unreadable" | "failed" | "unstopped";
     };
 
 function isProbed(account: Account): boolean {
@@ -111,17 +134,23 @@ function limitsEntry(
   now: () => EpochMillis,
 ): ProbeEntry {
   if (event === null) {
-    return EMPTY_ENTRY;
+    return UNSUPPORTED_ENTRY;
   }
   const detector = createRateLimitDetector(now);
   detector.observe(event);
   const snapshot = detector.snapshot();
   if (snapshot === null) {
-    return EMPTY_ENTRY;
+    return UNSUPPORTED_ENTRY;
   }
   return {
-    limit: { accountId, ...snapshot, observedAt: now() },
+    limit: {
+      accountId,
+      ...snapshot,
+      windows: [...snapshot.windows],
+      observedAt: now(),
+    },
     runtime: exhaustedRuntime(snapshot),
+    availability: LimitAvailability.reported,
   };
 }
 
@@ -137,7 +166,9 @@ function entryFor<Limits>(
     case "needs_login":
       return NEEDS_LOGIN_ENTRY;
     case "no_limits":
-      return EMPTY_ENTRY;
+      return UNSUPPORTED_ENTRY;
+    case "unreadable":
+      return FAILED_ENTRY;
     case "failed":
     case "unstopped":
       return null;
@@ -192,6 +223,15 @@ class LimitProbeEngine implements LimitProbeService {
 
   runtimeOf(accountId: string): AccountRuntime | null {
     return this.entries.get(accountId)?.runtime ?? null;
+  }
+
+  availabilityOf(account: Account): LimitAvailability {
+    if (!isProbed(account)) {
+      return LimitAvailability.unsupported;
+    }
+    return (
+      this.entries.get(account.id)?.availability ?? LimitAvailability.pending
+    );
   }
 
   onChanged(listener: () => void): () => void {
@@ -275,7 +315,7 @@ class LimitProbeEngine implements LimitProbeService {
     for (const [accountId, entry] of this.entries) {
       if (!kept.has(accountId)) {
         this.entries.delete(accountId);
-        changed ||= !sameEntry(entry, EMPTY_ENTRY);
+        changed ||= !sameEntry(entry, PENDING_ENTRY);
       }
     }
     return changed;
@@ -333,12 +373,13 @@ class LimitProbeEngine implements LimitProbeService {
     };
     const next = await running;
     this.inFlight = null;
-    if (next === null) {
+    const known = this.entries.get(account.id);
+    if (next === null && known !== undefined) {
       return false;
     }
-    const previous = this.entries.get(account.id) ?? EMPTY_ENTRY;
-    this.entries.set(account.id, next);
-    return !sameEntry(previous, next);
+    const stored = next ?? FAILED_ENTRY;
+    this.entries.set(account.id, stored);
+    return !sameEntry(known ?? PENDING_ENTRY, stored);
   }
 }
 

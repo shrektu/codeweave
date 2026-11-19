@@ -9,7 +9,30 @@ import {
   formatLocalTime,
   isSessionLive,
   isStale,
+  limitPercent,
+  limitWindowLabel,
 } from "./format";
+
+it("limit_window_label_per_period_and_scope", () => {
+  expect(limitWindowLabel({ period: "five_hour", scope: null })).toBe("5-hour");
+  expect(limitWindowLabel({ period: "seven_day", scope: null })).toBe("Weekly");
+  expect(limitWindowLabel({ period: "monthly", scope: null })).toBe("Monthly");
+  expect(limitWindowLabel({ period: "window_45m", scope: null })).toBe(
+    "window_45m",
+  );
+  expect(limitWindowLabel({ period: null, scope: null })).toBe("Limit");
+  expect(limitWindowLabel({ period: "seven_day", scope: "Opus" })).toBe(
+    "Weekly · Opus",
+  );
+});
+
+it("limit_percent_clamps_out_of_range", () => {
+  expect(limitPercent(1.4, false)).toBe(100);
+  expect(limitPercent(-0.2, false)).toBe(0);
+  expect(limitPercent(null, false)).toBe(0);
+  expect(limitPercent(0.426, false)).toBe(43);
+  expect(limitPercent(0.1, true)).toBe(100);
+});
 
 it("session_live_excludes_stopped_failed_halted", () => {
   const live = [
@@ -121,6 +144,7 @@ it("account_label_falls_back_to_id", () => {
       keyHint: null,
       runtime: { status: "ready" },
       limit: null,
+      limitAvailability: "pending",
     },
   ] as const;
 
