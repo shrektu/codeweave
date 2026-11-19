@@ -9,7 +9,12 @@ import type { ParamsMap } from "../../shared/protocol";
 import type { VaultStatus } from "../../shared/vault";
 import type { CatalogModel } from "../../shared/views";
 import { errorMessage } from "../errorMessage";
-import { API_PROVIDER_IDS, parseApiProvider } from "../format";
+import {
+  API_AUTH_IDS,
+  API_PROVIDER_IDS,
+  parseApiAuth,
+  parseApiProvider,
+} from "../format";
 import type { IpcClient } from "../ipc";
 
 type ApiAddParams = Extract<ParamsMap["accounts/add"], { api: unknown }>;
@@ -20,6 +25,7 @@ export interface ApiDraft {
   baseUrl: string;
   rotation: boolean;
   apiKey: string;
+  auth: ApiAuth;
 }
 
 export const INITIAL_API_DRAFT: ApiDraft = {
@@ -28,9 +34,16 @@ export const INITIAL_API_DRAFT: ApiDraft = {
   baseUrl: "",
   rotation: API_PROVIDERS[ApiProviderId.groq].defaultRotation,
   apiKey: "",
+  auth: ApiAuth.apiKey,
 };
 
 const VAULT_UNAVAILABLE_MESSAGE = "Secure key storage is unavailable";
+const SIGN_IN_LABELS: Readonly<Record<ApiAuth, string>> = {
+  [ApiAuth.apiKey]: "API key",
+  [ApiAuth.consoleLogin]: "OpenCode Console login",
+};
+const CONSOLE_LOGIN_HINT =
+  "After adding the account, run the login command shown on its row. Codeweave never signs in for you. Needs opencode 2.2.5 or newer.";
 
 export function validateApiDraft(draft: ApiDraft): string | null {
   if (draft.model.trim() === "") {
@@ -39,10 +52,26 @@ export function validateApiDraft(draft: ApiDraft): string | null {
   if (draft.provider === ApiProviderId.custom && draft.baseUrl.trim() === "") {
     return "Base URL is required";
   }
-  if (draft.apiKey === "") {
+  if (draft.auth === ApiAuth.apiKey && draft.apiKey === "") {
     return "API key is required";
   }
   return null;
+}
+
+function authFor(draft: ApiDraft, provider: ApiProviderId): ApiAuth {
+  return API_PROVIDERS[provider].consoleLogin ? draft.auth : ApiAuth.apiKey;
+}
+
+export function withProvider(
+  draft: ApiDraft,
+  provider: ApiProviderId,
+): ApiDraft {
+  return {
+    ...draft,
+    provider,
+    rotation: API_PROVIDERS[provider].defaultRotation,
+    auth: authFor(draft, provider),
+  };
 }
 
 export function withPickedModel(
@@ -58,23 +87,24 @@ export function withPickedModel(
     provider: model.providerId,
     model: model.modelId,
     rotation,
+    auth: authFor(draft, model.providerId),
   };
 }
 
 export function toApiParams(
   draft: ApiDraft,
 ): Pick<ApiAddParams, "api" | "apiKey"> {
-  return {
-    api: {
-      provider: draft.provider,
-      model: draft.model.trim(),
-      baseUrl:
-        draft.provider === ApiProviderId.custom ? draft.baseUrl.trim() : null,
-      rotation: draft.rotation,
-      auth: ApiAuth.apiKey,
-    },
-    apiKey: draft.apiKey,
+  const api = {
+    provider: draft.provider,
+    model: draft.model.trim(),
+    baseUrl:
+      draft.provider === ApiProviderId.custom ? draft.baseUrl.trim() : null,
+    rotation: draft.rotation,
+    auth: draft.auth,
   };
+  return draft.auth === ApiAuth.apiKey
+    ? { api, apiKey: draft.apiKey }
+    : { api };
 }
 
 export function useVaultStatus(
@@ -128,17 +158,40 @@ function ProviderSelect({
         onChange={(event) => {
           const provider = parseApiProvider(event.target.value);
           if (provider !== null) {
-            onChange({
-              ...draft,
-              provider,
-              rotation: API_PROVIDERS[provider].defaultRotation,
-            });
+            onChange(withProvider(draft, provider));
           }
         }}
       >
         {API_PROVIDER_IDS.map((id) => (
           <option key={id} value={id}>
             {API_PROVIDERS[id].label}
+          </option>
+        ))}
+      </select>
+    </>
+  );
+}
+
+function SignInSelect({
+  draft,
+  onChange,
+}: Pick<ApiAccountFieldsProps, "draft" | "onChange">): JSX.Element {
+  return (
+    <>
+      <label htmlFor="api-auth">Sign in with</label>
+      <select
+        id="api-auth"
+        value={draft.auth}
+        onChange={(event) => {
+          const auth = parseApiAuth(event.target.value);
+          if (auth !== null) {
+            onChange({ ...draft, auth });
+          }
+        }}
+      >
+        {API_AUTH_IDS.map((id) => (
+          <option key={id} value={id}>
+            {SIGN_IN_LABELS[id]}
           </option>
         ))}
       </select>
@@ -202,19 +255,28 @@ export function ApiAccountFields({
         />
         <label htmlFor="api-rotation">Use in rotation</label>
       </div>
-      <label htmlFor="api-key">API key</label>
-      <input
-        id="api-key"
-        type="password"
-        autoComplete="off"
-        value={draft.apiKey}
-        onChange={(event) => {
-          onChange({ ...draft, apiKey: event.target.value });
-        }}
-      />
-      {hint !== undefined && <p className="agent-hint">{hint}</p>}
-      {vault?.available === false && (
-        <p className="error">{vault.reason ?? VAULT_UNAVAILABLE_MESSAGE}</p>
+      {API_PROVIDERS[draft.provider].consoleLogin && (
+        <SignInSelect draft={draft} onChange={onChange} />
+      )}
+      {draft.auth === ApiAuth.apiKey ? (
+        <>
+          <label htmlFor="api-key">API key</label>
+          <input
+            id="api-key"
+            type="password"
+            autoComplete="off"
+            value={draft.apiKey}
+            onChange={(event) => {
+              onChange({ ...draft, apiKey: event.target.value });
+            }}
+          />
+          {hint !== undefined && <p className="agent-hint">{hint}</p>}
+          {vault?.available === false && (
+            <p className="error">{vault.reason ?? VAULT_UNAVAILABLE_MESSAGE}</p>
+          )}
+        </>
+      ) : (
+        <p className="agent-hint">{CONSOLE_LOGIN_HINT}</p>
       )}
     </>
   );

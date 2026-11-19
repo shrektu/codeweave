@@ -1,5 +1,6 @@
 import { useState, type JSX } from "react";
 
+import { ApiAuth } from "../../domain/apiProviders";
 import { ProviderId } from "../../domain/types";
 import type { AccountView } from "../../shared/views";
 import type { IpcClient } from "../ipc";
@@ -10,7 +11,6 @@ import {
   providerOf,
   type SelectableProvider,
 } from "../format";
-import { loginCommands } from "../loginCommand";
 import { useApp } from "../services";
 import { useAsyncAction } from "../useAsyncAction";
 import { useSuggestedDirectory } from "../useSuggestedDirectory";
@@ -26,6 +26,7 @@ import {
 } from "./ApiAccountFields";
 import { Dialog, type DialogProps } from "./Dialog";
 import { ModelCatalogDialog } from "./ModelCatalogDialog";
+import { SignIn } from "./SignIn";
 
 interface AccountRowProps {
   account: AccountView;
@@ -38,27 +39,6 @@ interface AccountRowProps {
 
 interface AddFormProps {
   client: IpcClient;
-}
-
-function SignIn({ account }: { account: AccountView }): JSX.Element | null {
-  const commands = loginCommands(account.provider, account.configDir);
-  if (commands === null) {
-    return null;
-  }
-  return (
-    <div className="signin">
-      <b>Sign in</b>
-      <p>{commands.hint}</p>
-      <div className="cmd">
-        <span>bash</span>
-        <code>{commands.bash}</code>
-      </div>
-      <div className="cmd">
-        <span>PowerShell</span>
-        <code>{commands.powershell}</code>
-      </div>
-    </div>
-  );
 }
 
 function AccountRow({
@@ -157,6 +137,7 @@ function AddAccountForm({ client }: AddFormProps): JSX.Element {
   const suggestion = useSuggestedDirectory(client);
   const { configDir, setConfigDir } = suggestion;
   const isApi = provider === ProviderId.opencode;
+  const needsVault = isApi && api.auth === ApiAuth.apiKey;
   const vault = useVaultStatus(client, isApi);
   const error = add.error ?? suggestion.error;
 
@@ -229,7 +210,7 @@ function AddAccountForm({ client }: AddFormProps): JSX.Element {
         <button
           type="submit"
           className="btn pri"
-          disabled={add.pending || (isApi && vault?.available === false)}
+          disabled={add.pending || (needsVault && vault?.available === false)}
         >
           Add account
         </button>

@@ -141,10 +141,12 @@ flow run without restarting the app.
 
 ## OpenCode accounts
 
-OpenCode accounts are API-key accounts. The providers are Groq, Cerebras,
-OpenRouter, Google AI Studio, Mistral, Z.ai, DeepSeek, Kimi (Moonshot),
-OpenCode Go and Custom OpenAI-compatible. Keys are encrypted with the OS
-keychain (Electron safeStorage) and kept out of the account's config directory.
+OpenCode accounts sign in with an API key or, for OpenCode Go and OpenCode Zen,
+with the OpenCode Console login of opencode 2.2.5 or newer. The providers are
+Groq, Cerebras, OpenRouter, Google AI Studio, Mistral, Z.ai, DeepSeek, Kimi
+(Moonshot), OpenCode Go, OpenCode Zen and Custom OpenAI-compatible. Keys are
+encrypted with the OS keychain (Electron safeStorage) and kept out of the
+account's config directory.
 
 Codeweave needs the `opencode` CLI on `PATH`. Two generations are supported:
 1.19.x (`npm i -g opencode-ai@1.19.5`) and 2.2.5 or newer
@@ -155,8 +157,9 @@ with 2.2.5 and 2.3.2.
 
 ### OpenCode Go
 
-Subscribe in the OpenCode Console, copy the API key and add an OpenCode account
-with the provider "OpenCode Go". One provider covers Go, Go Plus and Go Teams.
+Subscribe in the OpenCode Console, then either copy the API key or use the
+Console login (see below), and add an OpenCode account with the provider
+"OpenCode Go". One provider covers Go, Go Plus and Go Teams.
 There is no base URL to enter: Codeweave uses OpenCode's built-in endpoint
 `https://opencode.ai/inference/go`. The models and the class defaults are listed
 in [docs/model-routing.md](docs/model-routing.md).
@@ -176,6 +179,28 @@ Codex, Gemini), OpenCode Go, free API tiers, paid API keys. Only accounts with
 
 Go support is tested against a local mock of the Go endpoint with opencode
 1.19.5; it has not been run against a real subscription.
+
+### OpenCode Console login
+
+For OpenCode Go and OpenCode Zen you can sign in with your Console account
+instead of an API key.
+
+1. When adding the account, set "Sign in with" to "OpenCode Console login". No
+   key is asked for.
+2. Run the command shown on the account's row in a terminal and confirm the
+   code in the browser. It looks like
+   `OPENCODE_DB='<account dir>/data/opencode/opencode.db' opencode auth login opencode --method device --standalone`.
+   `OPENCODE_DB` keeps the login in that account's directory only, and
+   `--standalone` keeps it from going through a running opencode background
+   service. Codeweave never runs the login for you.
+
+Codeweave checks the login (`opencode auth list`) before each session and in the
+background, and shows "Needs login" until it exists. The account rotates on the
+Go limit like a key account. Console login needs opencode 2.2.5 or newer and is
+not available with opencode 1.19.x.
+
+To log out, run
+`OPENCODE_DB='<account dir>/data/opencode/opencode.db' opencode auth logout opencode --standalone`.
 
 ## Terminal
 
