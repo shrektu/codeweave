@@ -51,7 +51,11 @@ export const OpencodeV2ErrorType = {
   budgetLimit: "provider.budget-limit",
   modelBudgetLimit: "provider.model-budget-limit",
   chatgptLimit: "provider.chatgpt-limit",
+  noRoute: "provider.no-route",
 } as const;
+
+export const NO_ROUTE_CONSOLE_LOGIN_HINT =
+  " — the OpenCode Console login may be missing or expired, or the workspace offers no model for this provider.";
 
 export const RATE_LIMIT_ERROR_TYPES: readonly string[] = [
   OpencodeV2ErrorType.rateLimit,

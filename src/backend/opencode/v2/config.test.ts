@@ -1,19 +1,28 @@
 import { describe, expect, it } from "vitest";
 
-import type { OpencodeCredentials } from "../config";
+import type { ApiKeyCredentials, ConsoleLoginCredentials } from "../config";
 
 import { buildV2CatalogConfig, buildV2SessionConfig } from "./config";
 
 const KEY_FILE = "/run/user/1000/codeweave-opencode-x/api-key";
 
-const BUILT_IN: OpencodeCredentials = {
+const CONSOLE: ConsoleLoginCredentials = {
+  auth: "console_login",
+  providerId: "opencode-go",
+  model: "kimi-k2.7-code",
+  baseUrl: null,
+};
+
+const BUILT_IN: ApiKeyCredentials = {
+  auth: "api_key",
   providerId: "groq",
   model: "llama-3.3-70b",
   baseUrl: null,
   apiKey: "sk-test-fake",
 };
 
-const CUSTOM: OpencodeCredentials = {
+const CUSTOM: ApiKeyCredentials = {
+  auth: "api_key",
   providerId: "acme",
   model: "acme-1",
   baseUrl: "https://example.test/v1",
@@ -82,6 +91,26 @@ describe("buildV2SessionConfig", () => {
         models: { "acme-1": { name: "acme-1" } },
       },
     });
+  });
+
+  it("console login config has no providers entry and no file reference", () => {
+    const config = buildV2SessionConfig({
+      credentials: CONSOLE,
+      keyFilePath: null,
+    });
+
+    expect(config.providers).toEqual({});
+    expect(config.model).toBe("opencode-go/kimi-k2.7-code");
+    expect(config.agents).toEqual({
+      title: { model: "opencode-go/kimi-k2.7-code" },
+    });
+    expect(config.policies.map((rule) => [rule.resource, rule.effect])).toEqual(
+      [
+        ["*", "deny"],
+        ["opencode-go", "allow"],
+      ],
+    );
+    expect(JSON.stringify(config)).not.toContain("{file:");
   });
 
   it("config_carries_the_key_only_as_a_file_reference", () => {

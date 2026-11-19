@@ -56,6 +56,7 @@ async function addApi(rig: BackendRig, spec: ApiSpec): Promise<AccountView> {
       model: spec.model ?? GROQ_MODEL,
       baseUrl: null,
       rotation: true,
+      auth: "api_key",
     },
     apiKey: `sk-test-${spec.label.toLowerCase().replaceAll(" ", "-")}-0001`,
   });

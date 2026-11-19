@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import { ApiProviderId, TRAINING_UNKNOWN } from "../domain/apiProviders";
+import {
+  API_PROVIDERS,
+  ApiAuth,
+  ApiProviderId,
+  TRAINING_UNKNOWN,
+} from "../domain/apiProviders";
 import { DiffOmission, FileChange } from "../domain/events";
 import {
   DecisionReason,
@@ -22,6 +27,7 @@ import {
 import { SWITCH_LOG_SNAPSHOT_LIMIT } from "./constants";
 
 const NonEmptyString = z.string().min(1);
+const NO_CONSOLE_LOGIN_MESSAGE = "This provider has no Console login";
 
 export const AccountRuntimeViewSchema = z.discriminatedUnion("status", [
   z.strictObject({ status: z.literal("ready") }),
@@ -40,12 +46,20 @@ export const LimitViewSchema = z.strictObject({
 });
 export type LimitView = z.infer<typeof LimitViewSchema>;
 
-export const ApiAccountSchema = z.strictObject({
-  provider: z.enum(ApiProviderId),
-  model: NonEmptyString,
-  baseUrl: z.url().nullable(),
-  rotation: z.boolean(),
-});
+export const ApiAccountSchema = z
+  .strictObject({
+    provider: z.enum(ApiProviderId),
+    model: NonEmptyString,
+    baseUrl: z.url().nullable(),
+    rotation: z.boolean(),
+    auth: z.enum(ApiAuth).default(ApiAuth.apiKey),
+  })
+  .refine(
+    (api) =>
+      api.auth !== ApiAuth.consoleLogin ||
+      API_PROVIDERS[api.provider].consoleLogin,
+    { message: NO_CONSOLE_LOGIN_MESSAGE, path: ["auth"] },
+  );
 
 export const AccountViewSchema = z.strictObject({
   id: z.string(),

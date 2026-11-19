@@ -20,6 +20,7 @@ import {
   readLoginShellPath,
   resolveLaunchEnv,
 } from "./launchEnv";
+import { createConsoleLoginProbe } from "./opencode/consoleLogin";
 import { createVersionProbe } from "./opencode/version";
 import { createProcessContainer } from "./process/select";
 import { isRunnableFileSync } from "./terminal/shell";
@@ -74,6 +75,11 @@ const ready = resolveLaunchEnv({
       newRunId: () => randomUUID(),
       resolveExecutable: createExecutableResolver(env, process.platform),
       inspectWorktree,
+      opencodeConsoleLogin: createConsoleLoginProbe({
+        exec: execText,
+        platform: process.platform,
+        ...(env.ComSpec === undefined ? {} : { comSpec: env.ComSpec }),
+      }),
       opencodeGeneration: createVersionProbe({
         exec: execText,
         platform: process.platform,

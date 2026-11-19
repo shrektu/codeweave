@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import { loginCommands } from "./loginCommand";
+import { consoleLoginCommands, loginCommands } from "./loginCommand";
 
 it("login_command_wraps_plain_path", () => {
   expect(loginCommands("claude", "/home/user/.claude-work")).toEqual({
@@ -67,6 +67,35 @@ it.each(["'", "\u2018", "\u2019", "\u201A", "\u201B"])(
     );
   },
 );
+
+it("console login command quotes posix and windows account dirs", () => {
+  expect(consoleLoginCommands("/home/us er/it's/acc")).toEqual({
+    bash: "OPENCODE_DB='/home/us er/it'\\''s/acc/data/opencode/opencode.db' opencode auth login opencode --method device --standalone",
+    powershell:
+      "$env:OPENCODE_DB='/home/us er/it''s/acc/data/opencode/opencode.db'; opencode auth login opencode --method device --standalone",
+    hint: "Run this in a terminal, then confirm the code in the browser (needs opencode 2.2.5 or newer):",
+  });
+  expect(consoleLoginCommands("C:\\Users\\o'neil\\cw\\acc")).toMatchObject({
+    bash: "OPENCODE_DB='C:\\Users\\o'\\''neil\\cw\\acc\\data\\opencode\\opencode.db' opencode auth login opencode --method device --standalone",
+    powershell:
+      "$env:OPENCODE_DB='C:\\Users\\o''neil\\cw\\acc\\data\\opencode\\opencode.db'; opencode auth login opencode --method device --standalone",
+  });
+});
+
+it("console_login_command_ignores_trailing_separator", () => {
+  expect(consoleLoginCommands("/home/user/acc/").bash).toBe(
+    "OPENCODE_DB='/home/user/acc/data/opencode/opencode.db' opencode auth login opencode --method device --standalone",
+  );
+  expect(consoleLoginCommands("C:\\cw\\acc\\").bash).toBe(
+    "OPENCODE_DB='C:\\cw\\acc\\data\\opencode\\opencode.db' opencode auth login opencode --method device --standalone",
+  );
+});
+
+it("console_login_command_uses_slash_for_mixed_separators", () => {
+  expect(consoleLoginCommands("C:/Users/me\\acc").bash).toBe(
+    "OPENCODE_DB='C:/Users/me\\acc/data/opencode/opencode.db' opencode auth login opencode --method device --standalone",
+  );
+});
 
 it("powershell_command_keeps_injection_attempt_inside_literal", () => {
   expect(loginCommands("claude", "x\u2019; calc; \u2019")?.powershell).toBe(

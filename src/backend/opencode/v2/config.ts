@@ -1,6 +1,6 @@
 import {
   declaredModels,
-  type OpencodeCredentials,
+  type ApiKeyCredentials,
   type SessionConfigInput,
 } from "../config";
 import {
@@ -48,7 +48,7 @@ const ASKED_ACTIONS: readonly string[] = [
 ];
 
 function providerConfig(
-  credentials: OpencodeCredentials,
+  credentials: ApiKeyCredentials,
   keyFilePath: string,
 ): OpencodeV2ProviderConfig {
   const apiKey = `${FILE_REFERENCE_PREFIX}${keyFilePath}${FILE_REFERENCE_SUFFIX}`;
@@ -98,7 +98,7 @@ export function buildV2CatalogConfig(
 export function buildV2SessionConfig(
   input: SessionConfigInput,
 ): OpencodeV2SessionConfig {
-  const { credentials, keyFilePath } = input;
+  const { credentials } = input;
   const qualified = `${credentials.providerId}/${credentials.model}`;
   return {
     model: qualified,
@@ -122,8 +122,14 @@ export function buildV2SessionConfig(
         effect: OpencodeV2Effect.allow,
       },
     ],
-    providers: {
-      [credentials.providerId]: providerConfig(credentials, keyFilePath),
-    },
+    providers:
+      input.keyFilePath === null
+        ? {}
+        : {
+            [credentials.providerId]: providerConfig(
+              input.credentials,
+              input.keyFilePath,
+            ),
+          },
   };
 }

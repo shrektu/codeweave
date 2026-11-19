@@ -106,6 +106,7 @@ const apiAccount: Account = {
     model: "llama-3.3-70b-versatile",
     baseUrl: null,
     rotation: true,
+    auth: "api_key",
   },
 };
 
@@ -138,6 +139,80 @@ describe("json store api accounts", () => {
         order: 1,
       },
     ]);
+  });
+});
+
+const consoleAccount: Account = {
+  ...apiAccount,
+  id: "acc-console",
+  order: 1,
+  api: {
+    provider: "opencode-go",
+    model: "kimi-k2.7-code",
+    baseUrl: null,
+    rotation: true,
+    auth: "console_login",
+  },
+};
+
+describe("json store console login accounts", () => {
+  it("mixed_file_round_trips_and_writes_auth_only_for_console_login", async () => {
+    const dir = await makeTempDir();
+    const store = createJsonStore(dir);
+
+    await store.writeAccounts([apiAccount, consoleAccount]);
+
+    expect(await store.readAccounts()).toEqual([apiAccount, consoleAccount]);
+    const text = await readFile(join(dir, "accounts.json"), "utf8");
+    expect(text.match(/"auth"/g)).toHaveLength(1);
+    expect(text).toContain('"auth": "console_login"');
+  });
+
+  it("file_written_by_an_older_version_reads_as_api_key", async () => {
+    const dir = await makeTempDir();
+    await writeFile(
+      join(dir, "accounts.json"),
+      JSON.stringify({
+        version: 1,
+        accounts: [
+          {
+            id: "acc-api",
+            provider: "opencode",
+            label: "Groq main",
+            configDir: "/home/jane/.codeweave/groq",
+            order: 0,
+            api: {
+              provider: "groq",
+              model: "llama-3.3-70b-versatile",
+              baseUrl: null,
+              rotation: true,
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(await createJsonStore(dir).readAccounts()).toEqual([apiAccount]);
+  });
+
+  it("unknown_auth_value_in_the_file_is_corrupt", async () => {
+    const dir = await makeTempDir();
+    await writeFile(
+      join(dir, "accounts.json"),
+      JSON.stringify({
+        version: 1,
+        accounts: [
+          {
+            ...apiAccount,
+            api: { ...apiAccount.api, auth: "oauth" },
+          },
+        ],
+      }),
+    );
+
+    await expect(createJsonStore(dir).readAccounts()).rejects.toBeInstanceOf(
+      StorageCorruptError,
+    );
   });
 });
 

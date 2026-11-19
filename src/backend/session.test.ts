@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 
 import type { AgentEvent } from "../domain/events";
+import type { ApiAuth } from "../domain/apiProviders";
 import { ProviderId, type Account } from "../domain/types";
 import { IpcError, IpcErrorCode } from "../shared/protocol";
 
@@ -79,6 +80,7 @@ interface SetupOptions {
   readonly appendError?: Error;
   readonly stopGates?: readonly Promise<void>[];
   readonly accountsGate?: Promise<void>;
+  readonly hasKey?: SessionServiceDeps["hasKey"];
 }
 
 const tempDirs: string[] = [];
@@ -198,7 +200,7 @@ async function setup(options: SetupOptions): Promise<Setup> {
     externalRuntime: () => null,
     beforeLaunch: options.beforeLaunch ?? (() => Promise.resolve()),
     isBlocked: options.isBlocked ?? (() => false),
-    hasKey: () => true,
+    hasKey: options.hasKey ?? (() => true),
     secrets: () => [],
   });
   services.push(service);
@@ -881,4 +883,50 @@ it("interrupted_start_with_surviving_agent_stays_in_use", async () => {
     code: IpcErrorCode.CONFLICT,
     message: "The previous agent is still running",
   });
+});
+
+function opencodeAccount(id: string, auth: ApiAuth): Account {
+  return {
+    id,
+    provider: ProviderId.opencode,
+    label: id,
+    configDir: `/cfg/${id}`,
+    order: 0,
+    api: {
+      provider: "opencode-go",
+      model: "kimi-k2.7-code",
+      baseUrl: null,
+      rotation: true,
+      auth,
+    },
+  };
+}
+
+it("console_login_opencode_account_without_a_key_is_startable", async () => {
+  const rig = await setup({
+    accounts: [opencodeAccount("go-console", "console_login")],
+    events: {},
+    hasKey: () => false,
+  });
+
+  const view = await rig.service.start({
+    cwd: rig.cwd,
+    provider: ProviderId.opencode,
+  });
+
+  expect(view.phase).toEqual({ phase: "running", accountId: "go-console" });
+});
+
+it("api_key_opencode_account_without_a_key_is_still_refused", async () => {
+  const rig = await setup({
+    accounts: [opencodeAccount("go-key", "api_key")],
+    events: {},
+    hasKey: () => false,
+  });
+
+  await expect(
+    rig.service.start({ cwd: rig.cwd, provider: ProviderId.opencode }),
+  ).rejects.toBeInstanceOf(IpcError);
+
+  expect(rig.specs).toEqual([]);
 });

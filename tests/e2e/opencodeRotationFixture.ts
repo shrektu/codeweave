@@ -124,6 +124,7 @@ export function opencodeAddParams(
       model: spec.model ?? MOCK_MODEL,
       baseUrl: mockUrl,
       rotation: true,
+      auth: "api_key",
     },
     apiKey: spec.apiKey,
   };

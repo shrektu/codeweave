@@ -1,9 +1,11 @@
 import { useId, useState, type JSX } from "react";
 
-import { API_PROVIDERS } from "../../domain/apiProviders";
+import { API_PROVIDERS, ApiAuth } from "../../domain/apiProviders";
 import type { AccountView } from "../../shared/views";
 import { useApp } from "../services";
 import { useAsyncAction } from "../useAsyncAction";
+
+import { SignIn } from "./SignIn";
 
 interface ApiAccountDetailsProps {
   account: AccountView;
@@ -64,17 +66,36 @@ function ReplaceKeyForm({
   );
 }
 
+function ApiSummary({ api }: Pick<ApiAccountDetailsProps, "api">): JSX.Element {
+  return (
+    <>
+      <span>{API_PROVIDERS[api.provider].label}</span>
+      <code>{api.model}</code>
+      <span>{api.rotation ? "Rotation on" : "Rotation off"}</span>
+    </>
+  );
+}
+
 export function ApiAccountDetails({
   account,
   api,
 }: ApiAccountDetailsProps): JSX.Element {
   const [replacing, setReplacing] = useState(false);
+  if (api.auth === ApiAuth.consoleLogin) {
+    return (
+      <div className="api-details">
+        <div className="api-summary">
+          <ApiSummary api={api} />
+          <span>Console login</span>
+        </div>
+        <SignIn account={account} />
+      </div>
+    );
+  }
   return (
     <div className="api-details">
       <div className="api-summary">
-        <span>{API_PROVIDERS[api.provider].label}</span>
-        <code>{api.model}</code>
-        <span>{api.rotation ? "Rotation on" : "Rotation off"}</span>
+        <ApiSummary api={api} />
         <span>
           {account.keyHint === null
             ? "No key saved"

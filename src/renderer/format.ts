@@ -1,4 +1,4 @@
-import { ApiProviderId } from "../domain/apiProviders";
+import { ApiAuth, ApiProviderId } from "../domain/apiProviders";
 import { ProviderId } from "../domain/types";
 import type {
   AccountView,
@@ -41,6 +41,12 @@ export const API_PROVIDER_IDS: readonly ApiProviderId[] =
 
 export function parseApiProvider(value: string): ApiProviderId | null {
   return API_PROVIDER_IDS.find((id) => id === value) ?? null;
+}
+
+export const API_AUTH_IDS: readonly ApiAuth[] = Object.values(ApiAuth);
+
+export function parseApiAuth(value: string): ApiAuth | null {
+  return API_AUTH_IDS.find((id) => id === value) ?? null;
 }
 
 export function isSelectable(

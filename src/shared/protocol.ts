@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { ApiAuth } from "../domain/apiProviders";
 import { MIN_SECRET_LENGTH } from "../domain/constants";
 import { FlowDecision } from "../domain/flowRun";
 import { AgentSchema, FlowSchema } from "../domain/flows";
@@ -63,6 +64,9 @@ const NonEmptyString = z.string().min(1);
 const NonBlankString = z.string().refine((text) => text.trim().length > 0);
 const EmptyParamsSchema = z.strictObject({});
 const ApiKeySchema = z.string().min(MIN_SECRET_LENGTH);
+export const API_KEY_REQUIRED_MESSAGE = "API key is required";
+export const CONSOLE_LOGIN_WITH_KEY_MESSAGE =
+  "A Console login account takes no API key";
 const TerminalColsSchema = z
   .int()
   .min(TERMINAL_MIN_COLS)
@@ -125,13 +129,24 @@ export const ParamsSchemas = {
         .enum([ProviderId.claude, ProviderId.codex, ProviderId.gemini])
         .optional(),
     }),
-    z.strictObject({
-      label: NonBlankString,
-      configDir: NonEmptyString,
-      provider: z.literal(ProviderId.opencode),
-      api: ApiAccountSchema,
-      apiKey: ApiKeySchema,
-    }),
+    z
+      .strictObject({
+        label: NonBlankString,
+        configDir: NonEmptyString,
+        provider: z.literal(ProviderId.opencode),
+        api: ApiAccountSchema,
+        apiKey: ApiKeySchema.optional(),
+      })
+      .refine(
+        ({ api, apiKey }) =>
+          api.auth !== ApiAuth.apiKey || apiKey !== undefined,
+        { message: API_KEY_REQUIRED_MESSAGE, path: ["apiKey"] },
+      )
+      .refine(
+        ({ api, apiKey }) =>
+          api.auth !== ApiAuth.consoleLogin || apiKey === undefined,
+        { message: CONSOLE_LOGIN_WITH_KEY_MESSAGE, path: ["apiKey"] },
+      ),
   ]),
   "accounts/setKey": z.strictObject({
     id: NonEmptyString,

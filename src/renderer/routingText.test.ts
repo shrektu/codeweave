@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ApiProviderId } from "../domain/apiProviders";
+import { ApiAuth, ApiProviderId } from "../domain/apiProviders";
 import { ProviderId } from "../domain/types";
 import type { AccountView, TurnRouteView } from "../shared/views";
 
@@ -115,6 +115,7 @@ describe("modelSuggestions", () => {
           model: "openai/gpt-oss-120b",
           baseUrl: null,
           rotation: true,
+          auth: ApiAuth.apiKey,
         }),
       ),
     ).toEqual(["groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b"]);
@@ -128,6 +129,7 @@ describe("modelSuggestions", () => {
           model: "my-model",
           baseUrl: "http://localhost:1",
           rotation: true,
+          auth: ApiAuth.apiKey,
         }),
       ),
     ).toEqual(["custom/my-model"]);
@@ -141,6 +143,7 @@ describe("modelSuggestions", () => {
           model: "glm-4.7-flash",
           baseUrl: null,
           rotation: true,
+          auth: ApiAuth.apiKey,
         }),
       ),
     ).toEqual(["zai/glm-4.7-flash"]);
@@ -151,6 +154,7 @@ describe("modelSuggestions", () => {
           model: "my-own-glm",
           baseUrl: null,
           rotation: true,
+          auth: ApiAuth.apiKey,
         }),
       ),
     ).toEqual(["zai/glm-4.7-flash", "zai/my-own-glm"]);
@@ -164,6 +168,7 @@ describe("modelSuggestions", () => {
           model: "openai/gpt-oss-20b",
           baseUrl: null,
           rotation: true,
+          auth: ApiAuth.apiKey,
         }),
       ),
     ).toEqual(["groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b"]);

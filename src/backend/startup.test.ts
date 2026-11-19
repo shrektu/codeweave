@@ -142,6 +142,7 @@ const GROQ_API: ApiAccount = {
   model: "llama-3.3-70b-versatile",
   baseUrl: null,
   rotation: true,
+  auth: "api_key",
 };
 
 async function credentialsRig(): Promise<{
@@ -177,11 +178,51 @@ it("credentials_carry_registry_provider_id_model_and_stored_key", async () => {
   expect(
     await createCredentialsFor(keyStore)(apiAccount("api-1", GROQ_API)),
   ).toEqual({
+    auth: "api_key",
     providerId: "groq",
     model: "llama-3.3-70b-versatile",
     baseUrl: null,
     apiKey: STORED_KEY,
   });
+});
+
+it("console_login_credentials_hold_no_key_and_never_read_the_key_store", async () => {
+  const { keyStore } = await credentialsRig();
+  const get = vi.spyOn(keyStore, "get");
+
+  expect(
+    await createCredentialsFor(keyStore)(
+      apiAccount("go-1", {
+        provider: "opencode-go",
+        model: "kimi-k2.7-code",
+        baseUrl: null,
+        rotation: true,
+        auth: "console_login",
+      }),
+    ),
+  ).toEqual({
+    auth: "console_login",
+    providerId: "opencode-go",
+    model: "kimi-k2.7-code",
+    baseUrl: null,
+  });
+  expect(get).not.toHaveBeenCalled();
+});
+
+it("zen_console_credentials_use_the_opencode_provider_id", async () => {
+  const { keyStore } = await credentialsRig();
+
+  expect(
+    await createCredentialsFor(keyStore)(
+      apiAccount("zen-1", {
+        provider: "opencode-zen",
+        model: "big-pickle",
+        baseUrl: null,
+        rotation: false,
+        auth: "console_login",
+      }),
+    ),
+  ).toMatchObject({ providerId: "opencode", model: "big-pickle" });
 });
 
 it("credentials_for_custom_provider_keep_the_base_url", async () => {
@@ -195,9 +236,11 @@ it("credentials_for_custom_provider_keep_the_base_url", async () => {
         model: "local-model",
         baseUrl: "http://127.0.0.1:9000/v1",
         rotation: false,
+        auth: "api_key",
       }),
     ),
   ).toEqual({
+    auth: "api_key",
     providerId: "custom",
     model: "local-model",
     baseUrl: "http://127.0.0.1:9000/v1",

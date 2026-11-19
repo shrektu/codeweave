@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 
+import { ApiAuth } from "../../domain/apiProviders";
 import type { Account, EpochMillis } from "../../domain/types";
 import {
   AgentStartFailure,
@@ -20,7 +21,10 @@ import {
   type RunFilesInput,
   type RunFiles,
 } from "./config";
+import { ConsoleLoginState, type ConsoleLoginProbe } from "./consoleLogin";
 import {
+  CONSOLE_LOGIN_REQUIRED_MESSAGE,
+  CONSOLE_LOGIN_V1_MESSAGE,
   NEEDS_LOGIN_MESSAGE,
   READY_TIMEOUT_MS,
   STALE_GATE_GRACE_MS,
@@ -43,6 +47,7 @@ export interface OpencodeAdapterDeps {
     account: Account,
   ) => Promise<OpencodeCredentials | null>;
   readonly generationFor: GenerationProbe;
+  readonly consoleLoginFor: ConsoleLoginProbe;
   readonly runtimeRoot: string;
   readonly platform: NodeJS.Platform;
   readonly comSpec?: string;
@@ -111,6 +116,7 @@ const GENERATION_DRIVERS: Readonly<
         now: deps.now,
         stopGraceMs: deps.stopGraceMs ?? DEFAULT_STOP_GRACE_MS,
         readyTimeoutMs: deps.readyTimeoutMs ?? READY_TIMEOUT_MS,
+        consoleLogin: credentials.auth === ApiAuth.consoleLogin,
         defaultModel: {
           id: credentials.model,
           providerID: credentials.providerId,
@@ -148,6 +154,7 @@ async function spawnRun(
       configDir: spec.account.configDir,
       configFile: files.configFile,
       password: secrets.password,
+      consoleLogin: secrets.credentials.auth === ApiAuth.consoleLogin,
       port,
       env: deps.envFor(spec),
       platform: deps.platform,
@@ -239,6 +246,41 @@ async function connectRun(
   }
 }
 
+function secretsOf(
+  credentials: OpencodeCredentials,
+  password: string,
+): string[] {
+  return credentials.auth === ApiAuth.apiKey
+    ? [credentials.apiKey, password]
+    : [password];
+}
+
+async function consoleLoginRefusal(
+  deps: OpencodeAdapterDeps,
+  startSpec: AgentStartSpec,
+  generation: OpencodeGeneration,
+): Promise<AgentStartResult | null> {
+  if (generation === OpencodeGeneration.v1) {
+    return {
+      ok: false,
+      reason: AgentStartFailure.needsLogin,
+      message: CONSOLE_LOGIN_V1_MESSAGE,
+    };
+  }
+  const state = await deps.consoleLoginFor({
+    executable: deps.executableFor(startSpec),
+    configDir: startSpec.account.configDir,
+    env: deps.envFor(startSpec),
+  });
+  return state === ConsoleLoginState.needsLogin
+    ? {
+        ok: false,
+        reason: AgentStartFailure.needsLogin,
+        message: CONSOLE_LOGIN_REQUIRED_MESSAGE,
+      }
+    : null;
+}
+
 async function startWithCredentials(
   deps: OpencodeAdapterDeps,
   startSpec: AgentStartSpec,
@@ -248,7 +290,7 @@ async function startWithCredentials(
   const secrets: RunSecrets = {
     credentials,
     password,
-    redact: createRedactor([credentials.apiKey, password]),
+    redact: createRedactor(secretsOf(credentials, password)),
   };
   let run: LaunchedRun;
   try {
@@ -260,6 +302,12 @@ async function startWithCredentials(
       env: { ...deps.envFor(startSpec), ...dirs },
       cwd: startSpec.cwd,
     });
+    if (credentials.auth === ApiAuth.consoleLogin) {
+      const refusal = await consoleLoginRefusal(deps, startSpec, generation);
+      if (refusal !== null) {
+        return refusal;
+      }
+    }
     run = await spawnRun(deps, startSpec, secrets, generation);
   } catch (error) {
     return failure(secrets.redact(messageOf(error)));

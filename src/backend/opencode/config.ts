@@ -2,7 +2,7 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { API_PROVIDERS } from "../../domain/apiProviders";
+import { API_PROVIDERS, ApiAuth } from "../../domain/apiProviders";
 import { MODEL_TIERS } from "../../domain/modelTiers";
 
 import {
@@ -19,12 +19,22 @@ import {
   XDG_RUNTIME_DIR_ENV,
 } from "./constants";
 
-export interface OpencodeCredentials {
+export interface ApiKeyCredentials {
+  readonly auth: typeof ApiAuth.apiKey;
   readonly providerId: string;
   readonly model: string;
   readonly baseUrl: string | null;
   readonly apiKey: string;
 }
+
+export interface ConsoleLoginCredentials {
+  readonly auth: typeof ApiAuth.consoleLogin;
+  readonly providerId: string;
+  readonly model: string;
+  readonly baseUrl: null;
+}
+
+export type OpencodeCredentials = ApiKeyCredentials | ConsoleLoginCredentials;
 
 export interface OpencodeProviderConfig {
   readonly options: { readonly apiKey: string; readonly baseURL?: string };
@@ -42,14 +52,19 @@ export interface OpencodeSessionConfig {
   readonly provider: Readonly<Record<string, OpencodeProviderConfig>>;
 }
 
-export interface SessionConfigInput {
-  readonly credentials: OpencodeCredentials;
-  readonly keyFilePath: string;
-}
+export type SessionConfigInput =
+  | {
+      readonly credentials: ApiKeyCredentials;
+      readonly keyFilePath: string;
+    }
+  | {
+      readonly credentials: ConsoleLoginCredentials;
+      readonly keyFilePath: null;
+    };
 
 export interface RunFiles {
   readonly dir: string;
-  readonly keyFile: string;
+  readonly keyFile: string | null;
   readonly configFile: string;
 }
 
@@ -66,8 +81,10 @@ const ASKED_PERMISSIONS = {
   external_directory: PERMISSION_ASK,
 } as const;
 
-function providerConfig(input: SessionConfigInput): OpencodeProviderConfig {
-  const { credentials, keyFilePath } = input;
+function providerConfig(
+  credentials: ApiKeyCredentials,
+  keyFilePath: string,
+): OpencodeProviderConfig {
   const apiKey = `${FILE_REFERENCE_PREFIX}${keyFilePath}${FILE_REFERENCE_SUFFIX}`;
   if (credentials.baseUrl === null) {
     return { options: { apiKey } };
@@ -103,7 +120,12 @@ export function buildSessionConfig(
     autoupdate: false,
     share: SHARE_DISABLED,
     permission: ASKED_PERMISSIONS,
-    provider: { [providerId]: providerConfig(input) },
+    provider:
+      input.keyFilePath === null
+        ? {}
+        : {
+            [providerId]: providerConfig(input.credentials, input.keyFilePath),
+          },
   };
 }
 
@@ -117,33 +139,45 @@ export async function removeRunFiles(files: RunFiles): Promise<void> {
 }
 
 export async function removeKeyFile(files: RunFiles): Promise<void> {
-  await rm(files.keyFile, { force: true });
+  if (files.keyFile !== null) {
+    await rm(files.keyFile, { force: true });
+  }
+}
+
+interface PreparedKey {
+  readonly keyFile: string | null;
+  readonly configInput: SessionConfigInput;
+}
+
+async function prepareKey(
+  credentials: OpencodeCredentials,
+  dir: string,
+): Promise<PreparedKey> {
+  if (credentials.auth === ApiAuth.consoleLogin) {
+    return { keyFile: null, configInput: { credentials, keyFilePath: null } };
+  }
+  const keyFile = join(dir, KEY_FILE_NAME);
+  await writeFile(keyFile, credentials.apiKey, {
+    mode: SECRET_FILE_MODE,
+    flag: "wx",
+  });
+  return { keyFile, configInput: { credentials, keyFilePath: keyFile } };
 }
 
 export async function createRunFiles(input: RunFilesInput): Promise<RunFiles> {
   const dir = await mkdtemp(join(input.runtimeRoot, RUN_DIR_PREFIX));
-  const files: RunFiles = {
-    dir,
-    keyFile: join(dir, KEY_FILE_NAME),
-    configFile: join(dir, CONFIG_FILE_NAME),
-  };
   try {
     await chmod(dir, RUN_DIR_MODE);
-    await writeFile(files.keyFile, input.credentials.apiKey, {
-      mode: SECRET_FILE_MODE,
-      flag: "wx",
-    });
-    const config = input.buildConfig({
-      credentials: input.credentials,
-      keyFilePath: files.keyFile,
-    });
-    await writeFile(files.configFile, JSON.stringify(config), {
-      mode: SECRET_FILE_MODE,
-      flag: "wx",
-    });
+    const { keyFile, configInput } = await prepareKey(input.credentials, dir);
+    const configFile = join(dir, CONFIG_FILE_NAME);
+    await writeFile(
+      configFile,
+      JSON.stringify(input.buildConfig(configInput)),
+      { mode: SECRET_FILE_MODE, flag: "wx" },
+    );
+    return { dir, keyFile, configFile };
   } catch (error) {
-    await removeRunFiles(files);
+    await rm(dir, { recursive: true, force: true });
     throw error;
   }
-  return files;
 }

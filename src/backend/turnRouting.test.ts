@@ -23,6 +23,7 @@ const GROQ: Account = {
     model: "llama-3.3-70b-versatile",
     baseUrl: null,
     rotation: true,
+    auth: "api_key",
   },
 };
 const CEREBRAS: Account = {
@@ -35,6 +36,7 @@ const CEREBRAS: Account = {
     model: "gpt-oss-120b",
     baseUrl: null,
     rotation: true,
+    auth: "api_key",
   },
 };
 const CLAUDE: Account = {

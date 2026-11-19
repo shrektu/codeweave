@@ -610,6 +610,7 @@ it("starts_the_2x_catalog_server_without_pure_and_with_the_2x_config", async () 
     "deepseek",
     "moonshotai",
     "opencode-go",
+    "opencode",
   ];
   expect(spec?.args.slice(0, 4)).toEqual([
     "serve",
@@ -673,7 +674,10 @@ it("drops_2x_models_of_unknown_providers", async () => {
   const result = await rig.catalog.load();
 
   expect(result.error).toBeNull();
-  expect(result.models.map((item) => item.providerId)).toEqual(["groq"]);
+  expect(result.models.map((item) => [item.providerId, item.modelId])).toEqual([
+    ["opencode-zen", "big-pickle"],
+    ["groq", "llama"],
+  ]);
 });
 
 it("2x_model_without_cost_or_limit_has_null_values", async () => {

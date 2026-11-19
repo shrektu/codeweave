@@ -25,6 +25,7 @@ const GROQ = accountOf("acc-2", ProviderId.opencode, {
   model: "llama-3.3-70b-versatile",
   baseUrl: null,
   rotation: true,
+  auth: "api_key",
 });
 
 describe("explicitModelFor", () => {

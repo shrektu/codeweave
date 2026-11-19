@@ -1,11 +1,13 @@
 import { expect, it } from "vitest";
 
 import { toSessionView } from "../backend/sessionView";
+import { API_PROVIDERS, ApiProviderId } from "../domain/apiProviders";
 import type { FileDiff } from "../domain/events";
 import { INITIAL_SESSION_STATE, reduceSession } from "../domain/sessionReducer";
 
 import {
   AgentViewSchema,
+  ApiAccountSchema,
   FlowRunViewSchema,
   FlowViewSchema,
   SessionViewSchema,
@@ -30,6 +32,43 @@ const OMITTED: FileDiff = {
   change: "created",
   omitted: "binary",
 };
+
+const API_BASE = {
+  model: "some-model",
+  baseUrl: null,
+  rotation: true,
+};
+const CONSOLE_LOGIN_PROVIDERS = ["opencode-go", "opencode-zen"];
+
+it("api_account_without_auth_defaults_to_api_key", () => {
+  const parsed = ApiAccountSchema.parse({ ...API_BASE, provider: "groq" });
+
+  expect(parsed.auth).toBe("api_key");
+});
+
+it.each(Object.values(ApiProviderId))(
+  "api_account_console_login_is_accepted_only_where_the_provider_has_it_%s",
+  (provider) => {
+    const parsed = ApiAccountSchema.safeParse({
+      ...API_BASE,
+      provider,
+      auth: "console_login",
+    });
+
+    expect(parsed.success).toBe(CONSOLE_LOGIN_PROVIDERS.includes(provider));
+    expect(API_PROVIDERS[provider].consoleLogin).toBe(parsed.success);
+  },
+);
+
+it("api_account_with_an_unknown_auth_is_rejected", () => {
+  const parsed = ApiAccountSchema.safeParse({
+    ...API_BASE,
+    provider: "groq",
+    auth: "oauth",
+  });
+
+  expect(parsed.success).toBe(false);
+});
 
 it("tool_call_view_schema_accepts_diffs", () => {
   const parsed = ToolCallViewSchema.safeParse({

@@ -1,3 +1,5 @@
+import { OPENCODE_ACCOUNT_DATA_DIR } from "../../shared/constants";
+
 export const OpencodePath = {
   config: "/config",
   providers: "/config/providers",
@@ -69,6 +71,7 @@ export const OpencodeEnv = {
   cacheHome: "XDG_CACHE_HOME",
   stateHome: "XDG_STATE_HOME",
   config: "OPENCODE_CONFIG",
+  db: "OPENCODE_DB",
   serverPassword: "OPENCODE_SERVER_PASSWORD",
   password: "OPENCODE_PASSWORD",
 } as const;
@@ -84,7 +87,7 @@ export const OPENCODE_ISOLATION_FLAGS: readonly string[] = [
 
 export const ACCOUNT_HOME_DIR = "home";
 export const ACCOUNT_CONFIG_DIR = "config";
-export const ACCOUNT_DATA_DIR = "data";
+export const ACCOUNT_DATA_DIR = OPENCODE_ACCOUNT_DATA_DIR;
 export const ACCOUNT_CACHE_DIR = "cache";
 export const ACCOUNT_STATE_DIR = "state";
 
@@ -125,6 +128,9 @@ export const TURN_FAILED_MESSAGE = "Turn failed";
 export const STREAM_CLOSED_MESSAGE = "Event stream closed";
 export const SESSION_BUSY_MESSAGE = "OpenCode session is still busy";
 export const NEEDS_LOGIN_MESSAGE = "OpenCode API key is missing";
+export const CONSOLE_LOGIN_REQUIRED_MESSAGE = "OpenCode Console login required";
+export const CONSOLE_LOGIN_V1_MESSAGE =
+  "OpenCode Console login needs opencode 2.2.5 or newer. Update opencode or use an API key.";
 export const READY_TIMEOUT_MESSAGE = "opencode server did not start in time";
 
 export const TITLE_RUN_COMMAND = "Run command";
