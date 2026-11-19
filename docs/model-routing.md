@@ -54,7 +54,8 @@ The result records the requested class, the class actually served and the source
 For every provider except OpenCode Go, models are ranked within the provider by the output price the
 provider publishes: the cheapest is `light`, the most expensive is `heavy`, anything in between is
 `standard`. Providers with two models get `light` and `heavy` only. Only current, stable, tool-calling text
-models that exist in the OpenCode 1.19.5 model snapshot are listed.
+models that exist in the bundled model snapshot of the installed OpenCode are listed. The catalog comes from
+whichever supported OpenCode is installed (1.19.5 or 2.x), so model lists can differ between versions.
 
 OpenCode Go is a flat-rate plan, so its rows are not ranked by token price but by how fast a model uses up
 the plan's allowance. The measure is the "Est. requests / 5 hr" figure the Go page publishes for the $10
