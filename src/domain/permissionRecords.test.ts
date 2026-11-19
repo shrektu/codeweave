@@ -5,6 +5,7 @@ import {
   createPermissionRecord,
   expireAll,
   resolve,
+  settle,
   type PermissionRecord,
 } from "./permissionRecords";
 
@@ -90,6 +91,48 @@ describe("permission records: invalid transitions", () => {
       ok: false,
       reason: "already_answering",
     });
+  });
+
+  it("settle_resolves_pending_with_an_offered_option", () => {
+    expect(settle(pending(), "deny")).toMatchObject({
+      state: "resolved",
+      optionId: "deny",
+    });
+  });
+
+  it("settle_resolves_an_answering_record", () => {
+    const answering = beginAnswer(pending(), "allow");
+    if (!answering.ok) {
+      throw new Error("expected answering");
+    }
+
+    expect(settle(answering.record, "deny")).toMatchObject({
+      state: "resolved",
+      optionId: "deny",
+    });
+  });
+
+  it("settle_expires_when_the_option_is_not_offered", () => {
+    expect(settle(pending(), "always")).toEqual({
+      requestId: "r1",
+      toolCallId: "t1",
+      title: "Run tests",
+      seq: 0,
+      options: OPTIONS,
+      state: "expired",
+    });
+  });
+
+  it("settle_keeps_resolved_and_expired_records", () => {
+    const resolved: PermissionRecord = {
+      ...pending(),
+      state: "resolved",
+      optionId: "allow",
+    };
+    const [expired = pending()] = expireAll([pending()]);
+
+    expect(settle(resolved, "deny")).toBe(resolved);
+    expect(settle(expired, "allow")).toBe(expired);
   });
 
   it("expireAll keeps resolved records and expires the others", () => {

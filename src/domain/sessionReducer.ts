@@ -3,6 +3,7 @@ import type { AgentEvent, FileDiff, ToolCallStatus } from "./events";
 import {
   createPermissionRecord,
   expireAll,
+  settle,
   type PermissionRecord,
 } from "./permissionRecords";
 import type { RouteSource } from "./routing";
@@ -168,6 +169,23 @@ function applyUpdate<T extends TurnLogEntry>(
   return entries.with(index, { ...existing, ...patch });
 }
 
+function settlePermission(
+  state: SessionState,
+  event: Extract<AgentEvent, { type: "permission_settled" }>,
+): SessionState {
+  if (!state.permissions.some((item) => item.requestId === event.requestId)) {
+    return state;
+  }
+  return {
+    ...state,
+    permissions: state.permissions.map((record) =>
+      record.requestId === event.requestId
+        ? settle(record, event.optionId)
+        : record,
+    ),
+  };
+}
+
 function addPermission(
   state: SessionState,
   event: Extract<AgentEvent, { type: "permission_request" }>,
@@ -268,6 +286,8 @@ export function reduceSession(
       return { ...state, permissions: expireAll(state.permissions) };
     case "model":
       return applyEffectiveModel(state, event.model);
+    case "permission_settled":
+      return settlePermission(state, event);
     case "rate_limit":
     case "api_retry":
       return state;

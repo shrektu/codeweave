@@ -255,6 +255,32 @@ describe("session reducer: permissions", () => {
 
   const secondRequest: AgentEvent = { ...request, requestId: "r2" };
 
+  it("permission_settled_resolves_pending_record", () => {
+    const state = reduceAll([
+      request,
+      secondRequest,
+      { type: "permission_settled", requestId: "r1", optionId: "allow" },
+    ]);
+
+    expect(state.permissions.map((p) => [p.requestId, p.state])).toEqual([
+      ["r1", "resolved"],
+      ["r2", "pending"],
+    ]);
+    expect(state.permissions[0]).toMatchObject({ optionId: "allow" });
+  });
+
+  it("permission_settled_for_unknown_request_changes_nothing", () => {
+    const before = reduceAll([request]);
+
+    const after = reduceSession(before, {
+      type: "permission_settled",
+      requestId: "ghost",
+      optionId: "allow",
+    });
+
+    expect(after).toEqual(before);
+  });
+
   it("turn_end_expires_pending_permissions", () => {
     const state = reduceAll([
       request,

@@ -2,6 +2,7 @@ import { readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { UnknownPermissionError } from "../../src/backend/agentAdapter";
 import { PROCESS_EXITED_MESSAGE } from "../../src/backend/constants";
 import { ConsoleLoginState } from "../../src/backend/opencode/consoleLogin";
 import type { OpencodeCredentials } from "../../src/backend/opencode/config";
@@ -261,6 +262,47 @@ it("tool_call_asks_permission_and_reports_the_tool", async () => {
       { type: "turn_end", stopReason: "end_turn" },
     ],
   );
+});
+
+it("always_reply_settles_sibling_permissions_without_replying_again", async () => {
+  const { handle, events, server } = await startedRig();
+  server.enqueue([
+    { type: "started" },
+    {
+      type: "permissions",
+      requests: [
+        { ...SHELL_ASK, id: "per_1", callId: "call_1" },
+        { ...SHELL_ASK, id: "per_2", callId: "call_2" },
+        { ...SHELL_ASK, id: "per_3", callId: "call_3" },
+      ],
+    },
+    { type: "succeeded" },
+  ]);
+  const turn = handle.prompt("go", { model: null });
+  await settled(() => {
+    expect(events.filter((e) => e.type === "permission_request")).toHaveLength(
+      3,
+    );
+  });
+
+  handle.answerPermission("per_1", "always");
+  await turn;
+
+  expect(events.filter((e) => e.type === "permission_settled")).toEqual([
+    { type: "permission_settled", requestId: "per_2", optionId: "always" },
+    { type: "permission_settled", requestId: "per_3", optionId: "always" },
+  ]);
+  expect(() => {
+    handle.answerPermission("per_2", "once");
+  }).toThrow(UnknownPermissionError);
+  expect(() => {
+    handle.answerPermission("per_3", "once");
+  }).toThrow(UnknownPermissionError);
+  await handle.stop(STOP_GRACE_MS);
+  expect(server.replies).toEqual([
+    { sessionId: OPENCODE_SESSION_ID, requestId: "per_1", decision: "always" },
+  ]);
+  expect(server.staleReplies).toEqual([]);
 });
 
 it("piped_shell_permission_shows_the_whole_command", async () => {

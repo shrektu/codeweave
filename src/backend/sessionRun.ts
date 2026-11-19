@@ -601,7 +601,7 @@ export class SessionRun {
     const optionId = await this.decideOption(event);
     this.deciding.delete(event.requestId);
     try {
-      if (optionId !== null) {
+      if (optionId !== null && this.isPending(event.requestId)) {
         this.answerPermission(event.requestId, optionId);
       }
     } catch (error) {
@@ -610,6 +610,12 @@ export class SessionRun {
       );
     }
     this.publish();
+  }
+
+  private isPending(requestId: string): boolean {
+    return this.state.permissions.some(
+      (record) => record.requestId === requestId && record.state === "pending",
+    );
   }
 
   private async decideOption(event: PermissionRequest): Promise<string | null> {

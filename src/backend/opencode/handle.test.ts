@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { FakeContained } from "../../../tests/fakes/fakeContainer";
 import type { AgentEvent } from "../../domain/events";
 import { PermissionProfile, ProviderId } from "../../domain/types";
+import { UnknownPermissionError } from "../agentAdapter";
 
 import { OpencodeHttpError, type OpencodeClient } from "./client";
 import { OpencodeHandle } from "./handle";
@@ -707,6 +708,47 @@ describe("child session permissions", () => {
     ]);
     rig.handle.answerPermission("per_child", "once");
     await flush();
+    expect(rig.replies).toEqual([[CHILD, "per_child", "once"]]);
+  });
+
+  it("replied_for_child_session_settles", async () => {
+    const { rig } = await withPendingChildPermission();
+
+    await rig.push("permission.replied", {
+      sessionID: CHILD,
+      requestID: "per_child",
+      reply: "always",
+    });
+
+    expect(rig.events.map((event) => event.type)).toEqual([
+      "permission_request",
+      "permission_settled",
+    ]);
+    expect(rig.events.at(-1)).toEqual({
+      type: "permission_settled",
+      requestId: "per_child",
+      optionId: "always",
+    });
+    expect(() => {
+      rig.handle.answerPermission("per_child", "once");
+    }).toThrow(UnknownPermissionError);
+    await rig.handle.stop(STOP_GRACE_MS);
+    expect(rig.replies).toEqual([]);
+  });
+
+  it("replied_for_own_answer_emits_nothing", async () => {
+    const { rig } = await withPendingChildPermission();
+    rig.handle.answerPermission("per_child", "once");
+    await flush();
+
+    await rig.push("permission.replied", {
+      requestID: "per_child",
+      reply: "once",
+    });
+
+    expect(rig.events.map((event) => event.type)).toEqual([
+      "permission_request",
+    ]);
     expect(rig.replies).toEqual([[CHILD, "per_child", "once"]]);
   });
 

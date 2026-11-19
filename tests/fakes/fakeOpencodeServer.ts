@@ -56,6 +56,23 @@ const SESSION_ROUTE = /^\/session\/([^/]+)\/(prompt_async|abort)$/;
 
 export type ToolStepStatus = "pending" | "running" | "completed" | "error";
 
+export interface OpencodePermissionStep {
+  readonly type: "permission";
+  readonly id: string;
+  readonly permission: string;
+  readonly patterns: readonly string[];
+  readonly metadata: Json;
+  readonly callId?: string;
+  readonly sessionId?: string;
+}
+
+interface PendingPermission {
+  readonly sessionId: string;
+  readonly settled: () => void;
+}
+
+const ALWAYS_RESPONSE = "always";
+
 export type OpencodeStep =
   | {
       readonly type: "text";
@@ -79,14 +96,10 @@ export type OpencodeStep =
       readonly error?: string;
       readonly title?: string;
     }
+  | OpencodePermissionStep
   | {
-      readonly type: "permission";
-      readonly id: string;
-      readonly permission: string;
-      readonly patterns: readonly string[];
-      readonly metadata: Json;
-      readonly callId?: string;
-      readonly sessionId?: string;
+      readonly type: "permissions";
+      readonly requests: readonly OpencodePermissionStep[];
     }
   | { readonly type: "retry"; readonly next: number; readonly message: string }
   | {
@@ -142,6 +155,7 @@ type EventStep = Exclude<
   {
     type:
       | "permission"
+      | "permissions"
       | "wait_abort"
       | "hang"
       | "wait"
@@ -299,9 +313,10 @@ export class FakeOpencodeServer {
   assistantModel: AssistantModel | null = null;
   readonly requests: RecordedRequest[] = [];
   readonly replies: PermissionReply[] = [];
+  readonly staleReplies: PermissionReply[] = [];
   private readonly scripts: (readonly OpencodeStep[])[] = [];
   private readonly clients = new Set<ServerResponse>();
-  private readonly replyWaiters = new Map<string, () => void>();
+  private readonly pending = new Map<string, PendingPermission>();
   private readonly replyListeners: (() => void)[] = [];
   private readonly http: Server;
   private readonly password: string;
@@ -381,10 +396,14 @@ export class FakeOpencodeServer {
   emitPermissionAsked(
     step: Extract<OpencodeStep, { type: "permission" }>,
   ): void {
+    const sessionId = step.sessionId ?? OPENCODE_SESSION_ID;
+    if (!this.pending.has(step.id)) {
+      this.pending.set(step.id, { sessionId, settled: () => undefined });
+    }
     this.emit(
       envelope("permission.asked", {
         id: step.id,
-        sessionID: step.sessionId ?? OPENCODE_SESSION_ID,
+        sessionID: sessionId,
         permission: step.permission,
         patterns: step.patterns,
         metadata: step.metadata,
@@ -498,8 +517,11 @@ export class FakeOpencodeServer {
         sendJson(response, true);
         return;
       case "permission":
-        this.recordReply(route.match, body);
-        sendJson(response, true);
+        if (this.recordReply(route.match, body)) {
+          sendJson(response, true);
+        } else {
+          response.writeHead(404).end();
+        }
         return;
       case "unknown":
         response.writeHead(404).end();
@@ -521,14 +543,51 @@ export class FakeOpencodeServer {
     );
   }
 
-  private recordReply(route: RegExpExecArray, body: unknown): void {
+  private ask(step: OpencodePermissionStep): Promise<void> {
+    const answered = Promise.withResolvers<undefined>();
+    this.pending.set(step.id, {
+      sessionId: step.sessionId ?? OPENCODE_SESSION_ID,
+      settled: () => {
+        answered.resolve(undefined);
+      },
+    });
+    this.emitPermissionAsked(step);
+    return answered.promise.then(() => undefined);
+  }
+
+  private recordReply(route: RegExpExecArray, body: unknown): boolean {
     const [, sessionId = "", permissionId = ""] = route;
-    const response = z.looseObject({ response: z.unknown() }).parse(body);
-    this.replies.push({ sessionId, permissionId, response: response.response });
-    this.replyWaiters.get(permissionId)?.();
+    const { response } = z.looseObject({ response: z.string() }).parse(body);
+    const reply = { sessionId, permissionId, response };
+    if (!this.pending.has(permissionId)) {
+      this.staleReplies.push(reply);
+      return false;
+    }
+    this.replies.push(reply);
+    this.settle(sessionId, permissionId, response);
+    if (response === ALWAYS_RESPONSE) {
+      for (const [id, other] of [...this.pending]) {
+        if (other.sessionId === sessionId) {
+          this.settle(sessionId, id, ALWAYS_RESPONSE);
+        }
+      }
+    }
     for (const listener of this.replyListeners.splice(0)) {
       listener();
     }
+    return true;
+  }
+
+  private settle(sessionId: string, permissionId: string, reply: string): void {
+    this.pending.get(permissionId)?.settled();
+    this.pending.delete(permissionId);
+    this.emit(
+      envelope("permission.replied", {
+        sessionID: sessionId,
+        requestID: permissionId,
+        reply,
+      }),
+    );
   }
 
   private async runTurn(
@@ -575,15 +634,15 @@ export class FakeOpencodeServer {
 
   private async perform(step: OpencodeStep): Promise<void> {
     switch (step.type) {
-      case "permission": {
-        const replied = Promise.withResolvers<undefined>();
-        this.replyWaiters.set(step.id, () => {
-          replied.resolve(undefined);
-        });
-        this.emitPermissionAsked(step);
-        await Promise.race([replied.promise, this.aborted.promise]);
+      case "permission":
+        await Promise.race([this.ask(step), this.aborted.promise]);
         return;
-      }
+      case "permissions":
+        await Promise.race([
+          Promise.all(step.requests.map((request) => this.ask(request))),
+          this.aborted.promise,
+        ]);
+        return;
       case "reject_prompt":
       case "slow_user_message":
         return;

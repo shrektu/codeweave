@@ -160,6 +160,15 @@ const PermissionAskedSchema = z.looseObject({
   }),
 });
 
+const PermissionRepliedSchema = z.looseObject({
+  type: z.literal(OpencodeV2EventType.permissionReplied),
+  data: z.looseObject({
+    ...SESSION_SHAPE,
+    requestID: z.string(),
+    reply: z.string(),
+  }),
+});
+
 export const OpencodeV2EventSchema = z.discriminatedUnion("type", [
   ServerConnectedSchema,
   SessionCreatedSchema,
@@ -177,6 +186,7 @@ export const OpencodeV2EventSchema = z.discriminatedUnion("type", [
   ToolFailedSchema,
   RetryScheduledSchema,
   PermissionAskedSchema,
+  PermissionRepliedSchema,
 ]);
 export type OpencodeV2Event = z.infer<typeof OpencodeV2EventSchema>;
 

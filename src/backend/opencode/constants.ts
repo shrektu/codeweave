@@ -15,6 +15,7 @@ export const OpencodePath = {
 export const OpencodeEventType = {
   partUpdated: "message.part.updated",
   permissionAsked: "permission.asked",
+  permissionReplied: "permission.replied",
   sessionStatus: "session.status",
   sessionIdle: "session.idle",
   sessionError: "session.error",
