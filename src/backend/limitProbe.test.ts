@@ -117,6 +117,7 @@ function setup(accounts: Account[]): Rig {
     abortResult: { kind: "failed" },
   };
   const service = createLimitProbeService({
+    consoleProbe: () => Promise.resolve({ kind: "failed" }),
     readAccounts: () => Promise.resolve([...rig.accounts]),
     probe: async (target, signal) => {
       rig.probed.push(target.id);

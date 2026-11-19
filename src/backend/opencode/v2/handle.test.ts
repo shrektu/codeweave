@@ -74,6 +74,7 @@ function parsed(type: string, data: Record<string, unknown>): OpencodeV2Event {
 
 function createHandle(client: OpencodeV2Client): OpencodeV2Handle {
   return new OpencodeV2Handle({
+    consoleLogin: false,
     spec: {
       account: {
         id: "acc",

@@ -1,3 +1,4 @@
+import { ApiAuth } from "../domain/apiProviders";
 import { RATE_LIMIT_STATUS_REJECTED } from "../domain/constants";
 import type { AgentEvent } from "../domain/events";
 import {
@@ -25,9 +26,17 @@ export interface LimitProbeDeps {
     account: Account,
     signal: AbortSignal,
   ) => Promise<AgyProbeResult>;
+  readonly consoleProbe: (
+    account: Account,
+    signal: AbortSignal,
+  ) => Promise<ConsoleProbeResult>;
   readonly isInUse: (accountId: string) => boolean;
   readonly now: () => EpochMillis;
   readonly schedule: RotationPorts["schedule"];
+}
+
+export interface ConsoleProbeResult {
+  readonly kind: "needs_login" | "no_limits" | "failed";
 }
 
 export interface LimitProbeService {
@@ -74,6 +83,16 @@ type ProbeOutcome<Limits> =
   | {
       readonly kind: "needs_login" | "no_limits" | "failed" | "unstopped";
     };
+
+function isProbed(account: Account): boolean {
+  return account.provider === ProviderId.opencode
+    ? account.api?.auth === ApiAuth.consoleLogin
+    : PROBED_PROVIDERS.includes(account.provider);
+}
+
+function noRateLimitEvent(): null {
+  return null;
+}
 
 function byOrderThenId(left: Account, right: Account): number {
   return left.order - right.order || left.id.localeCompare(right.id);
@@ -232,7 +251,7 @@ class LimitProbeEngine implements LimitProbeService {
 
   private async pass(): Promise<void> {
     const accounts = (await this.deps.readAccounts())
-      .filter((account) => PROBED_PROVIDERS.includes(account.provider))
+      .filter(isProbed)
       .toSorted(byOrderThenId);
     let changed = this.dropRemoved(accounts);
     for (const account of accounts) {
@@ -267,17 +286,26 @@ class LimitProbeEngine implements LimitProbeService {
     signal: AbortSignal,
   ): Promise<ProbeEntry | null> {
     try {
-      return account.provider === ProviderId.gemini
-        ? this.entryOf(
+      switch (account.provider) {
+        case ProviderId.gemini:
+          return this.entryOf(
             account,
             await this.deps.agyProbe(account, signal),
             toAgyRateLimitEvent,
-          )
-        : this.entryOf(
+          );
+        case ProviderId.opencode:
+          return this.entryOf(
+            account,
+            await this.deps.consoleProbe(account, signal),
+            noRateLimitEvent,
+          );
+        default:
+          return this.entryOf(
             account,
             await this.deps.probe(account, signal),
             toRateLimitEvent,
           );
+      }
     } catch (error) {
       console.warn(`limit probe failed: ${account.id}`, error);
       return null;

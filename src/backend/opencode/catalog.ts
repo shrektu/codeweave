@@ -286,6 +286,7 @@ async function probeModels(
     configDir: files.configDir,
     configFile: files.configFile,
     password,
+    consoleLogin: false,
     port: await deps.freePort(),
     env,
     platform: deps.platform,

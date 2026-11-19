@@ -14,6 +14,7 @@ import {
   PROBE_RUN_ID_PREFIX,
 } from "../../src/backend/constants";
 import type { LockKeyResolver } from "../../src/backend/locks";
+import { createConsoleLoginProbe } from "../../src/backend/opencode/consoleLogin";
 import { OpencodeGeneration } from "../../src/backend/opencode/constants";
 import { createJsonStore, type JsonStore } from "../../src/backend/storage";
 import type {
@@ -56,8 +57,12 @@ import {
   ScriptedOpencodeContainer,
   type FakeOpencodeConfig,
 } from "./fakeOpencodeServer";
-import { ScriptedOpencodeV2Container } from "./fakeOpencodeV2Server";
+import {
+  ScriptedOpencodeV2Container,
+  type FakeOpencodeV2Config,
+} from "./fakeOpencodeV2Server";
 import { unsupportedLaunch } from "./fakeContainer";
+import { createFakeAuthCli, type FakeAuthCli } from "./fakeOpencodeAuth";
 import { createFakeVault, type FakeVault } from "./fakeVault";
 import { resolvePathLockKey } from "./rigProcesses";
 import type { ScheduledTask } from "./rotationHarness";
@@ -130,12 +135,15 @@ export interface BackendRigOptions {
   readonly now?: () => number;
   readonly parentEnv?: NodeJS.ProcessEnv;
   readonly opencodeConfig?: FakeOpencodeConfig;
+  readonly opencodeV2Config?: FakeOpencodeV2Config;
   readonly opencodeV2?: boolean;
   readonly catalogProbeTimeoutMs?: number;
   readonly resolveLockKey?: LockKeyResolver;
   readonly backendLockKeys?: true;
   readonly opencodeGeneration?: BackendDeps["opencodeGeneration"];
   readonly vault?: FakeVault;
+  readonly authCli?: FakeAuthCli;
+  readonly consoleLoginTimeoutMs?: number;
   readonly postUpdaterConfig?: BackendDeps["postUpdaterConfig"];
   readonly probeStopResults?: ConstructorParameters<
     typeof ScriptedCodexContainer
@@ -165,6 +173,7 @@ export interface BackendRig {
   readonly probeStats: ProbeStats;
   readonly store: JsonStore;
   readonly vault: FakeVault;
+  readonly authCli: FakeAuthCli;
   readonly userData: string;
   readonly cwd: string;
   readonly order: string[];
@@ -336,6 +345,7 @@ interface AgentContainers {
 
 function rigDeps(
   options: BackendRigOptions,
+  authCli: FakeAuthCli,
   userData: string,
   vault: FakeVault,
   containers: AgentContainers,
@@ -368,6 +378,13 @@ function rigDeps(
     homeDir: "/home/jane",
     platform: options.platform ?? "linux",
     now: options.now ?? (() => RIG_NOW_MS),
+    opencodeConsoleLogin: createConsoleLoginProbe({
+      exec: authCli.exec,
+      platform: options.platform ?? "linux",
+      ...(options.consoleLoginTimeoutMs === undefined
+        ? {}
+        : { timeoutMs: options.consoleLoginTimeoutMs }),
+    }),
     opencodeGeneration:
       options.opencodeGeneration ??
       (() =>
@@ -423,6 +440,7 @@ export async function createBackendRig(
   const opencodeContainer = new ScriptedOpencodeContainer([]);
   Object.assign(opencodeContainer.config, options.opencodeConfig);
   const opencodeV2Container = new ScriptedOpencodeV2Container([]);
+  Object.assign(opencodeV2Container.config, options.opencodeV2Config);
   const agyContainer = new ScriptedAgyContainer();
   for (const script of options.agyUsage ?? []) {
     agyContainer.scriptUsage(script);
@@ -455,9 +473,11 @@ export async function createBackendRig(
     contained: [] as Contained[],
   };
   const vault = options.vault ?? createFakeVault();
+  const authCli = options.authCli ?? createFakeAuthCli();
   const backend = await startBackend(
     rigDeps(
       options,
+      authCli,
       userData,
       vault,
       {
@@ -494,6 +514,7 @@ export async function createBackendRig(
     probeTasks,
     store,
     vault,
+    authCli,
     userData,
     cwd,
     ...parts,

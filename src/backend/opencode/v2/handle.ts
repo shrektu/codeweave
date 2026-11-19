@@ -48,6 +48,7 @@ interface ActiveTurn extends BaseTurn {
 export interface OpencodeV2HandleInit extends HandleBaseInit {
   readonly client: OpencodeV2Client;
   readonly readyTimeoutMs: number;
+  readonly consoleLogin: boolean;
   readonly defaultModel: V2ModelRef;
 }
 
@@ -293,7 +294,7 @@ export class OpencodeV2Handle extends OpencodeHandleBase<
     this.conclude(
       turn,
       this.errorEvents(
-        classifyExecutionError(error, now),
+        classifyExecutionError(error, now, this.ctx.consoleLogin),
         Math.ceil(at / MS_PER_SECOND),
       ),
     );
@@ -324,6 +325,7 @@ export class OpencodeV2Handle extends OpencodeHandleBase<
         const classified = classifyExecutionError(
           event.data.error,
           this.ctx.now(),
+          this.ctx.consoleLogin,
         );
         return classified.aborted && (turn.cancelled || this.stopping)
           ? [turnEnd(true)]

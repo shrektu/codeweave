@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import { join } from "node:path";
 
-import { API_PROVIDERS } from "../domain/apiProviders";
+import { API_PROVIDERS, ApiAuth } from "../domain/apiProviders";
 import type { RotationPorts } from "../domain/rotation";
 import {
   PermissionProfile,
@@ -49,7 +49,11 @@ import { createFlowRunService } from "./flowRuns";
 import { createHandlers } from "./handlers";
 import { recordInstance } from "./instance";
 import type { IpcHandlers } from "./ipcServer";
-import { createLimitProbeService, type LimitProbeService } from "./limitProbe";
+import {
+  createLimitProbeService,
+  type ConsoleProbeResult,
+  type LimitProbeService,
+} from "./limitProbe";
 import { resolveLockKey, WorktreeLocks, type LockKeyResolver } from "./locks";
 import { createOpencodeAdapter } from "./opencode/adapter";
 import {
@@ -62,6 +66,11 @@ import {
   defaultRuntimeRoot,
   type OpencodeCredentials,
 } from "./opencode/config";
+import {
+  ConsoleLoginState,
+  type ConsoleLoginProbe,
+} from "./opencode/consoleLogin";
+import { OpencodeGeneration } from "./opencode/constants";
 import { findFreePort } from "./opencode/port";
 import type { GenerationProbe } from "./opencode/version";
 import {
@@ -108,6 +117,7 @@ export interface BackendDeps {
   ) => string;
   readonly inspectWorktree: (cwd: string) => Promise<WorktreeState>;
   readonly opencodeGeneration: GenerationProbe;
+  readonly opencodeConsoleLogin: ConsoleLoginProbe;
   readonly catalogProbeTimeoutMs?: number;
   readonly ptyLauncher?: PtyLauncherFactory;
   readonly resolveLockKey?: LockKeyResolver;
@@ -165,6 +175,14 @@ const SERVER_PASSWORD_BYTES = 32;
 const UNAVAILABLE_CATALOG: ModelCatalogService = {
   load: () =>
     Promise.resolve({ models: [], error: CONTAINER_UNAVAILABLE_MESSAGE }),
+};
+
+const CONSOLE_PROBE_KINDS: Readonly<
+  Record<ConsoleLoginState, ConsoleProbeResult["kind"]>
+> = {
+  [ConsoleLoginState.loggedIn]: "no_limits",
+  [ConsoleLoginState.needsLogin]: "needs_login",
+  [ConsoleLoginState.failed]: "failed",
 };
 
 function newServerPassword(): string {
@@ -231,6 +249,40 @@ function createAgyLimitProbe(
   };
 }
 
+function createConsoleLimitProbe(
+  deps: BackendDeps,
+  store: JsonStore,
+): (account: Account, signal: AbortSignal) => Promise<ConsoleProbeResult> {
+  const envFor = createEnvFor(deps);
+  return async (account, signal) => {
+    const executable = deps.resolveExecutable(
+      ProviderId.opencode,
+      (await store.readSettings()).opencodeExecutable,
+    );
+    const env = envFor({
+      account,
+      cwd: account.configDir,
+      profile: PermissionProfile.plan,
+      runId: `${PROBE_RUN_ID_PREFIX}${randomUUID()}`,
+      executable,
+    });
+    const generation = await deps.opencodeGeneration(executable, {
+      env,
+      cwd: account.configDir,
+    });
+    if (generation === OpencodeGeneration.v1) {
+      return { kind: "needs_login" };
+    }
+    const state = await deps.opencodeConsoleLogin({
+      executable,
+      configDir: account.configDir,
+      env,
+      signal,
+    });
+    return { kind: CONSOLE_PROBE_KINDS[state] };
+  };
+}
+
 function createProbes(
   deps: BackendDeps,
   container: ProcessContainer | null,
@@ -257,6 +309,7 @@ function createProbes(
       newRunId: () => `${PROBE_RUN_ID_PREFIX}${randomUUID()}`,
     }),
     agyProbe: createAgyLimitProbe(deps, container, store),
+    consoleProbe: createConsoleLimitProbe(deps, store),
     isInUse,
     now: deps.now,
     schedule: deps.schedule,
@@ -293,6 +346,14 @@ export function createCredentialsFor(
     if (api === undefined) {
       return null;
     }
+    if (api.auth === ApiAuth.consoleLogin) {
+      return {
+        auth: ApiAuth.consoleLogin,
+        providerId: API_PROVIDERS[api.provider].opencodeId,
+        model: api.model,
+        baseUrl: null,
+      };
+    }
     let apiKey: string | null;
     try {
       apiKey = await keyStore.get(account.id);
@@ -303,6 +364,7 @@ export function createCredentialsFor(
     return apiKey === null
       ? null
       : {
+          auth: ApiAuth.apiKey,
           providerId: API_PROVIDERS[api.provider].opencodeId,
           model: api.model,
           baseUrl: api.baseUrl,
@@ -355,6 +417,7 @@ function createAdapter(
       executableFor: (spec) => spec.executable,
       credentialsFor: createCredentialsFor(keyStore),
       generationFor: deps.opencodeGeneration,
+      consoleLoginFor: deps.opencodeConsoleLogin,
       runtimeRoot: defaultRuntimeRoot(deps.parentEnv),
       platform: deps.platform,
       ...comSpecOf(deps),

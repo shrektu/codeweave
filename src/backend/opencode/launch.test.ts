@@ -7,6 +7,7 @@ import {
   accountDirs,
   buildOpencodeCommand,
   buildOpencodeLaunch,
+  consoleLoginDbPath,
 } from "./launch";
 import { OpencodeGeneration } from "./constants";
 
@@ -17,6 +18,7 @@ const BASE = {
   configDir: "/home/jane/.oc-main",
   configFile: "/run/user/1000/codeweave-opencode-x/opencode.json",
   password: SERVER_SECRET,
+  consoleLogin: false,
   port: 4567,
   env: { PATH: "/usr/bin", HOME: "/home/jane", XDG_DATA_HOME: "/stale" },
 };
@@ -106,6 +108,33 @@ describe("buildOpencodeLaunch", () => {
     });
 
     expect(launch.command).toBe("cmd.exe");
+  });
+});
+
+describe("buildOpencodeLaunch console login", () => {
+  it("console_login_launch_points_opencode_db_into_the_account_data_dir", () => {
+    const { env } = buildOpencodeLaunch({
+      ...BASE,
+      consoleLogin: true,
+      executable: "/usr/local/bin/opencode",
+      platform: "linux",
+    });
+
+    expect(env.OPENCODE_DB).toBe(
+      join(BASE.configDir, "data", "opencode", "opencode.db"),
+    );
+    expect(env.OPENCODE_DB).toBe(consoleLoginDbPath(BASE.configDir));
+    expect(env.XDG_DATA_HOME).toBe(join(BASE.configDir, "data"));
+  });
+
+  it("key_account_launch_has_no_opencode_db", () => {
+    const { env } = buildOpencodeLaunch({
+      ...BASE,
+      executable: "/usr/local/bin/opencode",
+      platform: "linux",
+    });
+
+    expect(Object.keys(env)).not.toContain("OPENCODE_DB");
   });
 });
 

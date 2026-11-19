@@ -1,8 +1,10 @@
 import { readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 import { PROCESS_EXITED_MESSAGE } from "../../src/backend/constants";
+import { ConsoleLoginState } from "../../src/backend/opencode/consoleLogin";
+import type { OpencodeCredentials } from "../../src/backend/opencode/config";
 import type { AgentEvent } from "../../src/domain/events";
 import type { SpawnSpec } from "../../src/backend/process/container";
 import { PermissionProfile } from "../../src/domain/types";
@@ -592,6 +594,42 @@ it("busy_session_is_interrupted_before_the_prompt", async () => {
     paths.indexOf(`POST ${PROMPT_PATH}`),
   );
   expect(events).toEqual([{ type: "turn_end", stopReason: "end_turn" }]);
+});
+
+const CONSOLE_CREDENTIALS: OpencodeCredentials = {
+  auth: "console_login",
+  providerId: "opencode-go",
+  model: OTHER_MODEL,
+  baseUrl: null,
+};
+
+it("console_login_logged_out_start_is_refused_with_needs_login_and_no_process", async () => {
+  const rig = await createOpencodeV2Rig({
+    credentials: CONSOLE_CREDENTIALS,
+    consoleLoginFor: () => Promise.resolve(ConsoleLoginState.needsLogin),
+  });
+
+  const result = await rig.start();
+
+  expect(result).toEqual({
+    ok: false,
+    reason: "needs_login",
+    message: "OpenCode Console login required",
+  });
+  expect(rig.container.specs).toEqual([]);
+});
+
+it("console_login_probe_failure_still_starts_the_run", async () => {
+  vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const rig = await createOpencodeV2Rig({
+    credentials: CONSOLE_CREDENTIALS,
+    consoleLoginFor: () => Promise.resolve(ConsoleLoginState.failed),
+  });
+
+  const result = await rig.start();
+
+  expect(result.ok).toBe(true);
+  expect(rig.container.specs).toHaveLength(1);
 });
 
 it("session_that_stays_busy_fails_the_turn", async () => {

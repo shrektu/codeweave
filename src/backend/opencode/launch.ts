@@ -2,6 +2,11 @@ import { join } from "node:path";
 
 import { FLAG_ENABLED } from "../constants";
 import {
+  OPENCODE_ACCOUNT_DATA_DIR,
+  OPENCODE_DATA_SUBDIR,
+  OPENCODE_DB_FILE_NAME,
+} from "../../shared/constants";
+import {
   WINDOWS_CMD_ARGS,
   WINDOWS_CMD_FALLBACK,
   WINDOWS_PLATFORM,
@@ -30,6 +35,7 @@ export interface OpencodeLaunchInput {
   readonly configDir: string;
   readonly configFile: string;
   readonly password: string;
+  readonly consoleLogin: boolean;
   readonly port: number;
   readonly env: Readonly<Record<string, string>>;
   readonly platform: NodeJS.Platform;
@@ -51,6 +57,15 @@ export function accountDirs(configDir: string): Record<string, string> {
     [OpencodeEnv.cacheHome]: join(configDir, ACCOUNT_CACHE_DIR),
     [OpencodeEnv.stateHome]: join(configDir, ACCOUNT_STATE_DIR),
   };
+}
+
+export function consoleLoginDbPath(configDir: string): string {
+  return join(
+    configDir,
+    OPENCODE_ACCOUNT_DATA_DIR,
+    OPENCODE_DATA_SUBDIR,
+    OPENCODE_DB_FILE_NAME,
+  );
 }
 
 function quoted(value: string): string {
@@ -76,15 +91,22 @@ function launchArgs(input: OpencodeLaunchInput): string[] {
     : [...args, PURE_ARG];
 }
 
+export function isolationEnv(): Record<string, string> {
+  return Object.fromEntries(
+    OPENCODE_ISOLATION_FLAGS.map((flag) => [flag, FLAG_ENABLED]),
+  );
+}
+
 function launchEnv(input: OpencodeLaunchInput): Record<string, string> {
   return {
     ...input.env,
     ...accountDirs(input.configDir),
+    ...(input.consoleLogin
+      ? { [OpencodeEnv.db]: consoleLoginDbPath(input.configDir) }
+      : {}),
     [OpencodeEnv.config]: input.configFile,
     [passwordVariable(input.generation)]: input.password,
-    ...Object.fromEntries(
-      OPENCODE_ISOLATION_FLAGS.map((flag) => [flag, FLAG_ENABLED]),
-    ),
+    ...isolationEnv(),
   };
 }
 

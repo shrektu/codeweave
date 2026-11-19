@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expect } from "vitest";
@@ -12,6 +12,10 @@ import type {
 } from "../../src/backend/agentAdapter";
 import { createOpencodeAdapter } from "../../src/backend/opencode/adapter";
 import type { OpencodeCredentials } from "../../src/backend/opencode/config";
+import {
+  ConsoleLoginState,
+  type ConsoleLoginProbe,
+} from "../../src/backend/opencode/consoleLogin";
 import { OpencodeGeneration } from "../../src/backend/opencode/constants";
 import { findFreePort } from "../../src/backend/opencode/port";
 import type { GenerationProbe } from "../../src/backend/opencode/version";
@@ -45,6 +49,7 @@ export const OPENCODE_RIG_READY_TIMEOUT_MS = 400;
 export const OPENCODE_RIG_REQUEST_TIMEOUT_MS = 150;
 export const OPENCODE_RIG_WARM_UP_TIMEOUT_MS = 500;
 export const OPENCODE_RIG_CREDENTIALS: OpencodeCredentials = {
+  auth: "api_key",
   providerId: "groq",
   model: "llama-3.3-70b",
   baseUrl: null,
@@ -92,9 +97,10 @@ export function keyPathOf(apiKeyReference: string): string {
 export interface OpencodeStartup {
   readonly configPath: string;
   readonly config: unknown;
-  readonly keyFileContent: string;
-  readonly keyFileMode: number;
+  readonly keyFileContent: string | null;
+  readonly keyFileMode: number | null;
   readonly runDirMode: number;
+  readonly runDirEntries: readonly string[];
 }
 
 export async function readRunStartup(
@@ -103,12 +109,15 @@ export async function readRunStartup(
 ): Promise<OpencodeStartup> {
   const config = JSON.parse(await readFile(configPath, "utf8")) as unknown;
   const keyPath = keyPathOf(apiKeyReferenceOf(config));
+  const runDir = dirname(configPath);
+  const keyed = keyPath !== "";
   return {
     configPath,
     config,
-    keyFileContent: await readFile(keyPath, "utf8"),
-    keyFileMode: (await stat(keyPath)).mode & PERMISSION_MASK,
-    runDirMode: (await stat(dirname(keyPath))).mode & PERMISSION_MASK,
+    keyFileContent: keyed ? await readFile(keyPath, "utf8") : null,
+    keyFileMode: keyed ? (await stat(keyPath)).mode & PERMISSION_MASK : null,
+    runDirMode: (await stat(runDir)).mode & PERMISSION_MASK,
+    runDirEntries: await readdir(runDir),
   };
 }
 
@@ -207,6 +216,7 @@ export abstract class ScriptedContainerBase<
 
 export interface OpencodeRigOptions {
   readonly credentials?: OpencodeCredentials | null;
+  readonly consoleLoginFor?: ConsoleLoginProbe;
   readonly stopResults?: readonly StopResult[];
   readonly readyTimeoutMs?: number;
   readonly requestTimeoutMs?: number;
@@ -280,6 +290,9 @@ export async function createRigOn<Container extends RigContainer>(
     envFor: () => ({ PATH: "/usr/bin" }),
     executableFor: () => OPENCODE_RIG_EXECUTABLE,
     credentialsFor: () => Promise.resolve(credentials),
+    consoleLoginFor:
+      options.consoleLoginFor ??
+      (() => Promise.resolve(ConsoleLoginState.loggedIn)),
     generationFor:
       options.generationFor ?? (() => Promise.resolve(defaultGeneration)),
     runtimeRoot,

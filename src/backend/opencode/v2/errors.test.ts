@@ -105,6 +105,44 @@ describe("classifyExecutionError kinds", () => {
   });
 });
 
+describe("classifyExecutionError console login hint", () => {
+  const NO_ROUTE = failure({
+    type: "provider.no-route",
+    message: "No model is available for session ses_1",
+  });
+  const HINT =
+    " — the OpenCode Console login may be missing or expired, or the workspace offers no model for this provider.";
+
+  it("no-route on a console account carries the login hint, on a key account it does not", () => {
+    const withLogin = classifyExecutionError(NO_ROUTE, NOW_MS, true);
+    const withKey = classifyExecutionError(NO_ROUTE, NOW_MS, false);
+
+    expect(withLogin.message).toBe(
+      `No model is available for session ses_1${HINT}`,
+    );
+    expect(withKey.message).toBe("No model is available for session ses_1");
+    expect(withLogin.errorKind).toBeNull();
+    expect(withLogin.aborted).toBe(false);
+  });
+
+  it("other errors on a console account keep their message", () => {
+    expect(
+      classifyExecutionError(failure({ type: "tool.execution" }), NOW_MS, true)
+        .message,
+    ).toBe("boom");
+  });
+
+  it("a no-route error without a message falls back to the generic message", () => {
+    expect(
+      classifyExecutionError(
+        failure({ type: "provider.no-route", message: "" }),
+        NOW_MS,
+        true,
+      ).message,
+    ).toBe("Turn failed");
+  });
+});
+
 describe("classifyExecutionError plain errors", () => {
   it("aborted_is_flagged", () => {
     expect(

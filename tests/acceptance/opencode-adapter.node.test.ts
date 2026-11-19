@@ -127,6 +127,29 @@ describe("opencode adapter: launch and secrets", () => {
   });
 });
 
+describe("opencode adapter: console login on 1.x", () => {
+  it("v1 console refusal is a needs-login failure", async () => {
+    const rig = await createOpencodeRig({
+      credentials: {
+        auth: "console_login",
+        providerId: "opencode-go",
+        model: "kimi-k2.7-code",
+        baseUrl: null,
+      },
+    });
+
+    const result = await rig.start();
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "needs_login",
+      message:
+        "OpenCode Console login needs opencode 2.2.5 or newer. Update opencode or use an API key.",
+    });
+    expect(rig.container.specs).toEqual([]);
+  });
+});
+
 describe("opencode adapter: run files", () => {
   it("config_and_key_file_lifecycle", async () => {
     const rig = await createOpencodeRig();

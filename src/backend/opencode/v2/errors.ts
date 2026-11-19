@@ -12,7 +12,11 @@ import {
 } from "../constants";
 import type { SessionErrorClass, SessionErrorKind } from "../errors";
 
-import { OpencodeV2ErrorType, RATE_LIMIT_ERROR_TYPES } from "./constants";
+import {
+  NO_ROUTE_CONSOLE_LOGIN_HINT,
+  OpencodeV2ErrorType,
+  RATE_LIMIT_ERROR_TYPES,
+} from "./constants";
 import type { ExecutionError } from "./protocol";
 
 function kindOf(error: ExecutionError | undefined): SessionErrorKind | null {
@@ -45,18 +49,28 @@ function resetsAtOf(
     : null;
 }
 
+function messageOf(
+  error: ExecutionError | undefined,
+  consoleLogin: boolean,
+): string {
+  if (error === undefined || error.message === "") {
+    return TURN_FAILED_MESSAGE;
+  }
+  return consoleLogin && error.type === OpencodeV2ErrorType.noRoute
+    ? `${error.message}${NO_ROUTE_CONSOLE_LOGIN_HINT}`
+    : error.message;
+}
+
 export function classifyExecutionError(
   error: ExecutionError | undefined,
   nowMs: EpochMillis,
+  consoleLogin = false,
 ): SessionErrorClass {
   const errorKind = kindOf(error);
   return {
     errorKind,
     aborted: error?.type === OpencodeV2ErrorType.aborted,
-    message:
-      error === undefined || error.message === ""
-        ? TURN_FAILED_MESSAGE
-        : error.message,
+    message: messageOf(error, consoleLogin),
     resetsAt:
       errorKind === ERROR_KIND_RATE_LIMIT ? resetsAtOf(error, nowMs) : null,
   };

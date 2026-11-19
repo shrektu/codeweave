@@ -12,6 +12,7 @@ import type {
   SpawnSpec,
 } from "../../src/backend/process/container";
 import { execText } from "../../src/backend/exec";
+import { createConsoleLoginProbe } from "../../src/backend/opencode/consoleLogin";
 import { createVersionProbe } from "../../src/backend/opencode/version";
 import { createProcessContainer } from "../../src/backend/process/select";
 import {
@@ -148,6 +149,10 @@ async function openRig(
     },
     newRunId: () => randomUUID(),
     resolveExecutable: createExecutableResolver(process.env, process.platform),
+    opencodeConsoleLogin: createConsoleLoginProbe({
+      exec: execText,
+      platform: process.platform,
+    }),
     opencodeGeneration: createVersionProbe({
       exec: execText,
       platform: process.platform,
