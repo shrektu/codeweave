@@ -17,6 +17,8 @@ export const ERROR_KIND_RATE_LIMIT = "rate_limit";
 export const ERROR_KIND_AUTH_REQUIRED = "auth_required";
 export const RPC_CODE_AUTH_REJECTED = -32000;
 export const RATE_LIMIT_STATUS_REJECTED = "rejected";
+export const RATE_LIMIT_TYPE_FIVE_HOUR = "five_hour";
+export const RATE_LIMIT_TYPE_SEVEN_DAY = "seven_day";
 
 export const SIDE_EFFECT_PATTERNS: readonly RegExp[] = [
   /\bgit\s+push\b/,

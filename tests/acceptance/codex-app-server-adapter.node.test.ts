@@ -45,6 +45,34 @@ const INITIAL_RATE_LIMIT = {
   resetsAt: null,
   rateLimitType: "five_hour",
   utilization: 0.1,
+  windows: [
+    {
+      id: "five_hour",
+      scope: null,
+      period: "five_hour",
+      utilization: 0.1,
+      resetsAt: null,
+      exhausted: false,
+    },
+  ],
+};
+
+const REJECTED_AT_RESET = {
+  type: "rate_limit",
+  status: "rejected",
+  resetsAt: RESET_AT,
+  rateLimitType: "five_hour",
+  utilization: 1,
+  windows: [
+    {
+      id: "five_hour",
+      scope: null,
+      period: "five_hour",
+      utilization: 1,
+      resetsAt: RESET_AT,
+      exhausted: true,
+    },
+  ],
 };
 
 const EXHAUSTED_READ: RateLimitRead = {
@@ -242,13 +270,7 @@ describe("codex app-server adapter: limits", () => {
         toolCallId: "c3",
         status: "completed",
       }),
-      {
-        type: "rate_limit",
-        status: "rejected",
-        resetsAt: RESET_AT,
-        rateLimitType: "five_hour",
-        utilization: 1,
-      },
+      REJECTED_AT_RESET,
       {
         type: "turn_error",
         errorKind: "rate_limit",
@@ -686,15 +708,7 @@ describe("codex app-server adapter: round two regressions", () => {
     pushRateLimitUpdate(rig, rateSnapshot(null, null, "rate_limit_reached"));
 
     await vi.waitFor(() => {
-      expect(events).toEqual([
-        {
-          type: "rate_limit",
-          status: "rejected",
-          resetsAt: null,
-          rateLimitType: "five_hour",
-          utilization: 0.1,
-        },
-      ]);
+      expect(events).toEqual([{ ...INITIAL_RATE_LIMIT, status: "rejected" }]);
     });
   });
 
@@ -711,13 +725,7 @@ describe("codex app-server adapter: round two regressions", () => {
     ];
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { events } = await startCodexHandle(rig);
-    const rejected = {
-      type: "rate_limit",
-      status: "rejected",
-      resetsAt: RESET_AT,
-      rateLimitType: "five_hour",
-      utilization: 1,
-    };
+    const rejected = REJECTED_AT_RESET;
 
     pushRateLimitUpdate(
       rig,
@@ -768,13 +776,7 @@ describe("codex app-server adapter: round two regressions", () => {
     await Promise.all(serverOf(rig).delayedReplies);
 
     expect(events.filter((event) => event.type === "rate_limit")).toEqual([
-      {
-        type: "rate_limit",
-        status: "rejected",
-        resetsAt: RESET_AT,
-        rateLimitType: "five_hour",
-        utilization: 1,
-      },
+      REJECTED_AT_RESET,
     ]);
   });
 });

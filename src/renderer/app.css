@@ -1029,6 +1029,14 @@ html[data-fx="low"] .flow-graph .react-flow__edge.animated path {
   justify-content: space-between;
 }
 
+.limit-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font: 12px var(--mono);
+  color: var(--muted);
+}
+
 .bar {
   height: 5px;
   border-radius: 3px;

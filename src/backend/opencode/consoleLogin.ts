@@ -32,8 +32,6 @@ const AUTH_LIST_ARGS: readonly string[] = [
 const CONSOLE_PROVIDER_ID = "opencode";
 const CREDENTIAL_CONNECTION = "credential";
 const NEEDS_AUTH_STATUS = "needs_auth";
-const JSON_LIST_OPEN = "[";
-const JSON_LIST_CLOSE = "]";
 const LINE_BREAK = "\n";
 const ABORTED_MESSAGE = "console login probe aborted";
 const REASON_TIMEOUT = "timeout";
@@ -70,36 +68,57 @@ export type ConsoleLoginProbe = (
   input: ConsoleLoginInput,
 ) => Promise<ConsoleLoginState>;
 
-function listFrom(candidate: string): AuthList | null {
-  const end = candidate.lastIndexOf(JSON_LIST_CLOSE);
+export interface JsonBounds {
+  readonly open: string;
+  readonly close: string;
+}
+
+const LIST_BOUNDS: JsonBounds = { open: "[", close: "]" };
+
+function valueFrom<Schema extends z.ZodType>(
+  candidate: string,
+  schema: Schema,
+  close: string,
+): z.infer<Schema> | null {
+  const end = candidate.lastIndexOf(close);
   if (end < 0) {
     return null;
   }
   try {
-    const parsed = AuthListSchema.safeParse(
-      JSON.parse(candidate.slice(0, end + 1)),
-    );
+    const parsed = schema.safeParse(JSON.parse(candidate.slice(0, end + 1)));
     return parsed.success ? parsed.data : null;
   } catch (error) {
     console.warn(
-      "an opencode console login output candidate is not JSON",
+      "an opencode output candidate is not JSON",
       error instanceof Error ? error.name : REASON_ERROR,
     );
     return null;
   }
 }
 
-function parseAuthList(stdout: string): AuthList | null {
+export function parseJsonOutput<Schema extends z.ZodType>(
+  stdout: string,
+  schema: Schema,
+  bounds: JsonBounds,
+): z.infer<Schema> | null {
   const lines = stripVTControlCharacters(stdout).split(LINE_BREAK);
   for (const [index, line] of lines.entries()) {
-    if (line.trimStart().startsWith(JSON_LIST_OPEN)) {
-      const list = listFrom(lines.slice(index).join(LINE_BREAK).trimStart());
-      if (list !== null) {
-        return list;
+    if (line.trimStart().startsWith(bounds.open)) {
+      const value = valueFrom(
+        lines.slice(index).join(LINE_BREAK).trimStart(),
+        schema,
+        bounds.close,
+      );
+      if (value !== null) {
+        return value;
       }
     }
   }
   return null;
+}
+
+function parseAuthList(stdout: string): AuthList | null {
+  return parseJsonOutput(stdout, AuthListSchema, LIST_BOUNDS);
 }
 
 function hasLiveCredential(list: AuthList): boolean {
@@ -155,19 +174,20 @@ function probeEnv(input: ConsoleLoginInput): Record<string, string> {
   };
 }
 
-export async function probeConsoleLogin(
+export async function runOpencodeProbe(
   deps: ConsoleLoginDeps,
   input: ConsoleLoginInput,
-): Promise<ConsoleLoginState> {
+  args: readonly string[],
+  label: string,
+): Promise<string | null> {
   const command = buildOpencodeCommand({
     executable: input.executable,
-    args: AUTH_LIST_ARGS,
+    args,
     platform: deps.platform,
     comSpec: deps.comSpec,
   });
-  let stdout: string;
   try {
-    stdout = await untilAborted(
+    return await untilAborted(
       deps.exec(command.command, command.args, {
         timeoutMs: deps.timeoutMs ?? CONSOLE_LOGIN_PROBE_TIMEOUT_MS,
         env: probeEnv(input),
@@ -179,9 +199,22 @@ export async function probeConsoleLogin(
       input.signal,
     );
   } catch (error) {
-    console.warn(
-      `the opencode console login probe failed: ${failureReason(error)}`,
-    );
+    console.warn(`the opencode ${label} probe failed: ${failureReason(error)}`);
+    return null;
+  }
+}
+
+export async function probeConsoleLogin(
+  deps: ConsoleLoginDeps,
+  input: ConsoleLoginInput,
+): Promise<ConsoleLoginState> {
+  const stdout = await runOpencodeProbe(
+    deps,
+    input,
+    AUTH_LIST_ARGS,
+    "console login",
+  );
+  if (stdout === null) {
     return ConsoleLoginState.failed;
   }
   const list = parseAuthList(stdout);

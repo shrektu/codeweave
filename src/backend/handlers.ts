@@ -63,6 +63,7 @@ export function createHandlers({
     broadcast,
     runtimeOf: (id) => sessions.runtimeOf(id),
     limitOf: (id) => probes.limitOf(id),
+    availabilityOf: (account) => probes.availabilityOf(account),
     isInUse: (id) => sessions.isInUse(id),
   });
   sessions.onRuntimeChanged(() => {

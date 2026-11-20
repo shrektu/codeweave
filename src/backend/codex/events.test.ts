@@ -211,6 +211,7 @@ describe("codex rate limit merging", () => {
       secondary: null,
       rateLimitReachedType: null,
       ordinaryUsageAllowed: true,
+      extra: [],
     });
     expect(toRateLimitEvent(replaced)?.status).toBe("allowed");
   });
@@ -271,7 +272,134 @@ describe("codex rate limit merging", () => {
       resetsAt: RESET_LATE,
       rateLimitType: "seven_day",
       utilization: 0.7,
+      windows: [
+        {
+          id: "five_hour",
+          scope: null,
+          period: "five_hour",
+          utilization: 0.4,
+          resetsAt: RESET_EARLY,
+          exhausted: false,
+        },
+        {
+          id: "seven_day",
+          scope: null,
+          period: "seven_day",
+          utilization: 0.7,
+          resetsAt: RESET_LATE,
+          exhausted: false,
+        },
+      ],
     });
+  });
+});
+
+const SPARK = snapshot({
+  limitId: "spark",
+  limitName: "Spark",
+  primary: rateWindow(100, 300, RESET_EARLY),
+  secondary: null,
+});
+
+function bindingOf(
+  state: ReturnType<typeof replaceRateLimits>,
+): Record<string, unknown> {
+  const event = toRateLimitEvent(state);
+  return {
+    status: event?.status,
+    resetsAt: event?.resetsAt,
+    rateLimitType: event?.rateLimitType,
+    utilization: event?.utilization,
+  };
+}
+
+describe("codex extra rate limits", () => {
+  it("extra_limits_become_scoped_windows", () => {
+    const state = replaceRateLimits(FULL, true, { spark: SPARK });
+
+    expect(toRateLimitEvent(state)?.windows).toEqual([
+      expect.objectContaining({ id: "five_hour", scope: null }),
+      expect.objectContaining({ id: "seven_day", scope: null }),
+      {
+        id: "spark:five_hour",
+        scope: "Spark",
+        period: "five_hour",
+        utilization: 1,
+        resetsAt: RESET_EARLY,
+        exhausted: true,
+      },
+    ]);
+  });
+
+  it("main_limit_is_not_duplicated_from_by_limit_id", () => {
+    const main = snapshot({ ...FULL, limitId: "codex" });
+
+    const state = replaceRateLimits(main, true, { codex: main });
+
+    expect(state.extra).toEqual([]);
+    expect(toRateLimitEvent(state)?.windows).toHaveLength(2);
+  });
+
+  it("entries_without_windows_are_skipped", () => {
+    const empty = snapshot({ limitId: "none", primary: null });
+
+    expect(replaceRateLimits(FULL, true, { none: empty }).extra).toEqual([]);
+  });
+
+  it("null_by_limit_id_yields_main_windows_only", () => {
+    expect(replaceRateLimits(FULL, true, null).extra).toEqual([]);
+    expect(replaceRateLimits(FULL, true).extra).toEqual([]);
+  });
+});
+
+describe("codex extra rate limits merging", () => {
+  it("sparse_update_keeps_extra_limits", () => {
+    const first = replaceRateLimits(FULL, true, { spark: SPARK });
+
+    const merged = mergeRateLimits(
+      first,
+      snapshot({ primary: rateWindow(50, 300, RESET_LATE) }),
+    );
+
+    expect(toRateLimitEvent(merged)?.windows).toHaveLength(3);
+  });
+
+  it("unknown_window_duration_gets_a_stable_id", () => {
+    const state = replaceRateLimits(
+      snapshot({
+        primary: rateWindow(10, null, null),
+        secondary: rateWindow(20, null, null),
+      }),
+      true,
+      { odd: snapshot({ limitId: "odd", primary: rateWindow(5, null, null) }) },
+    );
+
+    expect(toRateLimitEvent(state)?.windows).toEqual([
+      expect.objectContaining({ id: "primary", period: null }),
+      expect.objectContaining({ id: "secondary", period: null }),
+      expect.objectContaining({ id: "odd:primary", scope: "odd" }),
+    ]);
+  });
+
+  it.each([
+    ["allowed", FULL, true],
+    ["exhausted", FULL, false],
+    [
+      "near_full",
+      snapshot({ primary: rateWindow(100, 300, RESET_EARLY) }),
+      true,
+    ],
+  ])("rotation_fields_ignore_extra_limits_%s", (_name, main, allowed) => {
+    const without = replaceRateLimits(main, allowed);
+    const withExtra = replaceRateLimits(main, allowed, {
+      spark: SPARK,
+      other: snapshot({
+        limitId: "other",
+        primary: rateWindow(99, 10_080, RESET_LATE),
+      }),
+    });
+
+    expect(bindingOf(withExtra)).toEqual(bindingOf(without));
   });
 });
 
@@ -292,6 +420,24 @@ describe("codex rate limit event", () => {
       resetsAt: RESET_LATE,
       rateLimitType: "seven_day",
       utilization: 1,
+      windows: [
+        {
+          id: "five_hour",
+          scope: null,
+          period: "five_hour",
+          utilization: 1,
+          resetsAt: RESET_EARLY,
+          exhausted: true,
+        },
+        {
+          id: "seven_day",
+          scope: null,
+          period: "seven_day",
+          utilization: 1,
+          resetsAt: RESET_LATE,
+          exhausted: true,
+        },
+      ],
     });
   });
 
@@ -325,6 +471,7 @@ describe("codex rate limit event", () => {
       resetsAt: null,
       rateLimitType: null,
       utilization: null,
+      windows: [],
     });
   });
 });

@@ -7,6 +7,7 @@ import {
 } from "../domain/constants";
 import { buildContextPackage } from "../domain/contextPackage";
 import type { AgentEvent } from "../domain/events";
+import { mergeLimitWindows, type LimitWindow } from "../domain/limitWindows";
 import { decidePermission } from "../domain/permissionPolicy";
 import { rotationPool } from "../domain/rotationPool";
 import {
@@ -512,6 +513,10 @@ export class SessionRun {
         resetsAt: outcome.resetsAt,
         rateLimitType: outcome.rateLimitType,
         utilization: detector.snapshot()?.utilization ?? null,
+        windows: this.mergedWindows(
+          accountId,
+          detector.snapshot()?.windows ?? [],
+        ),
         observedAt: this.deps.now(),
       });
     }
@@ -567,6 +572,13 @@ export class SessionRun {
     this.publish();
   }
 
+  private mergedWindows(
+    accountId: string,
+    next: readonly LimitWindow[],
+  ): LimitWindow[] {
+    return mergeLimitWindows(this.limits.get(accountId)?.windows ?? [], next);
+  }
+
   private recordLimit(accountId: string): void {
     const snapshot = this.detector?.snapshot() ?? null;
     if (snapshot !== null) {
@@ -576,6 +588,7 @@ export class SessionRun {
         resetsAt: snapshot.resetsAt,
         rateLimitType: snapshot.rateLimitType,
         utilization: snapshot.utilization,
+        windows: this.mergedWindows(accountId, snapshot.windows),
         observedAt: this.deps.now(),
       });
     }

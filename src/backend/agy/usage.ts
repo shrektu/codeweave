@@ -3,13 +3,12 @@ import { createInterface } from "node:readline";
 import {
   MS_PER_SECOND,
   RATE_LIMIT_STATUS_REJECTED,
-} from "../../domain/constants";
-import type { AgentEvent } from "../../domain/events";
-import {
-  RATE_LIMIT_STATUS_ALLOWED,
   RATE_LIMIT_TYPE_FIVE_HOUR,
   RATE_LIMIT_TYPE_SEVEN_DAY,
-} from "../codex/constants";
+} from "../../domain/constants";
+import type { AgentEvent } from "../../domain/events";
+import type { LimitWindow } from "../../domain/limitWindows";
+import { RATE_LIMIT_STATUS_ALLOWED } from "../codex/constants";
 import { withTimeout } from "../codex/handshake";
 import { watchAbort } from "../codex/probe";
 import type {
@@ -36,6 +35,8 @@ import {
 
 export interface AgyBucket {
   readonly id: string;
+  readonly name: string | null;
+  readonly group: string;
   readonly window: string | null;
   readonly remainingFraction: number;
   readonly resetsAt: number | null;
@@ -43,6 +44,7 @@ export interface AgyBucket {
 
 export interface AgyLimits {
   readonly buckets: readonly AgyBucket[];
+  readonly others: readonly AgyBucket[];
 }
 
 export type AgyProbeResult =
@@ -67,6 +69,9 @@ export interface AgyProbeDeps {
 type RateLimitEvent = Extract<AgentEvent, { type: "rate_limit" }>;
 
 const NEVER_ABORTED = new AbortController();
+const WINDOW_ID_SEPARATOR = "/";
+const NO_WINDOW_ID = "-";
+const REPEAT_MARK = "#";
 
 const FAILED: AgyProbeResult = { kind: "failed" };
 const NEEDS_LOGIN: AgyProbeResult = { kind: "needs_login" };
@@ -78,9 +83,11 @@ function resetEpoch(resetTime: string | undefined): number | null {
   return Number.isNaN(millis) ? null : Math.floor(millis / MS_PER_SECOND);
 }
 
-function bucketOf(bucket: UsageBucket): AgyBucket {
+function bucketOf(group: string, bucket: UsageBucket): AgyBucket {
   return {
     id: bucket.id,
+    name: bucket.name ?? null,
+    group,
     window: bucket.window ?? null,
     remainingFraction: bucket.remaining_fraction,
     resetsAt: resetEpoch(bucket.reset_time),
@@ -97,11 +104,19 @@ export function probeResultOf(output: UsageOutput): AgyProbeResult {
   if (groups === undefined) {
     return FAILED;
   }
-  const buckets =
-    groups.find((group) => group.name === GEMINI_USAGE_GROUP)?.buckets ?? [];
-  return buckets.length === 0
-    ? NO_LIMITS
-    : { kind: "limits", limits: { buckets: buckets.map(bucketOf) } };
+  const all = groups.flatMap((group) =>
+    group.buckets.map((bucket) => bucketOf(group.name, bucket)),
+  );
+  if (all.length === 0) {
+    return NO_LIMITS;
+  }
+  return {
+    kind: "limits",
+    limits: {
+      buckets: all.filter((bucket) => bucket.group === GEMINI_USAGE_GROUP),
+      others: all.filter((bucket) => bucket.group !== GEMINI_USAGE_GROUP),
+    },
+  };
 }
 
 function exhaustedBuckets(limits: AgyLimits): AgyBucket[] {
@@ -152,6 +167,26 @@ function rateLimitTypeOf(window: string | null): string | null {
   }
 }
 
+function windowsOf(limits: AgyLimits | null): LimitWindow[] {
+  if (limits === null) {
+    return [];
+  }
+  const seen = new Map<string, number>();
+  return [...limits.buckets, ...limits.others].map((bucket) => {
+    const base = `${bucket.group}${WINDOW_ID_SEPARATOR}${bucket.id}${WINDOW_ID_SEPARATOR}${bucket.window ?? NO_WINDOW_ID}`;
+    const repeats = seen.get(base) ?? 0;
+    seen.set(base, repeats + 1);
+    return {
+      id: repeats === 0 ? base : `${base}${REPEAT_MARK}${repeats.toString()}`,
+      scope: bucket.name ?? bucket.group,
+      period: rateLimitTypeOf(bucket.window),
+      utilization: 1 - bucket.remainingFraction,
+      resetsAt: bucket.resetsAt,
+      exhausted: bucket.remainingFraction <= 0,
+    };
+  });
+}
+
 function rejectedEvent(limits: AgyLimits | null): RateLimitEvent {
   const exhausted = limits === null ? [] : exhaustedBuckets(limits);
   const binding = latestReset(exhausted) ?? exhausted[0] ?? null;
@@ -161,6 +196,7 @@ function rejectedEvent(limits: AgyLimits | null): RateLimitEvent {
     resetsAt: binding?.resetsAt ?? null,
     rateLimitType: rateLimitTypeOf(binding?.window ?? null),
     utilization: binding === null ? null : 1 - binding.remainingFraction,
+    windows: windowsOf(limits),
   };
 }
 
@@ -171,16 +207,20 @@ export function toAgyRateLimitEvent(
   if (forceRejected || (limits !== null && isExhausted(limits))) {
     return rejectedEvent(limits);
   }
-  const binding = limits === null ? null : mostUsed(limits.buckets);
-  if (binding === null) {
+  if (limits === null) {
+    return null;
+  }
+  const binding = mostUsed(limits.buckets);
+  if (binding === null && limits.others.length === 0) {
     return null;
   }
   return {
     type: "rate_limit",
     status: RATE_LIMIT_STATUS_ALLOWED,
-    resetsAt: binding.resetsAt,
-    rateLimitType: rateLimitTypeOf(binding.window),
-    utilization: 1 - binding.remainingFraction,
+    resetsAt: binding?.resetsAt ?? null,
+    rateLimitType: rateLimitTypeOf(binding?.window ?? null),
+    utilization: binding === null ? null : 1 - binding.remainingFraction,
+    windows: windowsOf(limits),
   };
 }
 

@@ -48,6 +48,29 @@ const EXHAUSTED_GROUPS = [
 ];
 const FIVE_HOUR_RESET = 1_793_364_876;
 const WEEKLY_RESET = 1_793_614_882;
+const OPEN_WINDOWS = [
+  {
+    id: "Gemini Models/gemini-weekly/weekly",
+    scope: "weekly limit",
+    period: "seven_day",
+    utilization: 0.25,
+    resetsAt: WEEKLY_RESET,
+    exhausted: false,
+  },
+  {
+    id: "Gemini Models/gemini-5h/5h",
+    scope: "5h limit",
+    period: "five_hour",
+    utilization: 0.5,
+    resetsAt: FIVE_HOUR_RESET,
+    exhausted: false,
+  },
+];
+const EXHAUSTED_WINDOWS = OPEN_WINDOWS.map((window) => ({
+  ...window,
+  utilization: 1,
+  exhausted: true,
+}));
 const NO_OUTPUT_DENIED =
   "no output; agy may have denied this command in headless mode";
 const QUOTA_ERROR =
@@ -353,6 +376,7 @@ describe("agy adapter quota exhaustion", () => {
         resetsAt: FIVE_HOUR_RESET,
         rateLimitType: "five_hour",
         utilization: 0.5,
+        windows: OPEN_WINDOWS,
       },
       {
         type: "rate_limit",
@@ -360,6 +384,7 @@ describe("agy adapter quota exhaustion", () => {
         resetsAt: WEEKLY_RESET,
         rateLimitType: "seven_day",
         utilization: 1,
+        windows: EXHAUSTED_WINDOWS,
       },
       {
         type: "turn_error",
@@ -741,6 +766,7 @@ describe("agy adapter busy turns and limits", () => {
       resetsAt: FIVE_HOUR_RESET,
       rateLimitType: "five_hour",
       utilization: 0.5,
+      windows: OPEN_WINDOWS,
     });
   });
 });

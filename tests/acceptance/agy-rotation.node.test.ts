@@ -19,6 +19,7 @@ import {
   type BackendRigOptions,
 } from "../fakes/backendRig";
 import { RIG_EXEC_PATH } from "../fakes/fakeAcpAgent";
+import { NO_LIMITS_USAGE_MARKDOWN } from "../fakes/fakeClaudeUsage";
 import { settlesWithin } from "../fakes/fakeCodexAppServer";
 import { settled } from "../fakes/settle";
 import {
@@ -200,7 +201,9 @@ describe("gemini quota rotation", () => {
 
 describe("gemini limit probe", () => {
   it("limit_probe_reports_gemini_limits_from_usage", async () => {
-    const { rig, gemini } = await geminiRig();
+    const { rig, gemini } = await geminiRig({
+      claudeProbeText: NO_LIMITS_USAGE_MARKDOWN,
+    });
 
     await firstCycleDone(rig);
 

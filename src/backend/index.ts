@@ -21,6 +21,7 @@ import {
   resolveLaunchEnv,
 } from "./launchEnv";
 import { createConsoleLoginProbe } from "./opencode/consoleLogin";
+import { createConsoleUsageProbe } from "./opencode/consoleUsage";
 import { createVersionProbe } from "./opencode/version";
 import { createProcessContainer } from "./process/select";
 import { isRunnableFileSync } from "./terminal/shell";
@@ -76,6 +77,11 @@ const ready = resolveLaunchEnv({
       resolveExecutable: createExecutableResolver(env, process.platform),
       inspectWorktree,
       opencodeConsoleLogin: createConsoleLoginProbe({
+        exec: execText,
+        platform: process.platform,
+        ...(env.ComSpec === undefined ? {} : { comSpec: env.ComSpec }),
+      }),
+      opencodeConsoleUsage: createConsoleUsageProbe({
         exec: execText,
         platform: process.platform,
         ...(env.ComSpec === undefined ? {} : { comSpec: env.ComSpec }),
