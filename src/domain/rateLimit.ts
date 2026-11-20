@@ -98,7 +98,7 @@ function toSnapshot(
   return { ...snapshot, windows: windowsOf(event, snapshot) };
 }
 
-function isNeedsLogin(error: TurnError | null): boolean {
+export function isNeedsLogin(error: TurnError | null): boolean {
   if (error === null) {
     return false;
   }

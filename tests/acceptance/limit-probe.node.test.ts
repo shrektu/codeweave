@@ -21,9 +21,22 @@ import {
   RIG_NOW_MS,
   closeRigs,
   openRig,
+  probeAgentsOf,
   turnEnded,
   type BackendRig,
 } from "../fakes/backendRig";
+import { AUTH_REQUIRED_CODE } from "../fakes/fakeAcpAgent";
+import {
+  FIVE_HOUR_RESET,
+  FIVE_HOUR_RESET_SECONDS,
+  NO_LIMITS_USAGE_MARKDOWN,
+  OPUS_RESET,
+  OPUS_RESET_SECONDS,
+  WEEK_RESET as USAGE_WEEK_RESET,
+  WEEK_RESET_SECONDS,
+  renderUsageMarkdown,
+  usageResponse,
+} from "../fakes/fakeClaudeUsage";
 import {
   rateLimitsResponse,
   rateSnapshot,
@@ -184,7 +197,7 @@ it("probe_fills_account_limit_for_idle_account", async () => {
   });
 });
 
-it("probe_skips_claude_accounts", async () => {
+it("probe_reports_claude_usage_windows", async () => {
   const rig = await openRig({
     accounts: [ACCOUNT_CLAUDE_C, ACCOUNT_CODEX_A],
     probeConfig: ALLOWED_CONFIG,
@@ -192,10 +205,228 @@ it("probe_skips_claude_accounts", async () => {
 
   await cyclesDone(rig, 1);
 
+  expect(await viewOf(rig, ACCOUNT_CLAUDE_C.id)).toMatchObject({
+    runtime: { status: "ready" },
+    limitAvailability: "reported",
+    limit: {
+      accountId: ACCOUNT_CLAUDE_C.id,
+      status: "allowed",
+      rateLimitType: "seven_day",
+      utilization: 0.6,
+      resetsAt: WEEK_RESET_SECONDS,
+      windows: [
+        {
+          id: "five_hour",
+          scope: null,
+          period: "five_hour",
+          utilization: 0.3,
+          resetsAt: FIVE_HOUR_RESET_SECONDS,
+          exhausted: false,
+        },
+        {
+          id: "seven_day",
+          scope: null,
+          period: "seven_day",
+          utilization: 0.6,
+          resetsAt: WEEK_RESET_SECONDS,
+          exhausted: false,
+        },
+        {
+          id: "seven_day:opus",
+          scope: "Opus",
+          period: "seven_day",
+          utilization: 0.2,
+          resetsAt: OPUS_RESET_SECONDS,
+          exhausted: false,
+        },
+      ],
+    },
+  });
+  expect(probeAgentsOf(rig).map((agent) => agent.prompts)).toEqual([
+    ["/usage"],
+  ]);
+  expect(rig.claudeProbeContainer.specs[0]?.env.TZ).toBe("UTC");
   expect(probedHomes(rig)).toEqual([ACCOUNT_CODEX_A.configDir]);
-  expect((await viewOf(rig, ACCOUNT_CLAUDE_C.id)).limit).toBeNull();
-  expect((await viewOf(rig, ACCOUNT_CODEX_A.id)).limit).not.toBeNull();
   expect(rig.container.agents).toHaveLength(0);
+});
+
+const OPUS_EXHAUSTED_MARKDOWN = renderUsageMarkdown(
+  usageResponse({
+    five_hour: { utilization: 30, resets_at: FIVE_HOUR_RESET },
+    seven_day: { utilization: 60, resets_at: USAGE_WEEK_RESET },
+    seven_day_opus: { utilization: 100, resets_at: OPUS_RESET },
+  }),
+);
+
+const FIVE_HOUR_EXHAUSTED_MARKDOWN = renderUsageMarkdown(
+  usageResponse({
+    five_hour: { utilization: 100, resets_at: FIVE_HOUR_RESET },
+    seven_day: { utilization: 60, resets_at: USAGE_WEEK_RESET },
+  }),
+);
+
+it("claude_opus_weekly_exhausted_keeps_account_ready", async () => {
+  const rig = await openRig({
+    accounts: [ACCOUNT_CLAUDE_C],
+    claudeProbeText: OPUS_EXHAUSTED_MARKDOWN,
+  });
+
+  await cyclesDone(rig, 1);
+
+  expect(await viewOf(rig, ACCOUNT_CLAUDE_C.id)).toMatchObject({
+    runtime: { status: "ready" },
+    limitAvailability: "reported",
+    limit: {
+      status: "allowed",
+      windows: [
+        { id: "five_hour", exhausted: false },
+        { id: "seven_day", exhausted: false },
+        {
+          id: "seven_day:opus",
+          scope: "Opus",
+          utilization: 1,
+          exhausted: true,
+        },
+      ],
+    },
+  });
+});
+
+it("claude_five_hour_exhausted_keeps_account_exhausted", async () => {
+  const rig = await openRig({
+    accounts: [ACCOUNT_CLAUDE_C],
+    claudeProbeText: FIVE_HOUR_EXHAUSTED_MARKDOWN,
+  });
+
+  await cyclesDone(rig, 1);
+
+  expect(await viewOf(rig, ACCOUNT_CLAUDE_C.id)).toMatchObject({
+    runtime: { status: "exhausted", resetsAt: FIVE_HOUR_RESET_SECONDS },
+    limit: { status: "rejected", resetsAt: FIVE_HOUR_RESET_SECONDS },
+  });
+});
+
+it("claude_probe_needs_login", async () => {
+  const rig = await openRig({
+    accounts: [ACCOUNT_CLAUDE_C],
+    claudeProbeScripts: [
+      [{ type: "fail", code: AUTH_REQUIRED_CODE, message: "Auth required" }],
+    ],
+  });
+
+  await cyclesDone(rig, 1);
+
+  expect((await viewOf(rig, ACCOUNT_CLAUDE_C.id)).runtime).toEqual({
+    status: "needs_login",
+  });
+});
+
+it("claude_probe_without_limits_reports_unsupported", async () => {
+  const rig = await openRig({
+    accounts: [ACCOUNT_CLAUDE_C],
+    claudeProbeScripts: [
+      [
+        { type: "text", text: NO_LIMITS_USAGE_MARKDOWN },
+        { type: "end", stopReason: "end_turn" },
+      ],
+    ],
+  });
+
+  await cyclesDone(rig, 1);
+
+  expect(await viewOf(rig, ACCOUNT_CLAUDE_C.id)).toMatchObject({
+    runtime: { status: "ready" },
+    limit: null,
+    limitAvailability: "unsupported",
+  });
+});
+
+it("claude_probe_timeout_reports_failed", async () => {
+  vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    const rig = await openRig({
+      accounts: [ACCOUNT_CLAUDE_C],
+      claudeProbeScripts: [[{ type: "hang" }]],
+    });
+    await until(() => probeAgentsOf(rig)[0]?.prompts.length === 1);
+    expect((await viewOf(rig, ACCOUNT_CLAUDE_C.id)).limitAvailability).toBe(
+      "pending",
+    );
+
+    await vi.advanceTimersByTimeAsync(PROBE_TIMEOUT_MS);
+
+    await until(() => rig.probeTasks.length === 1);
+    expect(await viewOf(rig, ACCOUNT_CLAUDE_C.id)).toMatchObject({
+      runtime: { status: "ready" },
+      limit: null,
+      limitAvailability: "failed",
+    });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("claude_probe_stops_its_agent", async () => {
+  const rig = await openRig({ accounts: [ACCOUNT_CLAUDE_C] });
+
+  await cyclesDone(rig, 1);
+
+  expect(rig.claudeProbeContainer.contained).toHaveLength(1);
+  expect(rig.claudeProbeContainer.contained[0]?.stopCalls).toEqual([
+    AGENT_STOP_GRACE_MS,
+  ]);
+  expect(rig.probeStats.alive).toBe(0);
+});
+
+it("claude_probe_unstopped_blocks_account", async () => {
+  vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  vi.spyOn(console, "error").mockImplementation(() => undefined);
+  const rig = await openRig({
+    accounts: [ACCOUNT_CLAUDE_C],
+    claudeProbeStopResults: [STOP_SURVIVORS],
+  });
+  await cyclesDone(rig, 1);
+
+  await expect(
+    rig.call("session/start", { cwd: rig.cwd, provider: "claude" }),
+  ).rejects.toMatchObject({
+    code: IpcErrorCode.CONFLICT,
+    message: "No usable account",
+  });
+
+  expect(rig.container.specs).toHaveLength(0);
+});
+
+it("claude_launch_waits_for_probe_release", async () => {
+  const rig = await openRig({
+    accounts: [ACCOUNT_CLAUDE_C],
+    claudeProbeScripts: [[{ type: "hang" }]],
+  });
+  await settled(() => {
+    expect(rig.claudeProbeContainer.contained).toHaveLength(1);
+  });
+  const probe = rig.claudeProbeContainer.contained[0];
+  if (probe === undefined) {
+    throw new Error("the Claude probe was not spawned");
+  }
+  await until(() => probeAgentsOf(rig)[0]?.prompts.length === 1);
+  probe.holdStops();
+
+  const starting = rig.call("session/start", {
+    cwd: rig.cwd,
+    provider: "claude",
+  });
+  await settled(() => {
+    expect(probe.stopCalls).toEqual([AGENT_STOP_GRACE_MS]);
+  });
+  await sleep(POLL_MS);
+
+  expect(rig.container.specs).toHaveLength(0);
+  probe.resolveHeldStops();
+  const started = await starting;
+  expect(started.activeAccountId).toBe(ACCOUNT_CLAUDE_C.id);
+  expect(rig.container.specs).toHaveLength(1);
 });
 
 it("probe_skips_account_in_use", async () => {
@@ -371,9 +602,6 @@ it("api_key_account_reports_unsupported", async () => {
 
   await cyclesDone(rig, 1);
 
-  expect((await viewOf(rig, ACCOUNT_CLAUDE_C.id)).limitAvailability).toBe(
-    "unsupported",
-  );
   expect((await viewOf(rig, ACCOUNT_API_KEY.id)).limitAvailability).toBe(
     "unsupported",
   );

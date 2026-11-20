@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { locateClaudeAcpEntry } from "../../src/backend/claude/launch";
+import { PROBE_RUN_ID_PREFIX } from "../../src/backend/constants";
 import type {
   Contained,
   ProcessContainer,
@@ -13,6 +14,7 @@ import type {
 } from "../../src/backend/process/container";
 import { execText } from "../../src/backend/exec";
 import { createConsoleLoginProbe } from "../../src/backend/opencode/consoleLogin";
+import { createConsoleUsageProbe } from "../../src/backend/opencode/consoleUsage";
 import { createVersionProbe } from "../../src/backend/opencode/version";
 import { createProcessContainer } from "../../src/backend/process/select";
 import {
@@ -85,6 +87,9 @@ function recordingContainer(
     kind: inner.kind,
     launch: (spec, launcher) => inner.launch(spec, launcher),
     async spawn(spec: SpawnSpec): Promise<Contained> {
+      if (spec.runId.startsWith(PROBE_RUN_ID_PREFIX)) {
+        return inner.spawn(spec);
+      }
       const [runA] = spawned;
       if (runA !== undefined && observation.runAGoneAtSecondSpawn === null) {
         observation.runAGoneAtSecondSpawn = await runA.isEmpty();
@@ -150,6 +155,10 @@ async function openRig(
     newRunId: () => randomUUID(),
     resolveExecutable: createExecutableResolver(process.env, process.platform),
     opencodeConsoleLogin: createConsoleLoginProbe({
+      exec: execText,
+      platform: process.platform,
+    }),
+    opencodeConsoleUsage: createConsoleUsageProbe({
       exec: execText,
       platform: process.platform,
     }),

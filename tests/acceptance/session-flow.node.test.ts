@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi, type MockInstance } from "vitest";
 
 import { createConnectionRegistry } from "../../src/backend/connections";
 import { ContainerUnavailableError } from "../../src/backend/process/container";
+import { mergeLimitWindows } from "../../src/domain/limitWindows";
 import { fromNodePort } from "../../src/shared/port";
 import { IpcErrorCode, ResponseSchema } from "../../src/shared/protocol";
 import { SessionViewSchema, SnapshotSchema } from "../../src/shared/views";
@@ -18,7 +19,9 @@ import {
   openRig as open,
   startParams,
   turnEnded,
+  type BackendRig,
 } from "../fakes/backendRig";
+import { NO_LIMITS_USAGE_MARKDOWN } from "../fakes/fakeClaudeUsage";
 import {
   AUTH_REQUIRED_CODE,
   DEFAULT_PERMISSION_OPTIONS,
@@ -305,8 +308,19 @@ it("rotation_stops_a_before_spawning_b_with_context_package", async () => {
   expect(await rig.store.readSwitchLog(10)).toEqual([entry]);
   expect(rig.broadcastsOf("switchLog/appended")).toEqual([entry]);
 });
+async function openProbed(): Promise<BackendRig> {
+  const rig = await open({
+    accounts: [ACCOUNT_A, ACCOUNT_B],
+    claudeProbeText: NO_LIMITS_USAGE_MARKDOWN,
+  });
+  await settled(() => {
+    expect(rig.probeTasks).toHaveLength(1);
+  });
+  return rig;
+}
+
 it("accounts_changed_broadcast_marks_exhausted_account", async () => {
-  const rig = await open();
+  const rig = await openProbed();
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
 
@@ -425,8 +439,37 @@ it("claude_live_windows_accumulate", async () => {
   ]);
 });
 
-it("runtime_broadcast_only_on_change", async () => {
+it("probe_and_live_opus_windows_merge", async () => {
   const rig = await open();
+  await settled(() => {
+    expect(rig.probeTasks).toHaveLength(1);
+  });
+  const probed = (await rig.call("accounts/list", {})).accounts.find(
+    (account) => account.id === ACCOUNT_A.id,
+  );
+  await rig.call("session/start", startParams(rig));
+  agentOf(rig).enqueue([
+    claudeLimitMeta("seven_day_opus", 0.5, WEEK_RESET_SECONDS),
+    END_TURN,
+  ]);
+
+  await rig.call("session/prompt", { text: "go" });
+  await turnEnded(rig);
+
+  const live = (await rig.session()).limits.flatMap((limit) => limit.windows);
+  const merged = mergeLimitWindows(probed?.limit?.windows ?? [], live);
+  expect(live.map((window) => window.id)).toEqual(["seven_day:opus"]);
+  expect(
+    merged
+      .filter((window) => window.scope === "Opus")
+      .map((window) => window.id),
+  ).toEqual(["seven_day:opus"]);
+  expect(merged.find((window) => window.id === "five_hour")).toBeDefined();
+});
+
+it("runtime_broadcast_only_on_change", async () => {
+  const rig = await openProbed();
+  const broadcastsBefore = rig.broadcastsOf("accounts/changed").length;
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([{ type: "text", text: "hello" }, END_TURN]);
 
@@ -434,11 +477,11 @@ it("runtime_broadcast_only_on_change", async () => {
   await turnEnded(rig);
 
   expect(rig.broadcastsOf("session/changed").length).toBeGreaterThan(2);
-  expect(rig.broadcastsOf("accounts/changed")).toEqual([]);
+  expect(rig.broadcastsOf("accounts/changed")).toHaveLength(broadcastsBefore);
 });
 
 it("runtime_broadcast_on_needs_login", async () => {
-  const rig = await open();
+  const rig = await openProbed();
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([
     { type: "fail", code: AUTH_REQUIRED_CODE, message: "Auth required" },
@@ -473,16 +516,21 @@ it("runtime_broadcast_on_needs_login", async () => {
 });
 
 it("runtime_broadcast_on_new_session_resets", async () => {
-  const rig = await open();
+  const rig = await openProbed();
+  const broadcastsBefore = rig.broadcastsOf("accounts/changed").length;
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
   await rig.call("session/prompt", { text: "go" });
   await settled(() => {
-    expect(rig.broadcastsOf("accounts/changed")).toHaveLength(1);
+    expect(rig.broadcastsOf("accounts/changed")).toHaveLength(
+      broadcastsBefore + 1,
+    );
   });
 
   await rig.call("session/stop", {});
-  expect(rig.broadcastsOf("accounts/changed")).toHaveLength(1);
+  expect(rig.broadcastsOf("accounts/changed")).toHaveLength(
+    broadcastsBefore + 1,
+  );
   await rig.call("session/start", startParams(rig));
 
   await settled(() => {

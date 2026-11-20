@@ -417,6 +417,7 @@ export async function createBackendTerminalRig(
     resolveExecutable: () => "/usr/bin/claude",
     inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),
     opencodeConsoleLogin: () => Promise.resolve(ConsoleLoginState.failed),
+    opencodeConsoleUsage: () => Promise.resolve({ kind: "failed" }),
     opencodeGeneration: () => Promise.resolve(OpencodeGeneration.v1),
     ptyLauncher: fakeLauncherFactory(spawns, undefined),
     resolveLockKey: resolvePathLockKey,

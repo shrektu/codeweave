@@ -12,9 +12,12 @@ import {
   type Account,
   type EpochMillis,
 } from "../domain/types";
+import type { LimitWindow } from "../domain/limitWindows";
 import type { LimitView } from "../shared/views";
 
 import { toAgyRateLimitEvent, type AgyProbeResult } from "./agy/usage";
+import type { ClaudeProbeResult } from "./claude/usageProbe";
+import { RATE_LIMIT_STATUS_ALLOWED } from "./codex/constants";
 import { PROBE_INTERVAL_MS } from "./constants";
 import { toRateLimitEvent } from "./codex/events";
 import type { ProbeResult } from "./codex/probe";
@@ -35,14 +38,20 @@ export interface LimitProbeDeps {
     account: Account,
     signal: AbortSignal,
   ) => Promise<ConsoleProbeResult>;
+  readonly claudeProbe: (
+    account: Account,
+    signal: AbortSignal,
+  ) => Promise<ClaudeProbeResult>;
   readonly isInUse: (accountId: string) => boolean;
   readonly now: () => EpochMillis;
   readonly schedule: RotationPorts["schedule"];
 }
 
-export interface ConsoleProbeResult {
-  readonly kind: "needs_login" | "no_limits" | "failed";
-}
+export type ConsoleProbeResult =
+  | {
+      readonly kind: "needs_login" | "failed" | "no_limits" | "unreadable";
+    }
+  | { readonly kind: "limits"; readonly limits: readonly LimitWindow[] };
 
 export interface LimitProbeService {
   start(): void;
@@ -108,13 +117,75 @@ type ProbeOutcome<Limits> =
     };
 
 function isProbed(account: Account): boolean {
-  return account.provider === ProviderId.opencode
-    ? account.api?.auth === ApiAuth.consoleLogin
-    : PROBED_PROVIDERS.includes(account.provider);
+  switch (account.provider) {
+    case ProviderId.opencode:
+      return account.api?.auth === ApiAuth.consoleLogin;
+    case ProviderId.claude:
+      return account.api === undefined;
+    default:
+      return PROBED_PROVIDERS.includes(account.provider);
+  }
 }
 
-function noRateLimitEvent(): null {
-  return null;
+function utilizationRank(window: LimitWindow): number {
+  return window.utilization ?? Number.NEGATIVE_INFINITY;
+}
+
+function resetRank(window: LimitWindow): number {
+  return window.resetsAt ?? Number.NEGATIVE_INFINITY;
+}
+
+function strongest(
+  windows: readonly LimitWindow[],
+  rank: (window: LimitWindow) => number,
+): LimitWindow | null {
+  return windows.reduce<LimitWindow | null>(
+    (best, window) =>
+      best === null || rank(window) > rank(best) ? window : best,
+    null,
+  );
+}
+
+function windowsEvent(
+  status: string,
+  binding: LimitWindow | null,
+  windows: readonly LimitWindow[],
+): RateLimitEvent {
+  return {
+    type: "rate_limit",
+    status,
+    resetsAt: binding?.resetsAt ?? null,
+    rateLimitType: binding?.period ?? null,
+    utilization: binding?.utilization ?? null,
+    windows,
+  };
+}
+
+function consoleRateLimitEvent(
+  windows: readonly LimitWindow[],
+): RateLimitEvent {
+  return windowsEvent(
+    RATE_LIMIT_STATUS_ALLOWED,
+    strongest(windows, utilizationRank),
+    windows,
+  );
+}
+
+function claudeRateLimitEvent(windows: readonly LimitWindow[]): RateLimitEvent {
+  const exhausted = windows.filter(
+    (window) => window.scope === null && window.exhausted,
+  );
+  return exhausted.length > 0
+    ? windowsEvent(
+        RATE_LIMIT_STATUS_REJECTED,
+        strongest(exhausted, resetRank),
+        windows,
+      )
+    : windowsEvent(
+        RATE_LIMIT_STATUS_ALLOWED,
+        strongest(windows, utilizationRank),
+        windows,
+      );
 }
 
 function byOrderThenId(left: Account, right: Account): number {
@@ -337,7 +408,13 @@ class LimitProbeEngine implements LimitProbeService {
           return this.entryOf(
             account,
             await this.deps.consoleProbe(account, signal),
-            noRateLimitEvent,
+            consoleRateLimitEvent,
+          );
+        case ProviderId.claude:
+          return this.entryOf(
+            account,
+            await this.deps.claudeProbe(account, signal),
+            claudeRateLimitEvent,
           );
         default:
           return this.entryOf(

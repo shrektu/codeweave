@@ -14,8 +14,10 @@ import {
   openRig,
   type BackendRig,
 } from "../fakes/backendRig";
+import { NO_LIMITS_USAGE_MARKDOWN } from "../fakes/fakeClaudeUsage";
 import { FAKE_VAULT_UNAVAILABLE_REASON } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
+import { settled } from "../fakes/settle";
 
 const KEY = "sk-test-groq-0001";
 const OTHER_KEY = "sk-test-groq-0002";
@@ -233,6 +235,12 @@ it("api_key_account_remove_deletes_stored_key", async () => {
   expect(await rig.store.readAccounts()).toEqual([]);
 });
 
+async function probePassDone(rig: BackendRig): Promise<void> {
+  await settled(() => {
+    expect(rig.probeTasks).toHaveLength(1);
+  });
+}
+
 it("legacy_storage_files_load_unchanged", async () => {
   const userData = await makeTempDir();
   const legacy: Account = {
@@ -255,7 +263,11 @@ it("legacy_storage_files_load_unchanged", async () => {
       claudeExecutable: null,
     }),
   );
-  const rig = await openRig({ userData });
+  const rig = await openRig({
+    userData,
+    claudeProbeText: NO_LIMITS_USAGE_MARKDOWN,
+  });
+  await probePassDone(rig);
 
   const { accounts } = await rig.call("accounts/list", {});
   const settings = await rig.call("settings/get", {});
@@ -268,6 +280,7 @@ it("legacy_storage_files_load_unchanged", async () => {
       keyHint: null,
       runtime: { status: "ready" },
       limit: null,
+      limitAvailability: "unsupported",
     },
   ]);
   expect(settings).toEqual({
@@ -402,6 +415,7 @@ it("remove_claude_account_ignores_corrupt_key_store", async () => {
 
 it("remove_opencode_account_fails_before_persist", async () => {
   const rig = await rigWithCorruptKeyStore([ACCOUNT_A, STORED_OPENCODE]);
+  await probePassDone(rig);
   const before = await readFile(join(rig.userData, ACCOUNTS_FILE), "utf8");
   const broadcastsBefore = rig.broadcastsOf("accounts/changed").length;
 

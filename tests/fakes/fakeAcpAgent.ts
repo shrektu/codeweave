@@ -385,6 +385,7 @@ export class ScriptedAcpContainer implements ProcessContainer {
   readonly agents: FakeAcpAgent[] = [];
   readonly contained: FakeContained[] = [];
   readonly config: FakeAcpConfig = {};
+  defaultScript: readonly ScriptStep[] | undefined;
   private readonly inner: FakeContainer;
   private readonly nextScripts: (readonly ScriptStep[])[] = [];
 
@@ -409,7 +410,7 @@ export class ScriptedAcpContainer implements ProcessContainer {
     this.specs.push(spec);
     this.contained.push(fake);
     const agent = new FakeAcpAgent(fake, this.config);
-    const steps = this.nextScripts.shift();
+    const steps = this.nextScripts.shift() ?? this.defaultScript;
     if (steps !== undefined) {
       agent.enqueue(steps);
     }

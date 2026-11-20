@@ -27,6 +27,10 @@ import { probeAgyUsage, type AgyProbeResult } from "./agy/usage";
 import { fingerprintAgentsDir } from "./agy/workspaceGuard";
 import type { BackendArgs } from "./args";
 import { createClaudeAcpAdapter } from "./claude/acpAdapter";
+import {
+  createClaudeUsageProbe,
+  type ClaudeUsageProbe,
+} from "./claude/usageProbe";
 import { createCodexAdapter } from "./codex/adapter";
 import { createCodexLimitProbe } from "./codex/probe";
 import {
@@ -71,6 +75,10 @@ import {
   ConsoleLoginState,
   type ConsoleLoginProbe,
 } from "./opencode/consoleLogin";
+import {
+  type ConsoleUsageProbe,
+  type ConsoleUsageResult,
+} from "./opencode/consoleUsage";
 import { OpencodeGeneration } from "./opencode/constants";
 import { findFreePort } from "./opencode/port";
 import type { GenerationProbe } from "./opencode/version";
@@ -88,6 +96,7 @@ import {
   type SessionService,
 } from "./session";
 import {
+  configuredExecutable,
   toUpdaterConfigMessage,
   type PostUpdaterConfig,
 } from "./settingsService";
@@ -119,6 +128,7 @@ export interface BackendDeps {
   readonly inspectWorktree: (cwd: string) => Promise<WorktreeState>;
   readonly opencodeGeneration: GenerationProbe;
   readonly opencodeConsoleLogin: ConsoleLoginProbe;
+  readonly opencodeConsoleUsage: ConsoleUsageProbe;
   readonly catalogProbeTimeoutMs?: number;
   readonly ptyLauncher?: PtyLauncherFactory;
   readonly resolveLockKey?: LockKeyResolver;
@@ -178,13 +188,32 @@ const UNAVAILABLE_CATALOG: ModelCatalogService = {
     Promise.resolve({ models: [], error: CONTAINER_UNAVAILABLE_MESSAGE }),
 };
 
-const CONSOLE_PROBE_KINDS: Readonly<
-  Record<ConsoleLoginState, ConsoleProbeResult["kind"]>
+const CLAUDE_PROBE_TIME_ZONE = "UTC";
+
+function probeLockKey(configDir: string): Promise<string> {
+  return Promise.resolve(configDir);
+}
+
+const CONSOLE_LOGIN_KINDS: Readonly<
+  Record<
+    Exclude<ConsoleLoginState, typeof ConsoleLoginState.loggedIn>,
+    ConsoleProbeResult
+  >
 > = {
-  [ConsoleLoginState.loggedIn]: "no_limits",
-  [ConsoleLoginState.needsLogin]: "needs_login",
-  [ConsoleLoginState.failed]: "failed",
+  [ConsoleLoginState.needsLogin]: { kind: "needs_login" },
+  [ConsoleLoginState.failed]: { kind: "failed" },
 };
+
+function consoleResultOf(usage: ConsoleUsageResult): ConsoleProbeResult {
+  switch (usage.kind) {
+    case "limits":
+      return { kind: "limits", limits: usage.windows };
+    case "none":
+      return { kind: "no_limits" };
+    case "failed":
+      return { kind: "failed" };
+  }
+}
 
 function newServerPassword(): string {
   return randomBytes(SERVER_PASSWORD_BYTES).toString("hex");
@@ -275,14 +304,41 @@ function createConsoleLimitProbe(
     if (generation === OpencodeGeneration.v1) {
       return { kind: "needs_login" };
     }
-    const state = await deps.opencodeConsoleLogin({
-      executable,
-      configDir: account.configDir,
-      env,
-      signal,
-    });
-    return { kind: CONSOLE_PROBE_KINDS[state] };
+    const input = { executable, configDir: account.configDir, env, signal };
+    const state = await deps.opencodeConsoleLogin(input);
+    if (state !== ConsoleLoginState.loggedIn) {
+      return CONSOLE_LOGIN_KINDS[state];
+    }
+    return consoleResultOf(await deps.opencodeConsoleUsage(input));
   };
+}
+
+function createClaudeLimitProbe(
+  deps: BackendDeps,
+  container: ProcessContainer,
+  store: JsonStore,
+): ClaudeUsageProbe {
+  const envFor = createEnvFor(deps);
+  return createClaudeUsageProbe({
+    adapter: createClaudeAcpAdapter({
+      processes: createProcesses(container, probeLockKey),
+      envFor: (spec) => ({
+        ...envFor(spec),
+        TZ: CLAUDE_PROBE_TIME_ZONE,
+      }),
+      execPath: deps.execPath,
+      adapterEntry: deps.adapterEntry,
+    }),
+    executable: async () =>
+      deps.resolveExecutable(
+        ProviderId.claude,
+        configuredExecutable(await store.readSettings(), ProviderId.claude),
+      ),
+    timeoutMs: PROBE_TIMEOUT_MS,
+    stopGraceMs: AGENT_STOP_GRACE_MS,
+    newRunId: () => `${PROBE_RUN_ID_PREFIX}${randomUUID()}`,
+    now: deps.now,
+  });
 }
 
 function createProbes(
@@ -312,6 +368,7 @@ function createProbes(
     }),
     agyProbe: createAgyLimitProbe(deps, container, store),
     consoleProbe: createConsoleLimitProbe(deps, store),
+    claudeProbe: createClaudeLimitProbe(deps, container, store),
     isInUse,
     now: deps.now,
     schedule: deps.schedule,

@@ -9,7 +9,14 @@ export const AUTH_LIST_ARGS: readonly string[] = [
   "json",
   "--standalone",
 ];
+export const USAGE_LIMITS_ARGS: readonly string[] = [
+  "api",
+  "experimental.usage.limits",
+  "--standalone",
+];
 export const DB_ENV = "OPENCODE_DB";
+
+export const NO_USAGE_OUTPUT = '{"location":{"directory":"/x"},"data":null}';
 
 export const LOGGED_IN_OUTPUT = JSON.stringify([
   {
@@ -54,6 +61,8 @@ export interface FakeAuthCli {
   readonly calls: AuthCallLog;
   hangNext: number;
   failure: Error | null;
+  usageOutput: string;
+  usageFailure: Error | null;
 }
 
 type AuthCallLog = AuthCliCall[];
@@ -103,8 +112,16 @@ export function createFakeAuthCli(): FakeAuthCli {
     calls,
     hangNext: 0,
     failure: null,
+    usageOutput: NO_USAGE_OUTPUT,
+    usageFailure: null,
     exec: async (file, args, options) => {
       calls.push(callOf(file, args, options));
+      if (args.join(" ") === USAGE_LIMITS_ARGS.join(" ")) {
+        if (cli.usageFailure !== null) {
+          throw cli.usageFailure;
+        }
+        return cli.usageOutput;
+      }
       if (cli.failure !== null) {
         throw cli.failure;
       }

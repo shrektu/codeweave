@@ -1,11 +1,12 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { ProviderId, type Account } from "../../src/domain/types";
 import { IpcErrorCode } from "../../src/shared/protocol";
+import type { AccountView } from "../../src/shared/views";
 import {
   RIG_NOW_MS,
   closeRigs,
@@ -66,7 +67,10 @@ const StartupSchema = z.looseObject({
   ),
 });
 
-afterEach(closeRigs);
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await closeRigs();
+});
 
 function dbPathOf(configDir: string): string {
   return join(configDir, "data", "opencode", "opencode.db");
@@ -337,6 +341,139 @@ it("revoked_console_login_in_the_probe_reads_as_needs_login", async () => {
   await cyclesDone(rig, PROBE_CYCLES_FIRST);
 
   expect(await runtimeOf(rig, CONSOLE_ID)).toEqual(NEEDS_LOGIN_RUNTIME);
+});
+
+async function viewOf(rig: BackendRig, id: string): Promise<AccountView> {
+  const found = (await rig.call("accounts/list", {})).accounts.find(
+    (account) => account.id === id,
+  );
+  if (found === undefined) {
+    throw new Error(`account ${id} is not listed`);
+  }
+  return found;
+}
+
+async function loggedInRig(usageOutput: string | Error): Promise<BackendRig> {
+  const configDir = await makeTempDir();
+  await writeLoginState(configDir, LOGGED_IN_OUTPUT);
+  const authCli = createFakeAuthCli();
+  if (usageOutput instanceof Error) {
+    authCli.usageFailure = usageOutput;
+  } else {
+    authCli.usageOutput = usageOutput;
+  }
+  const rig = await openRig({
+    opencodeV2: true,
+    authCli,
+    accounts: [consoleAccount(CONSOLE_ID, 0, configDir)],
+  });
+  await cyclesDone(rig, PROBE_CYCLES_FIRST);
+  return rig;
+}
+
+function usageOutputOf(data: unknown): string {
+  return JSON.stringify({ location: { directory: "/x" }, data });
+}
+
+const GO_ROLLING_RESET_MS = 1_700_003_600_000;
+const GO_WEEKLY_RESET_MS = 1_700_100_000_000;
+const GO_MONTHLY_RESET_MS = 1_702_000_000_000;
+const BUDGET_RESET_MS = 1_701_000_000_000;
+
+const GO_USAGE_OUTPUT = usageOutputOf({
+  workspace: { id: "wrk_1", name: "Personal", usageURL: "https://x/usage" },
+  go: {
+    rolling: { percent: 12.5, limited: false, resetsAt: GO_ROLLING_RESET_MS },
+    weekly: { percent: 40, limited: false, resetsAt: GO_WEEKLY_RESET_MS },
+    monthly: { percent: 100, limited: true, resetsAt: GO_MONTHLY_RESET_MS },
+  },
+  budgets: [{ id: "bud_1", limit: 50, spent: 12.5, resetsAt: BUDGET_RESET_MS }],
+});
+
+it("console_account_reports_go_windows", async () => {
+  const rig = await loggedInRig(GO_USAGE_OUTPUT);
+
+  expect(await viewOf(rig, CONSOLE_ID)).toMatchObject({
+    runtime: { status: "ready" },
+    limitAvailability: "reported",
+    limit: {
+      status: "allowed",
+      rateLimitType: "monthly",
+      utilization: 1,
+      resetsAt: 1_702_000_000,
+      windows: [
+        {
+          id: "five_hour",
+          scope: null,
+          period: "five_hour",
+          utilization: 0.125,
+          resetsAt: 1_700_003_600,
+          exhausted: false,
+        },
+        {
+          id: "seven_day",
+          scope: null,
+          period: "seven_day",
+          utilization: 0.4,
+          resetsAt: 1_700_100_000,
+          exhausted: false,
+        },
+        {
+          id: "monthly",
+          scope: null,
+          period: "monthly",
+          utilization: 1,
+          resetsAt: 1_702_000_000,
+          exhausted: true,
+        },
+        {
+          id: "budget:bud_1",
+          scope: "Budget $12.50 of $50",
+          period: "monthly",
+          utilization: 0.25,
+          resetsAt: 1_701_000_000,
+          exhausted: false,
+        },
+      ],
+    },
+  });
+});
+
+it("console_account_without_allowance_reports_unsupported", async () => {
+  const rig = await loggedInRig(usageOutputOf({ budgets: [] }));
+
+  expect(await viewOf(rig, CONSOLE_ID)).toMatchObject({
+    runtime: { status: "ready" },
+    limit: null,
+    limitAvailability: "unsupported",
+  });
+});
+
+it("console_usage_failure_reports_failed_not_needs_login", async () => {
+  vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const rig = await loggedInRig(new Error("exit 1"));
+
+  expect(await viewOf(rig, CONSOLE_ID)).toMatchObject({
+    runtime: { status: "ready" },
+    limit: null,
+    limitAvailability: "failed",
+  });
+});
+
+it("console_usage_failure_keeps_last_windows", async () => {
+  vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const rig = await loggedInRig(GO_USAGE_OUTPUT);
+  const before = await viewOf(rig, CONSOLE_ID);
+  rig.authCli.usageFailure = new Error("exit 1");
+
+  const task = rig.probeTasks.findLast((candidate) => !candidate.cancelled);
+  task?.run();
+  await cyclesDone(rig, PROBE_CYCLES_FIRST + 1);
+
+  const after = await viewOf(rig, CONSOLE_ID);
+  expect(after.limitAvailability).toBe("reported");
+  expect(after.limit?.windows).toHaveLength(4);
+  expect(after.limit).toEqual(before.limit);
 });
 
 it("console login probe timeout does not block the session start", async () => {

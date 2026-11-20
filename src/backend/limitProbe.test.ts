@@ -3,12 +3,18 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { expect, it, vi } from "vitest";
 
 import type { ScheduledTask } from "../../tests/fakes/rotationHarness";
+import type { LimitWindow } from "../domain/limitWindows";
 import type { Account } from "../domain/types";
 
 import type { AgyLimits, AgyProbeResult } from "./agy/usage";
 import type { RateLimitState } from "./codex/events";
 import type { ProbeResult } from "./codex/probe";
-import { createLimitProbeService, type LimitProbeService } from "./limitProbe";
+import type { ClaudeProbeResult } from "./claude/usageProbe";
+import {
+  createLimitProbeService,
+  type ConsoleProbeResult,
+  type LimitProbeService,
+} from "./limitProbe";
 
 const NOW_MS = 1_700_000_000_000;
 const RESET_AT = 1_700_003_600;
@@ -19,6 +25,16 @@ const CODEX_A: Account = account("codex-a", "codex", 0);
 const CODEX_B: Account = account("codex-b", "codex", 1);
 const CLAUDE_C: Account = account("claude-c", "claude", 2);
 const GEMINI_G: Account = account("gemini-g", "gemini", 3);
+const CLAUDE_API: Account = {
+  ...account("claude-api", "claude", 5),
+  api: {
+    provider: "opencode-go",
+    model: "kimi-k2.7-code",
+    baseUrl: null,
+    rotation: true,
+    auth: "api_key",
+  },
+};
 
 const AGY_FIVE_HOUR_RESET = 1_700_007_200;
 const AGY_ALLOWED: AgyLimits = {
@@ -114,6 +130,8 @@ interface RigState {
   hold: PromiseWithResolvers<undefined> | null;
   stopHold: PromiseWithResolvers<undefined> | null;
   abortResult: ProbeResult;
+  consoleResult: ConsoleProbeResult;
+  claudeResult: ClaudeProbeResult;
 }
 
 function setup(accounts: Account[]): Rig {
@@ -132,9 +150,12 @@ function setup(accounts: Account[]): Rig {
     hold: null,
     stopHold: null,
     abortResult: { kind: "failed" },
+    consoleResult: { kind: "failed" },
+    claudeResult: { kind: "failed" },
   };
   const service = createLimitProbeService({
-    consoleProbe: () => Promise.resolve({ kind: "failed" }),
+    consoleProbe: () => Promise.resolve(rig.consoleResult),
+    claudeProbe: () => Promise.resolve(rig.claudeResult),
     readAccounts: () => Promise.resolve([...rig.accounts]),
     probe: async (target, signal) => {
       rig.probed.push(target.id);
@@ -316,7 +337,7 @@ it("unreadable_probe_clears_limit_and_runtime_and_reports_failed", async () => {
 });
 
 it("availability_follows_probe_state_and_account_kind", async () => {
-  const rig = setup([CODEX_A, CODEX_B, CLAUDE_C]);
+  const rig = setup([CODEX_A, CODEX_B, CLAUDE_API]);
   rig.results.set(CODEX_A.id, [limits(ALLOWED)]);
   rig.results.set(CODEX_B.id, [{ kind: "no_limits" }]);
 
@@ -326,7 +347,157 @@ it("availability_follows_probe_state_and_account_kind", async () => {
 
   expect(rig.service.availabilityOf(CODEX_A)).toBe("reported");
   expect(rig.service.availabilityOf(CODEX_B)).toBe("unsupported");
-  expect(rig.service.availabilityOf(CLAUDE_C)).toBe("unsupported");
+  expect(rig.service.availabilityOf(CLAUDE_API)).toBe("unsupported");
+});
+
+const CONSOLE_D: Account = {
+  ...account("console-d", "opencode", 4),
+  api: {
+    provider: "opencode-go",
+    model: "kimi-k2.7-code",
+    baseUrl: null,
+    rotation: true,
+    auth: "console_login",
+  },
+};
+
+function limitWindow(
+  id: string,
+  utilization: number | null,
+  resetsAt: number | null,
+  exhausted: boolean,
+): LimitWindow {
+  return { id, scope: null, period: id, utilization, resetsAt, exhausted };
+}
+
+it("console_event_never_rejects", async () => {
+  const rig = setup([CONSOLE_D]);
+  const windows = [
+    limitWindow("five_hour", 0.2, RESET_AT, false),
+    limitWindow("monthly", 1, RESET_AT + 100, true),
+    limitWindow("seven_day", null, null, false),
+  ];
+  rig.consoleResult = { kind: "limits", limits: windows };
+
+  rig.service.start();
+  await passes(rig, 1);
+
+  expect(rig.service.limitOf(CONSOLE_D.id)).toEqual({
+    accountId: CONSOLE_D.id,
+    status: "allowed",
+    resetsAt: RESET_AT + 100,
+    rateLimitType: "monthly",
+    utilization: 1,
+    windows,
+    observedAt: NOW_MS,
+  });
+  expect(rig.service.runtimeOf(CONSOLE_D.id)).toBeNull();
+  expect(rig.service.availabilityOf(CONSOLE_D)).toBe("reported");
+});
+
+it("console_unreadable_usage_reports_failed_without_needs_login", async () => {
+  const rig = setup([CONSOLE_D]);
+  rig.consoleResult = { kind: "unreadable" };
+
+  rig.service.start();
+  await passes(rig, 1);
+
+  expect(rig.service.runtimeOf(CONSOLE_D.id)).toBeNull();
+  expect(rig.service.availabilityOf(CONSOLE_D)).toBe("failed");
+});
+
+it("claude_event_rejects_on_exhausted_window", async () => {
+  const rig = setup([CLAUDE_C]);
+  const windows = [
+    limitWindow("five_hour", 0.3, RESET_AT, false),
+    limitWindow("seven_day", 1, RESET_AT + 500, true),
+    limitWindow("seven_day:opus", 1, RESET_AT + 900, true),
+  ];
+  rig.claudeResult = { kind: "limits", limits: windows };
+
+  rig.service.start();
+  await passes(rig, 1);
+
+  expect(rig.service.limitOf(CLAUDE_C.id)).toEqual({
+    accountId: CLAUDE_C.id,
+    status: "rejected",
+    resetsAt: RESET_AT + 900,
+    rateLimitType: "seven_day:opus",
+    utilization: 1,
+    windows,
+    observedAt: NOW_MS,
+  });
+  expect(rig.service.runtimeOf(CLAUDE_C.id)).toEqual({
+    status: "exhausted",
+    resetsAt: RESET_AT + 900,
+  });
+});
+
+it("claude_event_ignores_exhausted_model_scoped_window", async () => {
+  const rig = setup([CLAUDE_C]);
+  const windows = [
+    limitWindow("five_hour", 0.3, RESET_AT, false),
+    limitWindow("seven_day", 0.5, RESET_AT + 500, false),
+    {
+      ...limitWindow("seven_day:opus", 1, RESET_AT + 900, true),
+      scope: "Opus",
+    },
+  ];
+  rig.claudeResult = { kind: "limits", limits: windows };
+
+  rig.service.start();
+  await passes(rig, 1);
+
+  expect(rig.service.limitOf(CLAUDE_C.id)).toEqual({
+    accountId: CLAUDE_C.id,
+    status: "allowed",
+    resetsAt: RESET_AT + 900,
+    rateLimitType: "seven_day:opus",
+    utilization: 1,
+    windows,
+    observedAt: NOW_MS,
+  });
+  expect(rig.service.runtimeOf(CLAUDE_C.id)).toBeNull();
+});
+
+it("claude_event_binds_the_most_utilized_window_when_allowed", async () => {
+  const rig = setup([CLAUDE_C]);
+  const windows = [
+    limitWindow("five_hour", 0.3, RESET_AT, false),
+    limitWindow("seven_day", 0.7, RESET_AT + 500, false),
+  ];
+  rig.claudeResult = { kind: "limits", limits: windows };
+
+  rig.service.start();
+  await passes(rig, 1);
+
+  expect(rig.service.limitOf(CLAUDE_C.id)).toMatchObject({
+    status: "allowed",
+    rateLimitType: "seven_day",
+    utilization: 0.7,
+    resetsAt: RESET_AT + 500,
+  });
+  expect(rig.service.runtimeOf(CLAUDE_C.id)).toBeNull();
+});
+
+it("claude_needs_login_probe_sets_runtime", async () => {
+  const rig = setup([CLAUDE_C]);
+  rig.claudeResult = { kind: "needs_login" };
+
+  rig.service.start();
+  await passes(rig, 1);
+
+  expect(rig.service.runtimeOf(CLAUDE_C.id)).toEqual({ status: "needs_login" });
+});
+
+it("claude_unstopped_probe_blocks_the_account", async () => {
+  const rig = setup([CLAUDE_C]);
+  rig.claudeResult = { kind: "unstopped" };
+
+  rig.service.start();
+  await passes(rig, 1);
+
+  expect(rig.service.isBlocked(CLAUDE_C.id)).toBe(true);
 });
 
 it("removed_accounts_lose_their_entries", async () => {
