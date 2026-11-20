@@ -1,11 +1,11 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { _electron as electron, type Page } from "@playwright/test";
 
 import { createJsonStore } from "../../src/backend/storage";
-import { PermissionProfile } from "../../src/domain/types";
+import { PermissionProfile, ProviderId } from "../../src/domain/types";
 import { userTexts, type MessagesBody } from "../fakes/anthropicMock";
 
 import {
@@ -39,11 +39,20 @@ export const FLOW_TASK = "Add a greeting helper";
 export const BUILD_REPLY = "Implemented the change.";
 export const REVIEW_REPLY = "Looks correct.\nVERDICT: APPROVED";
 
-const AGENTS_MARKDOWN = `---
+export interface FlowFilesOptions {
+  readonly provider?: ProviderId;
+  readonly builderProfile?: PermissionProfile;
+}
+
+function agentsMarkdown({
+  provider = ProviderId.claude,
+  builderProfile = PermissionProfile.acceptEdits,
+}: FlowFilesOptions): string {
+  return `---
 id: builder
 role: Builds the change
-provider: claude
-permissionProfile: accept-edits
+provider: ${provider}
+permissionProfile: ${builderProfile}
 ---
 
 The builder implements the change.
@@ -51,12 +60,13 @@ The builder implements the change.
 ---
 id: checker
 role: Reviews the change
-provider: claude
+provider: ${provider}
 permissionProfile: plan
 ---
 
 The checker reviews the change.
 `;
+}
 
 const FLOW_MARKDOWN = `---
 id: two-node
@@ -162,17 +172,26 @@ export function hasBuildHandoff(prompt: string): boolean {
   );
 }
 
+export async function writeFlowFiles(
+  repo: string,
+  options: FlowFilesOptions = {},
+): Promise<void> {
+  await mkdir(join(repo, "agents"));
+  await mkdir(join(repo, "flows"));
+  await writeFile(join(repo, AGENTS_FILE), agentsMarkdown(options));
+  await writeFile(join(repo, FLOW_FILE), FLOW_MARKDOWN);
+}
+
 export async function createFlowWorkspace(): Promise<FlowWorkspace> {
-  const root = await mkdtemp(join(tmpdir(), FLOW_WORKSPACE_PREFIX));
+  const root = await realpath(
+    await mkdtemp(join(tmpdir(), FLOW_WORKSPACE_PREFIX)),
+  );
   const userData = join(root, "user-data");
   const repo = join(root, "repo");
   const claude = account("acc-a", "A", join(root, "config-a"), 0);
   await createRepo(repo);
   await createConfigDir(claude.configDir, KEY_A);
-  await mkdir(join(repo, "agents"));
-  await mkdir(join(repo, "flows"));
-  await writeFile(join(repo, AGENTS_FILE), AGENTS_MARKDOWN);
-  await writeFile(join(repo, FLOW_FILE), FLOW_MARKDOWN);
+  await writeFlowFiles(repo);
   const store = createJsonStore(userData);
   await store.writeAccounts([claude]);
   await store.writeSettings(rotationSettings(PermissionProfile.acceptEdits));

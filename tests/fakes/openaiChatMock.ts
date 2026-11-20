@@ -7,6 +7,8 @@ import {
 
 import { z } from "zod";
 
+import { TurnKind, type MockTurn, type ToolInput } from "./mockTurn";
+
 export const ChatScenario = {
   toolThen429: "tool-then-429",
   toolThenGoLimit: "tool-then-go-limit",
@@ -49,7 +51,32 @@ const RequestBodySchema = z.looseObject({
       }),
     )
     .default([]),
+  messages: z
+    .array(
+      z.looseObject({
+        role: z.string().optional(),
+        tool_call_id: z.string().optional(),
+        content: z
+          .union([
+            z.string(),
+            z.array(z.looseObject({ text: z.string().optional() })),
+          ])
+          .nullish(),
+        tool_calls: z
+          .array(
+            z.looseObject({
+              id: z.string().optional(),
+              function: z
+                .looseObject({ name: z.string().optional() })
+                .optional(),
+            }),
+          )
+          .optional(),
+      }),
+    )
+    .default([]),
 });
+export type ChatRequestBody = z.infer<typeof RequestBodySchema>;
 
 export interface ChatRecordedRequest {
   readonly key: string;
@@ -62,6 +89,7 @@ export interface ChatRecordedRequest {
 export interface ChatMockOptions {
   readonly scenarios: Readonly<Record<string, ChatScenario>>;
   readonly toolCommand: string;
+  readonly respond?: (body: ChatRequestBody) => MockTurn | undefined;
 }
 
 export interface OpenaiChatMock {
@@ -115,6 +143,29 @@ function offersShell(raw: string): boolean {
   );
 }
 
+function sendNamedToolCall(
+  res: ServerResponse,
+  sequence: number,
+  name: string,
+  args: ToolInput,
+): void {
+  sendStream(
+    res,
+    {
+      role: "assistant",
+      tool_calls: [
+        {
+          index: 0,
+          id: `call_${String(sequence)}`,
+          type: "function",
+          function: { name, arguments: JSON.stringify(args) },
+        },
+      ],
+    },
+    "tool_calls",
+  );
+}
+
 function sendToolCall(
   res: ServerResponse,
   toolCommand: string,
@@ -125,21 +176,20 @@ function sendToolCall(
   const args = useShell
     ? { command: toolCommand }
     : { command: toolCommand, description: TOOL_DESCRIPTION };
-  sendStream(
-    res,
-    {
-      role: "assistant",
-      tool_calls: [
-        {
-          index: 0,
-          id: `call_${String(sequence)}`,
-          type: "function",
-          function: { name: toolName, arguments: JSON.stringify(args) },
-        },
-      ],
-    },
-    "tool_calls",
-  );
+  sendNamedToolCall(res, sequence, toolName, args);
+}
+
+function sendTurn(res: ServerResponse, turn: MockTurn, sequence: number): void {
+  if (turn.kind === TurnKind.text) {
+    sendText(res, turn.text);
+  } else {
+    sendNamedToolCall(res, sequence, turn.name, turn.input);
+  }
+}
+
+function parseBody(raw: string): ChatRequestBody {
+  const parsed = RequestBodySchema.safeParse(JSON.parse(raw || "{}"));
+  return parsed.success ? parsed.data : { tools: [], messages: [] };
 }
 
 function sendJson(res: ServerResponse, status: number, body: object): void {
@@ -242,6 +292,11 @@ function createHandler(
       return;
     }
     sequence += 1;
+    const turn = options.respond?.(parseBody(raw));
+    if (turn !== undefined) {
+      sendTurn(res, turn, sequence);
+      return;
+    }
     const seen = toolRequestsByKey.get(key) ?? 0;
     toolRequestsByKey.set(key, seen + 1);
     if (scenario === ChatScenario.ok) {

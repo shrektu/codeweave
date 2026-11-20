@@ -61,9 +61,11 @@ jobs:
       - name: End-to-end tests
         if: runner.os != 'Linux'
         run: pnpm e2e
-      - name: Install Claude Code CLI (Linux)
-        if: runner.os == 'Linux'
+      - name: Install Claude Code CLI
         run: npm i -g @anthropic-ai/claude-code@2.1.312
+      - name: Orchestrator end-to-end test
+        if: runner.os != 'Linux'
+        run: pnpm exec playwright test --config playwright.rotation.config.ts orchestrator.spec.ts
       - name: Install Codex CLI (Linux)
         if: runner.os == 'Linux'
         run: npm i -g @openai/codex@0.165.0
