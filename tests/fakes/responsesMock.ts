@@ -178,10 +178,30 @@ function turnItem(turn: MockTurn, sequence: number): Record<string, unknown> {
   };
 }
 
+function textDeltaEvents(
+  item: Record<string, unknown>,
+  text: string,
+): SseEvent[] {
+  return [
+    [
+      "response.output_item.added",
+      {
+        type: "response.output_item.added",
+        item: { ...item, content: [{ type: "output_text", text: "" }] },
+      },
+    ],
+    [
+      "response.output_text.delta",
+      { type: "response.output_text.delta", delta: text },
+    ],
+  ];
+}
+
 function sendStream(
   res: ServerResponse,
   item: Record<string, unknown>,
   sequence: number,
+  leading: readonly SseEvent[] = [],
 ): void {
   const responseId = `resp_${String(sequence)}`;
   const events: SseEvent[] = [
@@ -189,6 +209,7 @@ function sendStream(
       "response.created",
       { type: "response.created", response: { id: responseId } },
     ],
+    ...leading,
     ["response.output_item.done", { type: "response.output_item.done", item }],
     [
       "response.completed",
@@ -271,7 +292,13 @@ function createHandler(
     sequence += 1;
     const turn = options.respond?.(body);
     if (turn !== undefined) {
-      sendStream(res, turnItem(turn, sequence), sequence);
+      const item = turnItem(turn, sequence);
+      sendStream(
+        res,
+        item,
+        sequence,
+        turn.kind === TurnKind.text ? textDeltaEvents(item, turn.text) : [],
+      );
       return;
     }
     const toolNames = record(key, path, body).toolNames;

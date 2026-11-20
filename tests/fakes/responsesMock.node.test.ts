@@ -195,9 +195,11 @@ describe("responses mock respond hook", () => {
       input: [userMessage("hi")],
       tools: [{ name: MCP_TOOL }],
     });
-    const events = parseSse(await response.text());
+    const done = parseSse(await response.text()).find(
+      (event) => event.event === "response.output_item.done",
+    );
 
-    expect(events[1]?.data).toMatchObject({
+    expect(done?.data).toMatchObject({
       item: {
         type: "message",
         role: "assistant",
@@ -230,6 +232,30 @@ describe("responses mock respond hook", () => {
         }),
       },
     });
+  });
+});
+
+describe("responses mock scripted text streaming", () => {
+  it("text_turn_streams_the_text_as_a_delta_before_the_done_item", async () => {
+    const mock = await startResponsesMock(SCENARIOS, {
+      respond: () => ({ kind: TurnKind.text, text: "streamed reply" }),
+    });
+    opened.push(mock);
+
+    const response = await post(mock, KEY_OK, {
+      input: [userMessage("hi")],
+      tools: [{ name: "exec_command" }],
+    });
+    const events = parseSse(await response.text());
+
+    expect(events.map((event) => event.event)).toEqual([
+      "response.created",
+      "response.output_item.added",
+      "response.output_text.delta",
+      "response.output_item.done",
+      "response.completed",
+    ]);
+    expect(events[2]?.data).toMatchObject({ delta: "streamed reply" });
   });
 });
 
