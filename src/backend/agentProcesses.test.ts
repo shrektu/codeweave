@@ -8,7 +8,7 @@ import { makeTempDir } from "../../tests/fakes/processHelpers";
 import { resolvePathLockKey } from "../../tests/fakes/rigProcesses";
 
 import { createAgentProcesses } from "./agentProcesses";
-import { WorktreeBusyError, WorktreeLocks } from "./locks";
+import { LeaseMode, WorktreeBusyError, WorktreeLocks } from "./locks";
 import type { Contained, SpawnSpec } from "./process/container";
 
 const SHARED_KEY = "/shared/lock/key";
@@ -49,6 +49,7 @@ describe("agent processes lock key", () => {
         recorded.push(cwd);
         return Promise.resolve(SHARED_KEY);
       },
+      leaseModeOf: () => LeaseMode.exclusive,
     });
 
     await agents.start(specIn(dirA));
@@ -72,6 +73,7 @@ describe("agent processes lock key", () => {
           ? Promise.reject(RESOLVER_FAILURE)
           : Promise.resolve(SHARED_KEY);
       },
+      leaseModeOf: () => LeaseMode.exclusive,
     });
 
     await expect(agents.start(specIn(dir))).rejects.toBe(RESOLVER_FAILURE);
@@ -90,6 +92,7 @@ describe("agent processes lock lifecycle", () => {
       container,
       locks: new WorktreeLocks(),
       resolveLockKey: resolvePathLockKey,
+      leaseModeOf: () => LeaseMode.exclusive,
     });
 
     await expect(agents.start(specIn(dir))).rejects.toBe(SPAWN_FAILURE);
@@ -104,6 +107,7 @@ describe("agent processes lock lifecycle", () => {
       container: new FakeContainer([]),
       locks: new WorktreeLocks(),
       resolveLockKey: resolvePathLockKey,
+      leaseModeOf: () => LeaseMode.exclusive,
     });
     const first = await agents.start(specIn(dir));
 

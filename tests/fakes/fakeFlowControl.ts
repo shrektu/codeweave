@@ -10,6 +10,8 @@ import {
 } from "../../src/domain/flowRun";
 import {
   EdgeKind,
+  FlowPlacement,
+  FlowRunOrigin,
   MergeStatus,
   type MergeOutcome,
 } from "../../src/domain/types";
@@ -71,6 +73,9 @@ export const SAMPLE_RUN: FlowRunView = {
   ],
   decision: { reason: DecisionReason.gate, nodeId: "check" },
   failure: null,
+  origin: FlowRunOrigin.orchestrator,
+  placement: FlowPlacement.inPlace,
+  branch: null,
 };
 
 export class FakeFlowControl implements FlowControl {

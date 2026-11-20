@@ -199,13 +199,98 @@ it("store_applies_flow_run_events_to_the_snapshot", async () => {
   await vi.waitFor(() => {
     expect(store.getState().connection).toBe("ready");
   });
-  const run = makeFlowRun({ status: "awaiting_decision", round: 2 });
+  const first = makeFlowRun({ runId: "run-1", status: "running" });
+  const second = makeFlowRun({ runId: "run-2", cwd: "/work/other" });
+  const decided = makeFlowRun({
+    runId: "run-1",
+    status: "awaiting_decision",
+    round: 2,
+  });
 
-  client.emit({ v: EVENT_VERSION, event: "flow/changed", payload: run });
-  expect(store.getState().snapshot?.flowRun).toEqual(run);
+  client.emit({ v: EVENT_VERSION, event: "flow/changed", payload: first });
+  client.emit({ v: EVENT_VERSION, event: "flow/changed", payload: second });
+  expect(store.getState().snapshot?.flowRuns).toEqual([first, second]);
 
-  client.emit({ v: EVENT_VERSION, event: "flow/changed", payload: null });
-  expect(store.getState().snapshot?.flowRun).toBeNull();
+  client.emit({ v: EVENT_VERSION, event: "flow/changed", payload: decided });
+  expect(store.getState().snapshot?.flowRuns).toEqual([decided, second]);
+});
+
+it("store_upserts_and_removes_flow_sessions_by_run_id", async () => {
+  const client = createFakeIpcClient();
+  client.respond("sessions/snapshot", makeSnapshot());
+  const store = createAppStore(client);
+  store.start();
+  await vi.waitFor(() => {
+    expect(store.getState().connection).toBe("ready");
+  });
+  const idle = makeSession({ id: "node-1", turnInFlight: false });
+  const busy = makeSession({ id: "node-1", turnInFlight: true });
+  const other = makeSession({ id: "node-2" });
+
+  client.emit({
+    v: EVENT_VERSION,
+    event: "flowSession/changed",
+    payload: { runId: "run-1", view: idle },
+  });
+  client.emit({
+    v: EVENT_VERSION,
+    event: "flowSession/changed",
+    payload: { runId: "run-2", view: other },
+  });
+  client.emit({
+    v: EVENT_VERSION,
+    event: "flowSession/changed",
+    payload: { runId: "run-1", view: busy },
+  });
+  expect(store.getState().snapshot?.flowSessions).toEqual([
+    { runId: "run-1", view: busy },
+    { runId: "run-2", view: other },
+  ]);
+  expect(store.getState().snapshot?.session).toBeNull();
+
+  client.emit({
+    v: EVENT_VERSION,
+    event: "flowSession/changed",
+    payload: { runId: "run-1", view: null },
+  });
+  expect(store.getState().snapshot?.flowSessions).toEqual([
+    { runId: "run-2", view: other },
+  ]);
+});
+
+it("store_keeps_the_latest_buffered_event_of_every_run_before_the_snapshot", async () => {
+  const client = createFakeIpcClient();
+  const snapshot = Promise.withResolvers<ReturnType<typeof makeSnapshot>>();
+  client.on("sessions/snapshot", () => snapshot.promise);
+  const store = createAppStore(client);
+  store.start();
+  const first = makeFlowRun({ runId: "run-1" });
+  const second = makeFlowRun({ runId: "run-2", cwd: "/work/other" });
+  const firstDone = makeFlowRun({ runId: "run-1", status: "done" });
+  const view = makeSession({ id: "node-2" });
+
+  client.emit({ v: EVENT_VERSION, event: "flow/changed", payload: first });
+  client.emit({ v: EVENT_VERSION, event: "flow/changed", payload: second });
+  client.emit({ v: EVENT_VERSION, event: "flow/changed", payload: firstDone });
+  client.emit({
+    v: EVENT_VERSION,
+    event: "flowSession/changed",
+    payload: { runId: "run-2", view },
+  });
+  client.emit({
+    v: EVENT_VERSION,
+    event: "flowSession/changed",
+    payload: { runId: "run-1", view: null },
+  });
+  snapshot.resolve(makeSnapshot());
+
+  await vi.waitFor(() => {
+    expect(store.getState().connection).toBe("ready");
+  });
+  expect(store.getState().snapshot?.flowRuns).toEqual([second, firstDone]);
+  expect(store.getState().snapshot?.flowSessions).toEqual([
+    { runId: "run-2", view },
+  ]);
 });
 
 it("store_keeps_only_the_newest_switch_log_entries", async () => {

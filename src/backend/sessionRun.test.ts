@@ -9,7 +9,9 @@ import { PermissionProfile, ProviderId, type Account } from "../domain/types";
 
 import { settled } from "../../tests/fakes/settle";
 
+import { createAccountReservations } from "./accountReservations";
 import type { AgentAdapter, AgentHandle } from "./agentAdapter";
+import { createLeaseModes } from "./leaseModes";
 import { createSessionService, type SessionService } from "./session";
 import { createJsonStore } from "./storage";
 
@@ -106,6 +108,9 @@ async function openRig(): Promise<Rig> {
     adapter,
     store,
     broadcast: () => undefined,
+    publishView: () => undefined,
+    reserved: createAccountReservations(),
+    leaseModes: createLeaseModes(),
     now: () => 1_700_000_000_000,
     schedule: () => () => undefined,
     inspectWorktree: async (dir) => {

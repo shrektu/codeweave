@@ -47,7 +47,12 @@ import {
   type FlowDraft,
   type FlowSelection,
 } from "./flowDraft";
-import { isSessionLive } from "./format";
+import {
+  isSessionLive,
+  latestOpenRunOf,
+  latestRunOf,
+  shownSessionOf,
+} from "./format";
 import type { IpcClient } from "./ipc";
 import { useApp } from "./services";
 import { useTerminalDock } from "./terminal/useTerminalDock";
@@ -434,7 +439,7 @@ function FlowTabBody({
           list={load.list}
           session={session}
           sessionLive={sessionLive}
-          flowRun={flowRun?.cwd === cwd ? flowRun : null}
+          flowRun={flowRun}
           editor={editor}
           reloading={source.reloading}
           onOpenSession={onOpenSession}
@@ -446,12 +451,11 @@ function FlowTabBody({
 }
 
 function openRunCwdOf(snapshot: Snapshot | null): string | null {
-  const run = snapshot?.flowRun ?? null;
-  return run !== null && isRunOpen(run.status) ? run.cwd : null;
+  return latestOpenRunOf(snapshot?.flowRuns ?? [])?.cwd ?? null;
 }
 
 function liveSessionCwdOf(snapshot: Snapshot | null): string | null {
-  const session = snapshot?.session ?? null;
+  const { session } = shownSessionOf(snapshot);
   return isSessionLive(session) ? (session?.cwd ?? null) : null;
 }
 
@@ -463,7 +467,7 @@ function flowCwdOf(
     openRunCwdOf(snapshot) ??
     liveSessionCwdOf(snapshot) ??
     picked ??
-    snapshot?.session?.cwd ??
+    shownSessionOf(snapshot).session?.cwd ??
     null
   );
 }
@@ -499,7 +503,9 @@ function FlowTab({
 }): JSX.Element {
   const { state } = useApp();
   const source = useFlowsLoad(cwd);
-  const session = state.snapshot?.session ?? null;
+  const { session } = shownSessionOf(state.snapshot);
+  const flowRun =
+    cwd === null ? null : latestRunOf(state.snapshot?.flowRuns ?? [], cwd);
 
   return (
     <section className="glass panel flow-tab" aria-label="Flow">
@@ -515,7 +521,7 @@ function FlowTab({
         cwd={cwd}
         session={session?.cwd === cwd ? session : null}
         sessionLive={isSessionLive(session)}
-        flowRun={state.snapshot?.flowRun ?? null}
+        flowRun={flowRun}
         source={source}
         editor={editor}
         onOpenSession={onOpenSession}

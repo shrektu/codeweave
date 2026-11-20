@@ -10,6 +10,7 @@ import { createTerminalRig, type TerminalRig } from "../fakes/fakeTerminal";
 import {
   fakeFlowRuns,
   fakeProbes,
+  fakeSessionPool,
   fakeSessions,
   fakeTerminals,
 } from "../fakes/fakeSessions";
@@ -56,9 +57,11 @@ async function handlersFor(
     userData,
     broadcast: vi.fn(),
     flowRuns: fakeFlowRuns(),
-    sessions: fakeSessions({
-      start: () => Promise.resolve(sessionIn(startedIn)),
-    }),
+    sessions: fakeSessionPool(
+      fakeSessions({
+        start: () => Promise.resolve(sessionIn(startedIn)),
+      }),
+    ),
     probes: fakeProbes(),
     catalog: { load: () => Promise.resolve({ models: [], error: null }) },
     containerStatus: { available: true, message: null },

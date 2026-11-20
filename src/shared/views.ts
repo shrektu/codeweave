@@ -17,6 +17,8 @@ import { TaskClass, TaskClassSchema } from "../domain/taskClass";
 import {
   EdgeKind,
   EffectLevel,
+  FlowPlacement,
+  FlowRunOrigin,
   PermissionProfile,
   ProviderId,
   SwitchReason,
@@ -267,6 +269,9 @@ export const FlowRunViewSchema = z.strictObject({
     })
     .nullable(),
   failure: z.string().nullable(),
+  origin: z.enum(FlowRunOrigin),
+  placement: z.enum(FlowPlacement),
+  branch: z.string().nullable(),
 });
 export type FlowRunView = z.infer<typeof FlowRunViewSchema>;
 
@@ -332,6 +337,9 @@ export const SnapshotSchema = z.strictObject({
     message: z.string().nullable(),
   }),
   terminal: TerminalViewSchema.nullable(),
-  flowRun: FlowRunViewSchema.nullable(),
+  flowRuns: z.array(FlowRunViewSchema),
+  flowSessions: z.array(
+    z.strictObject({ runId: NonEmptyString, view: SessionViewSchema }),
+  ),
 });
 export type Snapshot = z.infer<typeof SnapshotSchema>;

@@ -54,6 +54,7 @@ import {
   type ConsoleProbeResult,
   type LimitProbeService,
 } from "./limitProbe";
+import { createLeaseModes, type LeaseModes } from "./leaseModes";
 import { resolveLockKey, WorktreeLocks, type LockKeyResolver } from "./locks";
 import { createOpencodeAdapter } from "./opencode/adapter";
 import {
@@ -81,11 +82,8 @@ import { createProviderAdapter } from "./providerAdapter";
 import { createKeyStore, type KeyStore } from "./secrets/keyStore";
 import { createSecretSource } from "./secrets/source";
 import type { SecretVault } from "./secrets/vault";
-import {
-  createSessionService,
-  type ContainerStatus,
-  type SessionService,
-} from "./session";
+import type { ContainerStatus } from "./session";
+import { createSessionPool, type SessionPool } from "./sessionPool";
 import {
   toUpdaterConfigMessage,
   type PostUpdaterConfig,
@@ -319,11 +317,13 @@ function createProbes(
 function createProcesses(
   container: ProcessContainer,
   resolveLockKey: LockKeyResolver,
+  leaseModes: LeaseModes,
 ): AgentProcesses {
   return createAgentProcesses({
     container,
     locks: new WorktreeLocks(),
     resolveLockKey,
+    leaseModeOf: (runId) => leaseModes.modeOf(runId),
     onFailure: (failure) => {
       console.error(
         `agent ${failure.runId} left processes behind: ${failure.survivors.join(",")}`,
@@ -573,10 +573,14 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     sessions.isInUse(accountId),
   );
   const lockKeyResolver = deps.resolveLockKey ?? resolveLockKey;
+  const leaseModes = createLeaseModes();
   const processes =
-    container === null ? null : createProcesses(container, lockKeyResolver);
-  const sessions: SessionService = createSessionService({
+    container === null
+      ? null
+      : createProcesses(container, lockKeyResolver, leaseModes);
+  const sessions: SessionPool = createSessionPool({
     adapter: createAdapter(deps, container, processes, keyStore),
+    leaseModes,
     store,
     broadcast: deps.broadcast,
     now: deps.now,
@@ -594,7 +598,9 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
   });
   const terminals = createTerminals(deps, container, store, lockKeyResolver);
   const flowRuns = createFlowRunService({
-    sessions,
+    sessions: (runId) => sessions.forRun(runId),
+    releaseSessions: (runId) => sessions.release(runId),
+    mainSessionLive: () => sessions.main.isLive(),
     listFlows,
     inspectWorktree: deps.inspectWorktree,
     broadcast: deps.broadcast,

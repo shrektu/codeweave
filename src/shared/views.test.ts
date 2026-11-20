@@ -218,7 +218,39 @@ const FLOW_RUN_VIEW = {
   nodes: [{ id: "a", status: "done", visits: 2, result: "ok" }],
   decision: { reason: "rounds_exhausted", nodeId: "a" },
   failure: null,
+  origin: "user",
+  placement: "in_place",
+  branch: null,
 };
+
+function runViewWithout(key: string): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(FLOW_RUN_VIEW).filter(([name]) => name !== key),
+  );
+}
+
+it("flow_run_view_schema_requires_origin_placement_and_branch", () => {
+  expect(FlowRunViewSchema.safeParse(runViewWithout("origin")).success).toBe(
+    false,
+  );
+  expect(FlowRunViewSchema.safeParse(runViewWithout("placement")).success).toBe(
+    false,
+  );
+  expect(FlowRunViewSchema.safeParse(runViewWithout("branch")).success).toBe(
+    false,
+  );
+  expect(
+    FlowRunViewSchema.safeParse({ ...FLOW_RUN_VIEW, origin: "robot" }).success,
+  ).toBe(false);
+  expect(
+    FlowRunViewSchema.safeParse({
+      ...FLOW_RUN_VIEW,
+      origin: "orchestrator",
+      placement: "worktree",
+      branch: "feature/login",
+    }).success,
+  ).toBe(true);
+});
 
 it("flow_run_view_schema_accepts_a_paused_run_and_rejects_unknowns", () => {
   const unknownNodeStatus = {

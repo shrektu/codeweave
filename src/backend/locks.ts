@@ -13,6 +13,12 @@ export class WorktreeBusyError extends Error {
   }
 }
 
+export const LeaseMode = {
+  exclusive: "exclusive",
+  observer: "observer",
+} as const;
+export type LeaseMode = (typeof LeaseMode)[keyof typeof LeaseMode];
+
 export interface Lease {
   readonly key: string;
   release(): void;
@@ -38,7 +44,10 @@ export async function resolveLockKey(cwd: string): Promise<string> {
 export class WorktreeLocks {
   private readonly held = new Map<string, symbol>();
 
-  acquire(key: string): Lease {
+  acquire(key: string, mode: LeaseMode = LeaseMode.exclusive): Lease {
+    if (mode === LeaseMode.observer) {
+      return { key, release: () => undefined };
+    }
     if (this.held.has(key)) {
       throw new WorktreeBusyError(key);
     }

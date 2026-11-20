@@ -9,6 +9,7 @@ import {
   formatLocalTime,
   isStale,
   MS_PER_MINUTE,
+  shownSessionOf,
 } from "../format";
 import { useApp } from "../services";
 import { useNow } from "../useNow";
@@ -70,7 +71,7 @@ export function LimitsPanel(): JSX.Element {
   const { state } = useApp();
   const now = useNow(MS_PER_MINUTE);
   const accounts = state.snapshot?.accounts ?? [];
-  const session = state.snapshot?.session ?? null;
+  const { session } = shownSessionOf(state.snapshot);
   const sessionLimits = session?.limits ?? [];
   const limits = [
     ...sessionLimits,

@@ -12,7 +12,9 @@ import { IpcError, IpcErrorCode } from "../shared/protocol";
 import { settled } from "../../tests/fakes/settle";
 
 import type { AgentAdapter, AgentHandle, AgentStartSpec } from "./agentAdapter";
+import { createAccountReservations } from "./accountReservations";
 import { SESSION_START_STOPPED_MESSAGE } from "./constants";
+import { createLeaseModes } from "./leaseModes";
 import { StopFailureReason, type StopResult } from "./process/container";
 import {
   createSessionService,
@@ -182,11 +184,12 @@ async function setup(options: SetupOptions): Promise<Setup> {
   const service = createSessionService({
     adapter,
     store: sessionStore,
-    broadcast: (event, payload) => {
-      if (event === "session/changed") {
-        broadcasts.push(payload);
-      }
+    broadcast: () => undefined,
+    publishView: (view) => {
+      broadcasts.push(view);
     },
+    reserved: createAccountReservations(),
+    leaseModes: createLeaseModes(),
     now: () => NOW_MS,
     schedule: () => () => undefined,
     inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),

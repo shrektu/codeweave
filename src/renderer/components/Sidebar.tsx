@@ -1,7 +1,12 @@
 import type { JSX } from "react";
 
 import type { AccountRuntimeView } from "../../shared/views";
-import { formatLocalTime, MS_PER_MINUTE, MS_PER_SECOND } from "../format";
+import {
+  formatLocalTime,
+  MS_PER_MINUTE,
+  MS_PER_SECOND,
+  shownSessionOf,
+} from "../format";
 import { useApp } from "../services";
 import { useNow } from "../useNow";
 
@@ -46,7 +51,8 @@ export function Sidebar({ onManageAccounts }: SidebarProps): JSX.Element {
   const { state } = useApp();
   const now = useNow(MS_PER_MINUTE);
   const accounts = state.snapshot?.accounts ?? [];
-  const activeAccountId = state.snapshot?.session?.activeAccountId ?? null;
+  const activeAccountId =
+    shownSessionOf(state.snapshot).session?.activeAccountId ?? null;
 
   return (
     <section className="glass panel" aria-label="Accounts">

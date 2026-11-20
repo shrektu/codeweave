@@ -18,7 +18,7 @@ import type { FlowsList } from "../../src/shared/views";
 import {
   fakeFlowRuns,
   fakeProbes,
-  fakeSessions,
+  fakeSessionPool,
   fakeTerminals,
 } from "../fakes/fakeSessions";
 import { fakeSecrets } from "../fakes/fakeVault";
@@ -97,7 +97,7 @@ function handlersFor(cwd: string): ReturnType<typeof createHandlers> {
     ...fakeSecrets(cwd),
     userData: cwd,
     broadcast: vi.fn(),
-    sessions: fakeSessions(),
+    sessions: fakeSessionPool(),
     flowRuns: fakeFlowRuns(),
     probes: fakeProbes(),
     catalog: { load: () => Promise.resolve({ models: [], error: null }) },

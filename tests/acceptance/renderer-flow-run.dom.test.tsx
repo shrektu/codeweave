@@ -58,7 +58,7 @@ afterEach(cleanup);
 
 interface ClientOptions {
   session?: SessionView | null;
-  flowRun?: FlowRunView | null;
+  flowRun?: FlowRunView;
   list?: FlowsList;
 }
 
@@ -69,7 +69,7 @@ function appClient(options: ClientOptions = {}): FakeIpcClient {
     "sessions/snapshot",
     makeSnapshot({
       session: options.session ?? null,
-      flowRun: options.flowRun ?? null,
+      flowRuns: options.flowRun === undefined ? [] : [options.flowRun],
     }),
   );
   client.respond("flows/list", options.list ?? makeFlowsList());
@@ -134,7 +134,7 @@ async function pickFolder(): Promise<void> {
   await findGraphNode("build");
 }
 
-function emitFlowRun(client: FakeIpcClient, run: FlowRunView | null): void {
+function emitFlowRun(client: FakeIpcClient, run: FlowRunView): void {
   client.emit({ v: PROTOCOL_VERSION, event: "flow/changed", payload: run });
 }
 
@@ -469,7 +469,7 @@ it("flow_run_stop_and_outcome_lines", async () => {
   expect(screen.queryByLabelText("Task")).toBeNull();
   fireEvent.click(await screen.findByRole("button", { name: "Stop flow" }));
   await waitFor(() => {
-    expect(requestsOf(client, "flow/stop")).toEqual([{}]);
+    expect(requestsOf(client, "flow/stop")).toEqual([{ runId: "run-1" }]);
   }, WAIT_OPTIONS);
 
   emitFlowRun(client, openRun({ status: "stopped" }));
@@ -699,7 +699,7 @@ it("flow_run_controls_survive_missing_flow", async () => {
   }, RED_WAIT_OPTIONS);
   fireEvent.click(screen.getByRole("button", { name: "Stop flow" }));
   await waitFor(() => {
-    expect(requestsOf(client, "flow/stop")).toEqual([{}]);
+    expect(requestsOf(client, "flow/stop")).toEqual([{ runId: "run-1" }]);
   }, RED_WAIT_OPTIONS);
 });
 

@@ -21,6 +21,7 @@ import type { AgentView, FlowsList, SessionView } from "../../src/shared/views";
 import {
   fakeFlowRuns,
   fakeProbes,
+  fakeSessionPool,
   fakeSessions,
   fakeTerminals,
 } from "../fakes/fakeSessions";
@@ -146,7 +147,7 @@ function handlersFor(cwd: string): ReturnType<typeof createHandlers> {
     ...fakeSecrets(cwd),
     userData: cwd,
     broadcast: vi.fn(),
-    sessions: fakeSessions(),
+    sessions: fakeSessionPool(),
     flowRuns: fakeFlowRuns(),
     probes: fakeProbes(),
     catalog: { load: () => Promise.resolve({ models: [], error: null }) },
@@ -846,7 +847,9 @@ function flowRunRig(): {
     },
   });
   const runs = createFlowRunService({
-    sessions,
+    sessions: () => sessions,
+    releaseSessions: () => Promise.resolve(),
+    mainSessionLive: () => false,
     listFlows,
     inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),
     broadcast: () => undefined,
@@ -875,7 +878,7 @@ edges: []
   await vi.waitFor(() => {
     expect(prompt).toHaveBeenCalledTimes(1);
   });
-  await runs.stop();
+  await runs.stopAll();
   const { revision } = await agentOf(cwd, "coder");
   await saveAgent(cwd, {
     file: CODER_FILE,
@@ -888,7 +891,7 @@ edges: []
   await vi.waitFor(() => {
     expect(prompt).toHaveBeenCalledTimes(2);
   });
-  await runs.stop();
+  await runs.stopAll();
 
   expect(prompt.mock.calls[0]?.[0]).toContain("Old instructions.");
   expect(prompt.mock.calls[1]?.[0]).toContain("New instructions.");

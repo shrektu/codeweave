@@ -11,7 +11,8 @@ import type { LimitProbeService } from "./limitProbe";
 import type { ModelCatalogService } from "./opencode/catalog";
 import type { KeyStore } from "./secrets/keyStore";
 import type { SecretVault } from "./secrets/vault";
-import type { ContainerStatus, SessionService } from "./session";
+import type { ContainerStatus } from "./session";
+import type { SessionPool } from "./sessionPool";
 import {
   createSettingsService,
   type PostUpdaterConfig,
@@ -25,7 +26,7 @@ export interface HandlerDeps {
   vault: SecretVault;
   userData: string;
   broadcast: ConnectionRegistry["broadcast"];
-  sessions: SessionService;
+  sessions: SessionPool;
   flowRuns: FlowRunService;
   probes: LimitProbeService;
   catalog: ModelCatalogService;
@@ -71,6 +72,7 @@ export function createHandlers({
   probes.onChanged(() => {
     publishAccounts(accounts);
   });
+  const { main } = sessions;
   const synced = async <T>(mutation: Promise<T>): Promise<T> => {
     const result = await mutation;
     sessions.setAccounts(await store.readAccounts());
@@ -89,42 +91,43 @@ export function createHandlers({
   return {
     ping: () => ({ pong: true, backendPid: process.pid }),
     "sessions/snapshot": async () => ({
-      session: sessions.view(),
+      session: main.view(),
       accounts: (await accounts.list()).accounts,
       settings: await settings.get(),
       switchLog: await store.readSwitchLog(SWITCH_LOG_SNAPSHOT_LIMIT),
       container: { ...containerStatus },
       terminal: terminals.view(),
-      flowRun: flowRuns.view(),
+      flowRuns: flowRuns.views(),
+      flowSessions: [...sessions.runViews()],
     }),
     "session/start": async (params) => {
-      if (flowRuns.isActive()) {
+      if (flowRuns.hasOpenUserRuns()) {
         throw new IpcError(IpcErrorCode.CONFLICT, FLOW_RUNNING_MESSAGE);
       }
-      const view = await sessions.start(params);
+      const view = await main.start(params);
       await terminals.retarget(view.cwd).catch((error: unknown) => {
         console.error("terminal retarget failed", error);
       });
       return view;
     },
     "session/prompt": async ({ text, ...overrides }) => {
-      await sessions.prompt(text, overrides);
+      await main.prompt(text, overrides);
       return { accepted: true };
     },
     "session/stop": async () => {
-      if (flowRuns.isActive()) {
-        await flowRuns.stop();
-        return { stopped: true };
-      }
-      const live = sessions.isLive();
-      const phase = sessions.view()?.phase.phase;
-      await sessions.stop();
+      const live = main.isLive();
+      const phase = main.view()?.phase.phase;
+      await main.stop();
       return {
         stopped: live || (phase !== undefined && phase !== "stopped"),
       };
     },
-    "permission/answer": ({ requestId, optionId }) => {
-      sessions.answerPermission(requestId, optionId);
+    "permission/answer": ({ requestId, optionId, runId }) => {
+      if (runId === undefined) {
+        main.answerPermission(requestId, optionId);
+      } else {
+        flowRuns.answerPermission(runId, requestId, optionId);
+      }
       return { ok: true };
     },
     "accounts/list": () => accounts.list(),
@@ -147,9 +150,9 @@ export function createHandlers({
     "agents/save": ({ cwd, ...params }) => saveAgent(cwd, params),
     "agents/delete": ({ cwd, ...params }) => deleteAgent(cwd, params),
     "flow/start": (params) => flowRuns.start(params),
-    "flow/stop": async () => {
-      const stopped = flowRuns.isActive();
-      await flowRuns.stop();
+    "flow/stop": async ({ runId }) => {
+      const stopped = flowRuns.isOpen(runId);
+      await flowRuns.stop(runId);
       return { stopped };
     },
     "flow/decide": (params) => flowRuns.decide(params),

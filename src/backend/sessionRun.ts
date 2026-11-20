@@ -47,6 +47,7 @@ import {
 import { IpcError, IpcErrorCode } from "../shared/protocol";
 import type { FlowRef, LimitView, SessionView } from "../shared/views";
 
+import type { AccountReservations } from "./accountReservations";
 import {
   AgentStartFailure,
   UnknownPermissionError,
@@ -56,6 +57,7 @@ import {
 import { createInFlight } from "./inFlight";
 import { PROCESS_EXITED_MESSAGE, SESSION_CLOSED_MESSAGE } from "./constants";
 import { ProbeStillRunningError } from "./limitProbe";
+import type { LeaseMode } from "./locks";
 import { pickOption, toPermissionQuery } from "./permissionQuery";
 import type { StopResult } from "./process/container";
 import type { SessionServiceDeps } from "./session";
@@ -121,7 +123,8 @@ interface SessionRunInit {
   registered: readonly Account[];
   accounts: readonly Account[];
   initial: Account;
-  reserved: Set<string>;
+  leaseMode: LeaseMode;
+  reserved: AccountReservations;
   loginFailures: ReadonlySet<string>;
   onRuntimeSettled: () => void;
 }
@@ -131,8 +134,9 @@ export class SessionRun {
   readonly provider: ProviderId;
   private readonly deps: SessionServiceDeps;
   private readonly spec: RunSpec;
+  private readonly leaseMode: LeaseMode;
   private readonly onRuntimeSettled: () => void;
-  private readonly reserved: Set<string>;
+  private readonly reserved: AccountReservations;
   private readonly loginFailures: ReadonlySet<string>;
   private readonly controller: RotationController;
   private accounts: readonly Account[];
@@ -163,11 +167,13 @@ export class SessionRun {
     registered,
     accounts,
     initial,
+    leaseMode,
     reserved,
     loginFailures,
     onRuntimeSettled,
   }: SessionRunInit) {
     this.deps = deps;
+    this.leaseMode = leaseMode;
     this.reserved = reserved;
     this.loginFailures = loginFailures;
     this.provider = provider;
@@ -338,7 +344,7 @@ export class SessionRun {
   }
 
   private publish(): void {
-    this.deps.broadcast("session/changed", this.view());
+    this.deps.publishView(this.view());
   }
 
   private launch(account: Account): Promise<AgentStartResult> {
@@ -346,11 +352,11 @@ export class SessionRun {
   }
 
   private async spawnAgent(account: Account): Promise<AgentStartResult> {
-    this.reserved.add(account.id);
+    const release = this.reserved.reserve(account.id);
     try {
       return await this.reserveAndStart(account);
     } finally {
-      this.reserved.delete(account.id);
+      release();
     }
   }
 
@@ -367,17 +373,7 @@ export class SessionRun {
         message: errorText(error),
       };
     }
-    const settings = await this.deps.store.readSettings();
-    const result = await this.deps.adapter.start({
-      account,
-      cwd: this.spec.cwd,
-      profile: this.spec.profile,
-      runId: this.deps.newRunId(),
-      executable: this.deps.resolveExecutable(
-        account.provider,
-        configuredExecutable(settings, account.provider),
-      ),
-    });
+    const result = await this.startAdapter(account);
     if (!result.ok) {
       return result;
     }
@@ -394,6 +390,26 @@ export class SessionRun {
     }
     this.register(result.handle);
     return result;
+  }
+
+  private async startAdapter(account: Account): Promise<AgentStartResult> {
+    const settings = await this.deps.store.readSettings();
+    const runId = this.deps.newRunId();
+    this.deps.leaseModes.set(runId, this.leaseMode);
+    try {
+      return await this.deps.adapter.start({
+        account,
+        cwd: this.spec.cwd,
+        profile: this.spec.profile,
+        runId,
+        executable: this.deps.resolveExecutable(
+          account.provider,
+          configuredExecutable(settings, account.provider),
+        ),
+      });
+    } finally {
+      this.deps.leaseModes.clear(runId);
+    }
   }
 
   private register(handle: AgentHandle): void {

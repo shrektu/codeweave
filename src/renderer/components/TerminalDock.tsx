@@ -3,6 +3,7 @@ import { useState, type JSX } from "react";
 import { TerminalStatus } from "../../domain/types";
 import type { TerminalView } from "../../shared/views";
 import type { EffectLevel } from "../effects";
+import { shownSessionOf } from "../format";
 import { useApp } from "../services";
 import { requestPendingClose } from "../terminal/attachments";
 import { clampDockHeight, DOCK_DEFAULT_HEIGHT_PX } from "../terminal/dockSize";
@@ -173,7 +174,7 @@ export function TerminalDock({
   const folder =
     terminal?.status === TerminalStatus.running
       ? terminal.cwd
-      : (snapshot?.session?.cwd ?? pickedFolder);
+      : (shownSessionOf(snapshot).session?.cwd ?? pickedFolder);
   const shownHeight = clampDockHeight(height, columnHeight);
 
   return (

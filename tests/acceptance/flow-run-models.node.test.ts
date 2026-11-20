@@ -104,8 +104,8 @@ async function openFlowRig(accounts: readonly Account[]): Promise<BackendRig> {
 async function startAndFinish(rig: BackendRig, flowId: string): Promise<void> {
   await rig.call("flow/start", { cwd: rig.cwd, flowId, task: "Add a form" });
   await settled(async () => {
-    const { flowRun } = await rig.call("sessions/snapshot", {});
-    expect(flowRun?.status).toBe("done");
+    const { flowRuns } = await rig.call("sessions/snapshot", {});
+    expect(flowRuns.map((run) => run.status)).toEqual(["done"]);
   });
 }
 

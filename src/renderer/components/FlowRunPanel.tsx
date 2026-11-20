@@ -160,7 +160,9 @@ function OpenRun({
           className="btn"
           disabled={action.pending}
           onClick={() => {
-            void action.run(() => client.request("flow/stop", {}));
+            void action.run(() =>
+              client.request("flow/stop", { runId: run.runId }),
+            );
           }}
         >
           Stop flow

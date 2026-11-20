@@ -18,6 +18,7 @@ import {
   isSessionLive,
   PROVIDER_LABELS,
   providerOf,
+  shownSessionOf,
   type SelectableProvider,
 } from "../format";
 import { turnBadge } from "../routingText";
@@ -30,6 +31,7 @@ import { ToolCard } from "./ToolCard";
 
 interface SessionBodyProps {
   session: SessionView;
+  runId: string | null;
   accounts: readonly AccountView[];
 }
 
@@ -104,7 +106,13 @@ function TurnBadgeEntry({ turn }: { turn: TurnRouteView }): JSX.Element {
   );
 }
 
-function StreamEntry({ item }: { item: StreamItem }): JSX.Element {
+function StreamEntry({
+  item,
+  runId,
+}: {
+  item: StreamItem;
+  runId: string | null;
+}): JSX.Element {
   switch (item.kind) {
     case "turn":
       return <TurnBadgeEntry turn={item.turn} />;
@@ -119,7 +127,7 @@ function StreamEntry({ item }: { item: StreamItem }): JSX.Element {
     case "permission":
       return (
         <li>
-          <PermissionCard permission={item.permission} />
+          <PermissionCard permission={item.permission} runId={runId} />
         </li>
       );
   }
@@ -274,9 +282,17 @@ function StartPrompt(): JSX.Element {
   );
 }
 
-function SessionBody({ session, accounts }: SessionBodyProps): JSX.Element {
+function SessionBody({
+  session,
+  runId,
+  accounts,
+}: SessionBodyProps): JSX.Element {
   const { client } = useApp();
   const stop = useAsyncAction();
+  const requestStop = (): Promise<unknown> =>
+    runId === null
+      ? client.request("session/stop", {})
+      : client.request("flow/stop", { runId });
 
   return (
     <>
@@ -291,7 +307,7 @@ function SessionBody({ session, accounts }: SessionBodyProps): JSX.Element {
             className="btn"
             disabled={stop.pending}
             onClick={() => {
-              void stop.run(() => client.request("session/stop", {}));
+              void stop.run(requestStop);
             }}
           >
             {session.turnInFlight ? "Stop" : "End session"}
@@ -301,7 +317,7 @@ function SessionBody({ session, accounts }: SessionBodyProps): JSX.Element {
       {stop.error !== null && <p className="error">{stop.error}</p>}
       <ul className="stream">
         {streamItems(session).map((item) => (
-          <StreamEntry key={item.key} item={item} />
+          <StreamEntry key={item.key} item={item} runId={runId} />
         ))}
       </ul>
       {!isSessionLive(session) && <StartPrompt />}
@@ -312,7 +328,7 @@ function SessionBody({ session, accounts }: SessionBodyProps): JSX.Element {
 
 export function SessionStream(): JSX.Element {
   const { state } = useApp();
-  const session = state.snapshot?.session ?? null;
+  const { session, runId } = shownSessionOf(state.snapshot);
 
   return (
     <section className="glass panel" aria-label="Session">
@@ -322,6 +338,7 @@ export function SessionStream(): JSX.Element {
       ) : (
         <SessionBody
           session={session}
+          runId={runId}
           accounts={state.snapshot?.accounts ?? []}
         />
       )}

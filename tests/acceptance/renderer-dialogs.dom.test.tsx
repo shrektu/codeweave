@@ -66,7 +66,7 @@ function settingsClient(): FakeIpcClient {
       updateChannel: patch.updateChannel ?? current.updateChannel,
       defaultTaskClass: patch.defaultTaskClass ?? current.defaultTaskClass,
     };
-    client.emit({ v: 6, event: "settings/changed", payload: current });
+    client.emit({ v: 7, event: "settings/changed", payload: current });
     return current;
   });
   return client;

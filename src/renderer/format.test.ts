@@ -1,6 +1,10 @@
 import { expect, it } from "vitest";
 
-import { makeSession } from "../../tests/fakes/fakeIpcClient";
+import {
+  makeFlowRun,
+  makeSession,
+  makeSnapshot,
+} from "../../tests/fakes/fakeIpcClient";
 
 import {
   accountLabel,
@@ -9,7 +13,48 @@ import {
   formatLocalTime,
   isSessionLive,
   isStale,
+  shownSessionOf,
 } from "./format";
+
+const STOPPED_MAIN = makeSession({ id: "main", phase: { phase: "stopped" } });
+const NODE_SESSION = makeSession({ id: "node" });
+
+it("shown_session_prefers_the_open_run_node_session_over_a_stopped_main", () => {
+  const snapshot = makeSnapshot({
+    session: STOPPED_MAIN,
+    flowRuns: [makeFlowRun({ runId: "run-1", status: "running" })],
+    flowSessions: [{ runId: "run-1", view: NODE_SESSION }],
+  });
+
+  expect(shownSessionOf(snapshot)).toEqual({
+    session: NODE_SESSION,
+    runId: "run-1",
+  });
+});
+
+it("shown_session_keeps_a_live_main_over_the_open_run_node_session", () => {
+  const live = makeSession({ id: "live-main" });
+  const snapshot = makeSnapshot({
+    session: live,
+    flowRuns: [makeFlowRun({ runId: "run-1", status: "running" })],
+    flowSessions: [{ runId: "run-1", view: NODE_SESSION }],
+  });
+
+  expect(shownSessionOf(snapshot)).toEqual({ session: live, runId: null });
+});
+
+it("shown_session_falls_back_to_a_stopped_main_when_no_run_is_open", () => {
+  const snapshot = makeSnapshot({
+    session: STOPPED_MAIN,
+    flowRuns: [makeFlowRun({ runId: "run-1", status: "done" })],
+    flowSessions: [{ runId: "run-1", view: NODE_SESSION }],
+  });
+
+  expect(shownSessionOf(snapshot)).toEqual({
+    session: STOPPED_MAIN,
+    runId: null,
+  });
+});
 
 it("session_live_excludes_stopped_failed_halted", () => {
   const live = [

@@ -8,10 +8,12 @@ const ALLOW_ONCE_KIND = "allow_once";
 
 export interface PermissionCardProps {
   permission: PermissionView;
+  runId?: string | null;
 }
 
 export function PermissionCard({
   permission,
+  runId = null,
 }: PermissionCardProps): JSX.Element {
   const { client } = useApp();
   const answer = useAsyncAction();
@@ -38,6 +40,7 @@ export function PermissionCard({
                 client.request("permission/answer", {
                   requestId: permission.requestId,
                   optionId: option.optionId,
+                  ...(runId === null ? {} : { runId }),
                 }),
               );
             }}

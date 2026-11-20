@@ -6,6 +6,8 @@ import { TaskClass } from "../../src/domain/taskClass";
 import { EdgeKind } from "../../src/domain/types";
 import {
   EffectLevel,
+  FlowPlacement,
+  FlowRunOrigin,
   PermissionProfile,
   ProviderId,
   SwitchReason,
@@ -242,6 +244,9 @@ export function makeFlowRun(overrides: Partial<FlowRunView> = {}): FlowRunView {
     ],
     decision: null,
     failure: null,
+    origin: FlowRunOrigin.user,
+    placement: FlowPlacement.inPlace,
+    branch: null,
     ...overrides,
   };
 }
@@ -353,7 +358,8 @@ export function makeSnapshot(overrides: Partial<Snapshot> = {}): Snapshot {
     switchLog: [],
     container: { available: true, message: null },
     terminal: null,
-    flowRun: null,
+    flowRuns: [],
+    flowSessions: [],
     ...overrides,
   };
 }

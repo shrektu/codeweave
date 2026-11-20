@@ -39,7 +39,12 @@ function applyEvent(snapshot: Snapshot, event: IpcEvent): Snapshot {
     case "terminal/changed":
       return { ...snapshot, terminal: event.payload };
     case "flow/changed":
-      return { ...snapshot, flowRun: event.payload };
+      return {
+        ...snapshot,
+        flowRuns: upsertByRunId(snapshot.flowRuns, event.payload),
+      };
+    case "flowSession/changed":
+      return { ...snapshot, flowSessions: applyFlowSession(snapshot, event) };
     case "terminal/data":
       return snapshot;
     case "switchLog/appended":
@@ -51,6 +56,37 @@ function applyEvent(snapshot: Snapshot, event: IpcEvent): Snapshot {
               -SWITCH_LOG_SNAPSHOT_LIMIT,
             ),
           };
+  }
+}
+
+function upsertByRunId<T extends { readonly runId: string }>(
+  entries: readonly T[],
+  entry: T,
+): T[] {
+  return entries.some((existing) => existing.runId === entry.runId)
+    ? entries.map((existing) =>
+        existing.runId === entry.runId ? entry : existing,
+      )
+    : [...entries, entry];
+}
+
+function applyFlowSession(
+  snapshot: Snapshot,
+  event: Extract<IpcEvent, { event: "flowSession/changed" }>,
+): Snapshot["flowSessions"] {
+  const { runId, view } = event.payload;
+  return view === null
+    ? snapshot.flowSessions.filter((entry) => entry.runId !== runId)
+    : upsertByRunId(snapshot.flowSessions, { runId, view });
+}
+
+function streamKey(event: IpcEvent): string {
+  switch (event.event) {
+    case "flow/changed":
+    case "flowSession/changed":
+      return `${event.event}:${event.payload.runId}`;
+    default:
+      return event.event;
   }
 }
 
@@ -70,7 +106,10 @@ export function bufferEvent(
   event: IpcEvent,
 ): IpcEvent[] {
   if (event.event !== "switchLog/appended") {
-    return [...buffer.filter((kept) => kept.event !== event.event), event];
+    return [
+      ...buffer.filter((kept) => streamKey(kept) !== streamKey(event)),
+      event,
+    ];
   }
   const appended = [...buffer, event];
   const evicted = new Set<IpcEvent>(

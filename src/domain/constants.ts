@@ -11,6 +11,7 @@ export const DEFAULT_MAX_RESULT_CHARS = 2000;
 export const DEFAULT_HANDOFF_CHARS = 16_000;
 
 export const MAX_PARALLEL_FLOWS = 3;
+export const RETAINED_FLOW_RUNS = 20;
 export const FLOW_TOOL_SERVER_NAME = "codeweave";
 
 export const MIN_FLOW_ROUNDS = 1;
