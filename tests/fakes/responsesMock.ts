@@ -50,6 +50,7 @@ const InputItemSchema = z.looseObject({
   type: z.string().optional(),
   role: z.string().optional(),
   name: z.string().optional(),
+  namespace: z.string().optional(),
   call_id: z.string().optional(),
   output: z.unknown().optional(),
   content: z
@@ -63,7 +64,14 @@ const InputItemSchema = z.looseObject({
 const RequestBodySchema = z.looseObject({
   model: z.string().optional(),
   input: z.array(InputItemSchema).default([]),
-  tools: z.array(z.looseObject({ name: z.string().optional() })).default([]),
+  tools: z
+    .array(
+      z.looseObject({
+        name: z.string().optional(),
+        tools: z.array(z.looseObject({ name: z.string() })).optional(),
+      }),
+    )
+    .default([]),
 });
 export type ResponsesRequestBody = z.infer<typeof RequestBodySchema>;
 type InputItem = z.infer<typeof InputItemSchema>;
@@ -164,6 +172,7 @@ function turnItem(turn: MockTurn, sequence: number): Record<string, unknown> {
     type: "function_call",
     id: `fc_${String(sequence)}`,
     call_id: `call_${String(sequence)}`,
+    ...(turn.namespace === undefined ? {} : { namespace: turn.namespace }),
     name: turn.name,
     arguments: JSON.stringify(turn.input),
   };

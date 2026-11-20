@@ -64,6 +64,7 @@ import {
   isOrchestratorRequest,
   nextOrchestratorStep,
   responsesTranscript,
+  responsesWireTurn,
   toolIs,
   type OrchestratorTranscript,
 } from "./orchestratorScript";
@@ -80,6 +81,7 @@ const TEST_TIMEOUT_MS = 240_000;
 const CLEANUP_TIMEOUT_MS = 30_000;
 const STEP_TIMEOUT_MS = 150_000;
 const POLL_INTERVAL_MS = 250;
+const DIAGNOSTIC_TAIL_CHARS = 400;
 const REVIEW_REPLY_WITHOUT_VERDICT = "Looks correct.";
 const REVIEW_VERDICT_MARKER = "## Verdict";
 const EXEC_TOOL = "exec_command";
@@ -111,6 +113,7 @@ interface Adapter<Body> {
   transcriptOf(body: Body): OrchestratorTranscript;
   promptOf(body: Body): string;
   shellTurn(toolNames: readonly string[], command: string): MockTurn;
+  toWire(body: Body, turn: MockTurn): MockTurn;
 }
 
 const cleanup = createCleanupStack();
@@ -197,10 +200,11 @@ function scriptedResponder<Body>(
     }
     if (isOrchestratorRequest(transcript.toolNames)) {
       observed.orchestrator.push(transcript);
-      return nextOrchestratorStep(transcript);
+      return adapter.toWire(body, nextOrchestratorStep(transcript));
     }
     observed.nodeToolNames.push(transcript.toolNames);
-    return nodeTurn(adapter, body, transcript, repoOf());
+    const turn = nodeTurn(adapter, body, transcript, repoOf());
+    return turn === undefined ? undefined : adapter.toWire(body, turn);
   };
 }
 
@@ -220,6 +224,7 @@ const responsesAdapter: Adapter<ResponsesRequestBody> = {
     }
     throw new Error(`no shell tool offered; offered: ${toolNames.join(", ")}`);
   },
+  toWire: responsesWireTurn,
 };
 
 const chatAdapter: Adapter<ChatRequestBody> = {
@@ -235,6 +240,7 @@ const chatAdapter: Adapter<ChatRequestBody> = {
     }
     throw new Error(`no bash tool offered; offered: ${toolNames.join(", ")}`);
   },
+  toWire: (_body, turn) => turn,
 };
 
 async function sessionOf(backend: Backend): Promise<SessionView> {
@@ -249,10 +255,20 @@ function transcriptText(session: SessionView): string {
   return session.messages.map((message) => message.text).join("");
 }
 
+function progressOf(session: SessionView, observed: Observed): string {
+  return JSON.stringify({
+    transcriptTail: transcriptText(session).slice(-DIAGNOSTIC_TAIL_CHARS),
+    orchestratorRequests: observed.orchestrator.length,
+    lastOrchestrator: observed.orchestrator.at(-1) ?? null,
+    lastNodeToolNames: observed.nodeToolNames.at(-1) ?? null,
+  });
+}
+
 async function runOrchestration(
   backend: Backend,
   repo: string,
   provider: ProviderId,
+  observed: Observed,
 ): Promise<void> {
   const { handlers } = backend;
   await handlers["session/start"]({
@@ -264,7 +280,10 @@ async function runOrchestration(
   await handlers["session/prompt"]({ text: FLOW_TASK });
   await vi.waitFor(async () => {
     const session = await sessionOf(backend);
-    expect(transcriptText(session).endsWith(FINAL_ANSWER)).toBe(true);
+    expect(
+      transcriptText(session).endsWith(FINAL_ANSWER),
+      progressOf(session, observed),
+    ).toBe(true);
   }, WAIT_OPTIONS);
 }
 
@@ -336,7 +355,7 @@ describe("orchestrator mode with the real codex CLI and a scripted model", () =>
       });
       const backend = await startOrchestratorBackend(workspace.userData);
 
-      await runOrchestration(backend, repo, ProviderId.codex);
+      await runOrchestration(backend, repo, ProviderId.codex, observed);
 
       await expectLoopCompleted(backend, repo, observed);
     },
@@ -374,7 +393,7 @@ describe("orchestrator mode with the real opencode CLI and a scripted model", ()
         opencodeAddParams(spec, userData, mock.url),
       );
 
-      await runOrchestration(backend, repo, ProviderId.opencode);
+      await runOrchestration(backend, repo, ProviderId.opencode, observed);
 
       await expectLoopCompleted(backend, repo, observed);
     },

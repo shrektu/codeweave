@@ -233,6 +233,34 @@ describe("responses mock respond hook", () => {
   });
 });
 
+describe("responses mock namespaced tool calls", () => {
+  it("tool_turn_with_a_namespace_streams_it_on_the_function_call", async () => {
+    const mock = await startResponsesMock(SCENARIOS, {
+      respond: () => ({
+        kind: TurnKind.tool,
+        namespace: "mcp__codeweave",
+        name: "start_flow",
+        input: { flowId: "two-node" },
+      }),
+    });
+    opened.push(mock);
+
+    const response = await post(mock, KEY_TOOL, {
+      input: [userMessage("hi")],
+      tools: [{ name: "exec_command" }],
+    });
+    const events = parseSse(await response.text());
+
+    expect(events[1]?.data).toMatchObject({
+      item: {
+        type: "function_call",
+        namespace: "mcp__codeweave",
+        name: "start_flow",
+      },
+    });
+  });
+});
+
 describe("responses mock respond hook input and fallback", () => {
   it("respond_receives_the_parsed_request_body", async () => {
     const seen: unknown[] = [];

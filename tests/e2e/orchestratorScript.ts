@@ -18,6 +18,7 @@ export const GREETING_CONTENT = "hello-from-the-flow";
 export const DECISION_MARKER = "Decision needed";
 const RUN_ID_PATTERN = /runId\\?"\s*:\s*\\?"([^"\\]+)/;
 const NAME_SEPARATOR = "_";
+const NAMESPACE_SEPARATOR = "__";
 const TOOL_TEXT_SEPARATOR = "\n";
 const MISSING_TOOL = "";
 
@@ -270,6 +271,21 @@ export function anthropicTranscript(
   );
 }
 
+function namespaced(namespace: string | undefined, name: string): string {
+  return namespace === undefined
+    ? name
+    : `${namespace}${NAMESPACE_SEPARATOR}${name}`;
+}
+
+function offeredResponsesTools(
+  tool: ResponsesRequestBody["tools"][number],
+): string[] {
+  if (tool.tools === undefined) {
+    return tool.name === undefined ? [] : [tool.name];
+  }
+  return tool.tools.map((inner) => namespaced(tool.name, inner.name));
+}
+
 function responsesEvents(
   item: ResponsesRequestBody["input"][number],
 ): TranscriptEvent[] {
@@ -278,7 +294,10 @@ function responsesEvents(
       {
         kind: EventKind.use,
         id: item.call_id ?? "",
-        name: item.name ?? MISSING_TOOL,
+        name:
+          item.name === undefined
+            ? MISSING_TOOL
+            : namespaced(item.namespace, item.name),
       },
     ];
   }
@@ -298,7 +317,7 @@ export function responsesTranscript(
   body: ResponsesRequestBody,
 ): OrchestratorTranscript {
   return transcriptFrom(
-    body.tools.flatMap((tool) => (tool.name === undefined ? [] : [tool.name])),
+    body.tools.flatMap(offeredResponsesTools),
     body.input.flatMap(responsesEvents),
   );
 }
@@ -332,4 +351,22 @@ export function chatTranscript(body: ChatRequestBody): OrchestratorTranscript {
     ),
     body.messages.flatMap(chatEvents),
   );
+}
+
+export function responsesWireTurn(
+  body: ResponsesRequestBody,
+  turn: MockTurn,
+): MockTurn {
+  if (turn.kind !== TurnKind.tool) {
+    return turn;
+  }
+  for (const tool of body.tools) {
+    const child = tool.tools?.find(
+      (inner) => namespaced(tool.name, inner.name) === turn.name,
+    );
+    if (tool.name !== undefined && child !== undefined) {
+      return { ...turn, namespace: tool.name, name: child.name };
+    }
+  }
+  return turn;
 }

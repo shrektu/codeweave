@@ -7,6 +7,7 @@ import {
   isOrchestratorRequest,
   nextOrchestratorStep,
   responsesTranscript,
+  responsesWireTurn,
   type OrchestratorTranscript,
   type TranscriptLast,
 } from "../e2e/orchestratorScript";
@@ -320,5 +321,67 @@ describe("responses and chat transcript adapters", () => {
         text: "flows json",
       },
     });
+  });
+});
+
+describe("codex mcp namespaces on the responses wire", () => {
+  const NAMESPACE = "mcp__codeweave";
+  const CODEX_BODY = {
+    tools: [
+      { type: "function", name: "exec_command" },
+      {
+        type: "namespace",
+        name: NAMESPACE,
+        tools: [{ name: "list_flows" }, { name: "start_flow" }],
+      },
+    ],
+    input: [
+      {
+        type: "function_call",
+        call_id: "c1",
+        namespace: NAMESPACE,
+        name: "list_flows",
+      },
+      { type: "function_call_output", call_id: "c1", output: "{}" },
+    ],
+  };
+
+  it("responses_flattens_codex_mcp_namespaces_into_offered_names", () => {
+    const body = responsesTranscript(CODEX_BODY);
+
+    expect(body.toolNames).toEqual([
+      "exec_command",
+      "mcp__codeweave__list_flows",
+      "mcp__codeweave__start_flow",
+    ]);
+    expect(isOrchestratorRequest(body.toolNames)).toBe(true);
+    expect(body.calls).toEqual([
+      { tool: "mcp__codeweave__list_flows", result: "{}" },
+    ]);
+  });
+
+  it("responses_wire_turn_splits_a_namespaced_tool_call", () => {
+    const input = { flowId: "two-node" };
+
+    expect(
+      responsesWireTurn(CODEX_BODY, {
+        kind: TurnKind.tool,
+        name: "mcp__codeweave__start_flow",
+        input,
+      }),
+    ).toEqual({
+      kind: TurnKind.tool,
+      namespace: NAMESPACE,
+      name: "start_flow",
+      input,
+    });
+  });
+
+  it("responses_wire_turn_keeps_top_level_tools_and_text", () => {
+    const shell = { kind: TurnKind.tool, name: "exec_command", input: {} };
+    const text = { kind: TurnKind.text, text: "done" };
+
+    expect(responsesWireTurn(CODEX_BODY, shell)).toEqual(shell);
+    expect(responsesWireTurn(CODEX_BODY, text)).toEqual(text);
   });
 });

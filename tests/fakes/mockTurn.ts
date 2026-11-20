@@ -10,6 +10,7 @@ export type MockTurn =
   | { readonly kind: typeof TurnKind.text; readonly text: string }
   | {
       readonly kind: typeof TurnKind.tool;
+      readonly namespace?: string;
       readonly name: string;
       readonly input: ToolInput;
     };
