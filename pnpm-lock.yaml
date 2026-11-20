@@ -172,6 +172,9 @@ importers:
       '@agentclientprotocol/sdk':
         specifier: 2.4.0
         version: 2.4.0(zod@4.6.7)
+      '@modelcontextprotocol/sdk':
+        specifier: 1.32.2
+        version: 1.32.2(supports-color@7.2.0)(zod@4.6.7)
       '@xterm/addon-fit':
         specifier: 0.11.0
         version: 0.11.0
