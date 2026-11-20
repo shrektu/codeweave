@@ -206,3 +206,5 @@ export const MODEL_FAILED_MESSAGE = "The model request failed";
 export const PROBE_NOT_STOPPED_MESSAGE = "The agy usage probe did not stop";
 export const PREVIOUS_PROCESS_NOT_STOPPED_MESSAGE =
   "The previous agy process did not stop";
+export const TOOLS_NOT_SUPPORTED_MESSAGE =
+  "Orchestrate is not supported on Gemini (agy) yet";
