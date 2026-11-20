@@ -15,6 +15,7 @@ export const OpencodePath = {
 export const OpencodeEventType = {
   partUpdated: "message.part.updated",
   permissionAsked: "permission.asked",
+  permissionReplied: "permission.replied",
   sessionStatus: "session.status",
   sessionIdle: "session.idle",
   sessionError: "session.error",
@@ -65,7 +66,7 @@ export const OpencodeErrorName = {
 } as const;
 
 export const OpencodeEnv = {
-  home: "HOME",
+  testHome: "OPENCODE_TEST_HOME",
   configHome: "XDG_CONFIG_HOME",
   dataHome: "XDG_DATA_HOME",
   cacheHome: "XDG_CACHE_HOME",

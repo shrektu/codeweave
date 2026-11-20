@@ -3,13 +3,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { FakeContained } from "../../../../tests/fakes/fakeContainer";
 import type { AgentEvent } from "../../../domain/events";
 import { PermissionProfile, ProviderId } from "../../../domain/types";
-import { TurnInProgressError } from "../../agentAdapter";
+import {
+  TurnInProgressError,
+  UnknownPermissionError,
+} from "../../agentAdapter";
 
 import type { OpencodeV2Client } from "./client";
 import { OpencodeV2Handle } from "./handle";
 import { parseOpencodeV2Event, type OpencodeV2Event } from "./protocol";
 
 const SESSION = "ses_1";
+const CHILD = "ses_child";
 const STOP_GRACE_MS = 20;
 const READY_TIMEOUT_MS = 30;
 const THRESHOLD_MS = 60_000;
@@ -427,6 +431,61 @@ describe("permissions and listeners", () => {
 
     expect(rig.calls.replies).toEqual([[SESSION, "per_1", "reject"]]);
     expect(rig.events).toEqual([]);
+  });
+
+  async function withPendingPermission(
+    sessionID: string,
+  ): Promise<{ rig: Rig }> {
+    const rig = await openRig();
+    await startedTurn(rig);
+    await rig.push("session.created", {
+      sessionID: CHILD,
+      parentID: SESSION,
+    });
+    await rig.push("permission.asked", {
+      id: "per_1",
+      sessionID,
+      action: "shell",
+      resources: ["ls"],
+    });
+    return { rig };
+  }
+
+  it("replied_for_child_session_settles", async () => {
+    const { rig } = await withPendingPermission(CHILD);
+
+    await rig.push("permission.replied", {
+      sessionID: CHILD,
+      requestID: "per_1",
+      reply: "always",
+    });
+
+    expect(rig.events).toEqual([
+      expect.objectContaining({ type: "permission_request" }),
+      { type: "permission_settled", requestId: "per_1", optionId: "always" },
+    ]);
+    expect(() => {
+      rig.handle.answerPermission("per_1", "once");
+    }).toThrow(UnknownPermissionError);
+    await rig.handle.stop(STOP_GRACE_MS);
+    expect(rig.calls.replies).toEqual([]);
+  });
+
+  it("replied_for_own_answer_emits_nothing", async () => {
+    const { rig } = await withPendingPermission(SESSION);
+    rig.handle.answerPermission("per_1", "once");
+    await flush();
+
+    await rig.push("permission.replied", {
+      sessionID: SESSION,
+      requestID: "per_1",
+      reply: "once",
+    });
+
+    expect(rig.events.map((event) => event.type)).toEqual([
+      "permission_request",
+    ]);
+    expect(rig.calls.replies).toEqual([[SESSION, "per_1", "once"]]);
   });
 
   it("a_throwing_listener_does_not_break_the_others", async () => {

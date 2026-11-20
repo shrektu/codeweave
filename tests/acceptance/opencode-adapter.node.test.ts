@@ -50,6 +50,10 @@ function typesOf(events: readonly AgentEvent[]): string[] {
   return events.map((event) => event.type);
 }
 
+function isRequest(type: string): boolean {
+  return type === "permission_request";
+}
+
 const BASH_TOOL = {
   type: "tool",
   callId: "call_1",
@@ -108,7 +112,7 @@ describe("opencode adapter: launch and secrets", () => {
     expect(spec?.args.slice(5)).toEqual(["--pure"]);
     expect(spec?.env).toEqual({
       PATH: "/usr/bin",
-      HOME: join(rig.accountDir, "home"),
+      OPENCODE_TEST_HOME: join(rig.accountDir, "home"),
       XDG_CONFIG_HOME: join(rig.accountDir, "config"),
       XDG_DATA_HOME: join(rig.accountDir, "data"),
       XDG_CACHE_HOME: join(rig.accountDir, "cache"),
@@ -428,6 +432,57 @@ describe("opencode adapter: edit permissions", () => {
       rawInput: { file_path: join(rig.cwd, "src/a.ts") },
       locations: [join(rig.cwd, "src/a.ts"), join(rig.cwd, "docs/b.md")],
     });
+  });
+});
+
+describe("opencode adapter: permissions settled by opencode", () => {
+  it("always_reply_settles_sibling_permissions_without_replying_again", async () => {
+    const rig = await createOpencodeRig();
+    const { handle, events } = await startOpencodeHandle(rig);
+    const server = opencodeServerOf(rig);
+    const ask = (
+      id: string,
+    ): Extract<OpencodeStep, { type: "permission" }> => ({
+      type: "permission",
+      id,
+      permission: "bash",
+      patterns: ["ls"],
+      metadata: { command: "ls" },
+    });
+    server.enqueue([
+      {
+        type: "permissions",
+        requests: [ask("per_1"), ask("per_2"), ask("per_3")],
+      },
+      { type: "idle" },
+    ]);
+    const turn = handle.prompt("go", { model: null });
+    await vi.waitFor(() => {
+      expect(typesOf(events).filter(isRequest)).toHaveLength(3);
+    });
+
+    handle.answerPermission("per_1", "always");
+    await turn;
+
+    expect(events.filter((e) => e.type === "permission_settled")).toEqual([
+      { type: "permission_settled", requestId: "per_2", optionId: "always" },
+      { type: "permission_settled", requestId: "per_3", optionId: "always" },
+    ]);
+    expect(() => {
+      handle.answerPermission("per_2", "once");
+    }).toThrow(UnknownPermissionError);
+    expect(() => {
+      handle.answerPermission("per_3", "once");
+    }).toThrow(UnknownPermissionError);
+    await handle.stop(STOP_GRACE_MS);
+    expect(server.replies).toEqual([
+      {
+        sessionId: OPENCODE_SESSION_ID,
+        permissionId: "per_1",
+        response: "always",
+      },
+    ]);
+    expect(server.staleReplies).toEqual([]);
   });
 });
 

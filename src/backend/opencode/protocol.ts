@@ -78,6 +78,15 @@ const PermissionAskedSchema = z.looseObject({
   properties: PermissionAskedPropertiesSchema,
 });
 
+const PermissionRepliedSchema = z.looseObject({
+  type: z.literal(OpencodeEventType.permissionReplied),
+  properties: z.looseObject({
+    sessionID: z.string().optional(),
+    requestID: z.string(),
+    reply: z.string(),
+  }),
+});
+
 const SessionStatusSchema = z.looseObject({
   type: z.literal(OpencodeEventType.sessionStatus),
   properties: z.looseObject({
@@ -150,6 +159,7 @@ export const OpencodeEventSchema = z.discriminatedUnion("type", [
   SessionLifecycleSchema,
   PartUpdatedSchema,
   PermissionAskedSchema,
+  PermissionRepliedSchema,
   SessionStatusSchema,
   SessionIdleSchema,
   SessionErrorSchema,

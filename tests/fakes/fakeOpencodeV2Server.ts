@@ -49,6 +49,7 @@ const STEP_AGENT = "build";
 const RUNNING_STATE = { type: "running" };
 const NO_CONTENT = 204;
 const NOT_FOUND = 404;
+const ALWAYS_DECISION = "always";
 const DIRECTORY_QUERY = "location[directory]";
 const FAKE_MODEL_BASE_URL = "https://opencode.ai/inference/go/openai/v1";
 
@@ -57,6 +58,20 @@ export interface FakeV2Error {
   readonly message: string;
   readonly status?: number;
   readonly retryAfterMs?: number;
+}
+
+export interface V2PermissionStep {
+  readonly type: "permission";
+  readonly id: string;
+  readonly action: string;
+  readonly resources: readonly string[];
+  readonly callId?: string;
+  readonly sessionId?: string;
+}
+
+interface PendingPermission {
+  readonly sessionId: string;
+  readonly settled: () => void;
 }
 
 export type OpencodeV2Step =
@@ -100,13 +115,10 @@ export type OpencodeV2Step =
       readonly id: string;
       readonly parentId?: string;
     }
+  | V2PermissionStep
   | {
-      readonly type: "permission";
-      readonly id: string;
-      readonly action: string;
-      readonly resources: readonly string[];
-      readonly callId?: string;
-      readonly sessionId?: string;
+      readonly type: "permissions";
+      readonly requests: readonly V2PermissionStep[];
     }
   | {
       readonly type: "retry";
@@ -148,7 +160,7 @@ const StartupConfigSchema = z.looseObject({
   ),
 });
 
-const ReplyBodySchema = z.looseObject({ decision: z.unknown() });
+const ReplyBodySchema = z.looseObject({ decision: z.string() });
 
 function apiKeyReferenceOf(config: unknown): string {
   const [provider] = Object.values(StartupConfigSchema.parse(config).providers);
@@ -337,10 +349,11 @@ export class FakeOpencodeV2Server implements ScriptedServer<OpencodeV2Step> {
   interruptOutcome: readonly OpencodeV2Step[] = DEFAULT_INTERRUPT_OUTCOME;
   readonly requests: RecordedRequest[] = [];
   readonly replies: V2PermissionReply[] = [];
+  readonly staleReplies: V2PermissionReply[] = [];
   readonly warmUps: V2WarmUp[] = [];
   private readonly scripts: (readonly OpencodeV2Step[])[] = [];
   private readonly clients = new Set<ServerResponse>();
-  private readonly replyWaiters = new Map<string, () => void>();
+  private readonly pending = new Map<string, PendingPermission>();
   private readonly replyListeners: (() => void)[] = [];
   private readonly http: Server;
   private readonly password: string;
@@ -479,8 +492,11 @@ export class FakeOpencodeV2Server implements ScriptedServer<OpencodeV2Step> {
         sendJson(response, { data: { id: OPENCODE_SESSION_ID } });
         return;
       case "reply":
-        this.recordReply(route.match, body);
-        response.writeHead(NO_CONTENT).end();
+        response
+          .writeHead(
+            this.recordReply(route.match, body) ? NO_CONTENT : NOT_FOUND,
+          )
+          .end();
         return;
       case "action":
         await this.sessionAction(route.action, body, response);
@@ -570,14 +586,51 @@ export class FakeOpencodeV2Server implements ScriptedServer<OpencodeV2Step> {
     );
   }
 
-  private recordReply(route: RegExpExecArray, body: unknown): void {
+  private ask(step: V2PermissionStep): Promise<void> {
+    const answered = Promise.withResolvers<undefined>();
+    this.pending.set(step.id, {
+      sessionId: step.sessionId ?? OPENCODE_SESSION_ID,
+      settled: () => {
+        answered.resolve(undefined);
+      },
+    });
+    this.emit(permissionEvent(step));
+    return answered.promise.then(() => undefined);
+  }
+
+  private recordReply(route: RegExpExecArray, body: unknown): boolean {
     const [, sessionId = "", requestId = ""] = route;
     const { decision } = ReplyBodySchema.parse(body);
-    this.replies.push({ sessionId, requestId, decision });
-    this.replyWaiters.get(requestId)?.();
+    const reply = { sessionId, requestId, decision };
+    if (!this.pending.has(requestId)) {
+      this.staleReplies.push(reply);
+      return false;
+    }
+    this.replies.push(reply);
+    this.settle(sessionId, requestId, decision);
+    if (decision === ALWAYS_DECISION) {
+      for (const [id, other] of [...this.pending]) {
+        if (other.sessionId === sessionId) {
+          this.settle(sessionId, id, ALWAYS_DECISION);
+        }
+      }
+    }
     for (const listener of this.replyListeners.splice(0)) {
       listener();
     }
+    return true;
+  }
+
+  private settle(sessionId: string, requestId: string, reply: string): void {
+    this.pending.get(requestId)?.settled();
+    this.pending.delete(requestId);
+    this.emit(
+      envelope("permission.replied", {
+        sessionID: sessionId,
+        requestID: requestId,
+        reply,
+      }),
+    );
   }
 
   private async runTurn(steps: readonly OpencodeV2Step[]): Promise<void> {
@@ -589,15 +642,15 @@ export class FakeOpencodeV2Server implements ScriptedServer<OpencodeV2Step> {
 
   private async perform(step: OpencodeV2Step): Promise<void> {
     switch (step.type) {
-      case "permission": {
-        const replied = Promise.withResolvers<undefined>();
-        this.replyWaiters.set(step.id, () => {
-          replied.resolve(undefined);
-        });
-        this.emit(permissionEvent(step));
-        await Promise.race([replied.promise, this.turnInterrupt.promise]);
+      case "permission":
+        await Promise.race([this.ask(step), this.turnInterrupt.promise]);
         return;
-      }
+      case "permissions":
+        await Promise.race([
+          Promise.all(step.requests.map((request) => this.ask(request))),
+          this.turnInterrupt.promise,
+        ]);
+        return;
       case "wait":
         await new Promise((resolve) => setTimeout(resolve, step.ms));
         return;
@@ -625,6 +678,7 @@ export class FakeOpencodeV2Server implements ScriptedServer<OpencodeV2Step> {
       {
         type:
           | "permission"
+          | "permissions"
           | "wait"
           | "wait_interrupt"
           | "hold"

@@ -66,6 +66,11 @@ export type AgentEvent =
       readonly options: readonly PermissionOption[];
     }
   | {
+      readonly type: "permission_settled";
+      readonly requestId: string;
+      readonly optionId: string;
+    }
+  | {
       readonly type: "rate_limit";
       readonly status: string;
       readonly resetsAt: unknown;

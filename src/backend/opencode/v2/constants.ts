@@ -39,6 +39,7 @@ export const OpencodeV2EventType = {
   toolFailed: "session.tool.failed",
   retryScheduled: "session.retry.scheduled",
   permissionAsked: "permission.asked",
+  permissionReplied: "permission.replied",
 } as const;
 
 export const OpencodeV2ErrorType = {

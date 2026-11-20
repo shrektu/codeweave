@@ -155,6 +155,10 @@ export class PermissionBroker {
     void this.reply(request.sessionId, requestId, optionId);
   }
 
+  settle(requestId: string): boolean {
+    return this.pending.delete(requestId);
+  }
+
   forget(): void {
     this.pending.clear();
   }

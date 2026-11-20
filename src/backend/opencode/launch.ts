@@ -51,7 +51,7 @@ export interface OpencodeLaunch {
 
 export function accountDirs(configDir: string): Record<string, string> {
   return {
-    [OpencodeEnv.home]: join(configDir, ACCOUNT_HOME_DIR),
+    [OpencodeEnv.testHome]: join(configDir, ACCOUNT_HOME_DIR),
     [OpencodeEnv.configHome]: join(configDir, ACCOUNT_CONFIG_DIR),
     [OpencodeEnv.dataHome]: join(configDir, ACCOUNT_DATA_DIR),
     [OpencodeEnv.cacheHome]: join(configDir, ACCOUNT_CACHE_DIR),

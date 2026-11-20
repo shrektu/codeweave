@@ -149,7 +149,7 @@ it("starts_on_opencode_1_19_5_after_one_version_call_with_the_account_dirs", asy
   expect(file).toBe(OPENCODE_RIG_EXECUTABLE);
   expect(args).toEqual(["--version"]);
   expect(options?.env).toMatchObject({
-    HOME: join(rig.accountDir, "home"),
+    OPENCODE_TEST_HOME: join(rig.accountDir, "home"),
     XDG_CONFIG_HOME: join(rig.accountDir, "config"),
     XDG_DATA_HOME: join(rig.accountDir, "data"),
     XDG_CACHE_HOME: join(rig.accountDir, "cache"),

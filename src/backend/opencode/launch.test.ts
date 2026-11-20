@@ -45,7 +45,8 @@ describe("buildOpencodeLaunch", () => {
       args: ["serve", "--hostname", "127.0.0.1", "--port", "4567", "--pure"],
       env: {
         PATH: "/usr/bin",
-        HOME: join(BASE.configDir, "home"),
+        HOME: "/home/jane",
+        OPENCODE_TEST_HOME: join(BASE.configDir, "home"),
         XDG_CONFIG_HOME: join(BASE.configDir, "config"),
         XDG_DATA_HOME: join(BASE.configDir, "data"),
         XDG_CACHE_HOME: join(BASE.configDir, "cache"),
@@ -70,7 +71,8 @@ describe("buildOpencodeLaunch", () => {
       args: ["serve", "--hostname", "127.0.0.1", "--port", "4567"],
       env: {
         PATH: "/usr/bin",
-        HOME: join(BASE.configDir, "home"),
+        HOME: "/home/jane",
+        OPENCODE_TEST_HOME: join(BASE.configDir, "home"),
         XDG_CONFIG_HOME: join(BASE.configDir, "config"),
         XDG_DATA_HOME: join(BASE.configDir, "data"),
         XDG_CACHE_HOME: join(BASE.configDir, "cache"),

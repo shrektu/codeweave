@@ -222,6 +222,8 @@ export class OpencodeV2Handle extends OpencodeHandleBase<
     const mapped = mapper.map(event);
     if (event.type === OpencodeV2EventType.permissionAsked) {
       this.onPermission(event, mapped);
+    } else if (event.type === OpencodeV2EventType.permissionReplied) {
+      this.onPermissionReplied(event);
     } else if (mapper.scopeOf(event) === SessionScope.own) {
       this.onOwnEvent(event, mapped);
     }
@@ -274,6 +276,19 @@ export class OpencodeV2Handle extends OpencodeHandleBase<
     const live = !this.stopping && this.turn !== null && !this.turn.terminal;
     if (this.permissions.admit(request, event.data.sessionID, live)) {
       this.emit(request);
+    }
+  }
+
+  private onPermissionReplied(
+    event: EventOf<typeof OpencodeV2EventType.permissionReplied>,
+  ): void {
+    const { requestID, reply } = event.data;
+    if (this.permissions.settle(requestID)) {
+      this.emit({
+        type: "permission_settled",
+        requestId: requestID,
+        optionId: reply,
+      });
     }
   }
 

@@ -254,6 +254,9 @@ export class OpencodeHandle extends OpencodeHandleBase<
       case OpencodeEventType.permissionAsked:
         this.onPermission(event, mapped);
         return;
+      case OpencodeEventType.permissionReplied:
+        this.onPermissionReplied(event);
+        return;
       case OpencodeEventType.sessionStatus:
         if (own && this.staleBefore === null) {
           this.onStatus(event);
@@ -364,6 +367,19 @@ export class OpencodeHandle extends OpencodeHandleBase<
     const sessionId = event.properties.sessionID ?? this.sessionId;
     if (this.permissions.admit(request, sessionId, live)) {
       this.emit(request);
+    }
+  }
+
+  private onPermissionReplied(
+    event: EventOf<typeof OpencodeEventType.permissionReplied>,
+  ): void {
+    const { requestID, reply } = event.properties;
+    if (this.permissions.settle(requestID)) {
+      this.emit({
+        type: "permission_settled",
+        requestId: requestID,
+        optionId: reply,
+      });
     }
   }
 

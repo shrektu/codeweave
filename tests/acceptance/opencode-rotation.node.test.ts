@@ -477,6 +477,7 @@ it("opencode_env_has_no_provider_keys", async () => {
     "OPENCODE_DISABLE_MODELS_FETCH",
     "OPENCODE_DISABLE_PROJECT_CONFIG",
     "OPENCODE_SERVER_PASSWORD",
+    "OPENCODE_TEST_HOME",
   ]);
   expect(JSON.stringify(env)).not.toContain("sk-test-parent");
 });

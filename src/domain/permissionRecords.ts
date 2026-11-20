@@ -65,6 +65,19 @@ export function resolve(record: PermissionRecord): TransitionResult {
   }
 }
 
+export function settle(
+  record: PermissionRecord,
+  optionId: string,
+): PermissionRecord {
+  if (record.state === "resolved" || record.state === "expired") {
+    return record;
+  }
+  if (record.options.some((option) => option.optionId === optionId)) {
+    return { ...record, state: "resolved", optionId };
+  }
+  return expireAll([record])[0] ?? record;
+}
+
 export function expireAll(
   records: readonly PermissionRecord[],
 ): readonly PermissionRecord[] {
