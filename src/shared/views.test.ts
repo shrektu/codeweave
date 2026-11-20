@@ -122,6 +122,7 @@ it("session_view_with_diffs_passes_session_view_schema", () => {
     limits: [],
     turnInFlight: false,
     flowRef: null,
+    orchestrate: false,
     hiddenRequestIds: new Set(),
   });
 

@@ -61,6 +61,7 @@ const RUNNING_VIEW: SessionView = {
   turnInFlight: true,
   flowRef: { flowId: "solo", nodeId: "build" },
   turns: [],
+  orchestrate: false,
 };
 const STOPPED_VIEW: SessionView = {
   ...RUNNING_VIEW,

@@ -52,6 +52,7 @@ import {
   AgentStartFailure,
   UnknownPermissionError,
   type AgentHandle,
+  type AgentToolAccess,
   type AgentStartResult,
 } from "./agentAdapter";
 import { createInFlight } from "./inFlight";
@@ -79,6 +80,8 @@ interface RunSpec extends TurnRoutingSpec {
   readonly cwd: string;
   readonly profile: PermissionProfile;
   readonly flowRef: FlowRef | null;
+  readonly tools: AgentToolAccess | null;
+  readonly preamble: string | null;
 }
 
 const INACTIVE_PHASES: readonly RotationPhase["phase"][] = [
@@ -87,6 +90,8 @@ const INACTIVE_PHASES: readonly RotationPhase["phase"][] = [
   "failed",
 ];
 const NEEDS_LOGIN: AccountRuntime = { status: "needs_login" };
+const PREAMBLE_SEPARATOR = "\n\n";
+const TOOL_TOKEN_LABEL = "flow tool token";
 
 function textEventFor(key: string, text: string): AgentEvent {
   return key === NO_MESSAGE_KEY
@@ -150,6 +155,7 @@ export class SessionRun {
   private readonly limits = new Map<string, LimitView>();
   private readonly handles = new Map<string, AgentHandle>();
   private readonly retired = new WeakSet<AgentHandle>();
+  private readonly briefed = new WeakSet<AgentHandle>();
   private readonly deciding = new Set<string>();
   private readonly launching = createInFlight();
   private readonly logging = createInFlight();
@@ -223,6 +229,7 @@ export class SessionRun {
       limits: [...this.limits.values()],
       turnInFlight: this.activeTurns > 0,
       flowRef: this.spec.flowRef,
+      orchestrate: this.spec.tools !== null,
       hiddenRequestIds: this.deciding,
     });
   }
@@ -406,6 +413,7 @@ export class SessionRun {
           account.provider,
           configuredExecutable(settings, account.provider),
         ),
+        ...(this.spec.tools === null ? {} : { tools: this.spec.tools }),
       });
     } finally {
       this.deps.leaseModes.clear(runId);
@@ -508,7 +516,7 @@ export class SessionRun {
     this.state = routed.state;
     const { model } = routed;
     try {
-      await handle.prompt(text, { model });
+      await handle.prompt(this.briefedText(handle, text), { model });
     } catch (error) {
       console.error(`prompt failed on ${accountId}: ${this.maskedText(error)}`);
       this.onEvent(handle, {
@@ -560,8 +568,23 @@ export class SessionRun {
     ];
   }
 
+  private briefedText(handle: AgentHandle, text: string): string {
+    const { preamble } = this.spec;
+    if (preamble === null || this.briefed.has(handle)) {
+      return text;
+    }
+    this.briefed.add(handle);
+    return `${preamble}${PREAMBLE_SEPARATOR}${text}`;
+  }
+
   private secretMasker(): SecretMasker {
-    return createSecretMasker(this.deps.secrets(this.registered));
+    const { tools } = this.spec;
+    return createSecretMasker([
+      ...this.deps.secrets(this.registered),
+      ...(tools === null
+        ? []
+        : [{ value: tools.token, label: TOOL_TOKEN_LABEL }]),
+    ]);
   }
 
   private applyEvent(handle: AgentHandle, event: AgentEvent): void {

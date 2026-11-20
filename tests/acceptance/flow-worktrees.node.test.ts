@@ -176,6 +176,42 @@ describe("diff", () => {
   });
 });
 
+describe("workingDiff", () => {
+  it("lists untracked files after the tracked diff and leaves the index unchanged", async () => {
+    await writeFile(join(repo, "a.txt"), "changed\n");
+    await writeFile(join(repo, "new.txt"), "brand new\n");
+    const indexBefore = await git(repo, ["status", "--porcelain=v2"]);
+
+    const text = await flows.workingDiff(repo);
+
+    expect(text).toContain("diff --git a/a.txt b/a.txt");
+    expect(text).toContain("+changed");
+    expect(text.endsWith("\nUntracked files:\nnew.txt\n")).toBe(true);
+    expect(text).not.toContain("+brand new");
+    expect(await git(repo, ["status", "--porcelain=v2"])).toBe(indexBefore);
+    expect(await git(repo, ["diff", "--cached", "--name-only"])).toBe("");
+  });
+
+  it("returns only the tracked diff when nothing is untracked", async () => {
+    await writeFile(join(repo, "a.txt"), "changed\n");
+
+    const text = await flows.workingDiff(repo);
+
+    expect(text).toContain("+changed");
+    expect(text).not.toContain("Untracked files:");
+  });
+});
+
+describe("isDirty", () => {
+  it("is true for an untracked file and false for a clean tree", async () => {
+    expect(await flows.isDirty(repo)).toBe(false);
+
+    await writeFile(join(repo, "new.txt"), "brand new\n");
+
+    expect(await flows.isDirty(repo)).toBe(true);
+  });
+});
+
 describe("merge", () => {
   it("merges a non-conflicting branch with a merge commit", async () => {
     const worktree = await flows.create(repo, RUN_ID);

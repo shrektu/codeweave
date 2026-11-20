@@ -20,6 +20,7 @@ export interface SessionViewInput {
   readonly limits: readonly LimitView[];
   readonly turnInFlight: boolean;
   readonly flowRef: FlowRef | null;
+  readonly orchestrate: boolean;
   readonly hiddenRequestIds: ReadonlySet<string>;
 }
 
@@ -88,5 +89,6 @@ export function toSessionView(input: SessionViewInput): SessionView {
     turnInFlight: input.turnInFlight,
     flowRef: input.flowRef,
     turns: state.turns.map((turn) => ({ ...turn })),
+    orchestrate: input.orchestrate,
   };
 }

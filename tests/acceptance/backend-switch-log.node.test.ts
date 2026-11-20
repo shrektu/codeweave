@@ -11,6 +11,7 @@ import {
   fakeSessionPool,
   fakeTerminals,
 } from "../fakes/fakeSessions";
+import { fakeOrchestrator } from "../fakes/fakeOrchestrator";
 import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
 
@@ -45,6 +46,7 @@ it("switch_log_list_skips_malformed_lines", async () => {
     broadcast: vi.fn(),
     sessions: fakeSessionPool(),
     flowRuns: fakeFlowRuns(),
+    orchestrator: fakeOrchestrator(),
     probes: fakeProbes(),
     catalog: { load: () => Promise.resolve({ models: [], error: null }) },
     containerStatus: { available: true, message: null },

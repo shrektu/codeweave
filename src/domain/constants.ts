@@ -50,3 +50,5 @@ export const FLOW_TOOL_MAX_BODY_BYTES = 1024 * 1024;
 export const FLOW_TOOL_BIND_HOST = "127.0.0.1";
 export const FLOW_TOOL_ALIAS_HOST = "localhost";
 export const FLOW_TOOL_TOKEN_BYTES = 32;
+export const ORCHESTRATOR_WAKEUP_PREFIX = "[Codeweave]";
+export const ORCHESTRATOR_MAX_FIX_ROUNDS = 2;

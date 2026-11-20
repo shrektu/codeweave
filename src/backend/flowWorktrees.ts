@@ -35,6 +35,8 @@ export interface FlowWorktrees {
   create(projectCwd: string, runId: string): Promise<FlowWorktree>;
   commitAll(worktree: FlowWorktree, message: string): Promise<string | null>;
   diff(worktree: FlowWorktree): Promise<string>;
+  workingDiff(cwd: string): Promise<string>;
+  isDirty(cwd: string): Promise<boolean>;
   merge(worktree: FlowWorktree): Promise<MergeOutcome>;
   finishMerge(worktree: FlowWorktree): Promise<MergeOutcome>;
   abortMerge(worktree: FlowWorktree): Promise<void>;
@@ -45,6 +47,7 @@ type Git = (dir: string, args: readonly string[]) => Promise<string>;
 
 const GIT_EXIT_FALSE = 1;
 const LINE_BREAK = /\r?\n/;
+const UNTRACKED_FILES_HEADING = "Untracked files:";
 
 function exitCode(error: unknown): number | undefined {
   if (error instanceof Error && "code" in error) {
@@ -233,6 +236,18 @@ async function diff(git: Git, worktree: FlowWorktree): Promise<string> {
   return git(worktree.path, ["diff", worktree.base]);
 }
 
+async function workingDiff(git: Git, cwd: string): Promise<string> {
+  const tracked = await git(cwd, ["diff", "HEAD"]);
+  const untracked = (
+    await git(cwd, ["ls-files", "--others", "--exclude-standard", "-z"])
+  )
+    .split(NUL_CHAR)
+    .filter((file) => file !== "");
+  return untracked.length === 0
+    ? tracked
+    : `${tracked}\n${UNTRACKED_FILES_HEADING}\n${untracked.join("\n")}\n`;
+}
+
 async function merge(git: Git, worktree: FlowWorktree): Promise<MergeOutcome> {
   const { projectRoot, branch } = worktree;
   await currentBranchRef(git, projectRoot);
@@ -317,6 +332,8 @@ export function createFlowWorktrees(deps: {
     create: (projectCwd, runId) => create(git, projectCwd, runId),
     commitAll: (worktree, message) => commitAll(git, worktree, message),
     diff: (worktree) => diff(git, worktree),
+    workingDiff: (cwd) => workingDiff(git, cwd),
+    isDirty: (cwd) => isDirty(git, cwd),
     merge: (worktree) => merge(git, worktree),
     finishMerge: (worktree) => finishMerge(git, worktree),
     abortMerge: (worktree) => abortMerge(git, worktree),

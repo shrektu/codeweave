@@ -9,6 +9,7 @@ import type { FlowRunService } from "./flowRuns";
 import type { IpcHandlers } from "./ipcServer";
 import type { LimitProbeService } from "./limitProbe";
 import type { ModelCatalogService } from "./opencode/catalog";
+import type { OrchestratorService } from "./orchestrator/service";
 import type { KeyStore } from "./secrets/keyStore";
 import type { SecretVault } from "./secrets/vault";
 import type { ContainerStatus } from "./session";
@@ -28,6 +29,7 @@ export interface HandlerDeps {
   broadcast: ConnectionRegistry["broadcast"];
   sessions: SessionPool;
   flowRuns: FlowRunService;
+  orchestrator: OrchestratorService;
   probes: LimitProbeService;
   catalog: ModelCatalogService;
   containerStatus: ContainerStatus;
@@ -51,6 +53,7 @@ export function createHandlers({
   broadcast,
   sessions,
   flowRuns,
+  orchestrator,
   probes,
   catalog,
   containerStatus,
@@ -104,7 +107,9 @@ export function createHandlers({
       if (flowRuns.hasOpenUserRuns()) {
         throw new IpcError(IpcErrorCode.CONFLICT, FLOW_RUNNING_MESSAGE);
       }
-      const view = await main.start(params);
+      const view = await (params.orchestrate === true
+        ? orchestrator.start(params)
+        : main.start(params));
       await terminals.retarget(view.cwd).catch((error: unknown) => {
         console.error("terminal retarget failed", error);
       });

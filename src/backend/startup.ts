@@ -44,8 +44,11 @@ import {
 } from "./constants";
 import { buildAgentEnv } from "./env";
 import { resolveExecutable } from "./executable";
+import { execText } from "./exec";
 import { listFlows } from "./flows";
 import { createFlowRunService } from "./flowRuns";
+import type { FlowToolServer } from "./flowTools/server";
+import { createFlowWorktrees } from "./flowWorktrees";
 import { createHandlers } from "./handlers";
 import { recordInstance } from "./instance";
 import type { IpcHandlers } from "./ipcServer";
@@ -56,6 +59,7 @@ import {
 } from "./limitProbe";
 import { createLeaseModes, type LeaseModes } from "./leaseModes";
 import { resolveLockKey, WorktreeLocks, type LockKeyResolver } from "./locks";
+import { createOrchestratorService } from "./orchestrator/service";
 import { createOpencodeAdapter } from "./opencode/adapter";
 import {
   CATALOG_DIR_NAME,
@@ -120,6 +124,7 @@ export interface BackendDeps {
   readonly ptyLauncher?: PtyLauncherFactory;
   readonly resolveLockKey?: LockKeyResolver;
   readonly postUpdaterConfig?: PostUpdaterConfig;
+  readonly startToolServer?: () => Promise<FlowToolServer>;
 }
 
 export interface Backend {
@@ -606,6 +611,16 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     broadcast: deps.broadcast,
     newRunId: deps.newRunId,
   });
+  const orchestrator = createOrchestratorService({
+    main: sessions.main,
+    flowRuns,
+    flowWorktrees: createFlowWorktrees({ exec: execText }),
+    listFlows,
+    newRunId: deps.newRunId,
+    ...(deps.startToolServer === undefined
+      ? {}
+      : { startToolServer: deps.startToolServer }),
+  });
   const handlers = createHandlers({
     store,
     keyStore,
@@ -614,6 +629,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     broadcast: deps.broadcast,
     sessions,
     flowRuns,
+    orchestrator,
     probes,
     catalog: createCatalog(deps, processes, store),
     containerStatus: status,
@@ -630,6 +646,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     shutdown: async () => {
       await terminals.shutdown();
       await probes.dispose();
+      await orchestrator.shutdown();
       await flowRuns.shutdown();
       await sessions.shutdown();
     },

@@ -108,6 +108,7 @@ export const ParamsSchemas = {
     provider: z.enum(ProviderId).optional(),
     model: ModelChoiceSchema.optional(),
     taskClass: TaskClassSchema.optional(),
+    orchestrate: z.boolean().optional(),
   }),
   "session/prompt": z.strictObject({
     text: NonBlankString,

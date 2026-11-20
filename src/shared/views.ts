@@ -189,6 +189,7 @@ export const SessionViewSchema = z.strictObject({
   turnInFlight: z.boolean(),
   flowRef: FlowRefSchema.nullable(),
   turns: z.array(TurnRouteViewSchema),
+  orchestrate: z.boolean(),
 });
 export type SessionView = z.infer<typeof SessionViewSchema>;
 

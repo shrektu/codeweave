@@ -60,6 +60,7 @@ export type FlowStartRequest = ParamsMap["flow/start"] & {
   readonly origin?: FlowRunOrigin;
   readonly placement?: FlowPlacement;
   readonly branch?: string | null;
+  readonly runId?: string;
 };
 
 export interface FlowRunService {
@@ -486,7 +487,7 @@ class FlowRunPool implements FlowRunService {
     const run = new FlowRun(
       this.deps,
       {
-        runId: this.deps.newRunId(),
+        runId: request.runId ?? this.deps.newRunId(),
         cwd: request.cwd,
         origin: request.origin ?? FlowRunOrigin.user,
         placement: request.placement ?? FlowPlacement.inPlace,

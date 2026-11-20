@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -110,7 +110,13 @@ export type ScriptStep =
   | { readonly type: "client_request"; readonly method: string }
   | { readonly type: "end"; readonly stopReason: StopReason }
   | ({ readonly type: "fail" } & FakeRpcFailure)
-  | { readonly type: "hang" };
+  | { readonly type: "hang" }
+  | {
+      readonly type: "write_file";
+      readonly path: string;
+      readonly content: string;
+    }
+  | { readonly type: "gate"; readonly until: Promise<void> };
 
 export interface FakeAcpConfig {
   initializeError?: FakeRpcFailure;
@@ -323,6 +329,12 @@ export class FakeAcpAgent {
         throw toError(step);
       case "hang":
         return new Promise<PromptResponse>(() => undefined);
+      case "write_file":
+        await writeFile(join(this.sessionCwd(), step.path), step.content);
+        return undefined;
+      case "gate":
+        await step.until;
+        return undefined;
       case "ext_notification":
         await peer.notify(step.method, { value: 1 });
         return undefined;
@@ -348,6 +360,14 @@ export class FakeAcpAgent {
         });
         return undefined;
     }
+  }
+
+  private sessionCwd(): string {
+    const request = this.newSessions[0];
+    if (request === undefined) {
+      throw new Error("no session was created");
+    }
+    return request.cwd;
   }
 
   private async probeClientRequest(

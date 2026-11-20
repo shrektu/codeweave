@@ -21,6 +21,7 @@ import {
   AgentStartFailure,
   type AgentAdapter,
   type AgentStartResult,
+  type AgentToolAccess,
 } from "./agentAdapter";
 import type { ConnectionRegistry } from "./connections";
 import {
@@ -66,6 +67,8 @@ export interface SessionServiceDeps {
 
 export interface StartOptions {
   readonly leaseMode?: LeaseMode;
+  readonly tools?: AgentToolAccess;
+  readonly preamble?: string;
 }
 
 export interface SessionService {
@@ -133,9 +136,10 @@ interface StartToken {
   cancelled: boolean;
 }
 
-type StartRequest = ParamsMap["session/start"] & {
-  readonly leaseMode: LeaseMode;
-};
+type StartRequest = ParamsMap["session/start"] &
+  Omit<StartOptions, "leaseMode"> & {
+    readonly leaseMode: LeaseMode;
+  };
 
 const isCancelled = (token: StartToken): boolean => token.cancelled;
 
@@ -193,6 +197,8 @@ async function createRun(
       model: params.model ?? null,
       taskClass: params.taskClass ?? null,
       defaultTaskClass: settings.defaultTaskClass,
+      tools: params.tools ?? null,
+      preamble: params.preamble ?? null,
     },
     provider,
     registered,
@@ -380,6 +386,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       pending = token;
       const request: StartRequest = {
         ...params,
+        ...options,
         leaseMode: options?.leaseMode ?? LeaseMode.exclusive,
       };
       const started = await starts.track(() => runStart(request, token));

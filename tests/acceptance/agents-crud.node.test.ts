@@ -25,6 +25,7 @@ import {
   fakeSessions,
   fakeTerminals,
 } from "../fakes/fakeSessions";
+import { fakeOrchestrator } from "../fakes/fakeOrchestrator";
 import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
 
@@ -149,6 +150,7 @@ function handlersFor(cwd: string): ReturnType<typeof createHandlers> {
     broadcast: vi.fn(),
     sessions: fakeSessionPool(),
     flowRuns: fakeFlowRuns(),
+    orchestrator: fakeOrchestrator(),
     probes: fakeProbes(),
     catalog: { load: () => Promise.resolve({ models: [], error: null }) },
     containerStatus: { available: true, message: null },
@@ -819,6 +821,7 @@ const RUNNING_VIEW: SessionView = {
   turnInFlight: true,
   flowRef: { flowId: "solo", nodeId: "build" },
   turns: [],
+  orchestrate: false,
 };
 
 function flowRunRig(): {
