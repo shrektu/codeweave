@@ -26,6 +26,7 @@ import {
   BUILD_REPLY,
   FLOW_TASK,
   ROOT_DIR,
+  bundledClaudeExecutable,
   createFlowWorkspace,
   createGate,
   isBuildNodePrompt,
@@ -70,6 +71,8 @@ const FLOW_TOOL_PREFIX = `${MCP_TOOL_NAME_PREFIX}${FLOW_TOOL_SERVER_NAME}${MCP_T
 const BEARER_MARKER = "Bearer";
 const MIN_NODE_REQUESTS = 3;
 const SUGGESTION_MARKER = "[SUGGESTION MODE";
+const PROMPT_MISSING_MESSAGE =
+  "The prompt field did not appear after choosing the folder. The page shows:\n";
 
 function flowNode(page: Page, id: string): Locator {
   return page
@@ -224,10 +227,19 @@ async function startMock(
   });
 }
 
+async function fillPrompt(page: Page): Promise<void> {
+  try {
+    await page.getByPlaceholder("Describe the task").fill(FLOW_TASK);
+  } catch (error) {
+    const shown = await page.locator("body").innerText();
+    throw new Error(`${PROMPT_MISSING_MESSAGE}${shown}`, { cause: error });
+  }
+}
+
 async function startSession(page: Page): Promise<void> {
   await page.getByRole("checkbox", { name: "Orchestrate" }).check();
   await page.getByRole("button", { name: "Choose folder…" }).click();
-  await page.getByPlaceholder("Describe the task").fill(FLOW_TASK);
+  await fillPrompt(page);
   await page.getByRole("button", { name: "Send" }).click();
 }
 
@@ -297,7 +309,9 @@ async function runLoop(
 test("orchestrator_completes_the_flow_loop_through_the_ui", async () => {
   const cleanup = createCleanupStack();
   try {
-    const workspace = await createFlowWorkspace();
+    const workspace = await createFlowWorkspace({
+      claudeExecutable: bundledClaudeExecutable(),
+    });
     cleanup.add(() => workspace.dispose());
 
     const mock = await runLoop(workspace, cleanup);

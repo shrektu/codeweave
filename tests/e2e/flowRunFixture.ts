@@ -1,9 +1,11 @@
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { _electron as electron, type Page } from "@playwright/test";
 
+import { locateClaudeAcpEntry } from "../../src/backend/claude/launch";
 import { createJsonStore } from "../../src/backend/storage";
 import { PermissionProfile, ProviderId } from "../../src/domain/types";
 import { userTexts, type MessagesBody } from "../fakes/anthropicMock";
@@ -27,6 +29,8 @@ const SANDBOX_FLAGS =
     ? ["--no-sandbox"]
     : [];
 const FLOW_WORKSPACE_PREFIX = "codeweave-flow-run-";
+const CLAUDE_AGENT_SDK_PACKAGE = "@anthropic-ai/claude-agent-sdk";
+const WINDOWS_EXECUTABLE_SUFFIX = ".exe";
 const AGENTS_FILE = join("agents", "flow-agents.md");
 export const FLOW_FILE = join("flows", "two-node.md");
 const VERDICT_SECTION_MARKER = "## Verdict";
@@ -182,7 +186,21 @@ export async function writeFlowFiles(
   await writeFile(join(repo, FLOW_FILE), FLOW_MARKDOWN);
 }
 
-export async function createFlowWorkspace(): Promise<FlowWorkspace> {
+export function bundledClaudeExecutable(): string {
+  const requireFromAcp = createRequire(locateClaudeAcpEntry());
+  const requireFromSdk = createRequire(
+    requireFromAcp.resolve(CLAUDE_AGENT_SDK_PACKAGE),
+  );
+  const extension =
+    process.platform === "win32" ? WINDOWS_EXECUTABLE_SUFFIX : "";
+  return requireFromSdk.resolve(
+    `${CLAUDE_AGENT_SDK_PACKAGE}-${process.platform}-${process.arch}/claude${extension}`,
+  );
+}
+
+export async function createFlowWorkspace(
+  options: { readonly claudeExecutable?: string } = {},
+): Promise<FlowWorkspace> {
   const root = await realpath(
     await mkdtemp(join(tmpdir(), FLOW_WORKSPACE_PREFIX)),
   );
@@ -194,7 +212,10 @@ export async function createFlowWorkspace(): Promise<FlowWorkspace> {
   await writeFlowFiles(repo);
   const store = createJsonStore(userData);
   await store.writeAccounts([claude]);
-  await store.writeSettings(rotationSettings(PermissionProfile.acceptEdits));
+  await store.writeSettings({
+    ...rotationSettings(PermissionProfile.acceptEdits),
+    claudeExecutable: options.claudeExecutable ?? null,
+  });
   return {
     userData,
     repo,
