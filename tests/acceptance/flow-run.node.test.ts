@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 
 import { IpcErrorCode, type ParamsMap } from "../../src/shared/protocol";
-import type { FlowRunView } from "../../src/shared/views";
+import type { FlowRunView, SessionView } from "../../src/shared/views";
 import {
   ACCOUNT_A,
   ACCOUNT_B,
@@ -264,11 +264,21 @@ async function startFlow(
 }
 
 async function flowRunOf(rig: BackendRig): Promise<FlowRunView> {
-  const { flowRun } = await rig.call("sessions/snapshot", {});
-  if (flowRun === null) {
+  const { flowRuns } = await rig.call("sessions/snapshot", {});
+  const flowRun = flowRuns.at(-1);
+  if (flowRun === undefined) {
     throw new Error("no flow run in snapshot");
   }
   return flowRun;
+}
+
+async function nodeSession(rig: BackendRig): Promise<SessionView> {
+  const { flowSessions } = await rig.call("sessions/snapshot", {});
+  const entry = flowSessions[0];
+  if (entry === undefined) {
+    throw new Error("no node session in snapshot");
+  }
+  return entry.view;
 }
 
 async function untilStatus(
@@ -284,16 +294,21 @@ async function untilStatus(
 
 async function answerHeldTurn(rig: BackendRig): Promise<void> {
   const requestId = await settled(async () => {
-    const { permissions } = await rig.session();
+    const { permissions } = await nodeSession(rig);
     expect(permissions).toHaveLength(1);
     return permissions[0]?.requestId ?? "";
   });
-  await rig.call("permission/answer", { requestId, optionId: "allow-once" });
+  const { runId } = await flowRunOf(rig);
+  await rig.call("permission/answer", {
+    requestId,
+    optionId: "allow-once",
+    runId,
+  });
 }
 
 async function untilTurnHeld(rig: BackendRig): Promise<void> {
   await settled(async () => {
-    expect((await rig.session()).permissions).toHaveLength(1);
+    expect((await nodeSession(rig)).permissions).toHaveLength(1);
   });
 }
 
@@ -317,8 +332,14 @@ function nodeSummary(
 }
 
 async function sessionPhase(rig: BackendRig): Promise<string | null> {
-  const { session } = await rig.call("sessions/snapshot", {});
-  return session?.phase.phase ?? null;
+  const { flowSessions } = await rig.call("sessions/snapshot", {});
+  return flowSessions[0]?.view.phase.phase ?? null;
+}
+
+async function untilSessionReleased(rig: BackendRig): Promise<void> {
+  await settled(async () => {
+    expect(await sessionPhase(rig)).toBeNull();
+  });
 }
 
 it("flow_run_two_nodes_hands_off_and_finishes_done", async () => {
@@ -369,7 +390,7 @@ it("flow_run_two_nodes_hands_off_and_finishes_done", async () => {
   expect(reviewPrompt).toContain("VERDICT: APPROVED");
   expect(reviewPrompt).toContain("VERDICT: CHANGES_REQUESTED");
   expect(rig.broadcastsOf("flow/changed").at(-1)).toEqual(view);
-  expect(await sessionPhase(rig)).toBe("stopped");
+  await untilSessionReleased(rig);
 });
 
 it("flow_run_node_provider_overrides_agent_provider", async () => {
@@ -459,7 +480,7 @@ it("flow_run_rounds_exhausted_pauses_then_another_round_and_stop", async () => {
 
   expect(stopped.decision).toBeNull();
   expect(rig.container.agents).toHaveLength(6);
-  expect(await sessionPhase(rig)).toBe("stopped");
+  await untilSessionReleased(rig);
 });
 
 it("flow_run_missing_verdict_pauses_for_approval", async () => {
@@ -621,7 +642,7 @@ it("flow_run_node_start_failure_fails_flow", async () => {
   expect(nodeSummary(failed)).toEqual([["build", "failed", 1]]);
   expect(rig.container.agents).toHaveLength(0);
   expect(rig.codexContainer.servers).toHaveLength(0);
-  expect(await sessionPhase(rig)).not.toBe("running");
+  await untilSessionReleased(rig);
 });
 
 it("flow_run_failed_turn_fails_flow_and_releases_slot", async () => {
@@ -637,7 +658,7 @@ it("flow_run_failed_turn_fails_flow_and_releases_slot", async () => {
     ["review", "idle", 0],
   ]);
   expect(rig.container.agents).toHaveLength(1);
-  expect(await sessionPhase(rig)).toBe("stopped");
+  await untilSessionReleased(rig);
   await expect(
     rig.call("session/start", startParams(rig)),
   ).resolves.toMatchObject({ phase: { phase: "running" } });
@@ -685,7 +706,7 @@ it("flow_run_waits_through_scheduled_resume_before_handoff", async () => {
 
   await startFlow(rig, "ask-review");
   await settled(async () => {
-    expect((await rig.session()).phase.phase).toBe("waiting");
+    expect((await nodeSession(rig)).phase.phase).toBe("waiting");
   });
 
   const waiting = await flowRunOf(rig);
@@ -721,7 +742,7 @@ it("flow_start_refused_while_session_live", async () => {
     }),
   ).rejects.toMatchObject({ code: IpcErrorCode.CONFLICT });
 
-  expect((await rig.call("sessions/snapshot", {})).flowRun).toBeNull();
+  expect((await rig.call("sessions/snapshot", {})).flowRuns).toEqual([]);
 });
 
 it("session_start_refused_while_flow_runs", async () => {
@@ -741,22 +762,27 @@ it("session_start_refused_while_flow_runs", async () => {
   ).rejects.toMatchObject({ code: IpcErrorCode.CONFLICT });
 });
 
-it("session_stop_stops_flow", async () => {
+it("session_stop_leaves_the_flow_running_and_flow_stop_stops_it", async () => {
   const rig = await openFlowRig();
   scriptTurns(rig, [HOLD_TURN, END_TURN]);
-  await startFlow(rig, "ask-review");
+  const { runId } = await startFlow(rig, "ask-review");
   await untilTurnHeld(rig);
 
   await expect(rig.call("session/stop", {})).resolves.toEqual({
-    stopped: true,
+    stopped: false,
   });
 
+  expect((await flowRunOf(rig)).status).toBe("running");
+  expect(await sessionPhase(rig)).toBe("running");
+  await expect(rig.call("flow/stop", { runId })).resolves.toEqual({
+    stopped: true,
+  });
   const stopped = await untilStatus(rig, "stopped");
   expect(nodeSummary(stopped)).toEqual([
     ["build", "idle", 1],
     ["review", "idle", 0],
   ]);
-  expect(await sessionPhase(rig)).toBe("stopped");
+  await untilSessionReleased(rig);
   expect(rig.container.agents).toHaveLength(1);
 });
 
@@ -799,7 +825,7 @@ it("flow_start_rejects_empty_or_unknown_flow", async () => {
     }),
   ).rejects.toMatchObject({ code: IpcErrorCode.VALIDATION });
 
-  expect((await rig.call("sessions/snapshot", {})).flowRun).toBeNull();
+  expect((await rig.call("sessions/snapshot", {})).flowRuns).toEqual([]);
   expect(rig.container.agents).toHaveLength(0);
 });
 
@@ -832,11 +858,13 @@ it("flow_stop_during_start_never_starts_a_node", async () => {
   const refused = expect(started).rejects.toMatchObject({
     code: IpcErrorCode.CONFLICT,
   });
-  await expect(rig.call("flow/stop", {})).resolves.toEqual({ stopped: true });
+  await expect(rig.call("flow/stop", { runId: "run-1" })).resolves.toEqual({
+    stopped: true,
+  });
   await refused;
 
   expect(rig.container.agents).toHaveLength(0);
-  expect((await rig.call("sessions/snapshot", {})).flowRun).toBeNull();
+  expect((await rig.call("sessions/snapshot", {})).flowRuns).toEqual([]);
   expect(rig.broadcastsOf("flow/changed")).toHaveLength(0);
 });
 
@@ -865,7 +893,8 @@ it("session_start_refused_until_stopped_flow_finishes", async () => {
     expect(await sessionPhase(rig)).toBe("running");
   });
 
-  const stopping = rig.call("flow/stop", {});
+  const { runId } = await flowRunOf(rig);
+  const stopping = rig.call("flow/stop", { runId });
   await settled(async () => {
     expect(await sessionPhase(rig)).toBe("stopped");
   });
@@ -892,7 +921,7 @@ it("flow_start_refused_while_session_starting", async () => {
   ).rejects.toMatchObject({ code: IpcErrorCode.CONFLICT });
   await manual;
 
-  expect((await rig.call("sessions/snapshot", {})).flowRun).toBeNull();
+  expect((await rig.call("sessions/snapshot", {})).flowRuns).toEqual([]);
 });
 
 it("flow_run_never_stops_manual_session", async () => {
@@ -938,7 +967,7 @@ it("flow_stop_during_node_session_start_stops_the_agent", async () => {
     ).toHaveLength(1);
   });
 
-  const stopping = rig.call("flow/stop", {});
+  const stopping = rig.call("flow/stop", { runId: "run-1" });
   gate.resolve(undefined);
   await expect(stopping).resolves.toEqual({ stopped: true });
   await outcome;

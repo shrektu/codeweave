@@ -1,4 +1,4 @@
-import { DEFAULT_MAX_RESULT_CHARS } from "./constants";
+import { DEFAULT_HANDOFF_CHARS } from "./constants";
 import { truncate, worktreeSection } from "./contextPackage";
 import { NodeInputKind, type NodeInput } from "./flowRun";
 import type { WorktreeState } from "./types";
@@ -28,7 +28,7 @@ function roleSection({ agentRole, agentBody }: NodePromptInput): string {
 }
 
 function inputSection({ kind, from, text }: NodeInput): string {
-  return `## ${SECTION_TITLE_BY_KIND[kind]} ${from}\n${truncate(text, DEFAULT_MAX_RESULT_CHARS)}`;
+  return `## ${SECTION_TITLE_BY_KIND[kind]} ${from}\n${truncate(text, DEFAULT_HANDOFF_CHARS)}`;
 }
 
 export function buildNodePrompt(input: NodePromptInput): string {

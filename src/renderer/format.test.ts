@@ -1,17 +1,169 @@
 import { expect, it } from "vitest";
 
-import { makeSession } from "../../tests/fakes/fakeIpcClient";
+import {
+  makeFlowRun,
+  makeSession,
+  makeSnapshot,
+} from "../../tests/fakes/fakeIpcClient";
 
 import {
   accountLabel,
   compactPath,
+  focusedRunOf,
   formatCountdown,
   formatLocalTime,
   isSessionLive,
   isStale,
+  orchestratedRunsOf,
+  shownSessionOf,
   limitPercent,
   limitWindowLabel,
 } from "./format";
+
+const STOPPED_MAIN = makeSession({ id: "main", phase: { phase: "stopped" } });
+const NODE_SESSION = makeSession({ id: "node" });
+
+it("shown_session_prefers_the_open_run_node_session_over_a_stopped_main", () => {
+  const snapshot = makeSnapshot({
+    session: STOPPED_MAIN,
+    flowRuns: [makeFlowRun({ runId: "run-1", status: "running" })],
+    flowSessions: [{ runId: "run-1", view: NODE_SESSION }],
+  });
+
+  expect(shownSessionOf(snapshot)).toEqual({
+    session: NODE_SESSION,
+    runId: "run-1",
+  });
+});
+
+it("shown_session_keeps_a_live_main_over_the_open_run_node_session", () => {
+  const live = makeSession({ id: "live-main" });
+  const snapshot = makeSnapshot({
+    session: live,
+    flowRuns: [makeFlowRun({ runId: "run-1", status: "running" })],
+    flowSessions: [{ runId: "run-1", view: NODE_SESSION }],
+  });
+
+  expect(shownSessionOf(snapshot)).toEqual({ session: live, runId: null });
+});
+
+it("shown_session_falls_back_to_a_stopped_main_when_no_run_is_open", () => {
+  const snapshot = makeSnapshot({
+    session: STOPPED_MAIN,
+    flowRuns: [makeFlowRun({ runId: "run-1", status: "done" })],
+    flowSessions: [{ runId: "run-1", view: NODE_SESSION }],
+  });
+
+  expect(shownSessionOf(snapshot)).toEqual({
+    session: STOPPED_MAIN,
+    runId: null,
+  });
+});
+
+it("shown_session_prefers_the_focused_run_node_session_over_a_live_main", () => {
+  const live = makeSession({ id: "live-main", orchestrate: true });
+  const snapshot = makeSnapshot({
+    session: live,
+    flowRuns: [makeFlowRun({ runId: "run-1", status: "running" })],
+    flowSessions: [{ runId: "run-1", view: NODE_SESSION }],
+  });
+
+  expect(shownSessionOf(snapshot, "run-1")).toEqual({
+    session: NODE_SESSION,
+    runId: "run-1",
+  });
+});
+
+it("shown_session_falls_back_when_the_focused_run_has_no_session", () => {
+  const live = makeSession({ id: "live-main", orchestrate: true });
+  const snapshot = makeSnapshot({
+    session: live,
+    flowRuns: [makeFlowRun({ runId: "run-1", status: "done" })],
+    flowSessions: [],
+  });
+
+  expect(shownSessionOf(snapshot, "run-1")).toEqual({
+    session: live,
+    runId: null,
+  });
+  expect(shownSessionOf(snapshot, "run-gone")).toEqual({
+    session: live,
+    runId: null,
+  });
+});
+
+it("orchestrated_runs_keep_only_runs_of_the_current_orchestrate_session_newest_first", () => {
+  const orchestrator = makeSession({ id: "orch", orchestrate: true });
+  const runs = [
+    makeFlowRun({ runId: "old", ownerSessionId: "orch" }),
+    makeFlowRun({ runId: "foreign", ownerSessionId: "other" }),
+    makeFlowRun({ runId: "user-run", ownerSessionId: null }),
+    makeFlowRun({ runId: "new", ownerSessionId: "orch" }),
+  ];
+
+  expect(
+    orchestratedRunsOf(
+      makeSnapshot({ session: orchestrator, flowRuns: runs }),
+    ).map((run) => run.runId),
+  ).toEqual(["new", "old"]);
+  expect(
+    orchestratedRunsOf(
+      makeSnapshot({
+        session: makeSession({ id: "orch", orchestrate: false }),
+        flowRuns: runs,
+      }),
+    ),
+  ).toEqual([]);
+  expect(orchestratedRunsOf(makeSnapshot({ flowRuns: runs }))).toEqual([]);
+  expect(orchestratedRunsOf(null)).toEqual([]);
+});
+
+it("focused_run_returns_null_for_an_evicted_run", () => {
+  const run = makeFlowRun({ runId: "run-1" });
+  const snapshot = makeSnapshot({
+    session: makeSession({ orchestrate: true }),
+    flowRuns: [run],
+  });
+
+  expect(focusedRunOf(snapshot, "run-1")).toEqual(run);
+  expect(focusedRunOf(snapshot, "run-evicted")).toBeNull();
+  expect(focusedRunOf(snapshot, null)).toBeNull();
+  expect(focusedRunOf(null, "run-1")).toBeNull();
+});
+
+it("focused_run_is_ignored_when_the_main_session_is_not_a_live_orchestrator", () => {
+  const run = makeFlowRun({ runId: "run-1", status: "running" });
+  const nodeView = { runId: "run-1", view: NODE_SESSION };
+  const mains = [
+    makeSession({ id: "main", orchestrate: true, phase: { phase: "stopped" } }),
+    makeSession({
+      id: "main",
+      orchestrate: true,
+      phase: { phase: "failed", reason: "crashed", runningAccountId: null },
+    }),
+    makeSession({ id: "main", orchestrate: false }),
+    null,
+  ];
+
+  for (const session of mains) {
+    const snapshot = makeSnapshot({
+      session,
+      flowRuns: [run],
+      flowSessions: [nodeView],
+    });
+    expect(focusedRunOf(snapshot, "run-1")).toBeNull();
+  }
+  expect(
+    shownSessionOf(
+      makeSnapshot({
+        session: makeSession({ id: "main", orchestrate: false }),
+        flowRuns: [makeFlowRun({ runId: "run-1", status: "done" })],
+        flowSessions: [nodeView],
+      }),
+      "run-1",
+    ).runId,
+  ).toBeNull();
+});
 
 it("limit_window_label_per_period_and_scope", () => {
   expect(limitWindowLabel({ period: "five_hour", scope: null })).toBe("5-hour");

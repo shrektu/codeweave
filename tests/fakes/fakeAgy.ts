@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import type {
   AgentHandle,
+  AgentToolAccess,
   AgentStartResult,
   AgentStartSpec,
 } from "../../src/backend/agentAdapter";
@@ -727,7 +728,11 @@ export interface AgyRig {
   readonly cwd: string;
   readonly configDir: string;
   readonly hookWrites: HookConfigWrite[];
-  start(profile?: PermissionProfile, runId?: string): Promise<AgentStartResult>;
+  start(
+    profile?: PermissionProfile,
+    runId?: string,
+    tools?: AgentToolAccess,
+  ): Promise<AgentStartResult>;
 }
 
 export function agySpecFor(
@@ -735,6 +740,7 @@ export function agySpecFor(
   profile: PermissionProfile,
   runId: string,
   account: Account = AGY_RIG_ACCOUNT,
+  tools?: AgentToolAccess,
 ): AgentStartSpec {
   return {
     account,
@@ -742,6 +748,7 @@ export function agySpecFor(
     profile,
     runId,
     executable: AGY_RIG_EXECUTABLE,
+    ...(tools === undefined ? {} : { tools }),
   };
 }
 
@@ -794,8 +801,8 @@ export async function createAgyRig(
     cwd,
     configDir,
     hookWrites,
-    start: (profile = PermissionProfile.ask, runId = "run-1") =>
-      adapter.start(agySpecFor(cwd, profile, runId, account)),
+    start: (profile = PermissionProfile.ask, runId = "run-1", tools) =>
+      adapter.start(agySpecFor(cwd, profile, runId, account, tools)),
   };
 }
 

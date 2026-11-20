@@ -21,9 +21,11 @@ import type { AgentView, FlowsList, SessionView } from "../../src/shared/views";
 import {
   fakeFlowRuns,
   fakeProbes,
+  fakeSessionPool,
   fakeSessions,
   fakeTerminals,
 } from "../fakes/fakeSessions";
+import { fakeOrchestrator } from "../fakes/fakeOrchestrator";
 import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
 
@@ -146,8 +148,9 @@ function handlersFor(cwd: string): ReturnType<typeof createHandlers> {
     ...fakeSecrets(cwd),
     userData: cwd,
     broadcast: vi.fn(),
-    sessions: fakeSessions(),
+    sessions: fakeSessionPool(),
     flowRuns: fakeFlowRuns(),
+    orchestrator: fakeOrchestrator(),
     probes: fakeProbes(),
     catalog: { load: () => Promise.resolve({ models: [], error: null }) },
     containerStatus: { available: true, message: null },
@@ -818,6 +821,7 @@ const RUNNING_VIEW: SessionView = {
   turnInFlight: true,
   flowRef: { flowId: "solo", nodeId: "build" },
   turns: [],
+  orchestrate: false,
 };
 
 function flowRunRig(): {
@@ -846,7 +850,9 @@ function flowRunRig(): {
     },
   });
   const runs = createFlowRunService({
-    sessions,
+    sessions: () => sessions,
+    releaseSessions: () => Promise.resolve(),
+    mainSessionLive: () => false,
     listFlows,
     inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),
     broadcast: () => undefined,
@@ -875,7 +881,7 @@ edges: []
   await vi.waitFor(() => {
     expect(prompt).toHaveBeenCalledTimes(1);
   });
-  await runs.stop();
+  await runs.stopAll();
   const { revision } = await agentOf(cwd, "coder");
   await saveAgent(cwd, {
     file: CODER_FILE,
@@ -888,7 +894,7 @@ edges: []
   await vi.waitFor(() => {
     expect(prompt).toHaveBeenCalledTimes(2);
   });
-  await runs.stop();
+  await runs.stopAll();
 
   expect(prompt.mock.calls[0]?.[0]).toContain("Old instructions.");
   expect(prompt.mock.calls[1]?.[0]).toContain("New instructions.");

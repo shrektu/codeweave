@@ -8,9 +8,10 @@ import { createJsonStore } from "../../src/backend/storage";
 import {
   fakeFlowRuns,
   fakeProbes,
-  fakeSessions,
+  fakeSessionPool,
   fakeTerminals,
 } from "../fakes/fakeSessions";
+import { fakeOrchestrator } from "../fakes/fakeOrchestrator";
 import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
 
@@ -43,8 +44,9 @@ it("switch_log_list_skips_malformed_lines", async () => {
     ...fakeSecrets(userData),
     userData,
     broadcast: vi.fn(),
-    sessions: fakeSessions(),
+    sessions: fakeSessionPool(),
     flowRuns: fakeFlowRuns(),
+    orchestrator: fakeOrchestrator(),
     probes: fakeProbes(),
     catalog: { load: () => Promise.resolve({ models: [], error: null }) },
     containerStatus: { available: true, message: null },

@@ -164,6 +164,7 @@ export interface BackendRigOptions {
   readonly codexStopResultsByHome?: Readonly<
     Record<string, readonly StopResult[]>
   >;
+  readonly startToolServer?: BackendDeps["startToolServer"];
 }
 
 export interface ProbeStats {
@@ -430,6 +431,9 @@ function rigDeps(
     ...(options.postUpdaterConfig === undefined
       ? {}
       : { postUpdaterConfig: options.postUpdaterConfig }),
+    ...(options.startToolServer === undefined
+      ? {}
+      : { startToolServer: options.startToolServer }),
     ...(options.catalogProbeTimeoutMs === undefined
       ? {}
       : { catalogProbeTimeoutMs: options.catalogProbeTimeoutMs }),

@@ -182,6 +182,34 @@ describe("createVersionProbe command", () => {
     expect(exec.mock.calls[0]?.[2]).toMatchObject({ cwd: "/other/dir" });
   });
 
+  it.each([
+    ["opencode v2.2.5\n", true],
+    ["opencode v2.3.1\n", true],
+    ["opencode v2.3.2\n", false],
+    ["opencode v2.10.0\n", false],
+    ["1.19.5\n", false],
+  ])("requiring_mcp_tools_on_%j_refuses_%s", async (stdout, refused) => {
+    const probe = probeOf(printing(stdout));
+
+    const outcome = probe(EXECUTABLE, { ...OPTIONS, requireMcpTools: true });
+
+    if (refused) {
+      await expect(outcome).rejects.toThrow(
+        "Orchestrate needs OpenCode 2.3.2 or newer",
+      );
+    } else {
+      await expect(outcome).resolves.toBeDefined();
+    }
+  });
+
+  it("not_requiring_mcp_tools_accepts_2.2.5", async () => {
+    const probe = probeOf(printing("opencode v2.2.5\n"));
+
+    await expect(
+      probe(EXECUTABLE, { ...OPTIONS, requireMcpTools: false }),
+    ).resolves.toBe(OpencodeGeneration.v2);
+  });
+
   it("sees_an_in_place_upgrade_on_the_next_probe", async () => {
     const probe = probeOf(printing("1.19.5\n", "opencode v2.1.0\n"));
 

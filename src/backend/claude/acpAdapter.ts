@@ -51,6 +51,7 @@ import type { StopResult } from "../process/container";
 
 import { isAuthError, mapPromptError, mapSessionUpdate } from "./acpEvents";
 import { buildClaudeLaunch } from "./launch";
+import { buildNewSessionRequest } from "./toolAccess";
 
 export interface ClaudeAcpDeps {
   readonly processes: AgentProcesses;
@@ -288,10 +289,9 @@ class ClaudeAcpSession implements AgentHandle {
       protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: {},
     });
-    const session = await this.peer.newSession({
-      cwd: spec.cwd,
-      mcpServers: [],
-    });
+    const session = await this.peer.newSession(
+      buildNewSessionRequest(spec.cwd, spec.tools),
+    );
     this.sessionId = session.sessionId;
     this.currentModel = modelOf(session.configOptions);
     if (spec.profile === PermissionProfile.bypass) {
@@ -407,6 +407,7 @@ export function createClaudeAcpAdapter(deps: ClaudeAcpDeps): AgentAdapter {
       execPath: deps.execPath,
       adapterEntry: deps.adapterEntry,
       env: deps.envFor(spec),
+      toolsEnabled: spec.tools !== undefined,
     });
     return deps.processes.start({
       command: launch.command,

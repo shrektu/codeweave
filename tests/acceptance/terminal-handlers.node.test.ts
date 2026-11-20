@@ -10,9 +10,11 @@ import { createTerminalRig, type TerminalRig } from "../fakes/fakeTerminal";
 import {
   fakeFlowRuns,
   fakeProbes,
+  fakeSessionPool,
   fakeSessions,
   fakeTerminals,
 } from "../fakes/fakeSessions";
+import { fakeOrchestrator } from "../fakes/fakeOrchestrator";
 import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
 
@@ -42,6 +44,7 @@ function sessionIn(cwd: string): SessionView {
     turnInFlight: false,
     flowRef: null,
     turns: [],
+    orchestrate: false,
   };
 }
 
@@ -56,9 +59,12 @@ async function handlersFor(
     userData,
     broadcast: vi.fn(),
     flowRuns: fakeFlowRuns(),
-    sessions: fakeSessions({
-      start: () => Promise.resolve(sessionIn(startedIn)),
-    }),
+    orchestrator: fakeOrchestrator(),
+    sessions: fakeSessionPool(
+      fakeSessions({
+        start: () => Promise.resolve(sessionIn(startedIn)),
+      }),
+    ),
     probes: fakeProbes(),
     catalog: { load: () => Promise.resolve({ models: [], error: null }) },
     containerStatus: { available: true, message: null },

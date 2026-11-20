@@ -9,7 +9,15 @@ import { PermissionProfile, ProviderId, type Account } from "../domain/types";
 
 import { settled } from "../../tests/fakes/settle";
 
-import type { AgentAdapter, AgentHandle } from "./agentAdapter";
+import { createAccountReservations } from "./accountReservations";
+import {
+  AgentStartFailure,
+  type AgentAdapter,
+  type AgentHandle,
+  type AgentStartSpec,
+  type AgentToolAccess,
+} from "./agentAdapter";
+import { createLeaseModes } from "./leaseModes";
 import { createSessionService, type SessionService } from "./session";
 import { createJsonStore } from "./storage";
 
@@ -106,6 +114,9 @@ async function openRig(): Promise<Rig> {
     adapter,
     store,
     broadcast: () => undefined,
+    publishView: () => undefined,
+    reserved: createAccountReservations(),
+    leaseModes: createLeaseModes(),
     now: () => 1_700_000_000_000,
     schedule: () => () => undefined,
     inspectWorktree: async (dir) => {
@@ -184,4 +195,209 @@ it("auto_answer_after_settle_is_silent", async () => {
   expect(rig.answers).toEqual([]);
   expect(warn).not.toHaveBeenCalled();
   rig.finishTurn();
+});
+
+const ACCOUNT_B: Account = { ...ACCOUNT, id: "acc-b", label: "B", order: 1 };
+const TOKEN = "flow-token-1234567890";
+const TOOLS: AgentToolAccess = {
+  server: "codeweave",
+  url: "http://127.0.0.1:41234/mcp",
+  token: TOKEN,
+  toolNames: ["list_flows"],
+};
+const PREAMBLE = "You orchestrate.";
+const PREAMBLE_GAP = "\n\n";
+const RATE_LIMITED: AgentEvent = {
+  type: "turn_error",
+  errorKind: "rate_limit",
+  rpcCode: null,
+  message: "usage limit reached",
+};
+
+interface ToolRigOptions {
+  readonly events?: Readonly<Record<string, readonly AgentEvent[]>>;
+  readonly startFailure?: string;
+}
+
+interface ToolRig {
+  readonly service: SessionService;
+  readonly cwd: string;
+  readonly specs: AgentStartSpec[];
+  readonly prompts: Record<string, string[]>;
+}
+
+function toolHandle(
+  spec: AgentStartSpec,
+  events: readonly AgentEvent[],
+  prompts: Record<string, string[]>,
+): AgentHandle {
+  const listeners = new Set<(event: AgentEvent) => void>();
+  return {
+    accountId: spec.account.id,
+    runId: spec.runId,
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    prompt: (text) => {
+      (prompts[spec.account.id] ??= []).push(text);
+      for (const event of events) {
+        listeners.forEach((listener) => {
+          listener(event);
+        });
+      }
+      return Promise.resolve();
+    },
+    answerPermission: () => undefined,
+    setProfile: () => Promise.resolve(),
+    cancel: () => Promise.resolve(),
+    stop: () => Promise.resolve({ ok: true }),
+  };
+}
+
+async function openToolRig(options: ToolRigOptions = {}): Promise<ToolRig> {
+  const userData = await mkdtemp(join(tmpdir(), "codeweave-tools-user-"));
+  const cwd = await mkdtemp(join(tmpdir(), "codeweave-tools-cwd-"));
+  tempDirs.push(userData, cwd);
+  const store = createJsonStore(userData);
+  await store.writeAccounts([ACCOUNT, ACCOUNT_B]);
+  const specs: AgentStartSpec[] = [];
+  const prompts: Record<string, string[]> = {};
+  const adapter: AgentAdapter = {
+    start: (spec) => {
+      specs.push(spec);
+      return Promise.resolve(
+        options.startFailure === undefined
+          ? {
+              ok: true,
+              handle: toolHandle(
+                spec,
+                options.events?.[spec.account.id] ?? [],
+                prompts,
+              ),
+            }
+          : {
+              ok: false,
+              reason: AgentStartFailure.error,
+              message: options.startFailure,
+            },
+      );
+    },
+  };
+  let runs = 0;
+  const service = createSessionService({
+    adapter,
+    store,
+    broadcast: () => undefined,
+    publishView: () => undefined,
+    reserved: createAccountReservations(),
+    leaseModes: createLeaseModes(),
+    now: () => 1_700_000_000_000,
+    schedule: () => () => undefined,
+    inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),
+    newRunId: () => {
+      runs += 1;
+      return `run-${String(runs)}`;
+    },
+    resolveExecutable: () => "/usr/bin/claude",
+    stopGraceMs: 10,
+    containerStatus: { available: true, message: null },
+    externalRuntime: () => null,
+    beforeLaunch: () => Promise.resolve(),
+    isBlocked: () => false,
+    hasKey: () => true,
+    secrets: () => [],
+  });
+  services.push(service);
+  return { service, cwd, specs, prompts };
+}
+
+async function untilIdle(service: SessionService): Promise<void> {
+  await settled(() => {
+    expect(service.view()?.turnInFlight).toBe(false);
+    expect(service.isSettled()).toBe(true);
+  });
+}
+
+it("prepends_the_preamble_once_per_agent_handle", async () => {
+  const rig = await openToolRig();
+  await rig.service.start(
+    { cwd: rig.cwd },
+    { tools: TOOLS, preamble: PREAMBLE },
+  );
+
+  await rig.service.prompt("first");
+  await untilIdle(rig.service);
+  await rig.service.prompt("second");
+  await untilIdle(rig.service);
+
+  expect(rig.prompts[ACCOUNT.id]).toEqual([
+    `${PREAMBLE}${PREAMBLE_GAP}first`,
+    "second",
+  ]);
+  expect(rig.service.view()?.orchestrate).toBe(true);
+});
+
+it("sends_the_prompt_unchanged_without_a_preamble", async () => {
+  const rig = await openToolRig();
+  await rig.service.start({ cwd: rig.cwd });
+
+  await rig.service.prompt("plain");
+  await untilIdle(rig.service);
+
+  expect(rig.prompts[ACCOUNT.id]).toEqual(["plain"]);
+  expect(rig.specs[0]).not.toHaveProperty("tools");
+  expect(rig.service.view()?.orchestrate).toBe(false);
+});
+
+it("passes_tools_on_rotation_and_repeats_the_preamble_for_the_new_handle", async () => {
+  const rig = await openToolRig({ events: { [ACCOUNT.id]: [RATE_LIMITED] } });
+  await rig.service.start(
+    { cwd: rig.cwd },
+    { tools: TOOLS, preamble: PREAMBLE },
+  );
+
+  await rig.service.prompt("go");
+  await settled(() => {
+    expect(rig.prompts[ACCOUNT_B.id]).toHaveLength(1);
+  });
+
+  expect(rig.specs.map((spec) => [spec.account.id, spec.tools])).toEqual([
+    [ACCOUNT.id, TOOLS],
+    [ACCOUNT_B.id, TOOLS],
+  ]);
+  expect(rig.prompts[ACCOUNT.id]).toEqual([`${PREAMBLE}${PREAMBLE_GAP}go`]);
+  expect(rig.prompts[ACCOUNT_B.id]?.[0]?.startsWith(PREAMBLE)).toBe(true);
+});
+
+it("masks_the_flow_tool_token_in_events_and_errors", async () => {
+  const leaking: readonly AgentEvent[] = [
+    { type: "text", text: `the token is ${TOKEN} ok` },
+    {
+      type: "turn_error",
+      errorKind: null,
+      rpcCode: null,
+      message: `failed with ${TOKEN}`,
+    },
+  ];
+  const rig = await openToolRig({ events: { [ACCOUNT.id]: leaking } });
+  await rig.service.start(
+    { cwd: rig.cwd },
+    { tools: TOOLS, preamble: PREAMBLE },
+  );
+
+  await rig.service.prompt("go");
+  await untilIdle(rig.service);
+
+  const serialized = JSON.stringify(rig.service.view());
+  expect(serialized).toContain("[redacted:flow tool token]");
+  expect(serialized).not.toContain(TOKEN);
+  const failing = await openToolRig({ startFailure: `refused ${TOKEN}` });
+  await expect(
+    failing.service.start({ cwd: failing.cwd }, { tools: TOOLS }),
+  ).rejects.toThrow(
+    "Could not start the agent: refused [redacted:flow tool token]",
+  );
 });

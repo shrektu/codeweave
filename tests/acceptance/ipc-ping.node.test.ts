@@ -36,14 +36,14 @@ describe("ipc server over a node MessageChannel", () => {
     const { send } = startServer();
 
     const response = await send({
-      v: 6,
+      v: 7,
       id: "req-1",
       method: "ping",
       params: {},
     });
 
     expect(response).toEqual({
-      v: 6,
+      v: 7,
       id: "req-1",
       ok: true,
       result: { pong: true, backendPid: process.pid },
@@ -54,7 +54,7 @@ describe("ipc server over a node MessageChannel", () => {
     const { send } = startServer();
 
     const response = await send({
-      v: 6,
+      v: 7,
       id: "req-2",
       method: "ping",
       params: {},
@@ -62,7 +62,7 @@ describe("ipc server over a node MessageChannel", () => {
     });
 
     expect(response).toEqual({
-      v: 6,
+      v: 7,
       id: "req-2",
       ok: false,
       error: { code: "VALIDATION", message: expect.any(String) as string },
@@ -80,7 +80,7 @@ describe("ipc server over a node MessageChannel", () => {
     });
 
     expect(response).toEqual({
-      v: 6,
+      v: 7,
       id: "req-3",
       ok: false,
       error: {
@@ -93,17 +93,17 @@ describe("ipc server over a node MessageChannel", () => {
   it("ipc_keeps_serving_after_error", async () => {
     const { send } = startServer();
 
-    await send({ v: 6, id: "req-4", method: "ping", params: {}, extra: true });
-    await send({ v: 6, id: "req-5", method: "ping", params: {} });
+    await send({ v: 7, id: "req-4", method: "ping", params: {}, extra: true });
+    await send({ v: 7, id: "req-5", method: "ping", params: {} });
     const response = await send({
-      v: 6,
+      v: 7,
       id: "req-6",
       method: "ping",
       params: {},
     });
 
     expect(response).toEqual({
-      v: 6,
+      v: 7,
       id: "req-6",
       ok: true,
       result: { pong: true, backendPid: process.pid },

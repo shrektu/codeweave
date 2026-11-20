@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
+import { TurnKind, type MockTurn } from "./mockTurn";
 import {
   ResponsesScenario,
   startResponsesMock,
@@ -170,6 +171,165 @@ describe("responses mock tool calls", () => {
         name: SHELL_TOOL,
         arguments: JSON.stringify({ command: ["bash", "-lc", COMMAND] }),
       },
+    });
+  });
+});
+
+describe("responses mock respond hook", () => {
+  const SCRIPTED_TEXT = "scripted reply";
+  const MCP_TOOL = "mcp__codeweave__start_flow";
+
+  async function openScripted(turn: MockTurn): Promise<ResponsesMock> {
+    const mock = await startResponsesMock(SCENARIOS, { respond: () => turn });
+    opened.push(mock);
+    return mock;
+  }
+
+  it("text_turn_streams_the_scripted_message", async () => {
+    const mock = await openScripted({
+      kind: TurnKind.text,
+      text: SCRIPTED_TEXT,
+    });
+
+    const response = await post(mock, KEY_OK, {
+      input: [userMessage("hi")],
+      tools: [{ name: MCP_TOOL }],
+    });
+    const done = parseSse(await response.text()).find(
+      (event) => event.event === "response.output_item.done",
+    );
+
+    expect(done?.data).toMatchObject({
+      item: {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: SCRIPTED_TEXT }],
+      },
+    });
+  });
+
+  it("tool_turn_streams_a_function_call_with_the_scripted_arguments", async () => {
+    const mock = await openScripted({
+      kind: TurnKind.tool,
+      name: MCP_TOOL,
+      input: { flowId: "two-node", placement: "in_place" },
+    });
+
+    const response = await post(mock, KEY_TOOL, {
+      input: [userMessage("hi")],
+      tools: [{ name: MCP_TOOL }],
+    });
+    const events = parseSse(await response.text());
+
+    expect(events[1]?.data).toMatchObject({
+      item: {
+        type: "function_call",
+        name: MCP_TOOL,
+        call_id: "call_1",
+        arguments: JSON.stringify({
+          flowId: "two-node",
+          placement: "in_place",
+        }),
+      },
+    });
+  });
+});
+
+describe("responses mock scripted text streaming", () => {
+  it("text_turn_streams_the_text_as_a_delta_before_the_done_item", async () => {
+    const mock = await startResponsesMock(SCENARIOS, {
+      respond: () => ({ kind: TurnKind.text, text: "streamed reply" }),
+    });
+    opened.push(mock);
+
+    const response = await post(mock, KEY_OK, {
+      input: [userMessage("hi")],
+      tools: [{ name: "exec_command" }],
+    });
+    const events = parseSse(await response.text());
+
+    expect(events.map((event) => event.event)).toEqual([
+      "response.created",
+      "response.output_item.added",
+      "response.output_text.delta",
+      "response.output_item.done",
+      "response.completed",
+    ]);
+    expect(events[2]?.data).toMatchObject({ delta: "streamed reply" });
+  });
+});
+
+describe("responses mock namespaced tool calls", () => {
+  it("tool_turn_with_a_namespace_streams_it_on_the_function_call", async () => {
+    const mock = await startResponsesMock(SCENARIOS, {
+      respond: () => ({
+        kind: TurnKind.tool,
+        namespace: "mcp__codeweave",
+        name: "start_flow",
+        input: { flowId: "two-node" },
+      }),
+    });
+    opened.push(mock);
+
+    const response = await post(mock, KEY_TOOL, {
+      input: [userMessage("hi")],
+      tools: [{ name: "exec_command" }],
+    });
+    const events = parseSse(await response.text());
+
+    expect(events[1]?.data).toMatchObject({
+      item: {
+        type: "function_call",
+        namespace: "mcp__codeweave",
+        name: "start_flow",
+      },
+    });
+  });
+});
+
+describe("responses mock respond hook input and fallback", () => {
+  it("respond_receives_the_parsed_request_body", async () => {
+    const seen: unknown[] = [];
+    const mock = await startResponsesMock(SCENARIOS, {
+      respond: (request) => {
+        seen.push(request.input.at(-1));
+        return undefined;
+      },
+    });
+    opened.push(mock);
+
+    await post(mock, KEY_OK, {
+      input: [
+        userMessage("first"),
+        {
+          type: "function_call_output",
+          call_id: "call_9",
+          output: "result text",
+        },
+      ],
+      tools: [],
+    });
+
+    expect(seen).toEqual([
+      {
+        type: "function_call_output",
+        call_id: "call_9",
+        output: "result text",
+      },
+    ]);
+  });
+
+  it("undefined_falls_back_to_the_default_reply", async () => {
+    const mock = await startResponsesMock(SCENARIOS, {
+      respond: () => undefined,
+    });
+    opened.push(mock);
+
+    const response = await post(mock, KEY_OK, { input: [], tools: [] });
+    const events = parseSse(await response.text());
+
+    expect(events[1]?.data).toMatchObject({
+      item: { content: [{ type: "output_text", text: "done" }] },
     });
   });
 });

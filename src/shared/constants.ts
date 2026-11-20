@@ -1,6 +1,6 @@
 import { ProviderId } from "../domain/types";
 
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 export const EXECUTABLE_SETTING_LABELS: Readonly<Record<ProviderId, string>> = {
   [ProviderId.claude]: "Claude executable",

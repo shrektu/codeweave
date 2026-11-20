@@ -4,6 +4,8 @@ import type { ExecText } from "../exec";
 
 import {
   OpencodeGeneration,
+  MCP_TOOLS_MINIMUM_VERSION,
+  MCP_TOOLS_VERSION_MESSAGE,
   SUPPORTED_MAJOR_VERSION,
   V2_MAJOR_VERSION,
   V2_MINIMUM_VERSION,
@@ -24,6 +26,7 @@ export interface OpencodeVersion {
 export interface GenerationProbeOptions {
   readonly env: Readonly<Record<string, string>>;
   readonly cwd: string;
+  readonly requireMcpTools?: boolean;
 }
 
 export type GenerationProbe = (
@@ -50,6 +53,10 @@ export class UnsupportedOpencodeVersionError extends Error {
     return new UnsupportedOpencodeVersionError(
       `OpenCode ${formatOpencodeVersion(version)} is not supported. ${VERSION_SUPPORT_HINT}`,
     );
+  }
+
+  static mcpToolsUnsupported(): UnsupportedOpencodeVersionError {
+    return new UnsupportedOpencodeVersionError(MCP_TOOLS_VERSION_MESSAGE);
   }
 
   static undetectable(cause?: unknown): UnsupportedOpencodeVersionError {
@@ -98,7 +105,7 @@ export function generationOf(
 }
 
 export function createVersionProbe(deps: VersionProbeDeps): GenerationProbe {
-  return async (executable, { env, cwd }) => {
+  return async (executable, { env, cwd, requireMcpTools }) => {
     const command = buildOpencodeCommand({
       executable,
       args: [VERSION_ARG],
@@ -128,6 +135,13 @@ export function createVersionProbe(deps: VersionProbeDeps): GenerationProbe {
     const generation = generationOf(version);
     if (generation === null) {
       throw UnsupportedOpencodeVersionError.unsupported(version);
+    }
+    if (
+      requireMcpTools === true &&
+      generation === OpencodeGeneration.v2 &&
+      compareVersions(version, MCP_TOOLS_MINIMUM_VERSION) < 0
+    ) {
+      throw UnsupportedOpencodeVersionError.mcpToolsUnsupported();
     }
     return generation;
   };

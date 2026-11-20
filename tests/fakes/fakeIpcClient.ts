@@ -6,6 +6,8 @@ import { TaskClass } from "../../src/domain/taskClass";
 import { EdgeKind } from "../../src/domain/types";
 import {
   EffectLevel,
+  FlowPlacement,
+  FlowRunOrigin,
   PermissionProfile,
   ProviderId,
   SwitchReason,
@@ -107,11 +109,12 @@ export function staticStore(state: AppState): AppStore {
     getState: () => state,
     subscribe: () => () => undefined,
     start: () => () => undefined,
+    focusRun: () => undefined,
   };
 }
 
 export function readyState(snapshot: Snapshot): AppState {
-  return { connection: "ready", snapshot, error: null };
+  return { connection: "ready", snapshot, error: null, focusedRunId: null };
 }
 
 export function renderWithServices(
@@ -205,6 +208,7 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
     turnInFlight: false,
     flowRef: null,
     turns: [],
+    orchestrate: false,
     ...overrides,
   };
 }
@@ -243,7 +247,12 @@ export function makeFlowRun(overrides: Partial<FlowRunView> = {}): FlowRunView {
       { id: "review", status: "idle", visits: 0, result: null },
     ],
     decision: null,
+    decisions: [],
     failure: null,
+    origin: FlowRunOrigin.user,
+    placement: FlowPlacement.inPlace,
+    branch: null,
+    ownerSessionId: null,
     ...overrides,
   };
 }
@@ -355,7 +364,8 @@ export function makeSnapshot(overrides: Partial<Snapshot> = {}): Snapshot {
     switchLog: [],
     container: { available: true, message: null },
     terminal: null,
-    flowRun: null,
+    flowRuns: [],
+    flowSessions: [],
     ...overrides,
   };
 }

@@ -9,7 +9,7 @@ import {
 } from "./protocol";
 
 function request(method: string, params: unknown): unknown {
-  return { v: 6, id: "a", method, params };
+  return { v: 7, id: "a", method, params };
 }
 
 const SAVE_FLOW = {
@@ -52,6 +52,7 @@ const VALID_REQUESTS: [string, unknown][] = [
   ["settings/set", { defaultTaskClass: "light" }],
   ["session/stop", {}],
   ["permission/answer", { requestId: "r", optionId: "o" }],
+  ["permission/answer", { requestId: "r", optionId: "o", runId: "run-1" }],
   ["accounts/list", {}],
   ["accounts/suggest", {}],
   ["accounts/add", { label: "Work", configDir: "/x" }],
@@ -107,7 +108,7 @@ const VALID_REQUESTS: [string, unknown][] = [
   ["switchLog/list", {}],
   ["flows/list", { cwd: "/work" }],
   ["flow/start", { cwd: "/work", flowId: "ship", task: "Add a login form" }],
-  ["flow/stop", {}],
+  ["flow/stop", { runId: "run-1" }],
   ["flow/decide", { runId: "run-1", decision: "approve" }],
   ["flow/decide", { runId: "run-1", decision: "another_round" }],
   ["flow/decide", { runId: "run-1", decision: "stop" }],
@@ -240,7 +241,16 @@ const FLOW_INVALID_REQUESTS: [string, unknown][] = [
     "flow/start with an empty cwd",
     request("flow/start", { cwd: "", flowId: "ship", task: "Go" }),
   ],
-  ["flow/stop with a param", request("flow/stop", { runId: "run-1" })],
+  ["flow/stop without a run id", request("flow/stop", {})],
+  ["flow/stop with an empty run id", request("flow/stop", { runId: "" })],
+  [
+    "permission/answer with an empty run id",
+    request("permission/answer", {
+      requestId: "r",
+      optionId: "o",
+      runId: "",
+    }),
+  ],
   [
     "flow/decide with an unknown decision",
     request("flow/decide", { runId: "run-1", decision: "retry" }),
@@ -255,7 +265,7 @@ const INVALID_REQUESTS: [string, unknown][] = [
   ...TERMINAL_INVALID_REQUESTS,
   ...FLOW_INVALID_REQUESTS,
   ["ping with a param", request("ping", { extra: 1 })],
-  ["ping without params", { v: 6, id: "a", method: "ping" }],
+  ["ping without params", { v: 7, id: "a", method: "ping" }],
   ["session/start without cwd", request("session/start", {})],
   ["session/start with empty cwd", request("session/start", { cwd: "" })],
   [
@@ -506,13 +516,13 @@ describe("RequestSchema", () => {
   });
 
   it.each([
-    ["an empty id", { v: 6, id: "", method: "ping", params: {} }],
-    ["an extra key", { v: 6, id: "a", method: "ping", params: {}, extra: 1 }],
-    ["an unknown method", { v: 6, id: "a", method: "pong", params: {} }],
+    ["an empty id", { v: 7, id: "", method: "ping", params: {} }],
+    ["an extra key", { v: 7, id: "a", method: "ping", params: {}, extra: 1 }],
+    ["an unknown method", { v: 7, id: "a", method: "pong", params: {} }],
     ["a missing version", { id: "a", method: "ping", params: {} }],
     ["a non-numeric version", { v: "2", id: "a", method: "ping", params: {} }],
     ["a fractional version", { v: 1.5, id: "a", method: "ping", params: {} }],
-    ["a missing id", { v: 6, method: "ping", params: {} }],
+    ["a missing id", { v: 7, method: "ping", params: {} }],
   ])("rejects_%s", (_label, payload) => {
     expect(RequestSchema.safeParse(payload).success).toBe(false);
   });
@@ -521,7 +531,7 @@ describe("RequestSchema", () => {
 describe("ResponseSchema", () => {
   it("accepts_a_ping_result", () => {
     const parsed = ResponseSchema.safeParse({
-      v: 6,
+      v: 7,
       id: "a",
       ok: true,
       result: { pong: true, backendPid: 42 },
@@ -539,7 +549,7 @@ describe("ResponseSchema", () => {
     "EXPIRED",
   ])("accepts_the_error_code_%s", (code) => {
     const parsed = ResponseSchema.safeParse({
-      v: 6,
+      v: 7,
       id: null,
       ok: false,
       error: { code, message: "bad" },
@@ -551,11 +561,11 @@ describe("ResponseSchema", () => {
   it.each([
     [
       "an unknown error code",
-      { v: 6, id: "a", ok: false, error: { code: "NOPE", message: "x" } },
+      { v: 7, id: "a", ok: false, error: { code: "NOPE", message: "x" } },
     ],
     [
       "a success without a request id",
-      { v: 6, id: null, ok: true, result: { pong: true, backendPid: 1 } },
+      { v: 7, id: null, ok: true, result: { pong: true, backendPid: 1 } },
     ],
   ])("rejects_%s", (_label, payload) => {
     expect(ResponseSchema.safeParse(payload).success).toBe(false);
@@ -605,12 +615,17 @@ describe("EventSchema", () => {
     currentNodeId: null,
     nodes: [{ id: "a", status: "done", visits: 2, result: "ok" }],
     decision: { reason: "rounds_exhausted", nodeId: "a" },
+    decisions: [],
     failure: null,
+    origin: "orchestrator",
+    placement: "worktree",
+    branch: "feature/login",
+    ownerSessionId: "sess-1",
   };
 
   it.each([
-    ["flow/changed", null],
     ["flow/changed", flowRun],
+    ["flowSession/changed", { runId: "run-1", view: null }],
     ["session/changed", null],
     ["accounts/changed", { accounts: [] }],
     ["settings/changed", settings],
@@ -619,36 +634,36 @@ describe("EventSchema", () => {
     ["terminal/changed", terminal],
     ["terminal/changed", null],
   ])("accepts_%s", (event, payload) => {
-    expect(EventSchema.safeParse({ v: 6, event, payload }).success).toBe(true);
+    expect(EventSchema.safeParse({ v: 7, event, payload }).success).toBe(true);
   });
 
   it.each([
-    ["an unknown event", { v: 6, event: "nope", payload: null }],
+    ["an unknown event", { v: 7, event: "nope", payload: null }],
     [
       "a settings event with a session payload",
-      { v: 6, event: "settings/changed", payload: null },
+      { v: 7, event: "settings/changed", payload: null },
     ],
     [
       "a log entry with an unknown reason",
       {
-        v: 6,
+        v: 7,
         event: "switchLog/appended",
         payload: { ...logEntry, reason: "whim" },
       },
     ],
-    ["an event without payload", { v: 6, event: "accounts/changed" }],
+    ["an event without payload", { v: 7, event: "accounts/changed" }],
     [
       "terminal data without an id",
-      { v: 6, event: "terminal/data", payload: { data: "x" } },
+      { v: 7, event: "terminal/data", payload: { data: "x" } },
     ],
     [
       "terminal data with an extra key",
-      { v: 6, event: "terminal/data", payload: { id: "t", data: "x", seq: 1 } },
+      { v: 7, event: "terminal/data", payload: { id: "t", data: "x", seq: 1 } },
     ],
     [
       "a terminal with an unknown status",
       {
-        v: 6,
+        v: 7,
         event: "terminal/changed",
         payload: { ...terminal, status: "zombie" },
       },
@@ -656,15 +671,47 @@ describe("EventSchema", () => {
     [
       "a terminal with a fractional exit code",
       {
-        v: 6,
+        v: 7,
         event: "terminal/changed",
         payload: { ...terminal, exitCode: 1.5 },
       },
     ],
     [
+      "a flow run event without a payload",
+      { v: 7, event: "flow/changed", payload: null },
+    ],
+    [
+      "a flow run with an unknown origin",
+      {
+        v: 7,
+        event: "flow/changed",
+        payload: { ...flowRun, origin: "robot" },
+      },
+    ],
+    [
+      "a flow run without a branch",
+      {
+        v: 7,
+        event: "flow/changed",
+        payload: { ...flowRun, branch: undefined },
+      },
+    ],
+    [
+      "a flow session without a run id",
+      { v: 7, event: "flowSession/changed", payload: { view: null } },
+    ],
+    [
+      "a flow session with an empty run id",
+      {
+        v: 7,
+        event: "flowSession/changed",
+        payload: { runId: "", view: null },
+      },
+    ],
+    [
       "a flow run with an unknown status",
       {
-        v: 6,
+        v: 7,
         event: "flow/changed",
         payload: { ...flowRun, status: "paused" },
       },
@@ -672,7 +719,7 @@ describe("EventSchema", () => {
     [
       "a flow run with an unknown decision reason",
       {
-        v: 6,
+        v: 7,
         event: "flow/changed",
         payload: { ...flowRun, decision: { reason: "tired", nodeId: "a" } },
       },

@@ -118,7 +118,7 @@ const VERDICT_BY_WORD: Readonly<Record<string, Verdict>> = {
   CHANGES_REQUESTED: Verdict.changesRequested,
 };
 const REVIEW_DECISIONS: readonly FlowDecision[] = Object.values(FlowDecision);
-const ALLOWED_DECISIONS: Readonly<
+export const ALLOWED_DECISIONS: Readonly<
   Record<DecisionReason, readonly FlowDecision[]>
 > = {
   [DecisionReason.gate]: [FlowDecision.approve, FlowDecision.stop],

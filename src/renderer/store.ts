@@ -8,25 +8,37 @@ import type { IpcEvent } from "../shared/protocol";
 import type { Snapshot, SwitchLogEntryView } from "../shared/views";
 
 import { errorMessage } from "./errorMessage";
+import { isLiveOrchestrator } from "./format";
 import type { IpcClient } from "./ipc";
 
 export interface AppState {
   connection: "connecting" | "ready" | "disconnected";
   snapshot: Snapshot | null;
   error: string | null;
+  focusedRunId: string | null;
 }
 
 export interface AppStore {
   getState: () => AppState;
   subscribe: (listener: () => void) => () => void;
   start: () => () => void;
+  focusRun: (runId: string | null) => void;
 }
 
 const INITIAL_STATE: AppState = {
   connection: "connecting",
   snapshot: null,
   error: null,
+  focusedRunId: null,
 };
+
+function focusAfter(previous: AppState, next: AppState): string | null {
+  const session = next.snapshot?.session ?? null;
+  return previous.snapshot?.session?.id === session?.id &&
+    isLiveOrchestrator(session)
+    ? next.focusedRunId
+    : null;
+}
 
 function applyEvent(snapshot: Snapshot, event: IpcEvent): Snapshot {
   switch (event.event) {
@@ -39,7 +51,12 @@ function applyEvent(snapshot: Snapshot, event: IpcEvent): Snapshot {
     case "terminal/changed":
       return { ...snapshot, terminal: event.payload };
     case "flow/changed":
-      return { ...snapshot, flowRun: event.payload };
+      return {
+        ...snapshot,
+        flowRuns: upsertByRunId(snapshot.flowRuns, event.payload),
+      };
+    case "flowSession/changed":
+      return { ...snapshot, flowSessions: applyFlowSession(snapshot, event) };
     case "terminal/data":
       return snapshot;
     case "switchLog/appended":
@@ -51,6 +68,37 @@ function applyEvent(snapshot: Snapshot, event: IpcEvent): Snapshot {
               -SWITCH_LOG_SNAPSHOT_LIMIT,
             ),
           };
+  }
+}
+
+function upsertByRunId<T extends { readonly runId: string }>(
+  entries: readonly T[],
+  entry: T,
+): T[] {
+  return entries.some((existing) => existing.runId === entry.runId)
+    ? entries.map((existing) =>
+        existing.runId === entry.runId ? entry : existing,
+      )
+    : [...entries, entry];
+}
+
+function applyFlowSession(
+  snapshot: Snapshot,
+  event: Extract<IpcEvent, { event: "flowSession/changed" }>,
+): Snapshot["flowSessions"] {
+  const { runId, view } = event.payload;
+  return view === null
+    ? snapshot.flowSessions.filter((entry) => entry.runId !== runId)
+    : upsertByRunId(snapshot.flowSessions, { runId, view });
+}
+
+function streamKey(event: IpcEvent): string {
+  switch (event.event) {
+    case "flow/changed":
+    case "flowSession/changed":
+      return `${event.event}:${event.payload.runId}`;
+    default:
+      return event.event;
   }
 }
 
@@ -70,7 +118,10 @@ export function bufferEvent(
   event: IpcEvent,
 ): IpcEvent[] {
   if (event.event !== "switchLog/appended") {
-    return [...buffer.filter((kept) => kept.event !== event.event), event];
+    return [
+      ...buffer.filter((kept) => streamKey(kept) !== streamKey(event)),
+      event,
+    ];
   }
   const appended = [...buffer, event];
   const evicted = new Set<IpcEvent>(
@@ -86,7 +137,7 @@ export function createAppStore(client: IpcClient): AppStore {
   const listeners = new Set<() => void>();
 
   const setState = (next: AppState): void => {
-    state = next;
+    state = { ...next, focusedRunId: focusAfter(state, next) };
     for (const listener of listeners) {
       listener();
     }
@@ -94,6 +145,9 @@ export function createAppStore(client: IpcClient): AppStore {
 
   return {
     getState: () => state,
+    focusRun(runId): void {
+      setState({ ...state, focusedRunId: runId });
+    },
     subscribe(listener): () => void {
       listeners.add(listener);
       return (): void => {
@@ -117,6 +171,7 @@ export function createAppStore(client: IpcClient): AppStore {
           .then((snapshot) => {
             if (active) {
               setState({
+                ...state,
                 connection: "ready",
                 snapshot: buffered.reduce(applyEvent, snapshot),
                 error: null,
@@ -126,6 +181,7 @@ export function createAppStore(client: IpcClient): AppStore {
           .catch((error: unknown) => {
             if (active) {
               setState({
+                ...state,
                 connection: "disconnected",
                 snapshot: null,
                 error: errorMessage(error),

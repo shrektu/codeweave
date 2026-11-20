@@ -845,6 +845,7 @@ function spawnCodex(
     env: deps.envFor(spec),
     platform: deps.platform,
     comSpec: deps.comSpec,
+    tools: spec.tools,
   });
   return deps.processes.start({
     command: launch.command,

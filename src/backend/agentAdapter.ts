@@ -3,12 +3,20 @@ import type { Account, PermissionProfile } from "../domain/types";
 
 import type { StopResult } from "./process/container";
 
+export interface AgentToolAccess {
+  readonly server: string;
+  readonly url: string;
+  readonly token: string;
+  readonly toolNames: readonly string[];
+}
+
 export interface AgentStartSpec {
   readonly account: Account;
   readonly cwd: string;
   readonly profile: PermissionProfile;
   readonly runId: string;
   readonly executable: string;
+  readonly tools?: AgentToolAccess;
 }
 
 export const AgentStartFailure = {

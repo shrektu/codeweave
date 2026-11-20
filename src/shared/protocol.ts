@@ -108,6 +108,7 @@ export const ParamsSchemas = {
     provider: z.enum(ProviderId).optional(),
     model: ModelChoiceSchema.optional(),
     taskClass: TaskClassSchema.optional(),
+    orchestrate: z.boolean().optional(),
   }),
   "session/prompt": z.strictObject({
     text: NonBlankString,
@@ -118,6 +119,7 @@ export const ParamsSchemas = {
   "permission/answer": z.strictObject({
     requestId: NonEmptyString,
     optionId: NonEmptyString,
+    runId: NonEmptyString.optional(),
   }),
   "accounts/list": EmptyParamsSchema,
   "accounts/suggest": EmptyParamsSchema,
@@ -193,7 +195,7 @@ export const ParamsSchemas = {
     flowId: NonEmptyString,
     task: NonBlankString,
   }),
-  "flow/stop": EmptyParamsSchema,
+  "flow/stop": z.strictObject({ runId: NonEmptyString }),
   "flow/decide": z.strictObject({
     runId: NonEmptyString,
     decision: z.enum(FlowDecision),
@@ -380,7 +382,15 @@ export const EventSchema = z.discriminatedUnion("event", [
   z.strictObject({
     v: z.int(),
     event: z.literal("flow/changed"),
-    payload: FlowRunViewSchema.nullable(),
+    payload: FlowRunViewSchema,
+  }),
+  z.strictObject({
+    v: z.int(),
+    event: z.literal("flowSession/changed"),
+    payload: z.strictObject({
+      runId: NonEmptyString,
+      view: SessionViewSchema.nullable(),
+    }),
   }),
   z.strictObject({
     v: z.int(),

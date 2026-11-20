@@ -1,4 +1,5 @@
 import {
+  bearerHeaders,
   declaredModels,
   type ApiKeyCredentials,
   type SessionConfigInput,
@@ -6,6 +7,7 @@ import {
 import {
   FILE_REFERENCE_PREFIX,
   FILE_REFERENCE_SUFFIX,
+  MCP_SERVER_TYPE_REMOTE,
   OPENAI_COMPATIBLE_PACKAGE,
   SHARE_DISABLED,
 } from "../constants";
@@ -30,7 +32,17 @@ export interface OpencodeV2ProviderConfig {
   readonly models?: Readonly<Record<string, { readonly name: string }>>;
 }
 
+export interface OpencodeV2McpServer {
+  readonly type: typeof MCP_SERVER_TYPE_REMOTE;
+  readonly url: string;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly codemode: false;
+}
+
 export interface OpencodeV2SessionConfig {
+  readonly mcp?: {
+    readonly servers: Readonly<Record<string, OpencodeV2McpServer>>;
+  };
   readonly model: string;
   readonly update: typeof UPDATE_DISABLED;
   readonly share: typeof SHARE_DISABLED;
@@ -101,6 +113,20 @@ export function buildV2SessionConfig(
   const { credentials } = input;
   const qualified = `${credentials.providerId}/${credentials.model}`;
   return {
+    ...(input.tools === undefined
+      ? {}
+      : {
+          mcp: {
+            servers: {
+              [input.tools.server]: {
+                type: MCP_SERVER_TYPE_REMOTE,
+                url: input.tools.url,
+                headers: bearerHeaders(input.tools),
+                codemode: false,
+              },
+            },
+          },
+        }),
     model: qualified,
     update: UPDATE_DISABLED,
     share: SHARE_DISABLED,

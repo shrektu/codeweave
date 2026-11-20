@@ -7,7 +7,7 @@ import {
 } from "react";
 
 import { isRunOpen } from "../domain/flowState";
-import { EffectLevel as EffectSetting } from "../domain/types";
+import { EffectLevel as EffectSetting, FlowRunOrigin } from "../domain/types";
 import type {
   FlowRunView,
   FlowsList,
@@ -25,6 +25,7 @@ import { FlowInspector } from "./components/FlowInspector";
 import { FlowRunPanel } from "./components/FlowRunPanel";
 import { FolderPrompt, PickFolderButton } from "./components/FolderControls";
 import { LimitsPanel } from "./components/LimitsPanel";
+import { OrchestratorTimeline } from "./components/OrchestratorTimeline";
 import { SessionStream } from "./components/SessionStream";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar } from "./components/Sidebar";
@@ -47,7 +48,13 @@ import {
   type FlowDraft,
   type FlowSelection,
 } from "./flowDraft";
-import { isSessionLive } from "./format";
+import {
+  focusedRunOf,
+  isSessionLive,
+  latestOpenRunOf,
+  latestRunOf,
+  shownSessionOf,
+} from "./format";
 import type { IpcClient } from "./ipc";
 import { useApp } from "./services";
 import { useTerminalDock } from "./terminal/useTerminalDock";
@@ -247,6 +254,7 @@ function FlowPicker({
   session,
   sessionLive,
   flowRun,
+  runFocused,
   editor,
   reloading,
   onOpenSession,
@@ -258,6 +266,7 @@ function FlowPicker({
   session: SessionView | null;
   sessionLive: boolean;
   flowRun: FlowRunView | null;
+  runFocused: boolean;
   editor: FlowEditor;
   reloading: boolean;
   onOpenSession: () => void;
@@ -265,7 +274,7 @@ function FlowPicker({
   onReload: () => void;
 }): JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(
-    session?.flowRef?.flowId ?? null,
+    (runFocused ? flowRun?.flowId : session?.flowRef?.flowId) ?? null,
   );
   const locked = flowRun !== null && isRunOpen(flowRun.status);
   const editedId =
@@ -404,6 +413,7 @@ function FlowTabBody({
   session,
   sessionLive,
   flowRun,
+  runFocused,
   source,
   editor,
   onOpenSession,
@@ -413,6 +423,7 @@ function FlowTabBody({
   session: SessionView | null;
   sessionLive: boolean;
   flowRun: FlowRunView | null;
+  runFocused: boolean;
   source: FlowsSource;
   editor: FlowEditor;
   onOpenSession: () => void;
@@ -434,7 +445,8 @@ function FlowTabBody({
           list={load.list}
           session={session}
           sessionLive={sessionLive}
-          flowRun={flowRun?.cwd === cwd ? flowRun : null}
+          flowRun={flowRun}
+          runFocused={runFocused}
           editor={editor}
           reloading={source.reloading}
           onOpenSession={onOpenSession}
@@ -446,12 +458,14 @@ function FlowTabBody({
 }
 
 function openRunCwdOf(snapshot: Snapshot | null): string | null {
-  const run = snapshot?.flowRun ?? null;
-  return run !== null && isRunOpen(run.status) ? run.cwd : null;
+  const userRuns = (snapshot?.flowRuns ?? []).filter(
+    (run) => run.origin === FlowRunOrigin.user,
+  );
+  return latestOpenRunOf(userRuns)?.cwd ?? null;
 }
 
 function liveSessionCwdOf(snapshot: Snapshot | null): string | null {
-  const session = snapshot?.session ?? null;
+  const { session } = shownSessionOf(snapshot);
   return isSessionLive(session) ? (session?.cwd ?? null) : null;
 }
 
@@ -463,7 +477,7 @@ function flowCwdOf(
     openRunCwdOf(snapshot) ??
     liveSessionCwdOf(snapshot) ??
     picked ??
-    snapshot?.session?.cwd ??
+    shownSessionOf(snapshot).session?.cwd ??
     null
   );
 }
@@ -499,7 +513,11 @@ function FlowTab({
 }): JSX.Element {
   const { state } = useApp();
   const source = useFlowsLoad(cwd);
-  const session = state.snapshot?.session ?? null;
+  const { session } = shownSessionOf(state.snapshot);
+  const focusedRun = focusedRunOf(state.snapshot, state.focusedRunId);
+  const flowRun =
+    focusedRun ??
+    (cwd === null ? null : latestRunOf(state.snapshot?.flowRuns ?? [], cwd));
 
   return (
     <section className="glass panel flow-tab" aria-label="Flow">
@@ -515,7 +533,8 @@ function FlowTab({
         cwd={cwd}
         session={session?.cwd === cwd ? session : null}
         sessionLive={isSessionLive(session)}
-        flowRun={state.snapshot?.flowRun ?? null}
+        flowRun={flowRun}
+        runFocused={focusedRun !== null}
         source={source}
         editor={editor}
         onOpenSession={onOpenSession}
@@ -589,6 +608,10 @@ export function App(): JSX.Element {
   const openSessionTab = (): void => {
     setCentreTab("session");
   };
+  const openFlowTab = (): void => {
+    setCentreTab("flow");
+  };
+  const orchestrating = state.snapshot?.session?.orchestrate === true;
 
   return (
     <div className="app">
@@ -665,6 +688,9 @@ export function App(): JSX.Element {
           aria-labelledby={`tab-${centreTab}`}
           className="tab-panel"
         >
+          {centreTab === "session" && orchestrating && (
+            <OrchestratorTimeline onShowGraph={openFlowTab} />
+          )}
           {centreTab === "session" && <SessionStream />}
           {centreTab === "flow" && (
             <FlowTab

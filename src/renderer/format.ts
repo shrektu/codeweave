@@ -1,12 +1,15 @@
 import { ApiAuth, ApiProviderId } from "../domain/apiProviders";
+import { isRunOpen } from "../domain/flowState";
 import { LimitPeriod } from "../domain/limitWindows";
 import { LimitAvailability, ProviderId } from "../domain/types";
 import type {
   AccountView,
+  FlowRunView,
   LimitView,
   LimitWindowView,
   RotationPhaseView,
   SessionView,
+  Snapshot,
 } from "../shared/views";
 
 const ENDED_PHASES: readonly RotationPhaseView["phase"][] = [
@@ -17,6 +20,79 @@ const ENDED_PHASES: readonly RotationPhaseView["phase"][] = [
 
 export function isSessionLive(session: SessionView | null): boolean {
   return session !== null && !ENDED_PHASES.includes(session.phase.phase);
+}
+
+export interface ShownSession {
+  readonly session: SessionView | null;
+  readonly runId: string | null;
+}
+
+const NO_SHOWN_SESSION: ShownSession = { session: null, runId: null };
+
+export function isLiveOrchestrator(session: SessionView | null): boolean {
+  return session?.orchestrate === true && isSessionLive(session);
+}
+
+export function shownSessionOf(
+  snapshot: Snapshot | null,
+  focusedRunId: string | null = null,
+): ShownSession {
+  if (snapshot === null) {
+    return NO_SHOWN_SESSION;
+  }
+  const focusedId = isLiveOrchestrator(snapshot.session) ? focusedRunId : null;
+  const focused = snapshot.flowSessions.find(
+    (entry) => entry.runId === focusedId,
+  );
+  if (focused !== undefined) {
+    return { session: focused.view, runId: focused.runId };
+  }
+  const main: ShownSession = { session: snapshot.session, runId: null };
+  if (isSessionLive(snapshot.session)) {
+    return main;
+  }
+  const openRuns = snapshot.flowRuns
+    .toReversed()
+    .filter((run) => isRunOpen(run.status));
+  const found = openRuns.flatMap((run) =>
+    snapshot.flowSessions.filter((entry) => entry.runId === run.runId),
+  )[0];
+  return found === undefined
+    ? main
+    : { session: found.view, runId: found.runId };
+}
+
+export function orchestratedRunsOf(snapshot: Snapshot | null): FlowRunView[] {
+  const session = snapshot?.session;
+  if (snapshot === null || session?.orchestrate !== true) {
+    return [];
+  }
+  return snapshot.flowRuns
+    .filter((run) => run.ownerSessionId === session.id)
+    .toReversed();
+}
+
+export function focusedRunOf(
+  snapshot: Snapshot | null,
+  focusedRunId: string | null,
+): FlowRunView | null {
+  if (snapshot === null || !isLiveOrchestrator(snapshot.session)) {
+    return null;
+  }
+  return snapshot.flowRuns.find((run) => run.runId === focusedRunId) ?? null;
+}
+
+export function latestRunOf(
+  runs: readonly FlowRunView[],
+  cwd: string,
+): FlowRunView | null {
+  return runs.findLast((run) => run.cwd === cwd) ?? null;
+}
+
+export function latestOpenRunOf(
+  runs: readonly FlowRunView[],
+): FlowRunView | null {
+  return runs.findLast((run) => isRunOpen(run.status)) ?? null;
 }
 
 export type SelectableProvider =

@@ -17,6 +17,8 @@ const DEFAULT_CONFIG = "playwright.config.ts";
 const PACK_COMMAND = "pnpm run pack";
 const TERMINAL_SPEC = "tests/e2e/terminal.spec.ts";
 const EXECUTABLE_ENV = "CODEWEAVE_E2E_EXECUTABLE";
+const CLAUDE_INSTALL_STEP = "Install Claude Code CLI";
+const ORCHESTRATOR_E2E_STEP = "Orchestrator end-to-end test";
 const SPEC_NAME_PATTERN = /"([A-Za-z]+\.spec\.ts)"/g;
 const LIST_PATTERNS = {
   testMatch: /testMatch:\s*\[([^\]]*)\]/,
@@ -121,4 +123,16 @@ it("rotation_specs_excluded_from_default_e2e", () => {
 
   expect(rotationSpecs).toContain("agyRotation.spec.ts");
   expect(ignoredSpecs).toEqual(expect.arrayContaining([...rotationSpecs]));
+});
+
+it("orchestrator_e2e_runs_after_claude_install_on_every_os", () => {
+  const steps = workflowSteps();
+  const install = steps.findIndex((step) => step.name === CLAUDE_INSTALL_STEP);
+  const orchestrator = steps.findIndex(
+    (step) => step.name === ORCHESTRATOR_E2E_STEP,
+  );
+
+  expect(install).toBeGreaterThanOrEqual(0);
+  expect(steps[install]?.if).toBeUndefined();
+  expect(orchestrator).toBeGreaterThan(install);
 });

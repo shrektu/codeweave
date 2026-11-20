@@ -1,11 +1,13 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { _electron as electron, type Page } from "@playwright/test";
 
+import { locateClaudeAcpEntry } from "../../src/backend/claude/launch";
 import { createJsonStore } from "../../src/backend/storage";
-import { PermissionProfile } from "../../src/domain/types";
+import { PermissionProfile, ProviderId } from "../../src/domain/types";
 import { userTexts, type MessagesBody } from "../fakes/anthropicMock";
 
 import {
@@ -27,6 +29,8 @@ const SANDBOX_FLAGS =
     ? ["--no-sandbox"]
     : [];
 const FLOW_WORKSPACE_PREFIX = "codeweave-flow-run-";
+const CLAUDE_AGENT_SDK_PACKAGE = "@anthropic-ai/claude-agent-sdk";
+const WINDOWS_EXECUTABLE_SUFFIX = ".exe";
 const AGENTS_FILE = join("agents", "flow-agents.md");
 export const FLOW_FILE = join("flows", "two-node.md");
 const VERDICT_SECTION_MARKER = "## Verdict";
@@ -39,11 +43,20 @@ export const FLOW_TASK = "Add a greeting helper";
 export const BUILD_REPLY = "Implemented the change.";
 export const REVIEW_REPLY = "Looks correct.\nVERDICT: APPROVED";
 
-const AGENTS_MARKDOWN = `---
+export interface FlowFilesOptions {
+  readonly provider?: ProviderId;
+  readonly builderProfile?: PermissionProfile;
+}
+
+function agentsMarkdown({
+  provider = ProviderId.claude,
+  builderProfile = PermissionProfile.acceptEdits,
+}: FlowFilesOptions): string {
+  return `---
 id: builder
 role: Builds the change
-provider: claude
-permissionProfile: accept-edits
+provider: ${provider}
+permissionProfile: ${builderProfile}
 ---
 
 The builder implements the change.
@@ -51,12 +64,13 @@ The builder implements the change.
 ---
 id: checker
 role: Reviews the change
-provider: claude
+provider: ${provider}
 permissionProfile: plan
 ---
 
 The checker reviews the change.
 `;
+}
 
 const FLOW_MARKDOWN = `---
 id: two-node
@@ -162,20 +176,46 @@ export function hasBuildHandoff(prompt: string): boolean {
   );
 }
 
-export async function createFlowWorkspace(): Promise<FlowWorkspace> {
-  const root = await mkdtemp(join(tmpdir(), FLOW_WORKSPACE_PREFIX));
+export async function writeFlowFiles(
+  repo: string,
+  options: FlowFilesOptions = {},
+): Promise<void> {
+  await mkdir(join(repo, "agents"));
+  await mkdir(join(repo, "flows"));
+  await writeFile(join(repo, AGENTS_FILE), agentsMarkdown(options));
+  await writeFile(join(repo, FLOW_FILE), FLOW_MARKDOWN);
+}
+
+export function bundledClaudeExecutable(): string {
+  const requireFromAcp = createRequire(locateClaudeAcpEntry());
+  const requireFromSdk = createRequire(
+    requireFromAcp.resolve(CLAUDE_AGENT_SDK_PACKAGE),
+  );
+  const extension =
+    process.platform === "win32" ? WINDOWS_EXECUTABLE_SUFFIX : "";
+  return requireFromSdk.resolve(
+    `${CLAUDE_AGENT_SDK_PACKAGE}-${process.platform}-${process.arch}/claude${extension}`,
+  );
+}
+
+export async function createFlowWorkspace(
+  options: { readonly claudeExecutable?: string } = {},
+): Promise<FlowWorkspace> {
+  const root = await realpath(
+    await mkdtemp(join(tmpdir(), FLOW_WORKSPACE_PREFIX)),
+  );
   const userData = join(root, "user-data");
   const repo = join(root, "repo");
   const claude = account("acc-a", "A", join(root, "config-a"), 0);
   await createRepo(repo);
   await createConfigDir(claude.configDir, KEY_A);
-  await mkdir(join(repo, "agents"));
-  await mkdir(join(repo, "flows"));
-  await writeFile(join(repo, AGENTS_FILE), AGENTS_MARKDOWN);
-  await writeFile(join(repo, FLOW_FILE), FLOW_MARKDOWN);
+  await writeFlowFiles(repo);
   const store = createJsonStore(userData);
   await store.writeAccounts([claude]);
-  await store.writeSettings(rotationSettings(PermissionProfile.acceptEdits));
+  await store.writeSettings({
+    ...rotationSettings(PermissionProfile.acceptEdits),
+    claudeExecutable: options.claudeExecutable ?? null,
+  });
   return {
     userData,
     repo,

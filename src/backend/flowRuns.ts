@@ -1,3 +1,4 @@
+import { MAX_PARALLEL_FLOWS, RETAINED_FLOW_RUNS } from "../domain/constants";
 import { buildNodePrompt } from "../domain/flowPrompt";
 import {
   FlowNodeRunStatus,
@@ -15,7 +16,13 @@ import {
 } from "../domain/flowRun";
 import type { FlowDefinition } from "../domain/flows";
 import { isAutoModel, type ModelChoice } from "../domain/modelChoice";
-import { EdgeKind, type ProviderId, type WorktreeState } from "../domain/types";
+import {
+  EdgeKind,
+  FlowPlacement,
+  FlowRunOrigin,
+  type ProviderId,
+  type WorktreeState,
+} from "../domain/types";
 import { IpcError, IpcErrorCode, type ParamsMap } from "../shared/protocol";
 import type {
   AgentView,
@@ -40,19 +47,36 @@ function modelChoiceOf(
 }
 
 export interface FlowRunDeps {
-  readonly sessions: SessionService;
+  readonly sessions: (runId: string) => SessionService;
+  readonly releaseSessions: (runId: string) => Promise<void>;
+  readonly mainSessionLive: () => boolean;
   readonly listFlows: (cwd: string) => Promise<FlowsList>;
   readonly inspectWorktree: (cwd: string) => Promise<WorktreeState>;
   readonly broadcast: ConnectionRegistry["broadcast"];
   readonly newRunId: () => string;
 }
 
+export type FlowStartRequest = ParamsMap["flow/start"] & {
+  readonly origin?: FlowRunOrigin;
+  readonly placement?: FlowPlacement;
+  readonly branch?: string | null;
+  readonly runId?: string;
+  readonly definitionsCwd?: string;
+  readonly ownerSessionId?: string | null;
+};
+
 export interface FlowRunService {
-  view(): FlowRunView | null;
-  start(params: ParamsMap["flow/start"]): Promise<FlowRunView>;
-  stop(): Promise<void>;
-  decide(params: ParamsMap["flow/decide"]): Promise<FlowRunView>;
-  isActive(): boolean;
+  views(): FlowRunView[];
+  view(runId: string): FlowRunView | null;
+  start(request: FlowStartRequest): Promise<FlowRunView>;
+  stop(runId: string): Promise<void>;
+  stopAll(): Promise<void>;
+  decide(params: ParamsMap["flow/decide"], note?: string): Promise<FlowRunView>;
+  answerPermission(runId: string, requestId: string, optionId: string): void;
+  isOpen(runId: string): boolean;
+  hasOpenRuns(): boolean;
+  hasOpenUserRuns(): boolean;
+  onChanged(listener: (view: FlowRunView) => void): () => void;
   shutdown(): Promise<void>;
 }
 
@@ -67,14 +91,27 @@ interface Opening {
   readonly settled: PromiseWithResolvers<undefined>;
 }
 
+interface RunIdentity {
+  readonly runId: string;
+  readonly cwd: string;
+  readonly origin: FlowRunOrigin;
+  readonly placement: FlowPlacement;
+  readonly branch: string | null;
+  readonly ownerSessionId: string | null;
+}
+
+type DecisionLog = FlowRunView["decisions"];
+
 const ACTIVE_STATUSES: readonly FlowRunStatus[] = [
   FlowRunStatus.running,
   FlowRunStatus.awaitingDecision,
 ];
-const FLOW_ALREADY_RUNNING_MESSAGE = "A flow is already running";
+const FLOW_ALREADY_RUNNING_MESSAGE = "A flow is already running in this folder";
+const FLOW_LIMIT_MESSAGE = `At most ${String(MAX_PARALLEL_FLOWS)} flows can run at once`;
 const SESSION_ALREADY_RUNNING_MESSAGE = "A session is already running";
 const BLANK_TASK_MESSAGE = "The task must not be blank";
 const UNKNOWN_RUN_MESSAGE = "Unknown flow run";
+const UNKNOWN_PERMISSION_MESSAGE = "Unknown permission request";
 const NODE_STOPPED_MESSAGE = "The flow run was stopped";
 const START_CANCELLED_MESSAGE = "The flow run was stopped before it started";
 const SHUT_DOWN_MESSAGE = "The flow runner has shut down";
@@ -87,7 +124,11 @@ function isOpen(state: FlowRunState): boolean {
   return ACTIVE_STATUSES.includes(state.status);
 }
 
-function toFlowRunView(state: FlowRunState): FlowRunView {
+function toFlowRunView(
+  state: FlowRunState,
+  identity: RunIdentity,
+  decisions: DecisionLog,
+): FlowRunView {
   return {
     runId: state.runId,
     flowId: state.flowId,
@@ -102,7 +143,12 @@ function toFlowRunView(state: FlowRunState): FlowRunView {
         ?.id ?? null,
     nodes: state.nodes.map((node) => ({ ...node })),
     decision: state.decision === null ? null : { ...state.decision },
+    decisions: decisions.map((entry) => ({ ...entry })),
     failure: state.failure,
+    origin: identity.origin,
+    placement: identity.placement,
+    branch: identity.branch,
+    ownerSessionId: identity.ownerSessionId,
   };
 }
 
@@ -133,46 +179,59 @@ function unknownFlow(list: FlowsList, flowId: string): IpcError {
       );
 }
 
-class FlowRunner implements FlowRunService {
+class FlowRun {
+  readonly runId: string;
+  readonly cwd: string;
+  readonly origin: FlowRunOrigin;
+  private readonly identity: RunIdentity;
   private readonly deps: FlowRunDeps;
-  private current: ActiveRun | null = null;
+  private readonly onChange: (view: FlowRunView) => void;
+  private readonly decisions: DecisionLog = [];
+  private active: ActiveRun | null = null;
   private opening: Opening | null = null;
-  private closed = false;
   private pumpRunning = false;
   private pumping: Promise<void> = Promise.resolve();
 
-  constructor(deps: FlowRunDeps) {
+  constructor(
+    deps: FlowRunDeps,
+    identity: RunIdentity,
+    onChange: (view: FlowRunView) => void,
+  ) {
     this.deps = deps;
+    this.identity = identity;
+    this.runId = identity.runId;
+    this.cwd = identity.cwd;
+    this.origin = identity.origin;
+    this.onChange = onChange;
   }
 
   view(): FlowRunView | null {
-    return this.current === null ? null : toFlowRunView(this.current.state);
+    return this.active === null ? null : this.viewOf(this.active.state);
   }
 
   isActive(): boolean {
     return (
       this.opening !== null ||
       this.pumpRunning ||
-      (this.current !== null && isOpen(this.current.state))
+      (this.active !== null && isOpen(this.active.state))
     );
   }
 
-  async start({
-    cwd,
+  async begin({
     flowId,
     task,
-  }: ParamsMap["flow/start"]): Promise<FlowRunView> {
-    this.assertIdle();
-    if (task.trim() === "") {
-      throw new IpcError(IpcErrorCode.VALIDATION, BLANK_TASK_MESSAGE);
-    }
+    definitionsCwd,
+  }: Pick<
+    FlowStartRequest,
+    "flowId" | "task" | "definitionsCwd"
+  >): Promise<FlowRunView> {
     const opening: Opening = {
       cancelled: false,
       settled: Promise.withResolvers<undefined>(),
     };
     this.opening = opening;
     try {
-      const list = await this.deps.listFlows(cwd);
+      const list = await this.deps.listFlows(definitionsCwd ?? this.cwd);
       if (opening.cancelled) {
         throw new IpcError(IpcErrorCode.CONFLICT, START_CANCELLED_MESSAGE);
       }
@@ -182,53 +241,67 @@ class FlowRunner implements FlowRunService {
       }
       const definition = toDefinition(flow);
       const transition = startRun(definition, {
-        runId: this.deps.newRunId(),
-        cwd,
+        runId: this.runId,
+        cwd: this.cwd,
         task,
         maxRounds: flow.maxRounds,
       });
-      this.current = {
+      const run: ActiveRun = {
         state: transition.state,
         flow: definition,
         agents: new Map(list.agents.map((agent) => [agent.id, agent])),
       };
-      this.launch(this.current, transition);
-      return toFlowRunView(transition.state);
+      this.active = run;
+      this.launch(run, transition);
+      return this.viewOf(transition.state);
     } finally {
       this.opening = null;
       opening.settled.resolve(undefined);
     }
   }
 
-  async decide({
-    runId,
-    decision,
-  }: ParamsMap["flow/decide"]): Promise<FlowRunView> {
-    const run = this.current;
-    if (run?.state.runId !== runId) {
+  decide(decision: FlowDecision, note: string | null): FlowRunView {
+    const run = this.active;
+    if (run === null) {
       throw new IpcError(IpcErrorCode.NOT_FOUND, UNKNOWN_RUN_MESSAGE);
     }
+    const pending = run.state.decision;
     const transition = this.transition(run, decision);
+    if (pending !== null) {
+      this.decisions.push({
+        nodeId: pending.nodeId,
+        reason: pending.reason,
+        decision,
+        note,
+      });
+    }
     this.launch(run, transition);
-    return Promise.resolve(toFlowRunView(transition.state));
+    return this.viewOf(transition.state);
+  }
+
+  private viewOf(state: FlowRunState): FlowRunView {
+    return toFlowRunView(state, this.identity, this.decisions);
+  }
+
+  answerPermission(requestId: string, optionId: string): void {
+    if (!this.isActive()) {
+      throw new IpcError(IpcErrorCode.NOT_FOUND, UNKNOWN_PERMISSION_MESSAGE);
+    }
+    this.deps.sessions(this.runId).answerPermission(requestId, optionId);
   }
 
   async stop(): Promise<void> {
     await this.cancelOpening();
-    const run = this.current;
+    const run = this.active;
     if (run !== null && isOpen(run.state)) {
       const sessionNeeded = run.state.status === FlowRunStatus.running;
       this.commit(run, stopRun(run.state).state);
       if (sessionNeeded) {
-        await this.deps.sessions.stop();
+        await this.deps.sessions(this.runId).stop();
       }
     }
     await this.pumping;
-  }
-
-  async shutdown(): Promise<void> {
-    this.closed = true;
-    await this.stop();
+    await this.releaseSessions();
   }
 
   private async cancelOpening(): Promise<void> {
@@ -239,19 +312,13 @@ class FlowRunner implements FlowRunService {
     await this.opening.settled.promise;
   }
 
-  private assertIdle(): void {
-    if (this.closed) {
-      throw new IpcError(IpcErrorCode.UNAVAILABLE, SHUT_DOWN_MESSAGE);
+  private releaseSessions(): Promise<void> {
+    if (this.active !== null && isOpen(this.active.state)) {
+      return Promise.resolve();
     }
-    if (this.isActive()) {
-      throw new IpcError(IpcErrorCode.CONFLICT, FLOW_ALREADY_RUNNING_MESSAGE);
-    }
-    if (this.deps.sessions.isLive()) {
-      throw new IpcError(
-        IpcErrorCode.CONFLICT,
-        SESSION_ALREADY_RUNNING_MESSAGE,
-      );
-    }
+    return this.deps.releaseSessions(this.runId).catch((error: unknown) => {
+      console.error("failed to release the run's sessions", error);
+    });
   }
 
   private transition(run: ActiveRun, decision: FlowDecision): Transition {
@@ -266,7 +333,7 @@ class FlowRunner implements FlowRunService {
 
   private commit(run: ActiveRun, state: FlowRunState): void {
     run.state = state;
-    this.deps.broadcast("flow/changed", toFlowRunView(state));
+    this.onChange(this.viewOf(state));
   }
 
   private launch(run: ActiveRun, first: Transition): void {
@@ -278,7 +345,8 @@ class FlowRunner implements FlowRunService {
       })
       .finally(() => {
         this.pumpRunning = false;
-      });
+      })
+      .then(() => this.releaseSessions());
   }
 
   private crash(run: ActiveRun, message: string): void {
@@ -320,9 +388,12 @@ class FlowRunner implements FlowRunService {
       return failure(errorText(error));
     } finally {
       if (opened) {
-        await this.deps.sessions.stop().catch((error: unknown) => {
-          console.error("failed to stop the node session", error);
-        });
+        await this.deps
+          .sessions(this.runId)
+          .stop()
+          .catch((error: unknown) => {
+            console.error("failed to stop the node session", error);
+          });
       }
     }
   }
@@ -331,7 +402,7 @@ class FlowRunner implements FlowRunService {
     const { node, agent } = this.resolve(run, nodeId);
     const model = modelChoiceOf(node.provider, agent);
     const taskClass = node.taskClass ?? agent.taskClass;
-    await this.deps.sessions.start({
+    await this.deps.sessions(this.runId).start({
       cwd: run.state.cwd,
       profile: agent.permissionProfile,
       provider: node.provider ?? agent.provider,
@@ -358,7 +429,7 @@ class FlowRunner implements FlowRunService {
     nodeId: string,
     inputs: readonly NodeInput[],
   ): Promise<NodeOutcome> {
-    const { sessions } = this.deps;
+    const sessions = this.deps.sessions(this.runId);
     const baseline = highestSeq(sessions.view()?.messages ?? []);
     const worktree = await this.deps.inspectWorktree(run.state.cwd);
     if (run.state.status !== FlowRunStatus.running) {
@@ -395,6 +466,150 @@ class FlowRunner implements FlowRunService {
   }
 }
 
+class FlowRunPool implements FlowRunService {
+  private readonly deps: FlowRunDeps;
+  private readonly runs = new Map<string, FlowRun>();
+  private readonly listeners = new Set<(view: FlowRunView) => void>();
+  private closed = false;
+
+  constructor(deps: FlowRunDeps) {
+    this.deps = deps;
+  }
+
+  views(): FlowRunView[] {
+    return [...this.runs.values()].flatMap((run) => {
+      const view = run.view();
+      return view === null ? [] : [view];
+    });
+  }
+
+  view(runId: string): FlowRunView | null {
+    return this.runs.get(runId)?.view() ?? null;
+  }
+
+  isOpen(runId: string): boolean {
+    return this.runs.get(runId)?.isActive() ?? false;
+  }
+
+  hasOpenRuns(): boolean {
+    return this.openRuns().length > 0;
+  }
+
+  hasOpenUserRuns(): boolean {
+    return this.openRuns().some((run) => run.origin === FlowRunOrigin.user);
+  }
+
+  onChanged(listener: (view: FlowRunView) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  async start(request: FlowStartRequest): Promise<FlowRunView> {
+    this.assertCanStart(request);
+    const run = new FlowRun(
+      this.deps,
+      {
+        runId: request.runId ?? this.deps.newRunId(),
+        cwd: request.cwd,
+        origin: request.origin ?? FlowRunOrigin.user,
+        placement: request.placement ?? FlowPlacement.inPlace,
+        branch: request.branch ?? null,
+        ownerSessionId: request.ownerSessionId ?? null,
+      },
+      (view) => {
+        this.publish(view);
+      },
+    );
+    const started = run.begin(request);
+    this.runs.set(run.runId, run);
+    this.evictFinished();
+    try {
+      return await started;
+    } catch (error) {
+      this.runs.delete(run.runId);
+      throw error;
+    }
+  }
+
+  async decide(
+    { runId, decision }: ParamsMap["flow/decide"],
+    note?: string,
+  ): Promise<FlowRunView> {
+    const run = this.runs.get(runId);
+    if (run === undefined) {
+      throw new IpcError(IpcErrorCode.NOT_FOUND, UNKNOWN_RUN_MESSAGE);
+    }
+    return Promise.resolve(run.decide(decision, note ?? null));
+  }
+
+  answerPermission(runId: string, requestId: string, optionId: string): void {
+    const run = this.runs.get(runId);
+    if (run === undefined) {
+      throw new IpcError(IpcErrorCode.NOT_FOUND, UNKNOWN_RUN_MESSAGE);
+    }
+    run.answerPermission(requestId, optionId);
+  }
+
+  async stop(runId: string): Promise<void> {
+    await this.runs.get(runId)?.stop();
+  }
+
+  async stopAll(): Promise<void> {
+    await Promise.all([...this.runs.values()].map((run) => run.stop()));
+  }
+
+  async shutdown(): Promise<void> {
+    this.closed = true;
+    await this.stopAll();
+  }
+
+  private openRuns(): FlowRun[] {
+    return [...this.runs.values()].filter((run) => run.isActive());
+  }
+
+  private publish(view: FlowRunView): void {
+    this.deps.broadcast("flow/changed", view);
+    this.listeners.forEach((listener) => {
+      listener(view);
+    });
+  }
+
+  private assertCanStart(request: FlowStartRequest): void {
+    if (this.closed) {
+      throw new IpcError(IpcErrorCode.UNAVAILABLE, SHUT_DOWN_MESSAGE);
+    }
+    const origin = request.origin ?? FlowRunOrigin.user;
+    if (origin === FlowRunOrigin.user && this.deps.mainSessionLive()) {
+      throw new IpcError(
+        IpcErrorCode.CONFLICT,
+        SESSION_ALREADY_RUNNING_MESSAGE,
+      );
+    }
+    const open = this.openRuns();
+    if (open.length >= MAX_PARALLEL_FLOWS) {
+      throw new IpcError(IpcErrorCode.CONFLICT, FLOW_LIMIT_MESSAGE);
+    }
+    if (open.some((run) => run.cwd === request.cwd)) {
+      throw new IpcError(IpcErrorCode.CONFLICT, FLOW_ALREADY_RUNNING_MESSAGE);
+    }
+    if (request.task.trim() === "") {
+      throw new IpcError(IpcErrorCode.VALIDATION, BLANK_TASK_MESSAGE);
+    }
+  }
+
+  private evictFinished(): void {
+    const surplus = Math.max(0, this.runs.size - RETAINED_FLOW_RUNS);
+    [...this.runs.values()]
+      .filter((run) => !run.isActive())
+      .slice(0, surplus)
+      .forEach((run) => {
+        this.runs.delete(run.runId);
+      });
+  }
+}
+
 export function createFlowRunService(deps: FlowRunDeps): FlowRunService {
-  return new FlowRunner(deps);
+  return new FlowRunPool(deps);
 }

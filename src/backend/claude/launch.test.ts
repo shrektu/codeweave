@@ -61,6 +61,24 @@ describe("buildClaudeLaunch", () => {
     expect(env).toEqual({ PATH: "/usr/bin" });
   });
 
+  it("adds_enable_tool_search_false_only_when_tools_are_enabled", () => {
+    const base = {
+      execPath: "/opt/app/codeweave",
+      adapterEntry: "/opt/app/acp/dist/index.js",
+      env: { PATH: "/usr/bin" },
+    };
+
+    expect(buildClaudeLaunch({ ...base, toolsEnabled: true }).env).toEqual({
+      PATH: "/usr/bin",
+      ELECTRON_RUN_AS_NODE: "1",
+      ENABLE_TOOL_SEARCH: "false",
+    });
+    expect(buildClaudeLaunch({ ...base, toolsEnabled: false }).env).toEqual({
+      PATH: "/usr/bin",
+      ELECTRON_RUN_AS_NODE: "1",
+    });
+  });
+
   it("launcher_child_does_not_inherit_electron_run_as_node", async () => {
     const probe = await writeProbe();
     const launch = buildClaudeLaunch({

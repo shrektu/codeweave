@@ -16,10 +16,12 @@ import {
 import { IpcError, IpcErrorCode, type ParamsMap } from "../shared/protocol";
 import type { SessionView } from "../shared/views";
 
+import type { AccountReservations } from "./accountReservations";
 import {
   AgentStartFailure,
   type AgentAdapter,
   type AgentStartResult,
+  type AgentToolAccess,
 } from "./agentAdapter";
 import type { ConnectionRegistry } from "./connections";
 import {
@@ -27,6 +29,8 @@ import {
   SESSION_START_STOPPED_MESSAGE,
 } from "./constants";
 import { createInFlight } from "./inFlight";
+import type { LeaseModes } from "./leaseModes";
+import { LeaseMode } from "./locks";
 import { exhaustedOnly, SessionRun } from "./sessionRun";
 import { observeViews } from "./sessionViews";
 import type { JsonStore } from "./storage";
@@ -41,6 +45,9 @@ export interface SessionServiceDeps {
   readonly adapter: AgentAdapter;
   readonly store: JsonStore;
   readonly broadcast: ConnectionRegistry["broadcast"];
+  readonly publishView: (view: SessionView | null) => void;
+  readonly reserved: AccountReservations;
+  readonly leaseModes: LeaseModes;
   readonly now: () => EpochMillis;
   readonly schedule: RotationPorts["schedule"];
   readonly inspectWorktree: (cwd: string) => Promise<WorktreeState>;
@@ -58,14 +65,23 @@ export interface SessionServiceDeps {
   readonly secrets: (accounts: readonly Account[]) => readonly SecretEntry[];
 }
 
+export interface StartOptions {
+  readonly leaseMode?: LeaseMode;
+  readonly tools?: AgentToolAccess;
+  readonly preamble?: string;
+}
+
 export interface SessionService {
   view(): SessionView | null;
-  start(params: ParamsMap["session/start"]): Promise<SessionView>;
+  start(
+    params: ParamsMap["session/start"],
+    options?: StartOptions,
+  ): Promise<SessionView>;
   prompt(text: string, overrides?: PromptOverrides): Promise<void>;
   stop(): Promise<void>;
   answerPermission(requestId: string, optionId: string): void;
   isInUse(accountId: string): boolean;
-  runtimeOf(accountId: string): AccountRuntime;
+  ownRuntimeOf(accountId: string): AccountRuntime | null;
   onRuntimeChanged(listener: () => void): () => void;
   onViewChanged(listener: (view: SessionView | null) => void): () => void;
   isLive(): boolean;
@@ -120,11 +136,16 @@ interface StartToken {
   cancelled: boolean;
 }
 
+type StartRequest = ParamsMap["session/start"] &
+  Omit<StartOptions, "leaseMode"> & {
+    readonly leaseMode: LeaseMode;
+  };
+
 const isCancelled = (token: StartToken): boolean => token.cancelled;
 
 interface RunWiring {
   readonly runtimeOf: (accountId: string) => AccountRuntime;
-  readonly reserved: Set<string>;
+  readonly reserved: AccountReservations;
   readonly loginFailures: ReadonlySet<string>;
   readonly onRuntimeSettled: () => void;
 }
@@ -148,7 +169,7 @@ function canStartWith(
 
 async function createRun(
   deps: SessionServiceDeps,
-  params: ParamsMap["session/start"],
+  params: StartRequest,
   wiring: RunWiring,
 ): Promise<CreatedRun> {
   const registered = (await deps.store.readAccounts()).toSorted(
@@ -176,11 +197,14 @@ async function createRun(
       model: params.model ?? null,
       taskClass: params.taskClass ?? null,
       defaultTaskClass: settings.defaultTaskClass,
+      tools: params.tools ?? null,
+      preamble: params.preamble ?? null,
     },
     provider,
     registered,
     accounts,
     initial,
+    leaseMode: params.leaseMode,
     reserved: wiring.reserved,
     loginFailures: wiring.loginFailures,
     onRuntimeSettled: wiring.onRuntimeSettled,
@@ -189,13 +213,13 @@ async function createRun(
 }
 
 export function createSessionService(deps: SessionServiceDeps): SessionService {
-  const views = observeViews(deps.broadcast);
-  const observed: SessionServiceDeps = { ...deps, broadcast: views.broadcast };
+  const views = observeViews(deps.publishView);
+  const observed: SessionServiceDeps = { ...deps, publishView: views.publish };
+  const { reserved } = deps;
   let run: SessionRun | null = null;
   let opening: SessionRun | null = null;
   let pending: StartToken | null = null;
   const starts = createInFlight();
-  const reserved = new Set<string>();
   let lastSignature = runtimeSignature(undefined);
   const listeners = new Set<() => void>();
 
@@ -218,12 +242,6 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
   const exhaustedProbe = exhaustedOnly(deps);
   const ownRuntimeOf = (accountId: string): AccountRuntime | null =>
     run?.ownRuntimeOf(accountId) ?? null;
-  const runtimeOf = (accountId: string): AccountRuntime =>
-    mergeRuntime(
-      ownRuntimeOf(accountId),
-      deps.externalRuntime(accountId),
-      deps.now(),
-    );
   const startRuntimeOf = (accountId: string): AccountRuntime =>
     mergeRuntime(
       ownRuntimeOf(accountId),
@@ -231,7 +249,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       deps.now(),
     );
   const openRun = async (
-    params: ParamsMap["session/start"],
+    params: StartRequest,
     loginFailures: ReadonlySet<string>,
   ): Promise<CreatedRun> => {
     opening = null;
@@ -257,7 +275,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       result.reason === AgentStartFailure.unavailable &&
       deps.isBlocked(initial.id));
   const reopen = async (
-    params: ParamsMap["session/start"],
+    params: StartRequest,
     loginFailures: ReadonlySet<string>,
     failed: CreatedRun,
     result: AgentStartResult,
@@ -294,7 +312,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     return created.run.begin(created.initial);
   };
   const beginRun = async (
-    params: ParamsMap["session/start"],
+    params: StartRequest,
     token: StartToken,
   ): Promise<{ created: CreatedRun; result: AgentStartResult }> => {
     const loginFailures = new Set<string>();
@@ -310,7 +328,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     return { created, result };
   };
   const runStart = async (
-    params: ParamsMap["session/start"],
+    params: StartRequest,
     token: StartToken,
   ): Promise<SessionRun> => {
     try {
@@ -351,7 +369,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
 
   return {
     view: () => run?.view() ?? null,
-    async start(params): Promise<SessionView> {
+    async start(params, options): Promise<SessionView> {
       if (!deps.containerStatus.available) {
         throw new IpcError(
           IpcErrorCode.UNAVAILABLE,
@@ -366,9 +384,14 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       }
       const token: StartToken = { cancelled: false };
       pending = token;
-      const started = await starts.track(() => runStart(params, token));
+      const request: StartRequest = {
+        ...params,
+        ...options,
+        leaseMode: options?.leaseMode ?? LeaseMode.exclusive,
+      };
+      const started = await starts.track(() => runStart(request, token));
       const view = started.view();
-      observed.broadcast("session/changed", view);
+      observed.publishView(view);
       checkRuntime();
       return view;
     },
@@ -397,7 +420,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       reserved.has(accountId) ||
       (opening?.isInUse(accountId) ?? false) ||
       (run?.isInUse(accountId) ?? false),
-    runtimeOf,
+    ownRuntimeOf,
     setAccounts: (next) => {
       run?.setAccounts(next);
     },

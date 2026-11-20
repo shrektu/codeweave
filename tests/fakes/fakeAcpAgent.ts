@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,6 +9,7 @@ import {
   methods,
   type AgentContext,
   type InitializeResponse,
+  type NewSessionRequest,
   type NewSessionResponse,
   type PermissionOption,
   type PromptResponse,
@@ -26,6 +27,7 @@ import type {
   AgentHandle,
   AgentStartResult,
   AgentStartSpec,
+  AgentToolAccess,
 } from "../../src/backend/agentAdapter";
 import {
   createClaudeAcpAdapter,
@@ -108,7 +110,13 @@ export type ScriptStep =
   | { readonly type: "client_request"; readonly method: string }
   | { readonly type: "end"; readonly stopReason: StopReason }
   | ({ readonly type: "fail" } & FakeRpcFailure)
-  | { readonly type: "hang" };
+  | { readonly type: "hang" }
+  | {
+      readonly type: "write_file";
+      readonly path: string;
+      readonly content: string;
+    }
+  | { readonly type: "gate"; readonly until: Promise<void> };
 
 export interface FakeAcpConfig {
   initializeError?: FakeRpcFailure;
@@ -209,6 +217,7 @@ function toUpdate(step: NotificationStep): SessionUpdate {
 
 export class FakeAcpAgent {
   readonly modeCalls: string[] = [];
+  readonly newSessions: NewSessionRequest[] = [];
   readonly configCalls: ConfigCall[] = [];
   readonly callOrder: string[] = [];
   readonly prompts: string[] = [];
@@ -231,20 +240,26 @@ export class FakeAcpAgent {
         }
         return { protocolVersion: PROTOCOL_VERSION, agentCapabilities: {} };
       })
-      .onRequest(methods.agent.session.new, (): NewSessionResponse => {
-        if (this.config.stderrText !== undefined) {
-          this.contained.stderr.write(this.config.stderrText);
-        }
-        if (this.config.newSessionError !== undefined) {
-          throw toError(this.config.newSessionError);
-        }
-        return {
-          sessionId: SESSION_ID,
-          ...(this.config.sessionModel === undefined
-            ? {}
-            : { configOptions: [modelConfigOption(this.config.sessionModel)] }),
-        };
-      })
+      .onRequest(
+        methods.agent.session.new,
+        ({ params }): NewSessionResponse => {
+          this.newSessions.push(params);
+          if (this.config.stderrText !== undefined) {
+            this.contained.stderr.write(this.config.stderrText);
+          }
+          if (this.config.newSessionError !== undefined) {
+            throw toError(this.config.newSessionError);
+          }
+          return {
+            sessionId: SESSION_ID,
+            ...(this.config.sessionModel === undefined
+              ? {}
+              : {
+                  configOptions: [modelConfigOption(this.config.sessionModel)],
+                }),
+          };
+        },
+      )
       .onRequest(methods.agent.authenticate, () => ({}))
       .onRequest(methods.agent.session.setConfigOption, ({ params }) => {
         this.configCalls.push({
@@ -314,6 +329,12 @@ export class FakeAcpAgent {
         throw toError(step);
       case "hang":
         return new Promise<PromptResponse>(() => undefined);
+      case "write_file":
+        await writeFile(join(this.sessionCwd(), step.path), step.content);
+        return undefined;
+      case "gate":
+        await step.until;
+        return undefined;
       case "ext_notification":
         await peer.notify(step.method, { value: 1 });
         return undefined;
@@ -339,6 +360,14 @@ export class FakeAcpAgent {
         });
         return undefined;
     }
+  }
+
+  private sessionCwd(): string {
+    const request = this.newSessions[0];
+    if (request === undefined) {
+      throw new Error("no session was created");
+    }
+    return request.cwd;
   }
 
   private async probeClientRequest(
@@ -446,7 +475,11 @@ export async function removeRigDirs(): Promise<void> {
 export interface AcpRig {
   readonly container: ScriptedAcpContainer;
   readonly cwd: string;
-  start(profile?: PermissionProfile, runId?: string): Promise<AgentStartResult>;
+  start(
+    profile?: PermissionProfile,
+    runId?: string,
+    tools?: AgentToolAccess,
+  ): Promise<AgentStartResult>;
 }
 
 export async function createRig(
@@ -474,13 +507,14 @@ export async function createRig(
   return {
     container,
     cwd,
-    start: (profile = PermissionProfile.ask, runId = "run-1") =>
+    start: (profile = PermissionProfile.ask, runId = "run-1", tools) =>
       adapter.start({
         account: RIG_ACCOUNT,
         cwd,
         profile,
         runId,
         executable: "/usr/bin/claude",
+        ...(tools === undefined ? {} : { tools }),
       }),
   };
 }

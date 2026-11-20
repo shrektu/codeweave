@@ -4,12 +4,16 @@ import { join } from "node:path";
 
 import { API_PROVIDERS, ApiAuth } from "../../domain/apiProviders";
 import { MODEL_TIERS } from "../../domain/modelTiers";
+import type { AgentToolAccess } from "../agentAdapter";
 
 import {
+  AUTHORIZATION_HEADER,
+  BEARER_PREFIX,
   CONFIG_FILE_NAME,
   FILE_REFERENCE_PREFIX,
   FILE_REFERENCE_SUFFIX,
   KEY_FILE_NAME,
+  MCP_SERVER_TYPE_REMOTE,
   OPENAI_COMPATIBLE_PACKAGE,
   PERMISSION_ASK,
   RUN_DIR_MODE,
@@ -42,7 +46,15 @@ export interface OpencodeProviderConfig {
   readonly models?: Readonly<Record<string, { readonly name: string }>>;
 }
 
+export interface OpencodeMcpServer {
+  readonly type: typeof MCP_SERVER_TYPE_REMOTE;
+  readonly url: string;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly enabled: true;
+}
+
 export interface OpencodeSessionConfig {
+  readonly mcp?: Readonly<Record<string, OpencodeMcpServer>>;
   readonly enabled_providers: readonly string[];
   readonly model: string;
   readonly small_model: string;
@@ -52,7 +64,7 @@ export interface OpencodeSessionConfig {
   readonly provider: Readonly<Record<string, OpencodeProviderConfig>>;
 }
 
-export type SessionConfigInput =
+export type SessionConfigInput = (
   | {
       readonly credentials: ApiKeyCredentials;
       readonly keyFilePath: string;
@@ -60,7 +72,8 @@ export type SessionConfigInput =
   | {
       readonly credentials: ConsoleLoginCredentials;
       readonly keyFilePath: null;
-    };
+    }
+) & { readonly tools?: AgentToolAccess | undefined };
 
 export interface RunFiles {
   readonly dir: string;
@@ -71,6 +84,7 @@ export interface RunFiles {
 export interface RunFilesInput {
   readonly credentials: OpencodeCredentials;
   readonly runtimeRoot: string;
+  readonly tools?: AgentToolAccess | undefined;
   readonly buildConfig: (input: SessionConfigInput) => object;
 }
 
@@ -108,12 +122,28 @@ export function declaredModels(
   );
 }
 
+export function bearerHeaders(tools: AgentToolAccess): Record<string, string> {
+  return { [AUTHORIZATION_HEADER]: `${BEARER_PREFIX}${tools.token}` };
+}
+
+function remoteMcpServer(tools: AgentToolAccess): OpencodeMcpServer {
+  return {
+    type: MCP_SERVER_TYPE_REMOTE,
+    url: tools.url,
+    headers: bearerHeaders(tools),
+    enabled: true,
+  };
+}
+
 export function buildSessionConfig(
   input: SessionConfigInput,
 ): OpencodeSessionConfig {
   const { providerId, model } = input.credentials;
   const qualified = `${providerId}/${model}`;
   return {
+    ...(input.tools === undefined
+      ? {}
+      : { mcp: { [input.tools.server]: remoteMcpServer(input.tools) } }),
     enabled_providers: [providerId],
     model: qualified,
     small_model: qualified,
@@ -152,23 +182,34 @@ interface PreparedKey {
 async function prepareKey(
   credentials: OpencodeCredentials,
   dir: string,
+  tools: AgentToolAccess | undefined,
 ): Promise<PreparedKey> {
   if (credentials.auth === ApiAuth.consoleLogin) {
-    return { keyFile: null, configInput: { credentials, keyFilePath: null } };
+    return {
+      keyFile: null,
+      configInput: { credentials, keyFilePath: null, tools },
+    };
   }
   const keyFile = join(dir, KEY_FILE_NAME);
   await writeFile(keyFile, credentials.apiKey, {
     mode: SECRET_FILE_MODE,
     flag: "wx",
   });
-  return { keyFile, configInput: { credentials, keyFilePath: keyFile } };
+  return {
+    keyFile,
+    configInput: { credentials, keyFilePath: keyFile, tools },
+  };
 }
 
 export async function createRunFiles(input: RunFilesInput): Promise<RunFiles> {
   const dir = await mkdtemp(join(input.runtimeRoot, RUN_DIR_PREFIX));
   try {
     await chmod(dir, RUN_DIR_MODE);
-    const { keyFile, configInput } = await prepareKey(input.credentials, dir);
+    const { keyFile, configInput } = await prepareKey(
+      input.credentials,
+      dir,
+      input.tools,
+    );
     const configFile = join(dir, CONFIG_FILE_NAME);
     await writeFile(
       configFile,

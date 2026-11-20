@@ -122,6 +122,7 @@ it("session_view_with_diffs_passes_session_view_schema", () => {
     limits: [],
     turnInFlight: false,
     flowRef: null,
+    orchestrate: false,
     hiddenRequestIds: new Set(),
   });
 
@@ -217,8 +218,70 @@ const FLOW_RUN_VIEW = {
   currentNodeId: null,
   nodes: [{ id: "a", status: "done", visits: 2, result: "ok" }],
   decision: { reason: "rounds_exhausted", nodeId: "a" },
+  decisions: [],
   failure: null,
+  origin: "user",
+  placement: "in_place",
+  branch: null,
+  ownerSessionId: null,
 };
+
+function runViewWithout(key: string): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(FLOW_RUN_VIEW).filter(([name]) => name !== key),
+  );
+}
+
+it("flow_run_view_schema_requires_origin_placement_and_branch", () => {
+  expect(FlowRunViewSchema.safeParse(runViewWithout("origin")).success).toBe(
+    false,
+  );
+  expect(FlowRunViewSchema.safeParse(runViewWithout("placement")).success).toBe(
+    false,
+  );
+  expect(FlowRunViewSchema.safeParse(runViewWithout("branch")).success).toBe(
+    false,
+  );
+  expect(
+    FlowRunViewSchema.safeParse({ ...FLOW_RUN_VIEW, origin: "robot" }).success,
+  ).toBe(false);
+  expect(
+    FlowRunViewSchema.safeParse({
+      ...FLOW_RUN_VIEW,
+      origin: "orchestrator",
+      placement: "worktree",
+      branch: "feature/login",
+    }).success,
+  ).toBe(true);
+});
+
+it("flow_run_view_schema_requires_the_decision_log_and_the_owner", () => {
+  const logged = {
+    ...FLOW_RUN_VIEW,
+    decisions: [
+      {
+        nodeId: "a",
+        reason: "rounds_exhausted",
+        decision: "another_round",
+        note: "Tests fail",
+      },
+    ],
+    ownerSessionId: "sess-1",
+  };
+  const unknownDecision = {
+    ...FLOW_RUN_VIEW,
+    decisions: [{ nodeId: "a", reason: "gate", decision: "shrug", note: null }],
+  };
+
+  expect(FlowRunViewSchema.safeParse(logged).success).toBe(true);
+  expect(FlowRunViewSchema.safeParse(runViewWithout("decisions")).success).toBe(
+    false,
+  );
+  expect(
+    FlowRunViewSchema.safeParse(runViewWithout("ownerSessionId")).success,
+  ).toBe(false);
+  expect(FlowRunViewSchema.safeParse(unknownDecision).success).toBe(false);
+});
 
 it("flow_run_view_schema_accepts_a_paused_run_and_rejects_unknowns", () => {
   const unknownNodeStatus = {

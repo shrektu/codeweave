@@ -99,6 +99,15 @@ export const CLIENT_NAME = "codeweave";
 export const CLIENT_TITLE = "Codeweave";
 export const CLIENT_VERSION = "0.0.0";
 export const APP_SERVER_ARG = "app-server";
+export const CONFIG_OVERRIDE_FLAG = "-c";
+export const MCP_TOKEN_ENV = "CODEWEAVE_MCP_TOKEN";
+export const MCP_SERVERS_KEY = "mcp_servers";
+export const MCP_URL_KEY = "url";
+export const MCP_BEARER_ENV_KEY = "bearer_token_env_var";
+export const MCP_APPROVAL_MODE_KEY = "default_tools_approval_mode";
+export const MCP_ENABLED_TOOLS_KEY = "enabled_tools";
+export const MCP_APPROVE_MODE = "approve";
+export const TOML_BARE_KEY_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 export const WINDOWS_CMD_FALLBACK = "cmd.exe";
 export const WINDOWS_CMD_ARGS: readonly string[] = ["/d", "/s", "/c"];

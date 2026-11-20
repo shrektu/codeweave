@@ -3,6 +3,7 @@ import { useId, useState, type JSX, type KeyboardEvent } from "react";
 import { parseTaskClass, TASK_CLASS_ORDER } from "../../domain/taskClass";
 import type { ParamsMap } from "../../shared/protocol";
 import type { AccountView, SessionView } from "../../shared/views";
+import { shownSessionOf } from "../format";
 import { modelSuggestions, TASK_CLASS_LABELS } from "../routingText";
 import { useApp } from "../services";
 import type { AppState } from "../store";
@@ -108,7 +109,13 @@ function RoutingControls({
 
 export function Composer(): JSX.Element {
   const { state } = useApp();
-  return <SessionComposer key={state.snapshot?.session?.id ?? null} />;
+  return (
+    <SessionComposer
+      key={
+        shownSessionOf(state.snapshot, state.focusedRunId).session?.id ?? null
+      }
+    />
+  );
 }
 
 function SessionComposer(): JSX.Element {
@@ -117,10 +124,11 @@ function SessionComposer(): JSX.Element {
   const [classValue, setClassValue] = useState(AUTO_CLASS_VALUE);
   const [model, setModel] = useState("");
   const send = useAsyncAction();
-  const session = state.snapshot?.session ?? null;
+  const { session, runId } = shownSessionOf(state.snapshot, state.focusedRunId);
   const account = runningAccount(session, state.snapshot?.accounts ?? []);
   const suggestions = modelSuggestions(account);
-  const enabled = canCompose(state.connection, session, send.pending);
+  const enabled =
+    runId === null && canCompose(state.connection, session, send.pending);
 
   const submit = async (): Promise<void> => {
     if (!enabled || text.trim() === "") {

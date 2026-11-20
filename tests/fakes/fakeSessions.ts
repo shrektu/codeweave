@@ -1,6 +1,7 @@
 import type { FlowRunService } from "../../src/backend/flowRuns";
 import type { LimitProbeService } from "../../src/backend/limitProbe";
 import type { SessionService } from "../../src/backend/session";
+import type { SessionPool } from "../../src/backend/sessionPool";
 import type { TerminalService } from "../../src/backend/terminal/service";
 
 export function fakeSessions(
@@ -13,7 +14,7 @@ export function fakeSessions(
     stop: () => Promise.resolve(),
     answerPermission: () => undefined,
     isInUse: () => false,
-    runtimeOf: () => ({ status: "ready" }),
+    ownRuntimeOf: () => null,
     onRuntimeChanged: () => () => undefined,
     onViewChanged: () => () => undefined,
     isLive: () => false,
@@ -24,15 +25,39 @@ export function fakeSessions(
   };
 }
 
+export function fakeSessionPool(
+  main: SessionService = fakeSessions(),
+  overrides: Partial<SessionPool> = {},
+): SessionPool {
+  return {
+    main,
+    forRun: () => main,
+    release: () => Promise.resolve(),
+    isInUse: () => false,
+    runtimeOf: () => ({ status: "ready" }),
+    runViews: () => [],
+    onRuntimeChanged: () => () => undefined,
+    setAccounts: () => undefined,
+    shutdown: () => Promise.resolve(),
+    ...overrides,
+  };
+}
+
 export function fakeFlowRuns(
   overrides: Partial<FlowRunService> = {},
 ): FlowRunService {
   return {
+    views: () => [],
     view: () => null,
     start: () => Promise.reject(new Error("not available in this test")),
     stop: () => Promise.resolve(),
+    stopAll: () => Promise.resolve(),
     decide: () => Promise.reject(new Error("not available in this test")),
-    isActive: () => false,
+    answerPermission: () => undefined,
+    isOpen: () => false,
+    hasOpenRuns: () => false,
+    hasOpenUserRuns: () => false,
+    onChanged: () => () => undefined,
     shutdown: () => Promise.resolve(),
     ...overrides,
   };

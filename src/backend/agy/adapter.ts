@@ -46,6 +46,7 @@ import {
   PROBE_NOT_STOPPED_MESSAGE,
   START_PROBE_TIMEOUT_MS,
   STOP_SETTLE_FACTOR,
+  TOOLS_NOT_SUPPORTED_MESSAGE,
   WORKSPACE_CONFIG_CHANGED_MESSAGE,
 } from "./constants";
 import { TurnTracker, isEditStep, stepId, type TurnOutcome } from "./events";
@@ -742,6 +743,13 @@ function probeDepsFor(
 export function createAgyAdapter(deps: AgyAdapterDeps): AgentAdapter {
   return {
     async start(spec: AgentStartSpec): Promise<AgentStartResult> {
+      if (spec.tools !== undefined) {
+        return {
+          ok: false,
+          reason: AgentStartFailure.error,
+          message: TOOLS_NOT_SUPPORTED_MESSAGE,
+        };
+      }
       const probe = await probeAgyUsage(
         probeDepsFor(
           deps,

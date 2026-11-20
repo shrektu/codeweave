@@ -4,7 +4,9 @@ import { join } from "node:path";
 
 import { afterEach, expect, it, vi } from "vitest";
 
+import { createAccountReservations } from "../../src/backend/accountReservations";
 import type { AgentAdapter, AgentHandle } from "../../src/backend/agentAdapter";
+import { createLeaseModes } from "../../src/backend/leaseModes";
 import {
   createSessionService,
   type SessionService,
@@ -232,6 +234,9 @@ async function opencodeSession(
     adapter: { start: (spec) => adapterFor(spec.account.id) },
     store,
     broadcast: () => undefined,
+    publishView: () => undefined,
+    reserved: createAccountReservations(),
+    leaseModes: createLeaseModes(),
     now: () => NOW_MS,
     schedule: () => () => undefined,
     inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),

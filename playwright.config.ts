@@ -13,6 +13,7 @@ export default defineConfig({
     "agyEditDiff.spec.ts",
     "flowRun.spec.ts",
     "agentEditor.spec.ts",
+    "orchestrator.spec.ts",
   ],
   timeout: TEST_TIMEOUT_MS,
   workers: 1,

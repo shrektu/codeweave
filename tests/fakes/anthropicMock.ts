@@ -7,6 +7,8 @@ import {
 
 import { z } from "zod";
 
+import { TurnKind, type MockTurn, type ToolInput } from "./mockTurn";
+
 export const MockScenario = {
   toolThen429: "tool-then-429",
   ok: "ok",
@@ -36,6 +38,15 @@ const SSE_HEADERS = {
 const ContentBlockSchema = z.looseObject({
   type: z.string(),
   text: z.string().optional(),
+  id: z.string().optional(),
+  name: z.string().optional(),
+  tool_use_id: z.string().optional(),
+  content: z
+    .union([
+      z.string(),
+      z.array(z.looseObject({ text: z.string().optional() })),
+    ])
+    .optional(),
 });
 
 const MessageSchema = z.looseObject({
@@ -64,6 +75,7 @@ export interface AnthropicMockOptions {
   readonly toolCommand: string;
   readonly onMainRequest?: (key: string, body: MessagesBody) => Promise<void>;
   readonly replyText?: (body: MessagesBody) => string;
+  readonly respond?: (body: MessagesBody) => MockTurn | undefined;
 }
 
 export interface AnthropicMock {
@@ -156,8 +168,7 @@ function textEvents(text: string): SseEvent[] {
   ];
 }
 
-function toolUseEvents(command: string): SseEvent[] {
-  const input = JSON.stringify({ command, description: "mock tool" });
+function toolUseEvents(id: string, name: string, input: ToolInput): SseEvent[] {
   return [
     messageStart("msg_tool"),
     [
@@ -165,12 +176,7 @@ function toolUseEvents(command: string): SseEvent[] {
       {
         type: "content_block_start",
         index: 0,
-        content_block: {
-          type: "tool_use",
-          id: TOOL_USE_ID,
-          name: BASH_TOOL_NAME,
-          input: {},
-        },
+        content_block: { type: "tool_use", id, name, input: {} },
       },
     ],
     [
@@ -178,12 +184,21 @@ function toolUseEvents(command: string): SseEvent[] {
       {
         type: "content_block_delta",
         index: 0,
-        delta: { type: "input_json_delta", partial_json: input },
+        delta: {
+          type: "input_json_delta",
+          partial_json: JSON.stringify(input),
+        },
       },
     ],
     ["content_block_stop", { type: "content_block_stop", index: 0 }],
     ...messageEnd("tool_use"),
   ];
+}
+
+function turnEvents(turn: MockTurn, sequence: number): SseEvent[] {
+  return turn.kind === TurnKind.text
+    ? textEvents(turn.text)
+    : toolUseEvents(`toolu_mock_${String(sequence)}`, turn.name, turn.input);
 }
 
 function sendSse(res: ServerResponse, events: readonly SseEvent[]): void {
@@ -256,7 +271,13 @@ function respondMain(
   } else if (hasToolResult(body)) {
     sendRateLimit(res, options.resetAtSeconds);
   } else {
-    sendSse(res, toolUseEvents(options.toolCommand));
+    sendSse(
+      res,
+      toolUseEvents(TOOL_USE_ID, BASH_TOOL_NAME, {
+        command: options.toolCommand,
+        description: "mock tool",
+      }),
+    );
   }
 }
 
@@ -265,6 +286,7 @@ function createHandler(
   requests: MockRequestRecord[],
   resetAtSeconds: number,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+  let sequence = 0;
   return async (req, res) => {
     const url = req.url ?? "";
     const raw = await readBody(req);
@@ -293,6 +315,12 @@ function createHandler(
       return;
     }
     await options.onMainRequest?.(key, body);
+    sequence += 1;
+    const turn = options.respond?.(body);
+    if (turn !== undefined) {
+      sendSse(res, turnEvents(turn, sequence));
+      return;
+    }
     respondMain(res, scenario, body, {
       toolCommand: options.toolCommand,
       resetAtSeconds,

@@ -9,6 +9,7 @@ import {
 import { DiffOmission, FileChange } from "../domain/events";
 import {
   DecisionReason,
+  FlowDecision,
   FlowNodeRunStatus,
   FlowRunStatus,
 } from "../domain/flowRun";
@@ -17,6 +18,8 @@ import { TaskClass, TaskClassSchema } from "../domain/taskClass";
 import {
   EdgeKind,
   EffectLevel,
+  FlowPlacement,
+  FlowRunOrigin,
   LimitAvailability,
   PermissionProfile,
   ProviderId,
@@ -200,6 +203,7 @@ export const SessionViewSchema = z.strictObject({
   turnInFlight: z.boolean(),
   flowRef: FlowRefSchema.nullable(),
   turns: z.array(TurnRouteViewSchema),
+  orchestrate: z.boolean(),
 });
 export type SessionView = z.infer<typeof SessionViewSchema>;
 
@@ -279,7 +283,19 @@ export const FlowRunViewSchema = z.strictObject({
       nodeId: z.string(),
     })
     .nullable(),
+  decisions: z.array(
+    z.strictObject({
+      nodeId: z.string(),
+      reason: z.enum(DecisionReason),
+      decision: z.enum(FlowDecision),
+      note: z.string().nullable(),
+    }),
+  ),
   failure: z.string().nullable(),
+  origin: z.enum(FlowRunOrigin),
+  placement: z.enum(FlowPlacement),
+  branch: z.string().nullable(),
+  ownerSessionId: z.string().nullable(),
 });
 export type FlowRunView = z.infer<typeof FlowRunViewSchema>;
 
@@ -345,6 +361,9 @@ export const SnapshotSchema = z.strictObject({
     message: z.string().nullable(),
   }),
   terminal: TerminalViewSchema.nullable(),
-  flowRun: FlowRunViewSchema.nullable(),
+  flowRuns: z.array(FlowRunViewSchema),
+  flowSessions: z.array(
+    z.strictObject({ runId: NonEmptyString, view: SessionViewSchema }),
+  ),
 });
 export type Snapshot = z.infer<typeof SnapshotSchema>;

@@ -229,6 +229,7 @@ it("composer class change during a turn applies to the next send", async () => {
       return () => listeners.delete(listener);
     },
     start: () => () => undefined,
+    focusRun: () => undefined,
   };
   renderWithServices(<Composer />, client, store);
 
@@ -318,6 +319,7 @@ it("composer resets its choice for a new session", async () => {
       return () => listeners.delete(listener);
     },
     start: () => () => undefined,
+    focusRun: () => undefined,
   };
   renderWithServices(<Composer />, client, store);
 

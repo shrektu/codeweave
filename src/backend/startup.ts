@@ -49,8 +49,11 @@ import {
 } from "./constants";
 import { buildAgentEnv } from "./env";
 import { resolveExecutable } from "./executable";
+import { execText } from "./exec";
 import { listFlows } from "./flows";
 import { createFlowRunService } from "./flowRuns";
+import type { FlowToolServer } from "./flowTools/server";
+import { createFlowWorktrees } from "./flowWorktrees";
 import { createHandlers } from "./handlers";
 import { recordInstance } from "./instance";
 import type { IpcHandlers } from "./ipcServer";
@@ -59,7 +62,9 @@ import {
   type ConsoleProbeResult,
   type LimitProbeService,
 } from "./limitProbe";
+import { createLeaseModes, type LeaseModes } from "./leaseModes";
 import { resolveLockKey, WorktreeLocks, type LockKeyResolver } from "./locks";
+import { createOrchestratorService } from "./orchestrator/service";
 import { createOpencodeAdapter } from "./opencode/adapter";
 import {
   CATALOG_DIR_NAME,
@@ -90,11 +95,8 @@ import { createProviderAdapter } from "./providerAdapter";
 import { createKeyStore, type KeyStore } from "./secrets/keyStore";
 import { createSecretSource } from "./secrets/source";
 import type { SecretVault } from "./secrets/vault";
-import {
-  createSessionService,
-  type ContainerStatus,
-  type SessionService,
-} from "./session";
+import type { ContainerStatus } from "./session";
+import { createSessionPool, type SessionPool } from "./sessionPool";
 import {
   configuredExecutable,
   toUpdaterConfigMessage,
@@ -133,6 +135,7 @@ export interface BackendDeps {
   readonly ptyLauncher?: PtyLauncherFactory;
   readonly resolveLockKey?: LockKeyResolver;
   readonly postUpdaterConfig?: PostUpdaterConfig;
+  readonly startToolServer?: () => Promise<FlowToolServer>;
 }
 
 export interface Backend {
@@ -321,7 +324,7 @@ function createClaudeLimitProbe(
   const envFor = createEnvFor(deps);
   return createClaudeUsageProbe({
     adapter: createClaudeAcpAdapter({
-      processes: createProcesses(container, probeLockKey),
+      processes: createProcesses(container, probeLockKey, createLeaseModes()),
       envFor: (spec) => ({
         ...envFor(spec),
         TZ: CLAUDE_PROBE_TIME_ZONE,
@@ -378,11 +381,13 @@ function createProbes(
 function createProcesses(
   container: ProcessContainer,
   resolveLockKey: LockKeyResolver,
+  leaseModes: LeaseModes,
 ): AgentProcesses {
   return createAgentProcesses({
     container,
     locks: new WorktreeLocks(),
     resolveLockKey,
+    leaseModeOf: (runId) => leaseModes.modeOf(runId),
     onFailure: (failure) => {
       console.error(
         `agent ${failure.runId} left processes behind: ${failure.survivors.join(",")}`,
@@ -632,10 +637,14 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     sessions.isInUse(accountId),
   );
   const lockKeyResolver = deps.resolveLockKey ?? resolveLockKey;
+  const leaseModes = createLeaseModes();
   const processes =
-    container === null ? null : createProcesses(container, lockKeyResolver);
-  const sessions: SessionService = createSessionService({
+    container === null
+      ? null
+      : createProcesses(container, lockKeyResolver, leaseModes);
+  const sessions: SessionPool = createSessionPool({
     adapter: createAdapter(deps, container, processes, keyStore),
+    leaseModes,
     store,
     broadcast: deps.broadcast,
     now: deps.now,
@@ -653,11 +662,23 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
   });
   const terminals = createTerminals(deps, container, store, lockKeyResolver);
   const flowRuns = createFlowRunService({
-    sessions,
+    sessions: (runId) => sessions.forRun(runId),
+    releaseSessions: (runId) => sessions.release(runId),
+    mainSessionLive: () => sessions.main.isLive(),
     listFlows,
     inspectWorktree: deps.inspectWorktree,
     broadcast: deps.broadcast,
     newRunId: deps.newRunId,
+  });
+  const orchestrator = createOrchestratorService({
+    main: sessions.main,
+    flowRuns,
+    flowWorktrees: createFlowWorktrees({ exec: execText }),
+    listFlows,
+    newRunId: deps.newRunId,
+    ...(deps.startToolServer === undefined
+      ? {}
+      : { startToolServer: deps.startToolServer }),
   });
   const handlers = createHandlers({
     store,
@@ -667,6 +688,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     broadcast: deps.broadcast,
     sessions,
     flowRuns,
+    orchestrator,
     probes,
     catalog: createCatalog(deps, processes, store),
     containerStatus: status,
@@ -683,6 +705,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     shutdown: async () => {
       await terminals.shutdown();
       await probes.dispose();
+      await orchestrator.shutdown();
       await flowRuns.shutdown();
       await sessions.shutdown();
     },

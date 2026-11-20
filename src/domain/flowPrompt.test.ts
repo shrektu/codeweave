@@ -61,8 +61,8 @@ it("prompt_role_section_is_just_the_role_when_the_agent_has_no_body", () => {
   expect(prompt).toContain("## Your role\nReviews the diff\n\n## Task");
 });
 
-it("prompt_caps_every_input_text_like_the_context_package_does", () => {
-  const long = "x".repeat(2500);
+it("prompt_caps_every_input_text_at_the_hand_off_limit", () => {
+  const long = "x".repeat(16_500);
 
   const prompt = buildNodePrompt({
     ...BASE,
@@ -72,14 +72,27 @@ it("prompt_caps_every_input_text_like_the_context_package_does", () => {
     ],
   });
 
-  const capped = `${"x".repeat(2000)}\n[truncated, 500 more characters]`;
+  const capped = `${"x".repeat(16_000)}\n[truncated, 500 more characters]`;
   expect(prompt).toContain(`## Hand-off from build\n${capped}`);
   expect(prompt).toContain(`## Review findings from lint\n${capped}`);
-  expect(prompt).not.toContain("x".repeat(2001));
+  expect(prompt).not.toContain("x".repeat(16_001));
+});
+
+it("prompt_truncates_an_input_one_character_over_the_limit", () => {
+  const over = "z".repeat(16_001);
+
+  const prompt = buildNodePrompt({
+    ...BASE,
+    inputs: [{ from: "build", kind: NodeInputKind.handoff, text: over }],
+  });
+
+  expect(prompt).toContain(
+    `## Hand-off from build\n${"z".repeat(16_000)}\n[truncated, 1 more characters]`,
+  );
 });
 
 it("prompt_keeps_an_input_at_the_cap_whole", () => {
-  const exact = "y".repeat(2000);
+  const exact = "y".repeat(16_000);
 
   const prompt = buildNodePrompt({
     ...BASE,

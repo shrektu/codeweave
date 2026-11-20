@@ -36,17 +36,17 @@ const VALIDATION_ERROR = {
 it("ipc_rejects_missing_params_and_keeps_serving", async () => {
   const send = startServer();
 
-  const rejected = await send({ v: 6, id: "p-1", method: "ping" });
-  const next = await send({ v: 6, id: "p-2", method: "ping", params: {} });
+  const rejected = await send({ v: 7, id: "p-1", method: "ping" });
+  const next = await send({ v: 7, id: "p-2", method: "ping", params: {} });
 
   expect(rejected).toEqual({
-    v: 6,
+    v: 7,
     id: "p-1",
     ok: false,
     error: VALIDATION_ERROR,
   });
   expect(next).toEqual({
-    v: 6,
+    v: 7,
     id: "p-2",
     ok: true,
     result: { pong: true, backendPid: process.pid },
@@ -57,26 +57,26 @@ it("ipc_rejects_blank_prompt_text", async () => {
   const send = startServer();
 
   const rejected = await send({
-    v: 6,
+    v: 7,
     id: "p-3",
     method: "session/prompt",
     params: { text: "  " },
   });
   const accepted = await send({
-    v: 6,
+    v: 7,
     id: "p-4",
     method: "session/prompt",
     params: { text: "hello" },
   });
 
   expect(rejected).toEqual({
-    v: 6,
+    v: 7,
     id: "p-3",
     ok: false,
     error: VALIDATION_ERROR,
   });
   expect(accepted).toEqual({
-    v: 6,
+    v: 7,
     id: "p-4",
     ok: true,
     result: { accepted: true },
@@ -140,10 +140,10 @@ it.each(TERMINAL_REJECTED)(
   async (method, params) => {
     const send = startTerminalServer();
 
-    const response = await send({ v: 6, id: "t-1", method, params });
+    const response = await send({ v: 7, id: "t-1", method, params });
 
     expect(response).toEqual({
-      v: 6,
+      v: 7,
       id: "t-1",
       ok: false,
       error: VALIDATION_ERROR,
@@ -156,9 +156,9 @@ it.each(TERMINAL_ACCEPTED)(
   async (method, params, result) => {
     const send = startTerminalServer();
 
-    const response = await send({ v: 6, id: "t-2", method, params });
+    const response = await send({ v: 7, id: "t-2", method, params });
 
-    expect(response).toEqual({ v: 6, id: "t-2", ok: true, result });
+    expect(response).toEqual({ v: 7, id: "t-2", ok: true, result });
   },
 );
 
@@ -168,7 +168,7 @@ it("ipc_rejects_protocol_v1", async () => {
   const response = await send({ v: 1, id: "p-5", method: "ping", params: {} });
 
   expect(response).toEqual({
-    v: 6,
+    v: 7,
     id: "p-5",
     ok: false,
     error: {

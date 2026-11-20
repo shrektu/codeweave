@@ -9,6 +9,8 @@ import { z } from "zod";
 
 import { ROTATION_COMMAND } from "../e2e/rotationFixture";
 
+import { TurnKind, type MockTurn } from "./mockTurn";
+
 export const ResponsesScenario = {
   toolThen429: "tool-then-429",
   ok: "ok",
@@ -46,6 +48,11 @@ const USAGE = {
 
 const InputItemSchema = z.looseObject({
   type: z.string().optional(),
+  role: z.string().optional(),
+  name: z.string().optional(),
+  namespace: z.string().optional(),
+  call_id: z.string().optional(),
+  output: z.unknown().optional(),
   content: z
     .union([
       z.string(),
@@ -57,10 +64,21 @@ const InputItemSchema = z.looseObject({
 const RequestBodySchema = z.looseObject({
   model: z.string().optional(),
   input: z.array(InputItemSchema).default([]),
-  tools: z.array(z.looseObject({ name: z.string().optional() })).default([]),
+  tools: z
+    .array(
+      z.looseObject({
+        name: z.string().optional(),
+        tools: z.array(z.looseObject({ name: z.string() })).optional(),
+      }),
+    )
+    .default([]),
 });
-type RequestBody = z.infer<typeof RequestBodySchema>;
+export type ResponsesRequestBody = z.infer<typeof RequestBodySchema>;
 type InputItem = z.infer<typeof InputItemSchema>;
+
+export interface ResponsesMockOptions {
+  readonly respond?: (body: ResponsesRequestBody) => MockTurn | undefined;
+}
 
 export interface RecordedRequest {
   readonly key: string;
@@ -92,7 +110,11 @@ function itemTexts(item: InputItem): string[] {
   );
 }
 
-function record(key: string, path: string, body: RequestBody): RecordedRequest {
+function record(
+  key: string,
+  path: string,
+  body: ResponsesRequestBody,
+): RecordedRequest {
   return {
     key,
     path,
@@ -107,7 +129,7 @@ function record(key: string, path: string, body: RequestBody): RecordedRequest {
   };
 }
 
-function parseBody(raw: string): RequestBody {
+function parseBody(raw: string): ResponsesRequestBody {
   const parsed = RequestBodySchema.safeParse(JSON.parse(raw || "{}"));
   return parsed.success ? parsed.data : { input: [], tools: [] };
 }
@@ -130,19 +152,56 @@ function functionCallItem(
   };
 }
 
-function messageItem(sequence: number): Record<string, unknown> {
+function messageItem(
+  sequence: number,
+  text: string = REPLY_TEXT,
+): Record<string, unknown> {
   return {
     type: "message",
     role: "assistant",
     id: `msg_${String(sequence)}`,
-    content: [{ type: "output_text", text: REPLY_TEXT }],
+    content: [{ type: "output_text", text }],
   };
+}
+
+function turnItem(turn: MockTurn, sequence: number): Record<string, unknown> {
+  if (turn.kind === TurnKind.text) {
+    return messageItem(sequence, turn.text);
+  }
+  return {
+    type: "function_call",
+    id: `fc_${String(sequence)}`,
+    call_id: `call_${String(sequence)}`,
+    ...(turn.namespace === undefined ? {} : { namespace: turn.namespace }),
+    name: turn.name,
+    arguments: JSON.stringify(turn.input),
+  };
+}
+
+function textDeltaEvents(
+  item: Record<string, unknown>,
+  text: string,
+): SseEvent[] {
+  return [
+    [
+      "response.output_item.added",
+      {
+        type: "response.output_item.added",
+        item: { ...item, content: [{ type: "output_text", text: "" }] },
+      },
+    ],
+    [
+      "response.output_text.delta",
+      { type: "response.output_text.delta", delta: text },
+    ],
+  ];
 }
 
 function sendStream(
   res: ServerResponse,
   item: Record<string, unknown>,
   sequence: number,
+  leading: readonly SseEvent[] = [],
 ): void {
   const responseId = `resp_${String(sequence)}`;
   const events: SseEvent[] = [
@@ -150,6 +209,7 @@ function sendStream(
       "response.created",
       { type: "response.created", response: { id: responseId } },
     ],
+    ...leading,
     ["response.output_item.done", { type: "response.output_item.done", item }],
     [
       "response.completed",
@@ -207,6 +267,7 @@ function bearerKey(req: IncomingMessage): string {
 
 function createHandler(
   scenarios: Readonly<Record<string, ResponsesScenario>>,
+  options: ResponsesMockOptions,
   requests: RecordedRequest[],
   resetEpoch: number,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
@@ -229,6 +290,17 @@ function createHandler(
       return;
     }
     sequence += 1;
+    const turn = options.respond?.(body);
+    if (turn !== undefined) {
+      const item = turnItem(turn, sequence);
+      sendStream(
+        res,
+        item,
+        sequence,
+        turn.kind === TurnKind.text ? textDeltaEvents(item, turn.text) : [],
+      );
+      return;
+    }
     const toolNames = record(key, path, body).toolNames;
     const hasOutput = body.input.some(
       (item) => item.type === FUNCTION_CALL_OUTPUT_TYPE,
@@ -256,10 +328,11 @@ async function listen(server: Server): Promise<number> {
 
 export async function startResponsesMock(
   scenarios: Readonly<Record<string, ResponsesScenario>>,
+  options: ResponsesMockOptions = {},
 ): Promise<ResponsesMock> {
   const requests: RecordedRequest[] = [];
   const resetEpoch = Math.floor(Date.now() / MS_PER_SECOND) + SECONDS_PER_HOUR;
-  const handle = createHandler(scenarios, requests, resetEpoch);
+  const handle = createHandler(scenarios, options, requests, resetEpoch);
   const server = createServer((req, res) => {
     handle(req, res).catch((error: unknown) => {
       console.error("responses mock failed", error);

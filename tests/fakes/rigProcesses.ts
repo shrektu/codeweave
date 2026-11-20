@@ -4,7 +4,7 @@ import {
   createAgentProcesses,
   type AgentProcesses,
 } from "../../src/backend/agentProcesses";
-import { WorktreeLocks } from "../../src/backend/locks";
+import { LeaseMode, WorktreeLocks } from "../../src/backend/locks";
 import type { ProcessContainer } from "../../src/backend/process/container";
 
 export function resolvePathLockKey(cwd: string): Promise<string> {
@@ -16,5 +16,6 @@ export function rigProcesses(container: ProcessContainer): AgentProcesses {
     container,
     locks: new WorktreeLocks(),
     resolveLockKey: resolvePathLockKey,
+    leaseModeOf: () => LeaseMode.exclusive,
   });
 }

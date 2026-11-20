@@ -16,6 +16,7 @@ import {
   limitPercent,
   limitWindowLabel,
   MS_PER_MINUTE,
+  shownSessionOf,
   missingLimitText,
   PERCENT_SCALE,
 } from "../format";
@@ -158,7 +159,7 @@ export function LimitsPanel(): JSX.Element {
   const { state } = useApp();
   const now = useNow(MS_PER_MINUTE);
   const accounts = state.snapshot?.accounts ?? [];
-  const session = state.snapshot?.session ?? null;
+  const { session } = shownSessionOf(state.snapshot, state.focusedRunId);
   const sessionLimits = session?.limits ?? [];
   const activeAccountId = session?.activeAccountId ?? null;
   const unlisted = sessionLimits.filter(

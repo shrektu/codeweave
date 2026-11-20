@@ -11,6 +11,7 @@ import {
   type AgentProcess,
 } from "../../src/backend/agentProcesses";
 import {
+  LeaseMode,
   resolveLockKey,
   WorktreeBusyError,
   WorktreeLocks,
@@ -111,6 +112,7 @@ function createAgents(): ReturnType<typeof createAgentProcesses> {
     container: createSystemdScopeContainer({ instanceId: TEST_INSTANCE_ID }),
     locks: new WorktreeLocks(),
     resolveLockKey,
+    leaseModeOf: () => LeaseMode.exclusive,
   });
 }
 
@@ -216,6 +218,7 @@ describe("worktree lock lifecycle", () => {
       container,
       locks: new WorktreeLocks(),
       resolveLockKey,
+      leaseModeOf: () => LeaseMode.exclusive,
     });
     const first = await agents.start(specFor(KEEP_ALIVE_SCRIPT));
     const firstContained = container.spawned[0];
@@ -247,6 +250,7 @@ describe("worktree lock lifecycle", () => {
       container,
       locks: new WorktreeLocks(),
       resolveLockKey,
+      leaseModeOf: () => LeaseMode.exclusive,
       onFailure: (failure) => failures.push(failure),
     });
     const agent = await agents.start(specFor(KEEP_ALIVE_SCRIPT));
@@ -291,6 +295,7 @@ describe("systemd container call timeouts", () => {
       }),
       locks: new WorktreeLocks(),
       resolveLockKey,
+      leaseModeOf: () => LeaseMode.exclusive,
       onFailure: (failure) => failures.push(failure),
     });
     const agent = await agents.start(specFor(KEEP_ALIVE_SCRIPT));
@@ -330,6 +335,7 @@ describe("systemd container teardown", () => {
       }),
       locks: new WorktreeLocks(),
       resolveLockKey,
+      leaseModeOf: () => LeaseMode.exclusive,
       onFailure: (failure) => failures.push(failure),
     });
     const agent = await agents.start(specFor(KEEP_ALIVE_SCRIPT));
