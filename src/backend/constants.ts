@@ -195,3 +195,17 @@ export const MCP_TOOL_NAME_PREFIX = "mcp__";
 export const MCP_TOOL_NAME_SEPARATOR = "__";
 export const AUTHORIZATION_HEADER = "Authorization";
 export const BEARER_SCHEME = "Bearer";
+
+export const FLOW_BRANCH_PREFIX = "codeweave/";
+export const FLOW_WORKTREE_INFIX = "-cw-";
+export const FLOW_RUN_SHORT_ID_LENGTH = 8;
+export const FLOW_WORKTREES_DIR = ".worktrees";
+export const CONFLICT_MARKER_OURS = "<<<<<<< ";
+export const CONFLICT_MARKER_SEPARATOR = "=======";
+export const CONFLICT_MARKER_THEIRS = ">>>>>>> ";
+export const MERGE_STAGE_OURS = 2;
+export const MERGE_STAGE_THEIRS = 3;
+export const BINARY_SNIFF_BYTES = 8000;
+export const NUL_BYTE = 0;
+export const NUL_CHAR = "\0";
+export const GIT_REGULAR_MODE_PREFIX = "100";
