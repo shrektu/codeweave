@@ -5,7 +5,11 @@ import { LimitsPanel } from "../../src/renderer/components/LimitsPanel";
 import { Sidebar } from "../../src/renderer/components/Sidebar";
 import { SwitchLog } from "../../src/renderer/components/SwitchLog";
 import { SwitchReason } from "../../src/domain/types";
-import type { Snapshot } from "../../src/shared/views";
+import type {
+  AccountView,
+  LimitWindowView,
+  Snapshot,
+} from "../../src/shared/views";
 import {
   createFakeIpcClient,
   makeAccount,
@@ -198,8 +202,8 @@ it("limits_panel_shows_probe_limit", () => {
         bar.getAttribute("aria-valuenow"),
       ]),
   ).toEqual([
-    ["Codex spare", "60"],
     ["Codex main", "25"],
+    ["Codex spare", "60"],
   ]);
   expect(screen.getByText("stale")).toBeTruthy();
 });
@@ -248,6 +252,212 @@ it("limits_panel_countdown_ticks_every_minute", () => {
   });
 
   expect(screen.getByText("Resets at 10:04 (in 3 min)")).toBeTruthy();
+});
+
+function windowView(
+  overrides: Partial<LimitWindowView> & Pick<LimitWindowView, "id">,
+): LimitWindowView {
+  return {
+    scope: null,
+    period: null,
+    utilization: null,
+    resetsAt: null,
+    exhausted: false,
+    ...overrides,
+  };
+}
+
+it("limits_panel_draws_a_meter_per_window", () => {
+  const windows = [
+    windowView({
+      id: "five_hour",
+      period: "five_hour",
+      utilization: 0.25,
+      resetsAt: atMinutesFromNow(90),
+    }),
+    windowView({ id: "seven_day", period: "seven_day", utilization: 0.6 }),
+    windowView({
+      id: "spark:five_hour",
+      scope: "Spark",
+      period: "five_hour",
+      utilization: 1.4,
+      exhausted: true,
+    }),
+  ];
+  renderPanel(
+    <LimitsPanel />,
+    makeSnapshot({
+      accounts: [
+        makeAccount({
+          id: "codex-1",
+          provider: "codex",
+          label: "Codex main",
+          limitAvailability: "reported",
+          limit: makeLimit({
+            accountId: "codex-1",
+            utilization: 0.6,
+            observedAt: NOW_MS,
+            windows,
+          }),
+        }),
+      ],
+    }),
+  );
+
+  expect(
+    screen
+      .getAllByRole("progressbar")
+      .map((bar) => [
+        bar.getAttribute("aria-label"),
+        bar.getAttribute("aria-valuenow"),
+      ]),
+  ).toEqual([
+    ["Codex main 5-hour", "25"],
+    ["Codex main Weekly", "60"],
+    ["Codex main 5-hour · Spark", "100"],
+  ]);
+  expect(screen.getByText("Weekly")).toBeTruthy();
+  expect(screen.getByText("Exhausted")).toBeTruthy();
+  expect(screen.getByText("Resets at 11:30 (in 1 h 30 min)")).toBeTruthy();
+});
+
+it("rejected_account_with_windows_shows_exhausted", () => {
+  renderPanel(
+    <LimitsPanel />,
+    makeSnapshot({
+      accounts: [
+        makeAccount({
+          id: "codex-1",
+          provider: "codex",
+          label: "Codex main",
+          limitAvailability: "reported",
+          limit: makeLimit({
+            accountId: "codex-1",
+            status: "rejected",
+            utilization: 0.4,
+            resetsAt: atMinutesFromNow(90),
+            observedAt: NOW_MS,
+            windows: [
+              windowView({
+                id: "five_hour",
+                period: "five_hour",
+                utilization: 0.4,
+              }),
+            ],
+          }),
+        }),
+      ],
+    }),
+  );
+
+  const header = screen.getByText("Codex main").parentElement;
+  expect(header?.textContent).toContain("Exhausted");
+  expect(header?.textContent).toContain("Resets at 11:30 (in 1 h 30 min)");
+  expect(screen.getByText("40%")).toBeTruthy();
+});
+
+const MISSING_DATA_ACCOUNTS: AccountView[] = [
+  makeAccount({
+    id: "a-login",
+    label: "Login",
+    runtime: { status: "needs_login" },
+    limitAvailability: "pending",
+  }),
+  makeAccount({
+    id: "a-claude",
+    label: "Claude sub",
+    order: 1,
+    limitAvailability: "unsupported",
+  }),
+  makeAccount({
+    id: "a-codex",
+    provider: "codex",
+    label: "Codex key",
+    order: 2,
+    limitAvailability: "unsupported",
+  }),
+  makeAccount({
+    id: "a-gemini",
+    provider: "gemini",
+    label: "Gemini",
+    order: 3,
+    limitAvailability: "unsupported",
+  }),
+  makeAccount({
+    id: "a-oc-key",
+    provider: "opencode",
+    label: "OC key",
+    order: 4,
+    limitAvailability: "unsupported",
+    api: {
+      provider: "openrouter",
+      model: "m",
+      baseUrl: null,
+      rotation: false,
+      auth: "api_key",
+    },
+  }),
+  makeAccount({
+    id: "a-oc-console",
+    provider: "opencode",
+    label: "OC console",
+    order: 5,
+    limitAvailability: "unsupported",
+    api: {
+      provider: "opencode-go",
+      model: "m",
+      baseUrl: null,
+      rotation: false,
+      auth: "console_login",
+    },
+  }),
+  makeAccount({
+    id: "a-failed",
+    label: "Broken",
+    order: 6,
+    limitAvailability: "failed",
+  }),
+  makeAccount({
+    id: "a-pending",
+    label: "Waiting",
+    order: 7,
+    limitAvailability: "pending",
+  }),
+];
+
+it("limits_panel_explains_missing_limit_data", () => {
+  renderPanel(
+    <LimitsPanel />,
+    makeSnapshot({ accounts: MISSING_DATA_ACCOUNTS }),
+  );
+
+  expect(screen.queryByRole("progressbar")).toBeNull();
+  expect(screen.getByText("Sign in to see limits")).toBeTruthy();
+  expect(
+    screen.getByText(
+      "No limit data: Claude Code reports limits only for a claude.ai subscription",
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      "No limit data: Codex reports limits only for a ChatGPT sign-in",
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.getByText("No limit data: agy reported no usage buckets"),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      "No limit data: opencode reports usage only for Console login accounts",
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      "No limit data: the Console reported no Go allowance or budget",
+    ),
+  ).toBeTruthy();
+  expect(screen.getByText("Could not read limits")).toBeTruthy();
+  expect(screen.getByText("Checking limits…")).toBeTruthy();
 });
 
 it("switch_log_lists_newest_first", () => {

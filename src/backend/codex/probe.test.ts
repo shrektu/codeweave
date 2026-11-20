@@ -79,6 +79,7 @@ describe("codex limit probe", () => {
         secondary: null,
         rateLimitReachedType: null,
         ordinaryUsageAllowed: true,
+        extra: [],
       },
     });
     expect(container.specs).toEqual([
@@ -127,19 +128,32 @@ describe("codex limit probe", () => {
 });
 
 describe("codex limit probe read errors", () => {
-  it.each([RPC_INVALID_REQUEST, RPC_INTERNAL_ERROR])(
-    "reports no_limits when the read fails with code %i",
-    async (code) => {
-      const { container, probe } = setup({
-        rateLimitReads: [{ kind: "error", code, message: "not available" }],
-      });
+  it.each([
+    [RPC_INVALID_REQUEST, "no_limits"],
+    [RPC_INTERNAL_ERROR, "unreadable"],
+  ])("reports %i as the outcome %s", async (code, kind) => {
+    const { container, probe } = setup({
+      rateLimitReads: [{ kind: "error", code, message: "not available" }],
+    });
 
-      const result = await probe(ACCOUNT_CODEX_A, new AbortController().signal);
+    const result = await probe(ACCOUNT_CODEX_A, new AbortController().signal);
 
-      expect(result).toEqual({ kind: "no_limits" });
-      expect(stopCallsOf(container)).toEqual([[GRACE_MS]]);
-    },
-  );
+    expect(result).toEqual({ kind });
+    expect(stopCallsOf(container)).toEqual([[GRACE_MS]]);
+  });
+
+  it("backend_failure_is_unreadable_not_unsupported", async () => {
+    const { probe } = setup({
+      rateLimitReads: [
+        { kind: "error", code: RPC_INTERNAL_ERROR, message: "backend down" },
+      ],
+    });
+
+    const result = await probe(ACCOUNT_CODEX_A, new AbortController().signal);
+
+    expect(result.kind).not.toBe("no_limits");
+    expect(result.kind).toBe("unreadable");
+  });
 
   it("fails quietly on an unexpected rpc error and still stops", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);

@@ -2,12 +2,15 @@ import {
   ERROR_KIND_AUTH_REQUIRED,
   ERROR_KIND_RATE_LIMIT,
   RATE_LIMIT_STATUS_REJECTED,
+  RATE_LIMIT_TYPE_FIVE_HOUR,
+  RATE_LIMIT_TYPE_SEVEN_DAY,
 } from "../../domain/constants";
 import type {
   AgentEvent,
   PermissionOption,
   ToolCallStatus,
 } from "../../domain/events";
+import type { LimitWindow } from "../../domain/limitWindows";
 import { PermissionProfile } from "../../domain/types";
 import {
   DEFAULT_TOOL_KIND,
@@ -34,8 +37,6 @@ import {
   OPTION_NAME_GRANT,
   PERCENT_SCALE,
   RATE_LIMIT_STATUS_ALLOWED,
-  RATE_LIMIT_TYPE_FIVE_HOUR,
-  RATE_LIMIT_TYPE_SEVEN_DAY,
   TITLE_EDIT_FILES,
   TITLE_EDIT_PREFIX,
   TITLE_PERMISSIONS,
@@ -56,6 +57,7 @@ import {
   type KnownThreadItem,
   type PermissionsApprovalParams,
   type RateLimitSnapshot,
+  type RateLimitsReadResponse,
   type RateLimitWindow,
   type ThreadItem,
   type TurnError,
@@ -79,19 +81,36 @@ export interface ProfilePolicy {
   readonly sandbox: CodexSandboxMode;
 }
 
+export interface ExtraRateLimit {
+  readonly limitId: string;
+  readonly limitName: string | null;
+  readonly primary: RateLimitWindow | null;
+  readonly secondary: RateLimitWindow | null;
+}
+
 export interface RateLimitState {
   readonly primary: RateLimitWindow | null;
   readonly secondary: RateLimitWindow | null;
   readonly rateLimitReachedType: string | null;
   readonly ordinaryUsageAllowed: boolean | null;
+  readonly extra: readonly ExtraRateLimit[];
 }
+
+export type RateLimitsByLimitId = NonNullable<
+  RateLimitsReadResponse["rateLimitsByLimitId"]
+>;
 
 export const EMPTY_RATE_LIMITS: RateLimitState = {
   primary: null,
   secondary: null,
   rateLimitReachedType: null,
   ordinaryUsageAllowed: null,
+  extra: [],
 };
+
+const SLOT_PRIMARY = "primary";
+const SLOT_SECONDARY = "secondary";
+const LIMIT_ID_SEPARATOR = ":";
 
 export function policyFor(profile: PermissionProfile): ProfilePolicy {
   switch (profile) {
@@ -351,15 +370,38 @@ function reachedTypeOf(
     : previous.rateLimitReachedType;
 }
 
+function extraLimitsOf(
+  mainLimitId: string | null | undefined,
+  byLimitId: RateLimitsByLimitId | null | undefined,
+): ExtraRateLimit[] {
+  return Object.entries(byLimitId ?? {}).flatMap(([key, entry]) => {
+    const primary = entry.primary ?? null;
+    const secondary = entry.secondary ?? null;
+    if (key === mainLimitId || (primary === null && secondary === null)) {
+      return [];
+    }
+    return [
+      {
+        limitId: entry.limitId ?? key,
+        limitName: entry.limitName ?? null,
+        primary,
+        secondary,
+      },
+    ];
+  });
+}
+
 export function replaceRateLimits(
   snapshot: RateLimitSnapshot,
   ordinaryUsageAllowed?: boolean | null,
+  byLimitId?: RateLimitsByLimitId | null,
 ): RateLimitState {
   return {
     primary: snapshot.primary ?? null,
     secondary: snapshot.secondary ?? null,
     rateLimitReachedType: snapshot.rateLimitReachedType ?? null,
     ordinaryUsageAllowed: ordinaryUsageAllowed ?? null,
+    extra: extraLimitsOf(snapshot.limitId, byLimitId),
   };
 }
 
@@ -373,6 +415,7 @@ export function mergeRateLimits(
     secondary: mergeWindow(previous.secondary, snapshot.secondary),
     rateLimitReachedType: reachedTypeOf(previous, snapshot),
     ordinaryUsageAllowed: ordinaryUsageAllowed ?? previous.ordinaryUsageAllowed,
+    extra: previous.extra,
   };
 }
 
@@ -421,6 +464,62 @@ function rateLimitTypeOf(minutes: number | null | undefined): string | null {
   }
 }
 
+interface WindowGroup {
+  readonly idPrefix: string | null;
+  readonly scope: string | null;
+  readonly primary: RateLimitWindow | null;
+  readonly secondary: RateLimitWindow | null;
+}
+
+function limitWindowOf(
+  source: RateLimitWindow,
+  slot: string,
+  group: WindowGroup,
+): LimitWindow {
+  const period = rateLimitTypeOf(source.windowDurationMins);
+  const base = period ?? slot;
+  return {
+    id:
+      group.idPrefix === null
+        ? base
+        : `${group.idPrefix}${LIMIT_ID_SEPARATOR}${base}`,
+    scope: group.scope,
+    period,
+    utilization: source.usedPercent / PERCENT_SCALE,
+    resetsAt: source.resetsAt ?? null,
+    exhausted: source.usedPercent >= PERCENT_SCALE,
+  };
+}
+
+function groupWindows(group: WindowGroup): LimitWindow[] {
+  const slots: readonly (readonly [RateLimitWindow | null, string])[] = [
+    [group.primary, SLOT_PRIMARY],
+    [group.secondary, SLOT_SECONDARY],
+  ];
+  return slots.flatMap(([source, slot]) =>
+    source === null ? [] : [limitWindowOf(source, slot, group)],
+  );
+}
+
+function limitWindowsOf(state: RateLimitState): LimitWindow[] {
+  return [
+    ...groupWindows({
+      idPrefix: null,
+      scope: null,
+      primary: state.primary,
+      secondary: state.secondary,
+    }),
+    ...state.extra.flatMap((extra) =>
+      groupWindows({
+        idPrefix: extra.limitId,
+        scope: extra.limitName ?? extra.limitId,
+        primary: extra.primary,
+        secondary: extra.secondary,
+      }),
+    ),
+  ];
+}
+
 export function toRateLimitEvent(
   state: RateLimitState,
   forceRejected = false,
@@ -436,6 +535,7 @@ export function toRateLimitEvent(
     resetsAt: window?.resetsAt ?? null,
     rateLimitType: rateLimitTypeOf(window?.windowDurationMins),
     utilization: window === null ? null : window.usedPercent / PERCENT_SCALE,
+    windows: limitWindowsOf(state),
   };
 }
 

@@ -16,6 +16,7 @@ import {
 import type { LockKeyResolver } from "../../src/backend/locks";
 import { createConsoleLoginProbe } from "../../src/backend/opencode/consoleLogin";
 import { OpencodeGeneration } from "../../src/backend/opencode/constants";
+import { createConsoleUsageProbe } from "../../src/backend/opencode/consoleUsage";
 import { createJsonStore, type JsonStore } from "../../src/backend/storage";
 import type {
   Contained,
@@ -41,7 +42,10 @@ import {
   RIG_EXEC_PATH,
   ScriptedAcpContainer,
   type FakeAcpAgent,
+  type FakeAcpConfig,
+  type ScriptStep,
 } from "./fakeAcpAgent";
+import { DEFAULT_USAGE_MARKDOWN } from "./fakeClaudeUsage";
 import {
   AGY_RIG_EXECUTABLE,
   ScriptedAgyContainer,
@@ -148,6 +152,12 @@ export interface BackendRigOptions {
   readonly probeStopResults?: ConstructorParameters<
     typeof ScriptedCodexContainer
   >[0];
+  readonly claudeProbeStopResults?: ConstructorParameters<
+    typeof ScriptedAcpContainer
+  >[0];
+  readonly claudeProbeConfig?: FakeAcpConfig;
+  readonly claudeProbeText?: string;
+  readonly claudeProbeScripts?: readonly (readonly ScriptStep[])[];
   readonly probeStopResultsByHome?: Readonly<
     Record<string, readonly StopResult[]>
   >;
@@ -170,6 +180,7 @@ export interface BackendRig {
   readonly opencodeV2Container: ScriptedOpencodeV2Container;
   readonly agyContainer: ScriptedAgyContainer;
   readonly probeContainer: ScriptedCodexContainer;
+  readonly claudeProbeContainer: ScriptedAcpContainer;
   readonly probeTasks: ScheduledTask[];
   readonly probeStats: ProbeStats;
   readonly store: JsonStore;
@@ -207,7 +218,7 @@ export async function removeBackendRigDirs(): Promise<void> {
 }
 
 async function spawnProbe(
-  probe: ScriptedCodexContainer,
+  probe: ProcessContainer,
   stats: ProbeStats,
   spec: SpawnSpec,
 ): Promise<Contained> {
@@ -261,7 +272,11 @@ function targetOf(
 function recordingContainer(
   claude: ScriptedAcpContainer,
   others: Pick<AgentContainers, "codex" | "opencode" | "agy">,
-  probe: { container: ScriptedCodexContainer; stats: ProbeStats },
+  probe: {
+    container: ScriptedCodexContainer;
+    claudeContainer: ScriptedAcpContainer;
+    stats: ProbeStats;
+  },
   rig: Pick<BackendRig, "order" | "sweeps" | "contained">,
   agyCommands: readonly string[],
   spawnGate?: Promise<void>,
@@ -271,9 +286,16 @@ function recordingContainer(
     launch: unsupportedLaunch,
     async spawn(spec: SpawnSpec): Promise<Contained> {
       if (spec.runId.startsWith(PROBE_RUN_ID_PREFIX)) {
-        return isAgyCommand(spec, agyCommands)
-          ? others.agy.spawn(spec)
-          : spawnProbe(probe.container, probe.stats, spec);
+        if (isAgyCommand(spec, agyCommands)) {
+          return others.agy.spawn(spec);
+        }
+        return spawnProbe(
+          spec.command === RIG_EXEC_PATH
+            ? probe.claudeContainer
+            : probe.container,
+          probe.stats,
+          spec,
+        );
       }
       rig.order.push(`spawn:${spec.runId}`);
       await spawnGate;
@@ -342,6 +364,7 @@ interface AgentContainers {
   readonly opencode: ProcessContainer;
   readonly agy: ScriptedAgyContainer;
   readonly probe: ScriptedCodexContainer;
+  readonly claudeProbe: ScriptedAcpContainer;
 }
 
 function rigDeps(
@@ -365,7 +388,11 @@ function rigDeps(
             recordingContainer(
               containers.claude,
               containers,
-              { container: containers.probe, stats: log.probeStats },
+              {
+                container: containers.probe,
+                claudeContainer: containers.claudeProbe,
+                stats: log.probeStats,
+              },
               log,
               options.agyExecutables ?? [],
               options.spawnGate,
@@ -380,6 +407,13 @@ function rigDeps(
     platform: options.platform ?? "linux",
     now: options.now ?? (() => RIG_NOW_MS),
     opencodeConsoleLogin: createConsoleLoginProbe({
+      exec: authCli.exec,
+      platform: options.platform ?? "linux",
+      ...(options.consoleLoginTimeoutMs === undefined
+        ? {}
+        : { timeoutMs: options.consoleLoginTimeoutMs }),
+    }),
+    opencodeConsoleUsage: createConsoleUsageProbe({
       exec: authCli.exec,
       platform: options.platform ?? "linux",
       ...(options.consoleLoginTimeoutMs === undefined
@@ -449,6 +483,17 @@ export async function createBackendRig(
   for (const script of options.agyUsage ?? []) {
     agyContainer.scriptUsage(script);
   }
+  const claudeProbeContainer = new ScriptedAcpContainer(
+    options.claudeProbeStopResults,
+  );
+  claudeProbeContainer.defaultScript = [
+    { type: "text", text: options.claudeProbeText ?? DEFAULT_USAGE_MARKDOWN },
+    { type: "end", stopReason: "end_turn" },
+  ];
+  Object.assign(claudeProbeContainer.config, options.claudeProbeConfig);
+  for (const steps of options.claudeProbeScripts ?? []) {
+    claudeProbeContainer.scriptNext(steps);
+  }
   const probeContainer = new ScriptedCodexContainer(options.probeStopResults);
   for (const [home, results] of Object.entries(
     options.probeStopResultsByHome ?? {},
@@ -491,6 +536,7 @@ export async function createBackendRig(
           options.opencodeV2 === true ? opencodeV2Container : opencodeContainer,
         agy: agyContainer,
         probe: probeContainer,
+        claudeProbe: claudeProbeContainer,
       },
       {
         ...parts,
@@ -514,6 +560,7 @@ export async function createBackendRig(
     opencodeV2Container,
     agyContainer,
     probeContainer,
+    claudeProbeContainer,
     probeStats,
     probeTasks,
     store,
@@ -578,6 +625,10 @@ export function agentOf(rig: BackendRig, index = 0): FakeAcpAgent {
     throw new Error(`agent ${String(index)} was not spawned`);
   }
   return agent;
+}
+
+export function probeAgentsOf(rig: BackendRig): readonly FakeAcpAgent[] {
+  return rig.claudeProbeContainer.agents;
 }
 
 export async function turnEnded(rig: BackendRig): Promise<void> {

@@ -13,6 +13,7 @@ export type ProbeResult =
   | { readonly kind: "limits"; readonly limits: RateLimitState }
   | { readonly kind: "needs_login" }
   | { readonly kind: "no_limits" }
+  | { readonly kind: "unreadable" }
   | { readonly kind: "failed" }
   | { readonly kind: "unstopped" };
 
@@ -34,12 +35,9 @@ export type CodexLimitProbe = (
 
 const RPC_CODE_INVALID_REQUEST = -32600;
 const RPC_CODE_INTERNAL_ERROR = -32603;
-const NO_LIMITS_RPC_CODES: readonly number[] = [
-  RPC_CODE_INVALID_REQUEST,
-  RPC_CODE_INTERNAL_ERROR,
-];
 
 const FAILED: ProbeResult = { kind: "failed" };
+const UNREADABLE: ProbeResult = { kind: "unreadable" };
 const NEEDS_LOGIN: ProbeResult = { kind: "needs_login" };
 const NO_LIMITS: ProbeResult = { kind: "no_limits" };
 const UNSTOPPED: ProbeResult = { kind: "unstopped" };
@@ -74,10 +72,8 @@ export function watchAbort(signal: AbortSignal): AbortWatch {
   };
 }
 
-function isNoLimitsError(error: unknown): boolean {
-  return (
-    error instanceof CodexRpcError && NO_LIMITS_RPC_CODES.includes(error.code)
-  );
+function rpcCodeOf(error: unknown): number | null {
+  return error instanceof CodexRpcError ? error.code : null;
 }
 
 async function readLimits(rpc: CodexRpc): Promise<ProbeResult> {
@@ -96,13 +92,18 @@ async function readLimits(rpc: CodexRpc): Promise<ProbeResult> {
       limits: replaceRateLimits(
         response.rateLimits,
         response.ordinaryUsageAllowed,
+        response.rateLimitsByLimitId,
       ),
     };
   } catch (error) {
-    if (isNoLimitsError(error)) {
-      return NO_LIMITS;
+    switch (rpcCodeOf(error)) {
+      case RPC_CODE_INVALID_REQUEST:
+        return NO_LIMITS;
+      case RPC_CODE_INTERNAL_ERROR:
+        return UNREADABLE;
+      default:
+        throw error;
     }
-    throw error;
   }
 }
 

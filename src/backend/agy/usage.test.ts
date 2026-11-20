@@ -56,16 +56,130 @@ function limitsOf(output: UsageOutput): AgyLimits {
 }
 
 describe("agy usage parsing", () => {
-  it("usage_without_gemini_group_has_no_limits", () => {
-    const other = outputWith([
-      usageGroup("Claude and GPT models", [
-        usageBucket("3p-5h", "5h", 0, "2026-10-30T15:41:01Z"),
-      ]),
-    ]);
-
-    expect(probeResultOf(other)).toEqual({ kind: "no_limits" });
+  it("usage_with_every_group_empty_has_no_limits", () => {
     expect(probeResultOf(outputWith([]))).toEqual({ kind: "no_limits" });
     expect(probeResultOf(geminiBuckets())).toEqual({ kind: "no_limits" });
+    expect(
+      probeResultOf(outputWith([usageGroup("Claude and GPT models", [])])),
+    ).toEqual({ kind: "no_limits" });
+  });
+
+  it("other_groups_alone_report_windows_without_binding", () => {
+    const limits = limitsOf(
+      outputWith([
+        usageGroup("Claude and GPT models", [
+          usageBucket("3p-5h", "5h", 0.4, "2026-10-30T15:41:01Z"),
+        ]),
+      ]),
+    );
+
+    expect(limits.buckets).toEqual([]);
+    expect(limits.others).toHaveLength(1);
+    expect(toAgyRateLimitEvent(limits)).toEqual({
+      type: "rate_limit",
+      status: "allowed",
+      resetsAt: null,
+      rateLimitType: null,
+      utilization: null,
+      windows: [
+        {
+          id: "Claude and GPT models/3p-5h/5h",
+          scope: "5h limit",
+          period: "five_hour",
+          utilization: 0.6,
+          resetsAt: 1_793_374_861,
+          exhausted: false,
+        },
+      ],
+    });
+  });
+
+  it("other_group_exhaustion_does_not_exhaust_the_account", () => {
+    const limits = limitsOf(
+      outputWith([
+        usageGroup("Gemini Models", [
+          usageBucket("g-5h", "5h", 0.5, "2026-10-30T12:54:36Z"),
+        ]),
+        usageGroup("Gemini 4 Argon", [
+          usageBucket("a-weekly", "weekly", 0, "2026-11-02T10:21:22Z"),
+        ]),
+      ]),
+    );
+
+    expect(isExhausted(limits)).toBe(false);
+    expect(exhaustedResetsAt(limits)).toBeNull();
+    expect(toAgyRateLimitEvent(limits)).toMatchObject({
+      status: "allowed",
+      rateLimitType: "five_hour",
+      utilization: 0.5,
+    });
+  });
+
+  it("bucket_without_window_reset_or_name_still_maps", () => {
+    const limits = limitsOf(
+      outputWith([
+        usageGroup("Gemini Models", [{ id: "bare", remaining_fraction: 0.5 }]),
+      ]),
+    );
+
+    expect(toAgyRateLimitEvent(limits)?.windows).toEqual([
+      {
+        id: "Gemini Models/bare/-",
+        scope: "Gemini Models",
+        period: null,
+        utilization: 0.5,
+        resetsAt: null,
+        exhausted: false,
+      },
+    ]);
+  });
+
+  it("duplicate_bucket_ids_get_unique_window_ids", () => {
+    const limits = limitsOf(
+      geminiBuckets(
+        usageBucket("dup", "5h", 0.5, "2026-10-30T12:54:36Z"),
+        usageBucket("dup", "5h", 0.4, "2026-10-30T12:54:36Z"),
+        usageBucket("dup", "5h", 0.3, "2026-10-30T12:54:36Z"),
+      ),
+    );
+
+    expect(
+      toAgyRateLimitEvent(limits)?.windows?.map((item) => item.id),
+    ).toEqual([
+      "Gemini Models/dup/5h",
+      "Gemini Models/dup/5h#1",
+      "Gemini Models/dup/5h#2",
+    ]);
+  });
+
+  it.each([
+    ["without others", []],
+    [
+      "with others",
+      [
+        usageGroup("Gemini 4 Argon", [
+          usageBucket("a-weekly", "weekly", 0.01, "2026-11-02T10:21:22Z"),
+        ]),
+      ],
+    ],
+  ])("binding_fields_are_identical_%s", (_name, others) => {
+    const base = [
+      usageGroup("Gemini Models", [
+        usageBucket("g-weekly", "weekly", 0.75, "2026-11-02T10:21:22Z"),
+        usageBucket("g-5h", "5h", 0.5, "2026-10-30T12:54:36Z"),
+      ]),
+    ];
+
+    const event = toAgyRateLimitEvent(
+      limitsOf(outputWith([...base, ...others])),
+    );
+
+    expect(event).toMatchObject({
+      status: "allowed",
+      resetsAt: FIVE_HOUR_RESET,
+      rateLimitType: "five_hour",
+      utilization: 0.5,
+    });
   });
 
   it("error_status_is_needs_login_only_for_the_auth_message", () => {
@@ -90,12 +204,16 @@ describe("agy usage parsing", () => {
     expect(limits.buckets).toEqual([
       {
         id: "gemini-5h",
+        name: "5h limit",
+        group: "Gemini Models",
         window: "5h",
         remainingFraction: 0.5,
         resetsAt: FIVE_HOUR_RESET,
       },
       {
         id: "gemini-weekly",
+        name: "weekly limit",
+        group: "Gemini Models",
         window: "weekly",
         remainingFraction: 0.25,
         resetsAt: null,
@@ -132,6 +250,24 @@ describe("agy rate limit event", () => {
       resetsAt: FIVE_HOUR_RESET,
       rateLimitType: "five_hour",
       utilization: 0.5,
+      windows: [
+        {
+          id: "Gemini Models/gemini-weekly/weekly",
+          scope: "weekly limit",
+          period: "seven_day",
+          utilization: 0.25,
+          resetsAt: WEEKLY_RESET,
+          exhausted: false,
+        },
+        {
+          id: "Gemini Models/gemini-5h/5h",
+          scope: "5h limit",
+          period: "five_hour",
+          utilization: 0.5,
+          resetsAt: FIVE_HOUR_RESET,
+          exhausted: false,
+        },
+      ],
     });
   });
 
@@ -148,6 +284,16 @@ describe("agy rate limit event", () => {
       resetsAt: null,
       rateLimitType: null,
       utilization: null,
+      windows: [
+        {
+          id: "Gemini Models/gemini-5h/5h",
+          scope: "5h limit",
+          period: "five_hour",
+          utilization: 0.6,
+          resetsAt: FIVE_HOUR_RESET,
+          exhausted: false,
+        },
+      ],
     });
   });
 
@@ -162,6 +308,16 @@ describe("agy rate limit event", () => {
       resetsAt: null,
       rateLimitType: "seven_day",
       utilization: 1,
+      windows: [
+        {
+          id: "Gemini Models/gemini-weekly/weekly",
+          scope: "weekly limit",
+          period: "seven_day",
+          utilization: 1,
+          resetsAt: null,
+          exhausted: true,
+        },
+      ],
     });
   });
 

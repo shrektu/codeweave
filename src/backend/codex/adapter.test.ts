@@ -135,6 +135,7 @@ describe("codex adapter rate limit reads", () => {
       resetsAt: null,
       rateLimitType: null,
       utilization: null,
+      windows: [],
     });
   });
 });
@@ -166,7 +167,25 @@ describe("codex adapter rate limit updates", () => {
       rateLimitType: "five_hour",
       utilization: 0.95,
     };
-    expect(events).toEqual([expected, expected]);
+    const fiveHour = {
+      id: "five_hour",
+      scope: null,
+      period: "five_hour",
+      utilization: 0.95,
+      resetsAt: RESET_AT,
+      exhausted: false,
+    };
+    const weekly = {
+      id: "seven_day",
+      scope: null,
+      period: "seven_day",
+      resetsAt: null,
+      exhausted: false,
+    };
+    expect(events).toEqual([
+      { ...expected, windows: [fiveHour, { ...weekly, utilization: 0.2 }] },
+      { ...expected, windows: [fiveHour, { ...weekly, utilization: 0.3 }] },
+    ]);
   });
 
   it("initial_snapshot_is_announced_once_at_first_prompt", async () => {

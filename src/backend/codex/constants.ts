@@ -140,6 +140,4 @@ export const PERCENT_SCALE = 100;
 export const RATE_LIMIT_STATUS_ALLOWED = "allowed";
 export const WINDOW_MINUTES_FIVE_HOUR = 300;
 export const WINDOW_MINUTES_SEVEN_DAY = 10_080;
-export const RATE_LIMIT_TYPE_FIVE_HOUR = "five_hour";
-export const RATE_LIMIT_TYPE_SEVEN_DAY = "seven_day";
 export const DEFAULT_RATE_LIMIT_READ_TIMEOUT_MS = 5000;

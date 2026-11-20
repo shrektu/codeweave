@@ -402,6 +402,7 @@ class CodexAppServerSession implements AgentHandle {
     this.limits = replaceRateLimits(
       response.rateLimits,
       response.ordinaryUsageAllowed,
+      response.rateLimitsByLimitId,
     );
   }
 

@@ -11,7 +11,12 @@ import {
 } from "node:path";
 
 import { ApiAuth } from "../domain/apiProviders";
-import { ProviderId, type Account, type ApiAccount } from "../domain/types";
+import {
+  ProviderId,
+  type Account,
+  type ApiAccount,
+  type LimitAvailability,
+} from "../domain/types";
 import {
   OPENCODE_ACCOUNT_DATA_DIR,
   OPENCODE_DATA_SUBDIR,
@@ -50,6 +55,7 @@ export interface AccountsServiceDeps {
   broadcast: ConnectionRegistry["broadcast"];
   runtimeOf: (id: string) => AccountRuntimeView;
   limitOf: (id: string) => LimitView | null;
+  availabilityOf: (account: Account) => LimitAvailability;
   isInUse: (id: string) => boolean;
 }
 
@@ -155,7 +161,8 @@ async function assertGeminiDirResolvesInside(
 }
 
 function createRepository(deps: AccountsServiceDeps): Repository {
-  const { store, keyStore, runtimeOf, limitOf, broadcast } = deps;
+  const { store, keyStore, runtimeOf, limitOf, availabilityOf, broadcast } =
+    deps;
   const toView = (account: Account): AccountView => ({
     ...account,
     api: account.api ?? null,
@@ -163,6 +170,7 @@ function createRepository(deps: AccountsServiceDeps): Repository {
     keyHint: keyStore.hint(account.id),
     runtime: runtimeOf(account.id),
     limit: limitOf(account.id),
+    limitAvailability: availabilityOf(account),
   });
   return {
     toView,

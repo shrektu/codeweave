@@ -90,6 +90,7 @@ export function fakeProbes(
     release: () => Promise.resolve(),
     isBlocked: () => false,
     limitOf: () => null,
+    availabilityOf: () => "pending",
     runtimeOf: () => null,
     onChanged: () => () => undefined,
     dispose: () => Promise.resolve(),

@@ -8,6 +8,15 @@ export const ProviderId = {
 } as const;
 export type ProviderId = (typeof ProviderId)[keyof typeof ProviderId];
 
+export const LimitAvailability = {
+  pending: "pending",
+  reported: "reported",
+  unsupported: "unsupported",
+  failed: "failed",
+} as const;
+export type LimitAvailability =
+  (typeof LimitAvailability)[keyof typeof LimitAvailability];
+
 export const PermissionProfile = {
   bypass: "bypass",
   unattended: "unattended",

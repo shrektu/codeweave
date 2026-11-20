@@ -66,9 +66,9 @@ async function expectRotationShown(page: Page): Promise<void> {
   );
   await expect(accounts.filter({ hasText: /^A/ })).toContainText(/Exhausted ·/);
   await expect(
-    page.getByRole("region", { name: "Limits" }).locator(".meter", {
-      hasText: /^A/,
-    }),
+    page
+      .getByRole("region", { name: "Limits" })
+      .locator(".limit-block > .meter-head", { hasText: /^A/ }),
   ).toContainText("Exhausted");
   await expect(page.locator(".session-head .phase")).toContainText(
     /Idle on B/,

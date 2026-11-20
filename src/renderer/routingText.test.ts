@@ -36,6 +36,7 @@ function account(api: AccountView["api"]): AccountView {
     keyHint: null,
     runtime: { status: "ready" },
     limit: null,
+    limitAvailability: "pending",
   };
 }
 

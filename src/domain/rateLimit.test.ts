@@ -195,6 +195,58 @@ describe("rate limit detector: login and state", () => {
       resetsAt: NOW_S + 60,
       rateLimitType: "five_hour",
       utilization: 0.5,
+      windows: [
+        {
+          id: "five_hour",
+          scope: null,
+          period: "five_hour",
+          utilization: 0.5,
+          resetsAt: NOW_S + 60,
+          exhausted: false,
+        },
+      ],
     });
+  });
+
+  it("snapshot_keeps_event_windows", () => {
+    const detector = createRateLimitDetector(() => NOW_MS);
+    const windows = [
+      {
+        id: "extra:five_hour",
+        scope: "Extra",
+        period: "five_hour",
+        utilization: 0.2,
+        resetsAt: null,
+        exhausted: false,
+      },
+    ];
+
+    detector.observe({
+      type: "rate_limit",
+      status: "allowed",
+      resetsAt: null,
+      rateLimitType: "five_hour",
+      utilization: 0.5,
+      windows,
+    });
+
+    expect(detector.snapshot()?.windows).toEqual(windows);
+  });
+
+  it("rejected_event_without_windows_derives_an_exhausted_window", () => {
+    const detector = createRateLimitDetector(() => NOW_MS);
+
+    detector.observe(limitEvent("rejected", null, "seven_day_opus"));
+
+    expect(detector.snapshot()?.windows).toEqual([
+      {
+        id: "seven_day:opus",
+        scope: "Opus",
+        period: "seven_day",
+        utilization: 0.5,
+        resetsAt: null,
+        exhausted: true,
+      },
+    ]);
   });
 });

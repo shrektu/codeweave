@@ -8,6 +8,7 @@ import {
   RPC_CODE_AUTH_REJECTED,
 } from "./constants";
 import type { AgentEvent } from "./events";
+import { windowOfRateLimitType, type LimitWindow } from "./limitWindows";
 import type { EpochMillis, EpochSeconds } from "./types";
 
 export type TurnOutcome =
@@ -25,6 +26,7 @@ export interface LimitSnapshot {
   readonly resetsAt: EpochSeconds | null;
   readonly rateLimitType: string | null;
   readonly utilization: number | null;
+  readonly windows: readonly LimitWindow[];
 }
 
 export interface RateLimitDetector {
@@ -68,18 +70,35 @@ function numberOrNull(raw: unknown): number | null {
   return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
 }
 
+function windowsOf(
+  event: Extract<AgentEvent, { type: "rate_limit" }>,
+  snapshot: Omit<LimitSnapshot, "windows">,
+): readonly LimitWindow[] {
+  if (event.windows !== undefined) {
+    return event.windows;
+  }
+  const single = windowOfRateLimitType({
+    rateLimitType: snapshot.rateLimitType,
+    utilization: snapshot.utilization,
+    resetsAt: snapshot.resetsAt,
+    exhausted: event.status === RATE_LIMIT_STATUS_REJECTED,
+  });
+  return single === null ? [] : [single];
+}
+
 function toSnapshot(
   event: Extract<AgentEvent, { type: "rate_limit" }>,
 ): LimitSnapshot {
-  return {
+  const snapshot = {
     status: event.status,
     resetsAt: normalizeResetsAt(event.resetsAt),
     rateLimitType: stringOrNull(event.rateLimitType),
     utilization: numberOrNull(event.utilization),
   };
+  return { ...snapshot, windows: windowsOf(event, snapshot) };
 }
 
-function isNeedsLogin(error: TurnError | null): boolean {
+export function isNeedsLogin(error: TurnError | null): boolean {
   if (error === null) {
     return false;
   }
