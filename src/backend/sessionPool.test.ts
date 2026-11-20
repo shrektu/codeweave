@@ -241,6 +241,9 @@ it("account_stays_in_use_while_a_second_instance_still_launches_on_it", async ()
     return gate?.promise ?? Promise.resolve(undefined);
   });
   const mainStart = pool.main.start({ cwd });
+  await vi.waitFor(() => {
+    expect(launched).toBe(1);
+  });
   const nodeStart = pool.forRun("run-1").start({ cwd });
   await vi.waitFor(() => {
     expect(launched).toBe(2);

@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 import {
   startFlowToolServer,
@@ -35,6 +35,9 @@ import {
   type ToolEndpoint,
 } from "../fakes/orchestratorHarness";
 import { settled } from "../fakes/settle";
+import { PROCESS_TEST_TIMEOUT_MS } from "../fakes/processHelpers";
+
+vi.setConfig({ testTimeout: PROCESS_TEST_TIMEOUT_MS });
 
 const END_TURN: ScriptStep = { type: "end", stopReason: "end_turn" };
 const RATE_LIMIT_FAILURE: ScriptStep = {

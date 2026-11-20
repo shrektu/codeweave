@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import {
   ACCOUNT_A,
@@ -23,6 +23,9 @@ import {
   type FlowRepo,
   type ToolClient,
 } from "../fakes/orchestratorHarness";
+import { PROCESS_TEST_TIMEOUT_MS } from "../fakes/processHelpers";
+
+vi.setConfig({ testTimeout: PROCESS_TEST_TIMEOUT_MS });
 
 const END_TURN: ScriptStep = { type: "end", stopReason: "end_turn" };
 const NOTE = "The diff matches the task";

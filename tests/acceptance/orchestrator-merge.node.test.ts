@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { FlowRunViewSchema, type FlowRunView } from "../../src/shared/views";
 import {
@@ -30,6 +30,9 @@ import {
   type ToolClient,
 } from "../fakes/orchestratorHarness";
 import { settled } from "../fakes/settle";
+import { PROCESS_TEST_TIMEOUT_MS } from "../fakes/processHelpers";
+
+vi.setConfig({ testTimeout: PROCESS_TEST_TIMEOUT_MS });
 
 const END_TURN: ScriptStep = { type: "end", stopReason: "end_turn" };
 const COMMIT_SUBJECT = "Apply solo flow changes";

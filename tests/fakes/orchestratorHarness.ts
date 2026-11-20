@@ -120,6 +120,8 @@ export async function writeFlowFiles(dir: string): Promise<void> {
 }
 
 export const IGNORE_FLOW_FILES = "flows/\nagents/\n";
+const REMOVE_RETRIES = 10;
+const REMOVE_RETRY_DELAY_MS = 200;
 
 export async function createFlowRepo(
   options: { readonly ignoreFlowFiles?: boolean } = {},
@@ -142,7 +144,12 @@ export async function createFlowRepo(
 }
 
 export function removeFlowRepo(flowRepo: FlowRepo): Promise<void> {
-  return rm(flowRepo.root, { recursive: true, force: true });
+  return rm(flowRepo.root, {
+    recursive: true,
+    force: true,
+    maxRetries: REMOVE_RETRIES,
+    retryDelay: REMOVE_RETRY_DELAY_MS,
+  });
 }
 
 export function toolEndpointOf(agent: FakeAcpAgent, index = 0): ToolEndpoint {
