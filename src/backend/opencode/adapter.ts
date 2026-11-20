@@ -5,6 +5,7 @@ import type { Account, EpochMillis } from "../../domain/types";
 import {
   AgentStartFailure,
   type AgentAdapter,
+  type AgentToolAccess,
   type AgentHandle,
   type AgentStartResult,
   type AgentStartSpec,
@@ -145,6 +146,7 @@ async function spawnRun(
   const files = await createRunFiles({
     credentials: secrets.credentials,
     runtimeRoot: deps.runtimeRoot,
+    tools: spec.tools,
     buildConfig: GENERATION_DRIVERS[generation].buildConfig,
   });
   try {
@@ -246,13 +248,16 @@ async function connectRun(
   }
 }
 
-function secretsOf(
+export function secretsOf(
   credentials: OpencodeCredentials,
   password: string,
+  tools: AgentToolAccess | undefined,
 ): string[] {
-  return credentials.auth === ApiAuth.apiKey
-    ? [credentials.apiKey, password]
-    : [password];
+  const base =
+    credentials.auth === ApiAuth.apiKey
+      ? [credentials.apiKey, password]
+      : [password];
+  return tools === undefined ? base : [...base, tools.token];
 }
 
 async function consoleLoginRefusal(
@@ -290,7 +295,7 @@ async function startWithCredentials(
   const secrets: RunSecrets = {
     credentials,
     password,
-    redact: createRedactor(secretsOf(credentials, password)),
+    redact: createRedactor(secretsOf(credentials, password, startSpec.tools)),
   };
   let run: LaunchedRun;
   try {
@@ -301,6 +306,7 @@ async function startWithCredentials(
     const generation = await deps.generationFor(deps.executableFor(startSpec), {
       env: { ...deps.envFor(startSpec), ...dirs },
       cwd: startSpec.cwd,
+      requireMcpTools: startSpec.tools !== undefined,
     });
     if (credentials.auth === ApiAuth.consoleLogin) {
       const refusal = await consoleLoginRefusal(deps, startSpec, generation);

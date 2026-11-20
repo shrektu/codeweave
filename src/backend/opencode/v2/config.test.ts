@@ -113,6 +113,37 @@ describe("buildV2SessionConfig", () => {
     expect(JSON.stringify(config)).not.toContain("{file:");
   });
 
+  it("tools_add_a_remote_mcp_server_keyed_by_the_server_name", () => {
+    const config = buildV2SessionConfig({
+      credentials: CONSOLE,
+      keyFilePath: null,
+      tools: {
+        server: "my server.v2",
+        url: "http://127.0.0.1:1/mcp",
+        token: "tok-1",
+        toolNames: ["ping"],
+      },
+    });
+
+    expect(config.mcp).toEqual({
+      servers: {
+        "my server.v2": {
+          type: "remote",
+          url: "http://127.0.0.1:1/mcp",
+          headers: { Authorization: "Bearer tok-1" },
+          codemode: false,
+        },
+      },
+    });
+    expect(config.permissions).toEqual(ASKED);
+  });
+
+  it("without_tools_the_config_has_no_mcp_key", () => {
+    expect(
+      buildV2SessionConfig({ credentials: CONSOLE, keyFilePath: null }),
+    ).not.toHaveProperty("mcp");
+  });
+
   it("config_carries_the_key_only_as_a_file_reference", () => {
     const serialized = JSON.stringify(
       buildV2SessionConfig({ credentials: CUSTOM, keyFilePath: KEY_FILE }),

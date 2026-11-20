@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { expect } from "vitest";
 
 import type {
+  AgentToolAccess,
   AgentHandle,
   AgentStartResult,
   AgentStartSpec,
@@ -99,6 +100,7 @@ export interface OpencodeStartup {
   readonly config: unknown;
   readonly keyFileContent: string | null;
   readonly keyFileMode: number | null;
+  readonly configFileMode: number;
   readonly runDirMode: number;
   readonly runDirEntries: readonly string[];
 }
@@ -116,6 +118,7 @@ export async function readRunStartup(
     config,
     keyFileContent: keyed ? await readFile(keyPath, "utf8") : null,
     keyFileMode: keyed ? (await stat(keyPath)).mode & PERMISSION_MASK : null,
+    configFileMode: (await stat(configPath)).mode & PERMISSION_MASK,
     runDirMode: (await stat(runDir)).mode & PERMISSION_MASK,
     runDirEntries: await readdir(runDir),
   };
@@ -236,7 +239,11 @@ export interface OpencodeRigOf<Container> {
   readonly cwd: string;
   readonly accountDir: string;
   readonly runtimeRoot: string;
-  start(profile?: PermissionProfile, runId?: string): Promise<AgentStartResult>;
+  start(
+    profile?: PermissionProfile,
+    runId?: string,
+    tools?: AgentToolAccess,
+  ): Promise<AgentStartResult>;
 }
 
 const rigRoots: string[] = [];
@@ -259,6 +266,7 @@ function specFor(
   cwd: string,
   profile: PermissionProfile,
   runId: string,
+  tools: AgentToolAccess | undefined,
 ): AgentStartSpec {
   return {
     account,
@@ -266,6 +274,7 @@ function specFor(
     profile,
     runId,
     executable: OPENCODE_RIG_EXECUTABLE,
+    ...(tools === undefined ? {} : { tools }),
   };
 }
 
@@ -321,8 +330,8 @@ export async function createRigOn<Container extends RigContainer>(
     cwd,
     accountDir,
     runtimeRoot,
-    start: (profile = PermissionProfile.ask, runId = "run-1") =>
-      adapter.start(specFor(account, cwd, profile, runId)),
+    start: (profile = PermissionProfile.ask, runId = "run-1", tools) =>
+      adapter.start(specFor(account, cwd, profile, runId, tools)),
   };
 }
 

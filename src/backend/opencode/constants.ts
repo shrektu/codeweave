@@ -163,6 +163,17 @@ export const HTTP_TOO_MANY_REQUESTS = 429;
 export const HTTP_UNAUTHORIZED = 401;
 export const HTTP_FORBIDDEN = 403;
 
+export const MCP_SERVER_TYPE_REMOTE = "remote";
+export const AUTHORIZATION_HEADER = "Authorization";
+export const BEARER_PREFIX = "Bearer ";
+export const MCP_TOOLS_MINIMUM_VERSION = {
+  major: 2,
+  minor: 3,
+  patch: 2,
+} as const;
+export const MCP_TOOLS_VERSION_MESSAGE =
+  "Orchestrate needs OpenCode 2.3.2 or newer";
+
 export const OpencodeGeneration = { v1: "v1", v2: "v2" } as const;
 export type OpencodeGeneration =
   (typeof OpencodeGeneration)[keyof typeof OpencodeGeneration];

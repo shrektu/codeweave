@@ -77,6 +77,35 @@ describe("buildSessionConfig", () => {
     });
   });
 
+  it("tools_add_an_enabled_remote_mcp_server_keyed_by_the_server_name", () => {
+    const config = buildSessionConfig({
+      credentials: BUILT_IN,
+      keyFilePath: "/run/key",
+      tools: {
+        server: "my server.v2",
+        url: "http://127.0.0.1:1/mcp",
+        token: "tok-1",
+        toolNames: ["ping"],
+      },
+    });
+
+    expect(config.mcp).toEqual({
+      "my server.v2": {
+        type: "remote",
+        url: "http://127.0.0.1:1/mcp",
+        headers: { Authorization: "Bearer tok-1" },
+        enabled: true,
+      },
+    });
+    expect(config.permission).toEqual(ASK_ALL);
+  });
+
+  it("without_tools_the_config_has_no_mcp_key", () => {
+    expect(
+      buildSessionConfig({ credentials: BUILT_IN, keyFilePath: "/run/key" }),
+    ).not.toHaveProperty("mcp");
+  });
+
   it("custom_endpoint_declares_an_openai_compatible_provider", () => {
     expect(
       buildSessionConfig({ credentials: CUSTOM, keyFilePath: "/run/key" }),
