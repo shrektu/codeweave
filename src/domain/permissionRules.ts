@@ -29,6 +29,31 @@ export const RISKY_ENV_NAMES: readonly string[] = [
   "RUBYOPT",
   "PYTHONSTARTUP",
 ];
+export const ENV_SETTING_BUILTINS: readonly string[] = [
+  "export",
+  "declare",
+  "typeset",
+  "local",
+  "readonly",
+  "read",
+  "let",
+  "mapfile",
+  "readarray",
+];
+export const PRINTF_COMMAND = "printf";
+export const PRINTF_VARIABLE_FLAG = "-v";
+export const DECLARATION_BUILTINS: readonly string[] = [
+  "declare",
+  "typeset",
+  "local",
+];
+export const DECLARATION_ATTRIBUTE_PATTERN = /^[-+][A-Za-z]*[in]/;
+export const SUBSCRIPT_OPEN = "[";
+export const CONFIG_HOME_ENV_NAMES: readonly string[] = [
+  "HOME",
+  "XDG_CONFIG_HOME",
+];
+export const ENV_IDENTIFIER_PATTERN = /[A-Za-z_][A-Za-z0-9_]*/g;
 export const REDIRECT_OPERATORS: readonly string[] = [
   ">",
   ">>",
@@ -437,3 +462,52 @@ export const REASON_RM_OUTSIDE =
 export const REASON_GIT_PUSH = "forced or protected-branch push is blocked";
 export const REASON_PIPE_TO_SHELL = "piping a download into a shell is blocked";
 export const REASON_MIGRATION = "database migrations are blocked";
+
+export function isRiskyEnvName(name: string): boolean {
+  return RISKY_ENV_NAME_PATTERN.test(name) || RISKY_ENV_NAMES.includes(name);
+}
+
+function isGitSensitiveEnvName(name: string): boolean {
+  return isRiskyEnvName(name) || CONFIG_HOME_ENV_NAMES.includes(name);
+}
+
+function isGitSensitiveEnvWord(word: string): boolean {
+  const identifiers = word.match(ENV_IDENTIFIER_PATTERN) ?? [];
+  return identifiers.some(isGitSensitiveEnvName);
+}
+
+function commandWords(words: readonly string[]): readonly string[] {
+  const start = words.findIndex((word) => !NON_COMMAND_WORDS.includes(word));
+  return start === -1 ? [] : words.slice(start);
+}
+
+function assignsPrintfVariable(args: readonly string[]): boolean {
+  const flag = args.indexOf(PRINTF_VARIABLE_FLAG);
+  const target = flag === -1 ? undefined : args[flag + 1];
+  return target !== undefined && isGitSensitiveEnvWord(target);
+}
+
+export function setsGitSensitiveEnv(words: readonly string[]): boolean {
+  const [first, ...args] = commandWords(words);
+  return (
+    first !== undefined &&
+    ((ENV_SETTING_BUILTINS.includes(first) &&
+      args.some(isGitSensitiveEnvWord)) ||
+      (first === PRINTF_COMMAND && assignsPrintfVariable(args)) ||
+      (DECLARATION_BUILTINS.includes(first) &&
+        args.some((word) => DECLARATION_ATTRIBUTE_PATTERN.test(word))))
+  );
+}
+
+export function hasGitSensitiveSubscript(words: readonly string[]): boolean {
+  return words.some((word) => {
+    const open = word.indexOf(SUBSCRIPT_OPEN);
+    return open !== -1 && isGitSensitiveEnvWord(word.slice(open));
+  });
+}
+
+export function hasGitSensitivePrefix(words: readonly string[]): boolean {
+  const rest = commandWords(words);
+  const end = rest.findIndex((word) => !ENV_ASSIGNMENT_PATTERN.test(word));
+  return (end === -1 ? rest : rest.slice(0, end)).some(isGitSensitiveEnvWord);
+}

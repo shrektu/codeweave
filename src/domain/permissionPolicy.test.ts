@@ -1340,3 +1340,118 @@ describe("redirect target and env prefix regressions", () => {
     expect(run("HOME=/tmp/x python3 -c 'print(1)'")).toEqual(ALLOW);
   });
 });
+
+describe("env set by builtins in earlier segments", () => {
+  it("export_of_several_names_with_risky_later_asks", () => {
+    expect(run("export CI=1 HOME=/tmp/x; git status")).toEqual(ASK);
+  });
+
+  it("declaration_flags_and_forms_still_mark_env", () => {
+    for (const command of [
+      "declare -gx HOME=/x; git status",
+      "typeset -x GIT_DIR=x; git status",
+      "export -- HOME=/x; git status",
+      "readonly HOME; git status",
+      "export HOME+=/x; git status",
+      "local XDG_CONFIG_HOME=/x; git status",
+      "export LD_PRELOAD=/x.so; find . -name a",
+    ]) {
+      expect(run(command), command).toEqual(ASK);
+    }
+  });
+
+  it("builtin_behind_non_command_word_marks_env", () => {
+    expect(run("! export HOME=/x; git status")).toEqual(ASK);
+  });
+
+  it("env_set_inside_nested_shell_asks_for_its_git", () => {
+    for (const command of [
+      "sh -c 'export HOME=/x; git status'",
+      "read HOME < f; git status",
+    ]) {
+      expect(run(command), command).toEqual(ASK);
+    }
+  });
+
+  it("harmless_or_later_exports_keep_allow", () => {
+    for (const command of [
+      "export CI=1; git status",
+      "export FOO=1 && npm test",
+      "export HOME=/x; python3 -c 'print(1)'",
+      "git status; export HOME=/x",
+      "export GIT_DIR=x; ls",
+      "HOME=/tmp/x python3 -c 'print(1)'",
+      "export NODE_ENV=production; git status",
+      "test -f a; git status",
+      "declare -x FOO=1; git status",
+      "printf 'PATH updated\\n'; git status",
+      "printf -v msg '%s' hi; git status",
+    ]) {
+      expect(run(command), command).toEqual(ALLOW);
+    }
+  });
+
+  it("prefix_on_special_builtin_persists_env", () => {
+    for (const command of [
+      "sh -c 'HOME=/tmp/x :; git push origin feat'",
+      "HOME=/tmp/x export CI=1; git push origin feat",
+    ]) {
+      expect(run(command), command).toEqual(ASK);
+    }
+  });
+
+  it("let_assigning_home_marks_env", () => {
+    expect(run("let HOME=1; git push origin feat")).toEqual(ASK);
+  });
+
+  it("nameref_to_home_marks_env", () => {
+    expect(
+      run("declare -n r=HOME; export r=/tmp/x; git push origin feat"),
+    ).toEqual(ASK);
+  });
+
+  it("array_subscript_assigning_home_marks_env", () => {
+    expect(run("read 'a[HOME=1]' < f; git status")).toEqual(ASK);
+  });
+
+  it("let_argument_starting_with_sign_marks_env", () => {
+    for (const command of [
+      "let '-(HOME=5)'; git push origin feat",
+      "let -- '-(HOME=5)'; git push origin feat",
+    ]) {
+      expect(run(command), command).toEqual(ASK);
+    }
+  });
+
+  it("subscript_arithmetic_in_any_command_marks_env", () => {
+    for (const command of [
+      "unset 'a[HOME=5]'; git push origin feat",
+      "test -v 'a[HOME=6]'; git push origin feat",
+    ]) {
+      expect(run(command), command).toEqual(ASK);
+    }
+  });
+
+  it("integer_or_nameref_declaration_marks_env", () => {
+    for (const command of [
+      "declare -i n; read n < f; git push origin feat",
+      "declare -n r; read r < f; export r=/tmp/x; git push origin feat",
+    ]) {
+      expect(run(command), command).toEqual(ASK);
+    }
+  });
+
+  it("printf_v_and_mapfile_assigning_env_mark_env", () => {
+    for (const command of [
+      "printf -v HOME /tmp/x; git push origin feat",
+      "mapfile -t PATH < f; git push origin feat",
+      "readarray -t GIT_DIR < f; git status",
+    ]) {
+      expect(run(command), command).toEqual(ASK);
+    }
+  });
+
+  it("allexport_then_plain_assignment_asks", () => {
+    expect(run("set -a; HOME=/x; git status")).toEqual(ASK);
+  });
+});

@@ -52,8 +52,6 @@ import {
   READ_ONLY_COMMANDS,
   READ_ONLY_FORBIDDEN_FLAGS,
   REFS_PREFIX_PATTERN,
-  RISKY_ENV_NAME_PATTERN,
-  RISKY_ENV_NAMES,
   REASON_GIT_PUSH,
   REASON_MIGRATION,
   REASON_PIPE_TO_SHELL,
@@ -66,6 +64,10 @@ import {
   RUNTIME_WORD_PATTERN,
   SEGMENT_OPERATORS,
   SHELL_COMMANDS,
+  hasGitSensitivePrefix,
+  hasGitSensitiveSubscript,
+  isRiskyEnvName,
+  setsGitSensitiveEnv,
   TRUSTED_BIN_DIRS,
   UNPARSEABLE_SUBSTRINGS,
   UNREPORTED_GLOB_START_PATTERN,
@@ -107,6 +109,7 @@ interface Segment {
 
 interface ScopedContext extends PermissionContext {
   readonly cwdUnresolved: boolean;
+  readonly envOverridden: boolean;
 }
 
 interface OptionStep {
@@ -336,11 +339,7 @@ function isTrustedExecutable(word: string): boolean {
 
 function isRelaxedAssignment(word: string, atStart: boolean): boolean {
   const name = word.slice(0, word.indexOf(LONG_VALUE_SEPARATOR));
-  return (
-    atStart &&
-    !RISKY_ENV_NAME_PATTERN.test(name) &&
-    !RISKY_ENV_NAMES.includes(name)
-  );
+  return atStart && !isRiskyEnvName(name);
 }
 
 function unwrap(words: readonly string[]): Unwrapped {
@@ -804,7 +803,9 @@ function decideSegmentWords(
     decideCommand(first, args, profile, ctx),
     needsConfirmation ? ASK : ALLOW,
     unwrapped.writes ? mostRestrictive([ASK, decideWrite(profile)]) : ALLOW,
-    unwrapped.assigns ? decideAssigns(first, profile) : ALLOW,
+    unwrapped.assigns || ctx.envOverridden
+      ? decideAssigns(first, profile)
+      : ALLOW,
   ]);
 }
 
@@ -915,15 +916,22 @@ function decideExecute(
   }
   const decisions: PermissionDecision[] = [];
   let cwdUnresolved = ctx.cwdUnresolved;
+  let envOverridden = ctx.envOverridden;
   for (const [index, segment] of segments.entries()) {
     decisions.push(
       decideSegment(segment, pipeUpstream(segments, index), profile, {
         ...ctx,
         cwdUnresolved,
+        envOverridden,
       }),
     );
-    cwdUnresolved =
-      cwdUnresolved || isDirectoryChange(unwrap(segment.words).words);
+    const { words } = unwrap(segment.words);
+    cwdUnresolved = cwdUnresolved || isDirectoryChange(words);
+    envOverridden =
+      envOverridden ||
+      hasGitSensitivePrefix(segment.words) ||
+      hasGitSensitiveSubscript(segment.words) ||
+      setsGitSensitiveEnv(words);
   }
   return mostRestrictive(decisions);
 }
@@ -972,6 +980,7 @@ export function decidePermission(
         decideExecute(query.command, profile, {
           ...ctx,
           cwdUnresolved: false,
+          envOverridden: false,
         }),
         profile,
       );

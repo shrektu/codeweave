@@ -854,3 +854,124 @@ describe("redirect target and env prefix regressions", () => {
     ).toBe("allow");
   });
 });
+
+describe("env set by builtins in earlier segments", () => {
+  it("builtin_export_of_git_sensitive_env_before_git_asks", () => {
+    for (const command of [
+      "export GIT_CONFIG_PARAMETERS=x; git push origin feat",
+      "export HOME=/tmp/x; git push origin feat",
+      "export HOME=/tmp/x && sh -c 'git status'",
+      "declare -x HOME=/tmp/x; git status",
+    ]) {
+      for (const profile of NON_BYPASS_PROFILES) {
+        expect(actionOf(command, profile), `${command} (${profile})`).toBe(
+          profile === PermissionProfile.plan ? "deny" : "ask",
+        );
+      }
+    }
+  });
+
+  it("prefix_on_special_builtin_persists_env", () => {
+    for (const command of [
+      "sh -c 'HOME=/tmp/x :; git push origin feat'",
+      "HOME=/tmp/x export CI=1; git push origin feat",
+    ]) {
+      for (const profile of NON_BYPASS_PROFILES) {
+        expect(actionOf(command, profile), `${command} (${profile})`).toBe(
+          profile === PermissionProfile.plan ? "deny" : "ask",
+        );
+      }
+    }
+  });
+
+  it("let_assigning_home_marks_env", () => {
+    for (const profile of NON_BYPASS_PROFILES) {
+      expect(
+        actionOf("let HOME=1; git push origin feat", profile),
+        profile,
+      ).toBe(profile === PermissionProfile.plan ? "deny" : "ask");
+    }
+  });
+
+  it("nameref_to_home_marks_env", () => {
+    const command = "declare -n r=HOME; export r=/tmp/x; git push origin feat";
+    for (const profile of NON_BYPASS_PROFILES) {
+      expect(actionOf(command, profile), profile).toBe(
+        profile === PermissionProfile.plan ? "deny" : "ask",
+      );
+    }
+  });
+
+  it("let_argument_starting_with_sign_marks_env", () => {
+    for (const command of [
+      "let '-(HOME=5)'; git push origin feat",
+      "let -- '-(HOME=5)'; git push origin feat",
+    ]) {
+      for (const profile of NON_BYPASS_PROFILES) {
+        expect(actionOf(command, profile), `${command} (${profile})`).toBe(
+          profile === PermissionProfile.plan ? "deny" : "ask",
+        );
+      }
+    }
+  });
+
+  it("subscript_arithmetic_in_any_command_marks_env", () => {
+    for (const command of [
+      "unset 'a[HOME=5]'; git push origin feat",
+      "test -v 'a[HOME=6]'; git push origin feat",
+    ]) {
+      for (const profile of NON_BYPASS_PROFILES) {
+        expect(actionOf(command, profile), `${command} (${profile})`).toBe(
+          profile === PermissionProfile.plan ? "deny" : "ask",
+        );
+      }
+    }
+  });
+
+  it("integer_or_nameref_declaration_marks_env", () => {
+    for (const command of [
+      "declare -i n; read n < f; git push origin feat",
+      "declare -n r; read r < f; export r=/tmp/x; git push origin feat",
+    ]) {
+      for (const profile of NON_BYPASS_PROFILES) {
+        expect(actionOf(command, profile), `${command} (${profile})`).toBe(
+          profile === PermissionProfile.plan ? "deny" : "ask",
+        );
+      }
+    }
+  });
+
+  it("printf_v_and_mapfile_assigning_env_mark_env", () => {
+    for (const command of [
+      "printf -v HOME /tmp/x; git push origin feat",
+      "mapfile -t PATH < f; git push origin feat",
+      "readarray -t GIT_DIR < f; git status",
+    ]) {
+      for (const profile of NON_BYPASS_PROFILES) {
+        expect(actionOf(command, profile), `${command} (${profile})`).toBe(
+          profile === PermissionProfile.plan ? "deny" : "ask",
+        );
+      }
+    }
+  });
+
+  it("harmless_builtin_exports_keep_unattended_allow", () => {
+    for (const command of [
+      "printf 'PATH updated\\n'; git status",
+      "printf -v msg '%s' hi; git status",
+      "test -f a; git status",
+      "declare -x FOO=1; git status",
+      "export CI=1; git status",
+      "HOME=/tmp/x python3 -c 'print(1)'",
+      "export NODE_ENV=production; git status",
+      "export CI=1; git status",
+      "export FOO=1 && npm test",
+      "export HOME=/tmp/x; python3 -c 'print(1)'",
+      "git status; export HOME=/tmp/x",
+    ]) {
+      expect(actionOf(command, PermissionProfile.unattended), command).toBe(
+        "allow",
+      );
+    }
+  });
+});
