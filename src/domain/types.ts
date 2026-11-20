@@ -31,6 +31,31 @@ export const UpdateChannel = {
 } as const;
 export type UpdateChannel = (typeof UpdateChannel)[keyof typeof UpdateChannel];
 
+export const FlowPlacement = {
+  inPlace: "in_place",
+  worktree: "worktree",
+} as const;
+export type FlowPlacement = (typeof FlowPlacement)[keyof typeof FlowPlacement];
+
+export const FlowRunOrigin = {
+  user: "user",
+  orchestrator: "orchestrator",
+} as const;
+export type FlowRunOrigin = (typeof FlowRunOrigin)[keyof typeof FlowRunOrigin];
+
+export const MergeStatus = {
+  merged: "merged",
+  conflict: "conflict",
+} as const;
+export type MergeStatus = (typeof MergeStatus)[keyof typeof MergeStatus];
+
+export type MergeOutcome =
+  | { readonly status: typeof MergeStatus.merged; readonly commit: string }
+  | {
+      readonly status: typeof MergeStatus.conflict;
+      readonly files: readonly string[];
+    };
+
 export const TerminalStatus = {
   running: "running",
   exited: "exited",
