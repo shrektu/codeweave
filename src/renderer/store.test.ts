@@ -349,3 +349,88 @@ it("store_stop_unsubscribes_from_events", async () => {
 
   expect(store.getState().snapshot?.settings.claudeExecutable).toBeNull();
 });
+
+async function readyStoreWithSession(sessionId: string): Promise<{
+  readonly client: ReturnType<typeof createFakeIpcClient>;
+  readonly store: ReturnType<typeof createAppStore>;
+}> {
+  const client = createFakeIpcClient();
+  client.respond(
+    "sessions/snapshot",
+    makeSnapshot({
+      session: makeSession({ id: sessionId, orchestrate: true }),
+    }),
+  );
+  const store = createAppStore(client);
+  store.start();
+  await vi.waitFor(() => {
+    expect(store.getState().connection).toBe("ready");
+  });
+  return { client, store };
+}
+
+it("clears_the_focused_run_when_the_orchestrator_session_stops", async () => {
+  const { client, store } = await readyStoreWithSession("sess-1");
+  store.focusRun("run-1");
+
+  client.emit({
+    v: EVENT_VERSION,
+    event: "session/changed",
+    payload: makeSession({
+      id: "sess-1",
+      orchestrate: true,
+      phase: { phase: "stopped" },
+    }),
+  });
+
+  expect(store.getState().focusedRunId).toBeNull();
+});
+
+it("store_focuses_a_run_and_clears_the_focus_on_request", async () => {
+  const { store } = await readyStoreWithSession("sess-1");
+
+  expect(store.getState().focusedRunId).toBeNull();
+  store.focusRun("run-1");
+  expect(store.getState().focusedRunId).toBe("run-1");
+  store.focusRun(null);
+  expect(store.getState().focusedRunId).toBeNull();
+});
+
+it("store_keeps_the_focused_run_while_the_same_session_changes", async () => {
+  const { client, store } = await readyStoreWithSession("sess-1");
+  store.focusRun("run-1");
+
+  client.emit({
+    v: EVENT_VERSION,
+    event: "session/changed",
+    payload: makeSession({
+      id: "sess-1",
+      orchestrate: true,
+      turnInFlight: true,
+    }),
+  });
+
+  expect(store.getState().focusedRunId).toBe("run-1");
+});
+
+it("store_clears_the_focused_run_when_the_main_session_changes", async () => {
+  const { client, store } = await readyStoreWithSession("sess-1");
+  store.focusRun("run-1");
+
+  client.emit({
+    v: EVENT_VERSION,
+    event: "session/changed",
+    payload: makeSession({ id: "sess-2" }),
+  });
+
+  expect(store.getState().focusedRunId).toBeNull();
+});
+
+it("store_clears_the_focused_run_when_the_main_session_ends", async () => {
+  const { client, store } = await readyStoreWithSession("sess-1");
+  store.focusRun("run-1");
+
+  client.emit({ v: EVENT_VERSION, event: "session/changed", payload: null });
+
+  expect(store.getState().focusedRunId).toBeNull();
+});

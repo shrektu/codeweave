@@ -52,7 +52,8 @@ export function Sidebar({ onManageAccounts }: SidebarProps): JSX.Element {
   const now = useNow(MS_PER_MINUTE);
   const accounts = state.snapshot?.accounts ?? [];
   const activeAccountId =
-    shownSessionOf(state.snapshot).session?.activeAccountId ?? null;
+    shownSessionOf(state.snapshot, state.focusedRunId).session
+      ?.activeAccountId ?? null;
 
   return (
     <section className="glass panel" aria-label="Accounts">

@@ -1,7 +1,12 @@
 import { expect, it, vi } from "vitest";
 
 import type { TaskClass } from "../domain/taskClass";
-import { FlowRunOrigin, PermissionProfile, ProviderId } from "../domain/types";
+import {
+  EdgeKind,
+  FlowRunOrigin,
+  PermissionProfile,
+  ProviderId,
+} from "../domain/types";
 import { IpcError, IpcErrorCode } from "../shared/protocol";
 import type { FlowRunView, FlowsList, SessionView } from "../shared/views";
 import { fakeSessions } from "../../tests/fakes/fakeSessions";
@@ -63,6 +68,35 @@ const RUNNING_VIEW: SessionView = {
   turns: [],
   orchestrate: false,
 };
+const FINISHED_VIEW: SessionView = {
+  ...RUNNING_VIEW,
+  turnInFlight: false,
+  lastTurn: { kind: "ended", stopReason: "end_turn" },
+};
+const GATED_FLOWS: FlowsList = {
+  ...FLOWS,
+  flows: [
+    {
+      id: "gated",
+      file: "flows/gated.md",
+      revision: "r3",
+      title: "Gated",
+      maxRounds: 2,
+      nodes: [
+        { id: "build", agent: "coder", provider: null, taskClass: null },
+        { id: "review", agent: "coder", provider: null, taskClass: null },
+      ],
+      edges: [
+        {
+          from: "build",
+          to: "review",
+          kind: EdgeKind.handsOffTo,
+          gate: true,
+        },
+      ],
+    },
+  ],
+};
 const STOPPED_VIEW: SessionView = {
   ...RUNNING_VIEW,
   phase: { phase: "stopped" },
@@ -88,11 +122,21 @@ interface RunSession {
   readonly holdStops: () => PromiseWithResolvers<undefined>;
 }
 
-function runSession(startResult: () => Promise<SessionView>): RunSession {
+function runSession(
+  startResult: () => Promise<SessionView>,
+  finishTurns: boolean,
+): RunSession {
   const listeners = new Set<(view: SessionView | null) => void>();
   let gate: Promise<undefined> = Promise.resolve(undefined);
   const start = vi.fn<SessionService["start"]>(startResult);
-  const prompt = vi.fn<SessionService["prompt"]>(() => Promise.resolve());
+  const prompt = vi.fn<SessionService["prompt"]>(() => {
+    if (finishTurns) {
+      listeners.forEach((listener) => {
+        listener(FINISHED_VIEW);
+      });
+    }
+    return Promise.resolve();
+  });
   const answerPermission = vi.fn<SessionService["answerPermission"]>();
   const stop = vi.fn<SessionService["stop"]>(async () => {
     listeners.forEach((listener) => {
@@ -105,7 +149,8 @@ function runSession(startResult: () => Promise<SessionView>): RunSession {
     prompt,
     stop,
     answerPermission,
-    view: () => RUNNING_VIEW,
+    view: () => (finishTurns ? FINISHED_VIEW : RUNNING_VIEW),
+    isSettled: () => finishTurns,
     onViewChanged: (listener) => {
       listeners.add(listener);
       return () => {
@@ -130,6 +175,7 @@ function runSession(startResult: () => Promise<SessionView>): RunSession {
 interface HarnessOptions {
   readonly startResult?: (runId: string) => Promise<SessionView>;
   readonly mainLive?: boolean;
+  readonly finishTurns?: boolean;
 }
 
 interface Harness {
@@ -154,7 +200,10 @@ function harness(options: HarnessOptions = {}): Harness {
     if (existing !== undefined) {
       return existing;
     }
-    const created = runSession(() => startResult(runId));
+    const created = runSession(
+      () => startResult(runId),
+      options.finishTurns ?? false,
+    );
     sessions.set(runId, created);
     return created;
   };
@@ -544,4 +593,94 @@ it("flow_runs_omit_task_class_when_node_and_agent_have_none", async () => {
   expect(sessionOf("run-1").start.mock.calls[0]?.[0]).not.toHaveProperty(
     "taskClass",
   );
+});
+
+async function pausedAtGate(): Promise<Harness> {
+  const rig = harness({ finishTurns: true });
+  rig.listing.resolve(GATED_FLOWS);
+  await rig.service.start({ ...START_PARAMS, flowId: "gated" });
+  await vi.waitFor(() => {
+    expect(rig.service.view("run-1")?.status).toBe("awaiting_decision");
+  });
+  return rig;
+}
+
+it("flow_runs_record_a_decision_with_its_note", async () => {
+  const { service } = await pausedAtGate();
+
+  const decided = await service.decide(
+    { runId: "run-1", decision: "approve" },
+    "The build node matches the task",
+  );
+
+  expect(decided.decisions).toEqual([
+    {
+      nodeId: "review",
+      reason: "gate",
+      decision: "approve",
+      note: "The build node matches the task",
+    },
+  ]);
+  await vi.waitFor(() => {
+    expect(service.view("run-1")?.status).toBe("done");
+  });
+  expect(service.view("run-1")?.decisions).toHaveLength(1);
+});
+
+it("flow_runs_record_a_null_note_when_none_is_given", async () => {
+  const { service } = await pausedAtGate();
+
+  const decided = await service.decide({ runId: "run-1", decision: "stop" });
+
+  expect(decided.decisions).toEqual([
+    { nodeId: "review", reason: "gate", decision: "stop", note: null },
+  ]);
+});
+
+it("flow_runs_record_nothing_when_the_decision_is_invalid", async () => {
+  const { service } = await pausedAtGate();
+
+  await expect(
+    service.decide(
+      { runId: "run-1", decision: "another_round" },
+      "Not allowed at a gate",
+    ),
+  ).rejects.toMatchObject({ code: IpcErrorCode.VALIDATION });
+
+  expect(service.view("run-1")?.decisions).toEqual([]);
+  expect(service.view("run-1")?.status).toBe("awaiting_decision");
+});
+
+it("flow_runs_read_definitions_from_definitions_cwd_but_run_in_cwd", async () => {
+  const { service, sessionOf, listingOf } = harness();
+  listingOf("/project").resolve(FLOWS);
+
+  const view = await service.start({
+    ...START_PARAMS,
+    cwd: "/work/worktree",
+    definitionsCwd: "/project",
+  });
+
+  expect(view.cwd).toBe("/work/worktree");
+  await vi.waitFor(() => {
+    expect(sessionOf("run-1").start).toHaveBeenCalledTimes(1);
+  });
+  expect(sessionOf("run-1").start.mock.calls[0]?.[0]).toMatchObject({
+    cwd: "/work/worktree",
+  });
+});
+
+it("flow_runs_carry_the_owner_session_id_and_default_to_null", async () => {
+  const { service, listingOf } = harness();
+  listingOf("/a").resolve(FLOWS);
+  listingOf("/b").resolve(FLOWS);
+
+  const owned = await service.start({
+    ...startIn("/a"),
+    ownerSessionId: "orchestrator-1",
+  });
+  const plain = await service.start(startIn("/b"));
+
+  expect(owned.ownerSessionId).toBe("orchestrator-1");
+  expect(plain.ownerSessionId).toBeNull();
 });

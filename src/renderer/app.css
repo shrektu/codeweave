@@ -642,6 +642,62 @@ html[data-fx="low"] .flow-graph .react-flow__edge.animated path {
   font: 12px var(--mono);
 }
 
+.tab-panel > .orchestrator-timeline {
+  flex: 0 0 auto;
+  max-height: 40%;
+  margin-bottom: 10px;
+}
+
+.timeline {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+
+.timeline-run {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.timeline-run p {
+  margin: 0;
+}
+
+.timeline-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.timeline-log {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.timeline-note {
+  color: var(--dim);
+}
+
+.focus-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
 .flow-editor {
   flex: 1 1 0;
   min-height: 0;

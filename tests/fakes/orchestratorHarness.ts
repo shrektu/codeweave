@@ -119,7 +119,11 @@ export async function writeFlowFiles(dir: string): Promise<void> {
   }
 }
 
-export async function createFlowRepo(): Promise<FlowRepo> {
+export const IGNORE_FLOW_FILES = "flows/\nagents/\n";
+
+export async function createFlowRepo(
+  options: { readonly ignoreFlowFiles?: boolean } = {},
+): Promise<FlowRepo> {
   const root = await realpath(await mkdtemp(join(tmpdir(), "cw-orch-")));
   const repo = join(root, "project");
   await mkdir(repo);
@@ -128,6 +132,9 @@ export async function createFlowRepo(): Promise<FlowRepo> {
   await git(repo, ["config", "user.email", "test@example.com"]);
   await git(repo, ["config", "commit.gpgsign", "false"]);
   await writeFile(join(repo, BASE_FILE), BASE_CONTENT);
+  if (options.ignoreFlowFiles === true) {
+    await writeFile(join(repo, ".gitignore"), IGNORE_FLOW_FILES);
+  }
   await writeFlowFiles(repo);
   await git(repo, ["add", "-A"]);
   await git(repo, ["commit", "--quiet", "-m", "Initial commit"]);
@@ -249,8 +256,12 @@ class GatedStartControl implements FlowControl {
     return this.inner.diff(runId);
   }
 
-  decide(runId: string, decision: FlowDecision): Promise<FlowRunView> {
-    return this.inner.decide(runId, decision);
+  decide(
+    runId: string,
+    decision: FlowDecision,
+    note?: string,
+  ): Promise<FlowRunView> {
+    return this.inner.decide(runId, decision, note);
   }
 
   stop(runId: string): Promise<void> {

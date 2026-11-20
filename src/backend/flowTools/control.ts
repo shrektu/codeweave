@@ -14,7 +14,11 @@ export interface FlowControl {
   status(runId: string): FlowRunView;
   nodeResult(runId: string, nodeId: string): string;
   diff(runId: string): Promise<string>;
-  decide(runId: string, decision: FlowDecision): Promise<FlowRunView>;
+  decide(
+    runId: string,
+    decision: FlowDecision,
+    note?: string,
+  ): Promise<FlowRunView>;
   stop(runId: string): Promise<void>;
   merge(runId: string): Promise<MergeOutcome>;
   finishMerge(runId: string): Promise<MergeOutcome>;

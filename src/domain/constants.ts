@@ -44,6 +44,7 @@ export const NO_MESSAGE_KEY = "";
 export const AGENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 export const MODEL_AUTO = "auto";
 export const FLOW_TOOL_PAGE_CHARS = 20_000;
+export const FLOW_DECISION_NOTE_CHARS = 1000;
 export const FLOW_TOOL_SERVER_VERSION = "1.0.0";
 export const FLOW_TOOL_PATH = "/mcp";
 export const FLOW_TOOL_MAX_BODY_BYTES = 1024 * 1024;

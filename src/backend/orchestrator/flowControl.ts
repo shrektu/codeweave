@@ -40,6 +40,7 @@ export interface OwnedRun {
 export interface Orchestration {
   readonly cwd: string;
   readonly runs: Map<string, OwnedRun>;
+  sessionId: string | null;
   ended: boolean;
 }
 
@@ -108,10 +109,14 @@ class OrchestratorFlowControl implements FlowControl {
       : this.deps.flowWorktrees.diff(worktree);
   }
 
-  async decide(runId: string, decision: FlowDecision): Promise<FlowRunView> {
+  async decide(
+    runId: string,
+    decision: FlowDecision,
+    note?: string,
+  ): Promise<FlowRunView> {
     this.assertActive();
     this.ownedRun(runId);
-    return this.deps.flowRuns.decide({ runId, decision });
+    return this.deps.flowRuns.decide({ runId, decision }, note);
   }
 
   async stop(runId: string): Promise<void> {
@@ -337,6 +342,8 @@ class OrchestratorFlowControl implements FlowControl {
       origin: FlowRunOrigin.orchestrator,
       placement: request.placement,
       branch,
+      definitionsCwd: this.cwd,
+      ownerSessionId: this.orchestration.sessionId,
     });
   }
 }

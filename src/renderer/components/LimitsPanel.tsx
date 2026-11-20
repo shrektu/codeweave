@@ -71,7 +71,7 @@ export function LimitsPanel(): JSX.Element {
   const { state } = useApp();
   const now = useNow(MS_PER_MINUTE);
   const accounts = state.snapshot?.accounts ?? [];
-  const { session } = shownSessionOf(state.snapshot);
+  const { session } = shownSessionOf(state.snapshot, state.focusedRunId);
   const sessionLimits = session?.limits ?? [];
   const limits = [
     ...sessionLimits,

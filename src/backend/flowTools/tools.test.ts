@@ -90,6 +90,65 @@ describe("flow tool paging", () => {
   });
 });
 
+describe("decide tool", () => {
+  it("forwards the note", async () => {
+    const control = new FakeFlowControl();
+    const client = await connect(control);
+
+    const outcome = await call(client, "decide", {
+      runId: "run-1",
+      decision: "approve",
+      note: "Diff matches the task",
+    });
+
+    expect(outcome.isError).toBe(false);
+    expect(control.calls).toEqual([
+      {
+        op: FlowControlOp.decide,
+        args: ["run-1", "approve", "Diff matches the task"],
+      },
+    ]);
+  });
+
+  it("forwards no note when none is given", async () => {
+    const control = new FakeFlowControl();
+    const client = await connect(control);
+
+    await call(client, "decide", { runId: "run-1", decision: "stop" });
+
+    expect(control.calls).toEqual([
+      { op: FlowControlOp.decide, args: ["run-1", "stop"] },
+    ]);
+  });
+
+  it("rejects a note over the limit", async () => {
+    const control = new FakeFlowControl();
+    const client = await connect(control);
+
+    const outcome = await call(client, "decide", {
+      runId: "run-1",
+      decision: "approve",
+      note: "x".repeat(1001),
+    });
+
+    expect(outcome.isError).toBe(true);
+    expect(control.calls).toEqual([]);
+  });
+
+  it("accepts a note of exactly the limit", async () => {
+    const control = new FakeFlowControl();
+    const client = await connect(control);
+
+    const outcome = await call(client, "decide", {
+      runId: "run-1",
+      decision: "approve",
+      note: "x".repeat(1000),
+    });
+
+    expect(outcome.isError).toBe(false);
+  });
+});
+
 describe("flow tool results and errors", () => {
   it("renders a run view as indented JSON", async () => {
     const client = await connect(new FakeFlowControl());

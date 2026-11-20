@@ -110,7 +110,11 @@ function RoutingControls({
 export function Composer(): JSX.Element {
   const { state } = useApp();
   return (
-    <SessionComposer key={shownSessionOf(state.snapshot).session?.id ?? null} />
+    <SessionComposer
+      key={
+        shownSessionOf(state.snapshot, state.focusedRunId).session?.id ?? null
+      }
+    />
   );
 }
 
@@ -120,7 +124,7 @@ function SessionComposer(): JSX.Element {
   const [classValue, setClassValue] = useState(AUTO_CLASS_VALUE);
   const [model, setModel] = useState("");
   const send = useAsyncAction();
-  const { session, runId } = shownSessionOf(state.snapshot);
+  const { session, runId } = shownSessionOf(state.snapshot, state.focusedRunId);
   const account = runningAccount(session, state.snapshot?.accounts ?? []);
   const suggestions = modelSuggestions(account);
   const enabled =

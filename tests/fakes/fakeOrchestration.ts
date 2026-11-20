@@ -84,6 +84,7 @@ export class FakeRuns implements FlowRunService {
       decision: null,
       placement: request.placement ?? FlowPlacement.inPlace,
       branch: request.branch ?? null,
+      ownerSessionId: request.ownerSessionId ?? null,
     };
     this.runViews.set(runId, view);
     this.open.add(runId);
@@ -102,11 +103,11 @@ export class FakeRuns implements FlowRunService {
     return Promise.resolve();
   }
 
-  decide(params: {
-    runId: string;
-    decision: FlowDecision;
-  }): Promise<FlowRunView> {
-    this.decided.push(params);
+  decide(
+    params: { runId: string; decision: FlowDecision },
+    note?: string,
+  ): Promise<FlowRunView> {
+    this.decided.push(note === undefined ? params : { ...params, note });
     return Promise.resolve(this.runViews.get(params.runId) ?? SAMPLE_RUN);
   }
 

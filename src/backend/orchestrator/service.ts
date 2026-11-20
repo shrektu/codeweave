@@ -171,12 +171,14 @@ class OrchestratorServiceImpl implements OrchestratorService {
     const orchestration: Orchestration = {
       cwd: params.cwd,
       runs: new Map(),
+      sessionId: null,
       ended: false,
     };
     const grant = tools.register(
       createOrchestratorFlowControl(this.deps, orchestration),
     );
     const view = await this.launch(tools, grant, params);
+    orchestration.sessionId = view.id;
     const previous = this.current;
     const next: ActiveOrchestration = new ActiveOrchestration(
       this.deps,

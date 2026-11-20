@@ -109,11 +109,12 @@ export function staticStore(state: AppState): AppStore {
     getState: () => state,
     subscribe: () => () => undefined,
     start: () => () => undefined,
+    focusRun: () => undefined,
   };
 }
 
 export function readyState(snapshot: Snapshot): AppState {
-  return { connection: "ready", snapshot, error: null };
+  return { connection: "ready", snapshot, error: null, focusedRunId: null };
 }
 
 export function renderWithServices(
@@ -244,10 +245,12 @@ export function makeFlowRun(overrides: Partial<FlowRunView> = {}): FlowRunView {
       { id: "review", status: "idle", visits: 0, result: null },
     ],
     decision: null,
+    decisions: [],
     failure: null,
     origin: FlowRunOrigin.user,
     placement: FlowPlacement.inPlace,
     branch: null,
+    ownerSessionId: null,
     ...overrides,
   };
 }

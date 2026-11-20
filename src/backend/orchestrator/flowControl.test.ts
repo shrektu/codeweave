@@ -18,6 +18,7 @@ import {
   type Orchestration,
 } from "./flowControl";
 
+const SESSION_ID = "orchestrator-session";
 const IN_PLACE_REQUEST = {
   flowId: "review",
   task: "Fix it",
@@ -42,6 +43,7 @@ function openRig(): Rig {
   const orchestration: Orchestration = {
     cwd: PROJECT,
     runs: new Map(),
+    sessionId: SESSION_ID,
     ended: false,
   };
   const control = createOrchestratorFlowControl(
@@ -139,6 +141,8 @@ it("registers_ownership_and_starts_an_in_place_run_in_the_project", async () => 
       origin: FlowRunOrigin.orchestrator,
       placement: FlowPlacement.inPlace,
       branch: null,
+      definitionsCwd: PROJECT,
+      ownerSessionId: SESSION_ID,
     },
   ]);
   expect(view.runId).toBe("run-1");
@@ -183,6 +187,8 @@ it("starts_a_worktree_run_in_the_new_worktree_on_its_branch", async () => {
     placement: FlowPlacement.worktree,
     branch: "codeweave/run-1",
     runId: "run-1",
+    definitionsCwd: PROJECT,
+    ownerSessionId: SESSION_ID,
   });
   expect(await rig.control.diff("run-1")).toBe("diff of run-1");
 });
@@ -363,7 +369,12 @@ it("forwards_decide_stop_and_list_flows_for_an_owned_run", async () => {
   await rig.control.decide(runId, "approve");
   await rig.control.stop(runId);
 
-  expect(rig.runs.decided).toEqual([{ runId, decision: "approve" }]);
+  await rig.control.decide(runId, "stop", "Out of budget");
+
+  expect(rig.runs.decided).toEqual([
+    { runId, decision: "approve" },
+    { runId, decision: "stop", note: "Out of budget" },
+  ]);
   expect(rig.runs.stopped).toEqual([runId]);
   await expect(rig.control.listFlows()).resolves.toEqual(SAMPLE_FLOWS);
 });

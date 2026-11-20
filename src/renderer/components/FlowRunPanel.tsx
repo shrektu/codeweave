@@ -19,17 +19,31 @@ interface DecisionChoice {
   offered: (reason: DecisionReason) => boolean;
 }
 
+export const DECISION_LABELS: Readonly<Record<FlowDecision, string>> = {
+  [FlowDecision.approve]: "Approve",
+  [FlowDecision.anotherRound]: "Another round",
+  [FlowDecision.stop]: "Stop",
+};
+
 const DECISION_CHOICES: readonly DecisionChoice[] = [
-  { decision: FlowDecision.approve, label: "Approve", offered: () => true },
+  {
+    decision: FlowDecision.approve,
+    label: DECISION_LABELS[FlowDecision.approve],
+    offered: () => true,
+  },
   {
     decision: FlowDecision.anotherRound,
-    label: "Another round",
+    label: DECISION_LABELS[FlowDecision.anotherRound],
     offered: (reason) => reason !== DecisionReason.gate,
   },
-  { decision: FlowDecision.stop, label: "Stop", offered: () => true },
+  {
+    decision: FlowDecision.stop,
+    label: DECISION_LABELS[FlowDecision.stop],
+    offered: () => true,
+  },
 ];
 
-const STATUS_LABELS: Readonly<Record<FlowRunStatus, string>> = {
+export const STATUS_LABELS: Readonly<Record<FlowRunStatus, string>> = {
   [FlowRunStatus.running]: "Running",
   [FlowRunStatus.awaitingDecision]: "Waiting for your decision",
   [FlowRunStatus.done]: "Done",
@@ -43,7 +57,7 @@ function reviewsText({ round, maxRounds }: FlowRunView): string {
     : `Reviews: ${round.toString()} (limit ${maxRounds.toString()})`;
 }
 
-function reasonText(run: FlowRunView, reason: DecisionReason): string {
+export function reasonText(run: FlowRunView, reason: DecisionReason): string {
   const nodeId = run.decision?.nodeId ?? "";
   const reviews = run.nodes.find((node) => node.id === nodeId)?.visits ?? 0;
   switch (reason) {
@@ -56,7 +70,7 @@ function reasonText(run: FlowRunView, reason: DecisionReason): string {
   }
 }
 
-function outcomeText(run: FlowRunView): string | null {
+export function outcomeText(run: FlowRunView): string | null {
   switch (run.status) {
     case FlowRunStatus.done:
       return "Flow finished.";

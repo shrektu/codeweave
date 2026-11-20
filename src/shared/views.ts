@@ -9,6 +9,7 @@ import {
 import { DiffOmission, FileChange } from "../domain/events";
 import {
   DecisionReason,
+  FlowDecision,
   FlowNodeRunStatus,
   FlowRunStatus,
 } from "../domain/flowRun";
@@ -269,10 +270,19 @@ export const FlowRunViewSchema = z.strictObject({
       nodeId: z.string(),
     })
     .nullable(),
+  decisions: z.array(
+    z.strictObject({
+      nodeId: z.string(),
+      reason: z.enum(DecisionReason),
+      decision: z.enum(FlowDecision),
+      note: z.string().nullable(),
+    }),
+  ),
   failure: z.string().nullable(),
   origin: z.enum(FlowRunOrigin),
   placement: z.enum(FlowPlacement),
   branch: z.string().nullable(),
+  ownerSessionId: z.string().nullable(),
 });
 export type FlowRunView = z.infer<typeof FlowRunViewSchema>;
 

@@ -615,10 +615,12 @@ describe("EventSchema", () => {
     currentNodeId: null,
     nodes: [{ id: "a", status: "done", visits: 2, result: "ok" }],
     decision: { reason: "rounds_exhausted", nodeId: "a" },
+    decisions: [],
     failure: null,
     origin: "orchestrator",
     placement: "worktree",
     branch: "feature/login",
+    ownerSessionId: "sess-1",
   };
 
   it.each([

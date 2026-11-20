@@ -1,8 +1,10 @@
 import { useState, type JSX } from "react";
 
+import { ProviderId } from "../../domain/types";
 import type {
   AccountView,
   FlowRef,
+  FlowRunView,
   FlowsList,
   MessageView,
   PermissionView,
@@ -13,6 +15,7 @@ import type {
 } from "../../shared/views";
 import {
   accountLabel,
+  focusedRunOf,
   formatLocalTime,
   isSelectable,
   isSessionLive,
@@ -22,7 +25,7 @@ import {
   type SelectableProvider,
 } from "../format";
 import { turnBadge } from "../routingText";
-import { useApp } from "../services";
+import { useApp, useServices } from "../services";
 import { useAsyncAction } from "../useAsyncAction";
 
 import { Composer } from "./Composer";
@@ -144,6 +147,9 @@ interface PendingStart {
 }
 
 const NO_CHOICE = "";
+const ORCHESTRATE_HINT = "The agent plans the task and runs flows for it.";
+const ORCHESTRATE_BLOCKED_HINT =
+  "Orchestrate is not available for Gemini (agy) yet.";
 
 function nodeChoices(list: FlowsList): NodeChoice[] {
   return list.flows.flatMap((flow) =>
@@ -168,8 +174,11 @@ function StartPrompt(): JSX.Element {
   const [pending, setPending] = useState<PendingStart | null>(null);
   const [chosen, setChosen] = useState(NO_CHOICE);
   const [picked, setPicked] = useState<SelectableProvider | null>(null);
+  const [orchestrate, setOrchestrate] = useState(false);
   const providers = distinctProviders(state.snapshot?.accounts ?? []);
   const provider = providers.find((id) => id === picked) ?? providers[0];
+  const orchestrateBlocked = provider === ProviderId.gemini;
+  const orchestrating = orchestrate && !orchestrateBlocked;
 
   const startSession = async (
     cwd: string,
@@ -179,6 +188,7 @@ function StartPrompt(): JSX.Element {
       cwd,
       ...(provider === undefined ? {} : { provider }),
       ...(flowRef === undefined ? {} : { flowRef }),
+      ...(orchestrating ? { orchestrate: true } : {}),
     });
     setPending(null);
     setChosen(NO_CHOICE);
@@ -199,7 +209,7 @@ function StartPrompt(): JSX.Element {
       if (cwd === null) {
         return;
       }
-      const choices = await listChoices(cwd);
+      const choices = orchestrating ? [] : await listChoices(cwd);
       if (choices.length === 0) {
         await startSession(cwd, undefined);
         return;
@@ -237,6 +247,22 @@ function StartPrompt(): JSX.Element {
           ))}
         </select>
       )}
+      <label className="field">
+        <input
+          type="checkbox"
+          checked={orchestrating}
+          disabled={orchestrateBlocked}
+          aria-describedby="orchestrate-hint"
+          onChange={(event) => {
+            setOrchestrate(event.target.checked);
+            setPending(null);
+          }}
+        />
+        Orchestrate
+      </label>
+      <p id="orchestrate-hint" className="empty">
+        {orchestrateBlocked ? ORCHESTRATE_BLOCKED_HINT : ORCHESTRATE_HINT}
+      </p>
       <button
         type="button"
         className="btn pri"
@@ -326,13 +352,34 @@ function SessionBody({
   );
 }
 
+function FocusBanner({ run }: { run: FlowRunView }): JSX.Element {
+  const { store } = useServices();
+  return (
+    <div className="focus-banner" role="status">
+      <span>{`Node session of ${run.flowTitle}`}</span>
+      <button
+        type="button"
+        className="btn"
+        onClick={() => {
+          store.focusRun(null);
+        }}
+      >
+        Back to orchestrator
+      </button>
+    </div>
+  );
+}
+
 export function SessionStream(): JSX.Element {
   const { state } = useApp();
-  const { session, runId } = shownSessionOf(state.snapshot);
+  const { session, runId } = shownSessionOf(state.snapshot, state.focusedRunId);
+  const focusedRun = focusedRunOf(state.snapshot, state.focusedRunId);
+  const bannerRun = focusedRun?.runId === runId ? focusedRun : null;
 
   return (
     <section className="glass panel" aria-label="Session">
       <h2 className="sec">Session</h2>
+      {bannerRun !== null && <FocusBanner run={bannerRun} />}
       {session === null ? (
         <StartPrompt />
       ) : (

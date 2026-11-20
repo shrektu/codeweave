@@ -3,6 +3,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 import {
+  FLOW_DECISION_NOTE_CHARS,
   FLOW_TOOL_PAGE_CHARS,
   FLOW_TOOL_SERVER_NAME,
   FLOW_TOOL_SERVER_VERSION,
@@ -151,10 +152,17 @@ function registerRunTools(server: McpServer, control: FlowControl): void {
       inputSchema: {
         ...RunIdShape,
         decision: z.enum(FlowDecision).describe("How to proceed"),
+        note: z
+          .string()
+          .max(FLOW_DECISION_NOTE_CHARS)
+          .optional()
+          .describe("Why you chose this decision; shown to the user"),
       },
     },
-    ({ runId, decision }) =>
-      guarded(async () => jsonResult(await control.decide(runId, decision))),
+    ({ runId, decision, note }) =>
+      guarded(async () =>
+        jsonResult(await control.decide(runId, decision, note)),
+      ),
   );
   server.registerTool(
     FlowToolName.stopFlow,

@@ -72,10 +72,12 @@ export const SAMPLE_RUN: FlowRunView = {
     { id: "check", status: FlowNodeRunStatus.done, visits: 1, result: null },
   ],
   decision: { reason: DecisionReason.gate, nodeId: "check" },
+  decisions: [],
   failure: null,
   origin: FlowRunOrigin.orchestrator,
   placement: FlowPlacement.inPlace,
   branch: null,
+  ownerSessionId: null,
 };
 
 export class FakeFlowControl implements FlowControl {
@@ -114,8 +116,14 @@ export class FakeFlowControl implements FlowControl {
     return this.answer(FlowControlOp.diff, [runId], this.diffText);
   }
 
-  decide(runId: string, decision: FlowDecision): Promise<FlowRunView> {
-    return this.answer(FlowControlOp.decide, [runId, decision], this.run);
+  decide(
+    runId: string,
+    decision: FlowDecision,
+    note?: string,
+  ): Promise<FlowRunView> {
+    const args =
+      note === undefined ? [runId, decision] : [runId, decision, note];
+    return this.answer(FlowControlOp.decide, args, this.run);
   }
 
   async stop(runId: string): Promise<void> {

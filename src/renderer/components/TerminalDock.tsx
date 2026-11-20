@@ -174,7 +174,8 @@ export function TerminalDock({
   const folder =
     terminal?.status === TerminalStatus.running
       ? terminal.cwd
-      : (shownSessionOf(snapshot).session?.cwd ?? pickedFolder);
+      : (shownSessionOf(snapshot, state.focusedRunId).session?.cwd ??
+        pickedFolder);
   const shownHeight = clampDockHeight(height, columnHeight);
 
   return (

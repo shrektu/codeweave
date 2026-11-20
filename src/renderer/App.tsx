@@ -7,7 +7,7 @@ import {
 } from "react";
 
 import { isRunOpen } from "../domain/flowState";
-import { EffectLevel as EffectSetting } from "../domain/types";
+import { EffectLevel as EffectSetting, FlowRunOrigin } from "../domain/types";
 import type {
   FlowRunView,
   FlowsList,
@@ -25,6 +25,7 @@ import { FlowInspector } from "./components/FlowInspector";
 import { FlowRunPanel } from "./components/FlowRunPanel";
 import { FolderPrompt, PickFolderButton } from "./components/FolderControls";
 import { LimitsPanel } from "./components/LimitsPanel";
+import { OrchestratorTimeline } from "./components/OrchestratorTimeline";
 import { SessionStream } from "./components/SessionStream";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar } from "./components/Sidebar";
@@ -48,6 +49,7 @@ import {
   type FlowSelection,
 } from "./flowDraft";
 import {
+  focusedRunOf,
   isSessionLive,
   latestOpenRunOf,
   latestRunOf,
@@ -252,6 +254,7 @@ function FlowPicker({
   session,
   sessionLive,
   flowRun,
+  runFocused,
   editor,
   reloading,
   onOpenSession,
@@ -263,6 +266,7 @@ function FlowPicker({
   session: SessionView | null;
   sessionLive: boolean;
   flowRun: FlowRunView | null;
+  runFocused: boolean;
   editor: FlowEditor;
   reloading: boolean;
   onOpenSession: () => void;
@@ -270,7 +274,7 @@ function FlowPicker({
   onReload: () => void;
 }): JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(
-    session?.flowRef?.flowId ?? null,
+    (runFocused ? flowRun?.flowId : session?.flowRef?.flowId) ?? null,
   );
   const locked = flowRun !== null && isRunOpen(flowRun.status);
   const editedId =
@@ -409,6 +413,7 @@ function FlowTabBody({
   session,
   sessionLive,
   flowRun,
+  runFocused,
   source,
   editor,
   onOpenSession,
@@ -418,6 +423,7 @@ function FlowTabBody({
   session: SessionView | null;
   sessionLive: boolean;
   flowRun: FlowRunView | null;
+  runFocused: boolean;
   source: FlowsSource;
   editor: FlowEditor;
   onOpenSession: () => void;
@@ -440,6 +446,7 @@ function FlowTabBody({
           session={session}
           sessionLive={sessionLive}
           flowRun={flowRun}
+          runFocused={runFocused}
           editor={editor}
           reloading={source.reloading}
           onOpenSession={onOpenSession}
@@ -451,7 +458,10 @@ function FlowTabBody({
 }
 
 function openRunCwdOf(snapshot: Snapshot | null): string | null {
-  return latestOpenRunOf(snapshot?.flowRuns ?? [])?.cwd ?? null;
+  const userRuns = (snapshot?.flowRuns ?? []).filter(
+    (run) => run.origin === FlowRunOrigin.user,
+  );
+  return latestOpenRunOf(userRuns)?.cwd ?? null;
 }
 
 function liveSessionCwdOf(snapshot: Snapshot | null): string | null {
@@ -504,8 +514,10 @@ function FlowTab({
   const { state } = useApp();
   const source = useFlowsLoad(cwd);
   const { session } = shownSessionOf(state.snapshot);
+  const focusedRun = focusedRunOf(state.snapshot, state.focusedRunId);
   const flowRun =
-    cwd === null ? null : latestRunOf(state.snapshot?.flowRuns ?? [], cwd);
+    focusedRun ??
+    (cwd === null ? null : latestRunOf(state.snapshot?.flowRuns ?? [], cwd));
 
   return (
     <section className="glass panel flow-tab" aria-label="Flow">
@@ -522,6 +534,7 @@ function FlowTab({
         session={session?.cwd === cwd ? session : null}
         sessionLive={isSessionLive(session)}
         flowRun={flowRun}
+        runFocused={focusedRun !== null}
         source={source}
         editor={editor}
         onOpenSession={onOpenSession}
@@ -595,6 +608,10 @@ export function App(): JSX.Element {
   const openSessionTab = (): void => {
     setCentreTab("session");
   };
+  const openFlowTab = (): void => {
+    setCentreTab("flow");
+  };
+  const orchestrating = state.snapshot?.session?.orchestrate === true;
 
   return (
     <div className="app">
@@ -671,6 +688,9 @@ export function App(): JSX.Element {
           aria-labelledby={`tab-${centreTab}`}
           className="tab-panel"
         >
+          {centreTab === "session" && orchestrating && (
+            <OrchestratorTimeline onShowGraph={openFlowTab} />
+          )}
           {centreTab === "session" && <SessionStream />}
           {centreTab === "flow" && (
             <FlowTab
