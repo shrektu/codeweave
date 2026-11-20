@@ -11,6 +11,7 @@ export interface WakeupQueueDeps {
 
 export interface WakeupQueue {
   enqueue(entry: FlowReportEntry): void;
+  hold(): () => void;
   dispose(): void;
 }
 
@@ -21,6 +22,7 @@ export function createWakeupQueue({
   const pending = new Map<string, FlowReportEntry>();
   let flushing = false;
   let disposed = false;
+  let holds = 0;
 
   const restore = (taken: ReadonlyMap<string, FlowReportEntry>): void => {
     for (const [runId, entry] of taken) {
@@ -30,7 +32,13 @@ export function createWakeupQueue({
     }
   };
   const flush = async (): Promise<void> => {
-    if (disposed || flushing || pending.size === 0 || !session.isSettled()) {
+    if (
+      disposed ||
+      flushing ||
+      holds > 0 ||
+      pending.size === 0 ||
+      !session.isSettled()
+    ) {
       return;
     }
     flushing = true;
@@ -56,6 +64,18 @@ export function createWakeupQueue({
       }
       pending.set(entry.view.runId, entry);
       void flush();
+    },
+    hold: () => {
+      holds += 1;
+      let released = false;
+      return () => {
+        if (released) {
+          return;
+        }
+        released = true;
+        holds -= 1;
+        void flush();
+      };
     },
     dispose: () => {
       disposed = true;

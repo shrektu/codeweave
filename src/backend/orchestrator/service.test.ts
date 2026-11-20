@@ -367,6 +367,27 @@ it("commits_a_done_worktree_run_before_reporting_it", async () => {
   expect(rig.main.prompts[0]).not.toContain("Note:");
 });
 
+it("holds_other_reports_while_a_done_worktree_run_is_committing", async () => {
+  const rig = openRig();
+  await rig.service.start(START_PARAMS);
+  const control = rig.server.control("tok-1");
+  const worktreeRun = await control.startFlow(WORKTREE_REQUEST);
+  const inPlaceRun = await control.startFlow(IN_PLACE_REQUEST);
+  const gate = Promise.withResolvers<undefined>();
+  rig.worktrees.commitGate = gate.promise;
+
+  rig.runs.finish(worktreeRun.runId, FlowRunStatus.done);
+  rig.runs.finish(inPlaceRun.runId, FlowRunStatus.awaitingDecision);
+
+  expect(rig.main.prompts).toEqual([]);
+  gate.resolve(undefined);
+  await vi.waitFor(() => {
+    expect(rig.main.prompts).toHaveLength(1);
+  });
+  expect(rig.main.prompts[0]).toContain(`Run ${worktreeRun.runId}`);
+  expect(rig.main.prompts[0]).toContain(`Run ${inPlaceRun.runId}`);
+});
+
 it("puts_the_commit_failure_into_the_report", async () => {
   const rig = openRig();
   await rig.service.start(START_PARAMS);

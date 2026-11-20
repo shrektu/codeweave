@@ -119,18 +119,23 @@ class ActiveOrchestration {
     run: OwnedRun,
     worktree: FlowWorktree,
   ): Promise<void> {
-    const committed = this.deps.flowWorktrees.commitAll(
-      worktree,
-      `Apply ${view.flowId} flow changes`,
-    );
-    run.committed = committed;
-    const note = await committed
-      .then(() => null)
-      .catch((error: unknown) => {
-        console.error(`failed to commit flow run ${view.runId}`, error);
-        return `${COMMIT_FAILED_MESSAGE}: ${errorText(error)}`;
-      });
-    this.queue.enqueue({ view, note });
+    const release = this.queue.hold();
+    try {
+      const committed = this.deps.flowWorktrees.commitAll(
+        worktree,
+        `Apply ${view.flowId} flow changes`,
+      );
+      run.committed = committed;
+      const note = await committed
+        .then(() => null)
+        .catch((error: unknown) => {
+          console.error(`failed to commit flow run ${view.runId}`, error);
+          return `${COMMIT_FAILED_MESSAGE}: ${errorText(error)}`;
+        });
+      this.queue.enqueue({ view, note });
+    } finally {
+      release();
+    }
   }
 
   private async teardown(): Promise<void> {

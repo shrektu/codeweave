@@ -188,3 +188,37 @@ it("does_not_start_a_second_flush_while_one_is_in_flight", async () => {
     expect(rig.prompts).toEqual(["run-1:done", "run-2:done"]);
   });
 });
+
+it("a_held_queue_delivers_nothing_until_released_then_sends_all_reports_in_one_prompt", () => {
+  const rig = rigWith();
+  const queue = createWakeupQueue({
+    session: rig.session,
+    build: describeEntries,
+  });
+
+  const release = queue.hold();
+  queue.enqueue(entry("run-1", FlowRunStatus.done));
+  queue.enqueue(entry("run-2", FlowRunStatus.failed));
+
+  expect(rig.prompts).toEqual([]);
+  release();
+  expect(rig.prompts).toEqual(["run-1:done,run-2:failed"]);
+});
+
+it("releasing_one_hold_twice_keeps_the_other_hold", () => {
+  const rig = rigWith();
+  const queue = createWakeupQueue({
+    session: rig.session,
+    build: describeEntries,
+  });
+
+  const releaseFirst = queue.hold();
+  const releaseSecond = queue.hold();
+  queue.enqueue(entry("run-1", FlowRunStatus.done));
+  releaseFirst();
+  releaseFirst();
+
+  expect(rig.prompts).toEqual([]);
+  releaseSecond();
+  expect(rig.prompts).toEqual(["run-1:done"]);
+});
