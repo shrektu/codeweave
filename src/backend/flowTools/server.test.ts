@@ -25,6 +25,7 @@ interface PostOptions {
   readonly host?: string;
   readonly token?: string;
   readonly body?: string;
+  readonly chunks?: readonly string[];
 }
 
 let server: FlowToolServer;
@@ -56,7 +57,12 @@ function post(options: PostOptions): Promise<number> {
       },
     );
     req.on("error", reject);
-    req.end(options.body ?? LIST_FLOWS_CALL);
+    for (const chunk of options.chunks ?? []) {
+      req.write(chunk);
+    }
+    req.end(
+      options.body ?? (options.chunks === undefined ? LIST_FLOWS_CALL : ""),
+    );
   });
 }
 
@@ -111,6 +117,14 @@ describe("flow tool server transport rules", () => {
 
   it("answers 413 to a body over one MiB without calling the control", async () => {
     expect(await post({ body: "x".repeat(MIB + 1) })).toBe(413);
+    expect(control.calls).toEqual([]);
+  });
+
+  it("answers 413 to a chunked body that grows past one MiB without calling the control", async () => {
+    const chunk = "x".repeat(MIB / 4);
+    expect(await post({ chunks: [chunk, chunk, chunk, chunk, chunk] })).toBe(
+      413,
+    );
     expect(control.calls).toEqual([]);
   });
 

@@ -5,6 +5,7 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import { finished } from "node:stream/promises";
 
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
@@ -64,7 +65,7 @@ async function readBody(request: IncomingMessage): Promise<Buffer | null> {
   }
   const chunks: Buffer[] = [];
   let size = 0;
-  for await (const chunk of request) {
+  for await (const chunk of request.iterator({ destroyOnReturn: false })) {
     if (!Buffer.isBuffer(chunk)) {
       continue;
     }
@@ -90,8 +91,9 @@ async function parseBody(
   }
   const body = await readBody(request);
   if (body === null) {
+    request.resume();
+    await finished(request);
     reject(response, HTTP_PAYLOAD_TOO_LARGE);
-    request.destroy();
     return { kind: "rejected" };
   }
   try {
