@@ -8,6 +8,7 @@ import type {
   AgentHandle,
   AgentStartResult,
   AgentStartSpec,
+  AgentToolAccess,
 } from "../../src/backend/agentAdapter";
 import { createCodexAdapter } from "../../src/backend/codex/adapter";
 import {
@@ -613,7 +614,11 @@ export async function removeCodexRigDirs(): Promise<void> {
 export interface CodexRig {
   readonly container: ScriptedCodexContainer;
   readonly cwd: string;
-  start(profile?: PermissionProfile, runId?: string): Promise<AgentStartResult>;
+  start(
+    profile?: PermissionProfile,
+    runId?: string,
+    tools?: AgentToolAccess,
+  ): Promise<AgentStartResult>;
 }
 
 export interface CodexRigLaunch {
@@ -642,8 +647,8 @@ export async function createCodexRig(
   return {
     container,
     cwd,
-    start: (profile = PermissionProfile.ask, runId = "run-1") =>
-      adapter.start(specFor(cwd, profile, runId)),
+    start: (profile = PermissionProfile.ask, runId = "run-1", tools) =>
+      adapter.start(specFor(cwd, profile, runId, tools)),
   };
 }
 
@@ -651,6 +656,7 @@ export function specFor(
   cwd: string,
   profile: PermissionProfile,
   runId: string,
+  tools?: AgentToolAccess,
 ): AgentStartSpec {
   return {
     account: CODEX_RIG_ACCOUNT,
@@ -658,6 +664,7 @@ export function specFor(
     profile,
     runId,
     executable: CODEX_RIG_EXECUTABLE,
+    ...(tools === undefined ? {} : { tools }),
   };
 }
 
