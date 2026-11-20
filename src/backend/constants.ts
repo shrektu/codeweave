@@ -188,3 +188,10 @@ export const MACOS_SYSTEM_BIN_DIRS: readonly string[] = [
   "/opt/homebrew/bin",
   "/usr/local/bin",
 ];
+export const ENABLE_TOOL_SEARCH_ENV = "ENABLE_TOOL_SEARCH";
+export const FLAG_DISABLED = "false";
+export const MCP_HTTP_SERVER_TYPE = "http";
+export const MCP_TOOL_NAME_PREFIX = "mcp__";
+export const MCP_TOOL_NAME_SEPARATOR = "__";
+export const AUTHORIZATION_HEADER = "Authorization";
+export const BEARER_SCHEME = "Bearer";

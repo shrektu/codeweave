@@ -6,6 +6,8 @@ import {
   CLAUDE_ACP_ENTRY,
   CLAUDE_ACP_PACKAGE,
   ELECTRON_RUN_AS_NODE_ENV,
+  ENABLE_TOOL_SEARCH_ENV,
+  FLAG_DISABLED,
   FLAG_ENABLED,
   LAUNCHER_SCRIPT,
 } from "../constants";
@@ -14,6 +16,7 @@ export interface ClaudeLaunchInput {
   readonly execPath: string;
   readonly adapterEntry: string;
   readonly env: Readonly<Record<string, string>>;
+  readonly toolsEnabled?: boolean;
 }
 
 export interface ClaudeLaunch {
@@ -26,7 +29,13 @@ export function buildClaudeLaunch(input: ClaudeLaunchInput): ClaudeLaunch {
   return {
     command: input.execPath,
     args: ["-e", LAUNCHER_SCRIPT, input.adapterEntry],
-    env: { ...input.env, [ELECTRON_RUN_AS_NODE_ENV]: FLAG_ENABLED },
+    env: {
+      ...input.env,
+      [ELECTRON_RUN_AS_NODE_ENV]: FLAG_ENABLED,
+      ...(input.toolsEnabled === true
+        ? { [ENABLE_TOOL_SEARCH_ENV]: FLAG_DISABLED }
+        : {}),
+    },
   };
 }
 

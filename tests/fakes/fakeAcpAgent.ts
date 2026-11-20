@@ -9,6 +9,7 @@ import {
   methods,
   type AgentContext,
   type InitializeResponse,
+  type NewSessionRequest,
   type NewSessionResponse,
   type PermissionOption,
   type PromptResponse,
@@ -26,6 +27,7 @@ import type {
   AgentHandle,
   AgentStartResult,
   AgentStartSpec,
+  AgentToolAccess,
 } from "../../src/backend/agentAdapter";
 import {
   createClaudeAcpAdapter,
@@ -209,6 +211,7 @@ function toUpdate(step: NotificationStep): SessionUpdate {
 
 export class FakeAcpAgent {
   readonly modeCalls: string[] = [];
+  readonly newSessions: NewSessionRequest[] = [];
   readonly configCalls: ConfigCall[] = [];
   readonly callOrder: string[] = [];
   readonly prompts: string[] = [];
@@ -231,20 +234,26 @@ export class FakeAcpAgent {
         }
         return { protocolVersion: PROTOCOL_VERSION, agentCapabilities: {} };
       })
-      .onRequest(methods.agent.session.new, (): NewSessionResponse => {
-        if (this.config.stderrText !== undefined) {
-          this.contained.stderr.write(this.config.stderrText);
-        }
-        if (this.config.newSessionError !== undefined) {
-          throw toError(this.config.newSessionError);
-        }
-        return {
-          sessionId: SESSION_ID,
-          ...(this.config.sessionModel === undefined
-            ? {}
-            : { configOptions: [modelConfigOption(this.config.sessionModel)] }),
-        };
-      })
+      .onRequest(
+        methods.agent.session.new,
+        ({ params }): NewSessionResponse => {
+          this.newSessions.push(params);
+          if (this.config.stderrText !== undefined) {
+            this.contained.stderr.write(this.config.stderrText);
+          }
+          if (this.config.newSessionError !== undefined) {
+            throw toError(this.config.newSessionError);
+          }
+          return {
+            sessionId: SESSION_ID,
+            ...(this.config.sessionModel === undefined
+              ? {}
+              : {
+                  configOptions: [modelConfigOption(this.config.sessionModel)],
+                }),
+          };
+        },
+      )
       .onRequest(methods.agent.authenticate, () => ({}))
       .onRequest(methods.agent.session.setConfigOption, ({ params }) => {
         this.configCalls.push({
@@ -445,7 +454,11 @@ export async function removeRigDirs(): Promise<void> {
 export interface AcpRig {
   readonly container: ScriptedAcpContainer;
   readonly cwd: string;
-  start(profile?: PermissionProfile, runId?: string): Promise<AgentStartResult>;
+  start(
+    profile?: PermissionProfile,
+    runId?: string,
+    tools?: AgentToolAccess,
+  ): Promise<AgentStartResult>;
 }
 
 export async function createRig(
@@ -473,13 +486,14 @@ export async function createRig(
   return {
     container,
     cwd,
-    start: (profile = PermissionProfile.ask, runId = "run-1") =>
+    start: (profile = PermissionProfile.ask, runId = "run-1", tools) =>
       adapter.start({
         account: RIG_ACCOUNT,
         cwd,
         profile,
         runId,
         executable: "/usr/bin/claude",
+        ...(tools === undefined ? {} : { tools }),
       }),
   };
 }
