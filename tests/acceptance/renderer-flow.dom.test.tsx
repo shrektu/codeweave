@@ -24,6 +24,7 @@ import {
   createFakeIpcClient,
   makeAgent,
   makeFlow,
+  makeFlowRun,
   makeFlowsList,
   makePermission,
   makeSession,
@@ -111,6 +112,7 @@ it("flow_graph_renders_example_nodes_edges_and_opens_session", async () => {
       flow={exampleFlow()}
       agents={exampleAgents()}
       session={session}
+      flowSessions={[]}
       onOpenSession={onOpenSession}
     />,
   );
@@ -143,6 +145,7 @@ it("flow_graph_hides_attribution_and_draws_background", async () => {
       flow={exampleFlow()}
       agents={exampleAgents()}
       session={null}
+      flowSessions={[]}
       onOpenSession={vi.fn()}
     />,
   );
@@ -166,6 +169,7 @@ it("flow_graph_session_node_shows_rate_limited_while_waiting", async () => {
       flow={makeFlow()}
       agents={[makeAgent()]}
       session={session}
+      flowSessions={[]}
       onOpenSession={vi.fn()}
     />,
   );
@@ -187,6 +191,7 @@ it("flow_graph_shows_permission_state_for_pending_permission", async () => {
       flow={makeFlow()}
       agents={[makeAgent()]}
       session={session}
+      flowSessions={[]}
       onOpenSession={vi.fn()}
     />,
   );
@@ -208,6 +213,7 @@ it("flow_graph_ignores_session_bound_to_another_flow", async () => {
       flow={makeFlow()}
       agents={[makeAgent()]}
       session={session}
+      flowSessions={[]}
       onOpenSession={onOpenSession}
     />,
   );
@@ -229,6 +235,7 @@ it("flow_graph_animates_edges_leaving_a_working_node", async () => {
       flow={makeFlow()}
       agents={[makeAgent()]}
       session={session}
+      flowSessions={[]}
       onOpenSession={vi.fn()}
     />,
   );
@@ -253,6 +260,7 @@ it("flow_graph_shows_working_after_failed_turn", async () => {
       flow={makeFlow()}
       agents={[makeAgent()]}
       session={session}
+      flowSessions={[]}
       onOpenSession={vi.fn()}
     />,
   );
@@ -271,6 +279,7 @@ it("flow_graph_does_not_animate_edges_when_nothing_works", async () => {
       flow={makeFlow()}
       agents={[makeAgent()]}
       session={null}
+      flowSessions={[]}
       onOpenSession={vi.fn()}
     />,
   );
@@ -584,4 +593,68 @@ it("start_prompt_no_duplicate_key_warning", async () => {
   );
   errors.mockRestore();
   expect(warnings).toEqual([]);
+});
+
+it("flow_graph_ignores_foreign_session_model", async () => {
+  const run = makeFlowRun({
+    runId: "run-a",
+    flowId: "ship",
+    status: "done",
+    currentNodeId: null,
+    nodes: [
+      {
+        id: "build",
+        status: "done",
+        visits: 1,
+        result: "ok",
+        model: "gpt-6.1-sol",
+      },
+      { id: "review", status: "idle", visits: 0, result: null, model: null },
+    ],
+  });
+  const mainSession = makeSession({
+    flowRef: { flowId: "ship", nodeId: "build" },
+    currentModel: "claude-opus-5-5",
+  });
+
+  render(
+    <FlowGraph
+      flow={makeFlow()}
+      agents={[makeAgent()]}
+      session={mainSession}
+      run={run}
+      flowSessions={[]}
+      onOpenSession={vi.fn()}
+    />,
+  );
+
+  const build = await findNode("build");
+  expect(build.querySelector(".flow-node-model")?.textContent).toBe(
+    "gpt-6.1-sol",
+  );
+});
+
+it("flow_graph_shows_the_live_run_session_model", async () => {
+  const run = makeFlowRun({ runId: "run-a", flowId: "ship" });
+  const runSession = makeSession({
+    id: "run-session",
+    flowRef: { flowId: "ship", nodeId: "build" },
+    currentModel: "claude-opus-5-5",
+  });
+
+  render(
+    <FlowGraph
+      flow={makeFlow()}
+      agents={[makeAgent()]}
+      session={null}
+      run={run}
+      flowSessions={[{ runId: "run-a", view: runSession }]}
+      onOpenSession={vi.fn()}
+    />,
+  );
+
+  const build = await findNode("build");
+  expect(build.querySelector(".flow-node-model")?.textContent).toBe(
+    "claude-opus-5-5",
+  );
 });

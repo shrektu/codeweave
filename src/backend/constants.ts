@@ -76,6 +76,8 @@ export const ENV_DENY_EXACT: readonly string[] = [
 ];
 
 export const CLAUDE_RATE_LIMIT_META_KEY = "_claude/rateLimit";
+export const CLAUDE_MODEL_META_KEY = "_claude/model";
+export const DEFAULT_MODEL_ALIAS = "default";
 export const UNKNOWN_RATE_LIMIT_STATUS = "unknown";
 export const DEFAULT_TOOL_KIND = "other";
 export const DEFAULT_TOOL_STATUS: ToolCallStatus = "pending";

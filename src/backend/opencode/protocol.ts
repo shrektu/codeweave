@@ -136,6 +136,7 @@ const MessageUpdatedSchema = z.looseObject({
       role: z.string(),
       sessionID: z.string().optional(),
       modelID: z.string().optional(),
+      providerID: z.string().optional(),
     }),
   }),
 });

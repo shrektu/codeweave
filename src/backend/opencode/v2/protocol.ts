@@ -76,7 +76,7 @@ const StepStartedSchema = z.looseObject({
   type: z.literal(OpencodeV2EventType.stepStarted),
   data: z.looseObject({
     ...SESSION_SHAPE,
-    model: z.looseObject({ id: z.string() }),
+    model: z.looseObject({ id: z.string(), providerID: z.string().optional() }),
   }),
 });
 

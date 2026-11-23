@@ -70,8 +70,20 @@ export const SAMPLE_RUN: FlowRunView = {
   maxRounds: 3,
   currentNodeId: "check",
   nodes: [
-    { id: "write", status: FlowNodeRunStatus.done, visits: 1, result: "done" },
-    { id: "check", status: FlowNodeRunStatus.done, visits: 1, result: null },
+    {
+      id: "write",
+      status: FlowNodeRunStatus.done,
+      visits: 1,
+      result: "done",
+      model: null,
+    },
+    {
+      id: "check",
+      status: FlowNodeRunStatus.done,
+      visits: 1,
+      result: null,
+      model: null,
+    },
   ],
   decision: { reason: DecisionReason.gate, nodeId: "check" },
   decisions: [],

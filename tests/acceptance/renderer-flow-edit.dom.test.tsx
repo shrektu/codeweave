@@ -486,6 +486,7 @@ async function renderEditableGraph(): Promise<{
       flow={flow}
       agents={makeFlowsList().agents}
       session={null}
+      flowSessions={[]}
       draft={draftOf(flow)}
       selection={null}
       onDraftChange={onDraftChange}
@@ -576,6 +577,7 @@ it("flow_graph_read_only_disables_connect_and_delete", async () => {
       flow={makeFlow()}
       agents={makeFlowsList().agents}
       session={null}
+      flowSessions={[]}
       onOpenSession={vi.fn()}
     />,
   );

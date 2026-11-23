@@ -642,14 +642,15 @@ describe("acp adapter: model selection", () => {
 describe("acp adapter: model reporting", () => {
   it("adapter reports the session model", async () => {
     const rig = await createRig();
-    rig.container.config.sessionModel = "default";
+    rig.container.config.sessionModel = "claude-sonnet-4-5";
     const { handle, events } = await startHandle(rig);
 
     await handle.prompt("one", { model: null });
     await handle.prompt("two", { model: "claude-opus-4-1" });
 
     expect(events).toEqual([
-      { type: "model", model: "default" },
+      { type: "model", model: "claude-sonnet-4-5" },
+      { type: "model", model: "claude-sonnet-4-5" },
       { type: "turn_end", stopReason: "end_turn" },
       { type: "model", model: "claude-opus-4-1" },
       { type: "turn_end", stopReason: "end_turn" },
@@ -658,16 +659,59 @@ describe("acp adapter: model reporting", () => {
 
   it("claude reports the model on every turn", async () => {
     const rig = await createRig();
-    rig.container.config.sessionModel = "default";
+    rig.container.config.sessionModel = "claude-sonnet-4-5";
     const { handle, events } = await startHandle(rig);
 
     await handle.prompt("one", { model: null });
     await handle.prompt("two", { model: null });
 
     expect(events.filter((event) => event.type === "model")).toEqual([
-      { type: "model", model: "default" },
-      { type: "model", model: "default" },
+      { type: "model", model: "claude-sonnet-4-5" },
+      { type: "model", model: "claude-sonnet-4-5" },
+      { type: "model", model: "claude-sonnet-4-5" },
     ]);
+  });
+
+  it("served_model_from_usage_meta_sets_turn_and_session_model", async () => {
+    const rig = await createRig();
+    rig.container.config.sessionModel = "default";
+    const { handle, events } = await startHandle(rig);
+    agentOf(rig).enqueue([
+      { type: "usage_update", meta: { "_claude/model": "claude-opus-5-5" } },
+      { type: "end", stopReason: "end_turn" },
+    ]);
+
+    await handle.prompt("go", { model: null });
+
+    expect(events).toEqual([
+      { type: "model", model: "claude-opus-5-5" },
+      { type: "turn_end", stopReason: "end_turn" },
+    ]);
+  });
+
+  it("default_alias_resolves_to_option_description", async () => {
+    const rig = await createRig();
+    rig.container.config.sessionModel = "default";
+    rig.container.config.defaultModelDescription = "Opus 5.5";
+
+    const { events } = await startHandle(rig);
+
+    expect(events).toEqual([{ type: "model", model: "Opus 5.5" }]);
+  });
+
+  it("usage_update_without_model_meta_is_ignored", async () => {
+    const rig = await createRig();
+    const { handle, events } = await startHandle(rig);
+    agentOf(rig).enqueue([
+      { type: "usage_update" },
+      { type: "usage_update", meta: { "_claude/model": 7 } },
+      { type: "usage_update", meta: { "_claude/model": "" } },
+      { type: "end", stopReason: "end_turn" },
+    ]);
+
+    await handle.prompt("go", { model: null });
+
+    expect(events).toEqual([{ type: "turn_end", stopReason: "end_turn" }]);
   });
 
   it("rejected model fails the turn without a rate limit", async () => {

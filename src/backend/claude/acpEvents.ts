@@ -1,4 +1,5 @@
 import type {
+  SessionConfigOption,
   SessionNotification,
   ToolCallContent,
 } from "@agentclientprotocol/sdk";
@@ -10,14 +11,18 @@ import {
 } from "../../domain/constants";
 import type { AgentEvent, ToolCallStatus } from "../../domain/events";
 import {
+  CLAUDE_MODEL_META_KEY,
   CLAUDE_RATE_LIMIT_META_KEY,
+  DEFAULT_MODEL_ALIAS,
   DEFAULT_TOOL_KIND,
   DEFAULT_TOOL_STATUS,
+  MODEL_CONFIG_ID,
   TOOL_OUTPUT_SEPARATOR,
   UNKNOWN_RATE_LIMIT_STATUS,
 } from "../constants";
 
 type SessionUpdate = SessionNotification["update"];
+type SessionConfigSelect = Extract<SessionConfigOption, { type: "select" }>;
 type TurnError = Extract<AgentEvent, { type: "turn_error" }>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -109,10 +114,43 @@ function mapToolCallUpdate(
   ];
 }
 
-function mapUsageUpdate(
-  update: Extract<SessionUpdate, { sessionUpdate: "usage_update" }>,
-): AgentEvent[] {
-  const limit = update._meta?.[CLAUDE_RATE_LIMIT_META_KEY];
+function selectOf(
+  options: readonly SessionConfigOption[] | null | undefined,
+): SessionConfigSelect | null {
+  const option = options?.find((item) => item.id === MODEL_CONFIG_ID);
+  return option?.type === "select" ? option : null;
+}
+
+export function modelValueOf(
+  options: readonly SessionConfigOption[] | null | undefined,
+): string | null {
+  return selectOf(options)?.currentValue ?? null;
+}
+
+export function modelOf(
+  options: readonly SessionConfigOption[] | null | undefined,
+): string | null {
+  const select = selectOf(options);
+  if (select === null) {
+    return null;
+  }
+  if (select.currentValue !== DEFAULT_MODEL_ALIAS) {
+    return select.currentValue;
+  }
+  const alias = select.options
+    .flatMap((entry) => ("options" in entry ? entry.options : [entry]))
+    .find((entry) => entry.value === DEFAULT_MODEL_ALIAS);
+  const resolved = alias?.description ?? "";
+  return resolved === "" ? null : resolved;
+}
+
+function mapModel(model: unknown): AgentEvent[] {
+  return typeof model === "string" && model !== ""
+    ? [{ type: "model", model }]
+    : [];
+}
+
+function mapRateLimit(limit: unknown): AgentEvent[] {
   if (!isRecord(limit)) {
     return [];
   }
@@ -130,6 +168,15 @@ function mapUsageUpdate(
   ];
 }
 
+function mapUsageUpdate(
+  update: Extract<SessionUpdate, { sessionUpdate: "usage_update" }>,
+): AgentEvent[] {
+  return [
+    ...mapRateLimit(update._meta?.[CLAUDE_RATE_LIMIT_META_KEY]),
+    ...mapModel(update._meta?.[CLAUDE_MODEL_META_KEY]),
+  ];
+}
+
 export function mapSessionUpdate(update: SessionUpdate): AgentEvent[] {
   switch (update.sessionUpdate) {
     case "agent_message_chunk":
@@ -140,6 +187,8 @@ export function mapSessionUpdate(update: SessionUpdate): AgentEvent[] {
       return mapToolCallUpdate(update);
     case "usage_update":
       return mapUsageUpdate(update);
+    case "config_option_update":
+      return mapModel(modelOf(update.configOptions));
     default:
       return [];
   }

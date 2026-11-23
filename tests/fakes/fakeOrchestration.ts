@@ -34,6 +34,7 @@ export function sessionView(overrides: Partial<SessionView> = {}): SessionView {
     lastTurn: null,
     turnInFlight: false,
     flowRef: null,
+    currentModel: null,
     turns: [],
     orchestrate: true,
     ...overrides,

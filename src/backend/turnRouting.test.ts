@@ -184,6 +184,47 @@ describe("recordTurn", () => {
     ]);
   });
 
+  it("opencode_repeat_turn_keeps_served_model", () => {
+    const begun = beginPrompt(INITIAL_SESSION_STATE, {});
+    const served = { ...begun.state, currentModel: "groq/gpt-oss-20b-0925" };
+
+    const recorded = recordTurn({
+      state: served,
+      accounts: [CLAUDE],
+      accountId: "acc-claude",
+      spec: SPEC,
+      prompt: begun.prompt,
+    });
+
+    expect(recorded.model).toBeNull();
+    expect(recorded.state.turns).toEqual([
+      expect.objectContaining({
+        model: null,
+        effectiveModel: "groq/gpt-oss-20b-0925",
+      }),
+    ]);
+  });
+
+  it("a requested model keeps the effective model empty", () => {
+    const begun = beginPrompt(INITIAL_SESSION_STATE, {});
+    const served = { ...begun.state, currentModel: "groq/gpt-oss-20b-0925" };
+
+    const recorded = recordTurn({
+      state: served,
+      accounts,
+      accountId: "acc-groq",
+      spec,
+      prompt: begun.prompt,
+    });
+
+    expect(recorded.state.turns).toEqual([
+      expect.objectContaining({
+        model: "openai/gpt-oss-120b",
+        effectiveModel: null,
+      }),
+    ]);
+  });
+
   it("a resend on another account replaces the entry", () => {
     const begun = beginPrompt(INITIAL_SESSION_STATE, {});
     const first = recordTurn({

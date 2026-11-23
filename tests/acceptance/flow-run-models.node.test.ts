@@ -141,6 +141,29 @@ it("auto model sends no model", async () => {
   expect(agentOf(rig).prompts).toHaveLength(1);
 });
 
+it("flow_run_node_reports_served_model", async () => {
+  const rig = await openFlowRig([ACCOUNT_A, ACCOUNT_B]);
+  rig.container.scriptNext([
+    { type: "usage_update", meta: { "_claude/model": "claude-opus-5-5" } },
+    ...say("done"),
+  ]);
+
+  await startAndFinish(rig, "automatic");
+
+  const { flowRuns } = await rig.call("sessions/snapshot", {});
+  expect(flowRuns.map((run) => run.nodes)).toEqual([
+    [
+      {
+        id: "build",
+        status: "done",
+        visits: 1,
+        result: "done",
+        model: "claude-opus-5-5",
+      },
+    ],
+  ]);
+});
+
 it("node provider override sends no agent model", async () => {
   const rig = await openFlowRig([ACCOUNT_A, ACCOUNT_CODEX_A]);
   rig.codexContainer.scriptNext([

@@ -45,6 +45,7 @@ export const AccountRateLimitsUpdatedSchema = z.looseObject({
 export const ThreadStartResponseSchema = z.looseObject({
   thread: z.looseObject({ id: z.string() }),
   model: z.string().nullish(),
+  modelProvider: z.string().nullish(),
 });
 
 export const ModelReroutedParamsSchema = z.looseObject({

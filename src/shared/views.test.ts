@@ -130,6 +130,46 @@ it("session_view_with_diffs_passes_session_view_schema", () => {
   expect(parsed.toolCalls[0]?.diffs).toEqual([MODIFIED]);
 });
 
+it("session_view_requires_current_model_nullable", () => {
+  const named = reduceSession(INITIAL_SESSION_STATE, {
+    type: "model",
+    model: "claude-opus-5-5",
+  });
+  const input = {
+    id: "s1",
+    cwd: "/work",
+    provider: "claude",
+    accounts: [],
+    profile: "ask",
+    phase: { phase: "halted" },
+    limits: [],
+    turnInFlight: false,
+    flowRef: null,
+    orchestrate: false,
+    hiddenRequestIds: new Set<string>(),
+  } as const;
+  const namedView = toSessionView({ ...input, state: named });
+  const unnamedView = toSessionView({
+    ...input,
+    state: INITIAL_SESSION_STATE,
+  });
+  const withoutModel = Object.fromEntries(
+    Object.entries(namedView).filter(([key]) => key !== "currentModel"),
+  );
+
+  expect(SessionViewSchema.parse(namedView).currentModel).toBe(
+    "claude-opus-5-5",
+  );
+  expect(SessionViewSchema.parse(unnamedView).currentModel).toBeNull();
+  expect(SessionViewSchema.safeParse(withoutModel).success).toBe(false);
+  expect(
+    SessionViewSchema.safeParse({ ...namedView, currentModel: 5 }).success,
+  ).toBe(false);
+  expect(
+    SessionViewSchema.safeParse({ ...namedView, extra: true }).success,
+  ).toBe(false);
+});
+
 const FLOW_VIEW = {
   id: "ship",
   file: "flows/ship.md",
@@ -230,7 +270,7 @@ const FLOW_RUN_VIEW = {
   round: 2,
   maxRounds: 2,
   currentNodeId: null,
-  nodes: [{ id: "a", status: "done", visits: 2, result: "ok" }],
+  nodes: [{ id: "a", status: "done", visits: 2, result: "ok", model: null }],
   decision: { reason: "rounds_exhausted", nodeId: "a" },
   decisions: [],
   failure: null,
@@ -245,6 +285,23 @@ function runViewWithout(key: string): Record<string, unknown> {
     Object.entries(FLOW_RUN_VIEW).filter(([name]) => name !== key),
   );
 }
+
+it("flow_run_node_requires_model_nullable", () => {
+  const node = { id: "a", status: "done", visits: 1, result: null };
+  const withModel = { ...FLOW_RUN_VIEW, nodes: [{ ...node, model: "gpt-6" }] };
+  const withoutModel = { ...FLOW_RUN_VIEW, nodes: [node] };
+  const numericModel = { ...FLOW_RUN_VIEW, nodes: [{ ...node, model: 6 }] };
+  const extraKey = {
+    ...FLOW_RUN_VIEW,
+    nodes: [{ ...node, model: null, effort: "high" }],
+  };
+
+  expect(FlowRunViewSchema.safeParse(FLOW_RUN_VIEW).success).toBe(true);
+  expect(FlowRunViewSchema.safeParse(withModel).success).toBe(true);
+  expect(FlowRunViewSchema.safeParse(withoutModel).success).toBe(false);
+  expect(FlowRunViewSchema.safeParse(numericModel).success).toBe(false);
+  expect(FlowRunViewSchema.safeParse(extraKey).success).toBe(false);
+});
 
 it("flow_run_view_schema_requires_origin_placement_and_branch", () => {
   expect(FlowRunViewSchema.safeParse(runViewWithout("origin")).success).toBe(
@@ -300,7 +357,9 @@ it("flow_run_view_schema_requires_the_decision_log_and_the_owner", () => {
 it("flow_run_view_schema_accepts_a_paused_run_and_rejects_unknowns", () => {
   const unknownNodeStatus = {
     ...FLOW_RUN_VIEW,
-    nodes: [{ id: "a", status: "sleeping", visits: 1, result: null }],
+    nodes: [
+      { id: "a", status: "sleeping", visits: 1, result: null, model: null },
+    ],
   };
   const extraDecisionField = {
     ...FLOW_RUN_VIEW,

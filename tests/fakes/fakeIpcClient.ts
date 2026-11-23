@@ -208,6 +208,7 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
     lastTurn: null,
     turnInFlight: false,
     flowRef: null,
+    currentModel: null,
     turns: [],
     orchestrate: false,
     ...overrides,
@@ -246,8 +247,8 @@ export function makeFlowRun(overrides: Partial<FlowRunView> = {}): FlowRunView {
     maxRounds: 2,
     currentNodeId: "build",
     nodes: [
-      { id: "build", status: "running", visits: 1, result: null },
-      { id: "review", status: "idle", visits: 0, result: null },
+      { id: "build", status: "running", visits: 1, result: null, model: null },
+      { id: "review", status: "idle", visits: 0, result: null, model: null },
     ],
     decision: null,
     decisions: [],

@@ -128,6 +128,7 @@ function toFlowRunView(
   state: FlowRunState,
   identity: RunIdentity,
   decisions: DecisionLog,
+  nodeModels: ReadonlyMap<string, string>,
 ): FlowRunView {
   return {
     runId: state.runId,
@@ -141,7 +142,10 @@ function toFlowRunView(
     currentNodeId:
       state.nodes.find((node) => node.status === FlowNodeRunStatus.running)
         ?.id ?? null,
-    nodes: state.nodes.map((node) => ({ ...node })),
+    nodes: state.nodes.map((node) => ({
+      ...node,
+      model: nodeModels.get(node.id) ?? null,
+    })),
     decision: state.decision === null ? null : { ...state.decision },
     decisions: decisions.map((entry) => ({ ...entry })),
     failure: state.failure,
@@ -187,6 +191,7 @@ class FlowRun {
   private readonly deps: FlowRunDeps;
   private readonly onChange: (view: FlowRunView) => void;
   private readonly decisions: DecisionLog = [];
+  private readonly nodeModels = new Map<string, string>();
   private active: ActiveRun | null = null;
   private opening: Opening | null = null;
   private pumpRunning = false;
@@ -280,7 +285,7 @@ class FlowRun {
   }
 
   private viewOf(state: FlowRunState): FlowRunView {
-    return toFlowRunView(state, this.identity, this.decisions);
+    return toFlowRunView(state, this.identity, this.decisions, this.nodeModels);
   }
 
   answerPermission(requestId: string, optionId: string): void {
@@ -388,6 +393,7 @@ class FlowRun {
       return failure(errorText(error));
     } finally {
       if (opened) {
+        this.recordNodeModel(nodeId);
         await this.deps
           .sessions(this.runId)
           .stop()
@@ -395,6 +401,15 @@ class FlowRun {
             console.error("failed to stop the node session", error);
           });
       }
+    }
+  }
+
+  private recordNodeModel(nodeId: string): void {
+    const view = this.deps.sessions(this.runId).view();
+    const last = view?.turns.at(-1);
+    const model = view?.currentModel ?? last?.effectiveModel ?? last?.model;
+    if (model !== undefined && model !== null) {
+      this.nodeModels.set(nodeId, model);
     }
   }
 

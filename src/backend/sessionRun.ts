@@ -36,7 +36,9 @@ import {
 } from "../domain/secretMask";
 import {
   INITIAL_SESSION_STATE,
+  applyServedModel,
   reduceSession,
+  resetCurrentModel,
   type SessionState,
 } from "../domain/sessionReducer";
 import {
@@ -423,6 +425,7 @@ export class SessionRun {
 
   private register(handle: AgentHandle): void {
     this.handles.set(handle.accountId, handle);
+    this.state = resetCurrentModel(this.state);
     this.current = handle;
     handle.subscribe((event) => {
       this.onEvent(handle, event);
@@ -593,7 +596,10 @@ export class SessionRun {
   }
 
   private applyEvent(handle: AgentHandle, event: AgentEvent): void {
-    this.state = reduceSession(this.state, event);
+    this.state =
+      event.type === "model"
+        ? applyServedModel(this.state, event.model, handle.accountId)
+        : reduceSession(this.state, event);
     this.detector?.observe(event);
     switch (event.type) {
       case "rate_limit":

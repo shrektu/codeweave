@@ -356,8 +356,18 @@ describe("codex app-server adapter: model reporting", () => {
 
     expect(events.filter((event) => event.type === "model")).toEqual([
       { type: "model", model: "gpt-5-codex" },
+      { type: "model", model: "gpt-5-codex" },
       { type: "model", model: "gpt-5-mini" },
     ]);
+  });
+
+  it("thread_start_model_is_current_before_first_prompt", async () => {
+    const rig = await createCodexRig();
+    rig.container.config.threadModel = "gpt-5-codex";
+
+    const { events } = await startCodexHandle(rig);
+
+    expect(events).toEqual([{ type: "model", model: "gpt-5-codex" }]);
   });
 
   it("codex reports the turn model it sent", async () => {
@@ -368,6 +378,7 @@ describe("codex app-server adapter: model reporting", () => {
     await handle.prompt("go", { model: "gpt-5-mini" });
 
     expect(events.filter((event) => event.type === "model")).toEqual([
+      { type: "model", model: "gpt-5-codex" },
       { type: "model", model: "gpt-5-mini" },
     ]);
   });
@@ -392,6 +403,7 @@ describe("codex app-server adapter: model reporting", () => {
     await handle.prompt("go", { model: "gpt-5-mini" });
 
     expect(events.filter((event) => event.type === "model")).toEqual([
+      { type: "model", model: "gpt-5-codex" },
       { type: "model", model: "gpt-5-mini" },
       { type: "model", model: "gpt-5-nano" },
     ]);
@@ -406,6 +418,7 @@ describe("codex app-server adapter: model reporting", () => {
     await handle.prompt("two", { model: null });
 
     expect(events.filter((event) => event.type === "model")).toEqual([
+      { type: "model", model: "gpt-5-codex" },
       { type: "model", model: "gpt-5-mini" },
       { type: "model", model: "gpt-5-mini" },
     ]);
@@ -420,6 +433,7 @@ describe("codex app-server adapter: model reporting", () => {
     await handle.prompt("two", { model: "gpt-5-mini" });
 
     expect(events.filter((event) => event.type === "model")).toEqual([
+      { type: "model", model: "gpt-5-codex" },
       { type: "model", model: "gpt-5-mini" },
       { type: "model", model: "gpt-5-mini" },
     ]);

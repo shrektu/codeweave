@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import { ApiAuth, ApiProviderId } from "../domain/apiProviders";
 import { ProviderId } from "../domain/types";
-import type { AccountView, TurnRouteView } from "../shared/views";
+import type { AccountView, SessionView, TurnRouteView } from "../shared/views";
 
 import {
   hasUnknownApiProvider,
   modelSuggestions,
+  servedModel,
+  sessionModelText,
   turnBadge,
 } from "./routingText";
 
@@ -48,9 +50,9 @@ const BADGE_CASES: [string, Partial<TurnRouteView>, string][] = [
     "groq/openai/gpt-oss-20b · heavy → standard",
   ],
   [
-    "effective model wins",
+    "effective model is shown as the CLI reported it",
     { effectiveModel: "openai/gpt-oss-120b" },
-    "groq/openai/gpt-oss-120b · light",
+    "openai/gpt-oss-120b · light",
   ],
   [
     "effective model already prefixed",
@@ -104,6 +106,66 @@ describe("turnBadge", () => {
     expect(turnBadge(turn({})).description).toBe(
       "This turn used groq/openai/gpt-oss-20b (light)",
     );
+  });
+});
+
+function sessionOf(overrides: Partial<SessionView>): SessionView {
+  return {
+    id: "s1",
+    cwd: "/work",
+    provider: ProviderId.claude,
+    profile: "ask",
+    phase: { phase: "running", accountId: "acc-1" },
+    activeAccountId: "acc-1",
+    activeProvider: ProviderId.claude,
+    messages: [],
+    toolCalls: [],
+    permissions: [],
+    limits: [],
+    lastTurn: null,
+    turnInFlight: false,
+    flowRef: null,
+    currentModel: null,
+    turns: [],
+    orchestrate: false,
+    ...overrides,
+  };
+}
+
+describe("sessionModelText", () => {
+  it("shows the model the CLI reports now", () => {
+    const session = sessionOf({
+      currentModel: "claude-opus-5-5",
+      turns: [turn({ effectiveModel: "claude-sonnet-4-5" })],
+    });
+
+    expect(sessionModelText(session)).toBe("claude-opus-5-5");
+  });
+
+  it("falls back to the label of the last turn", () => {
+    const session = sessionOf({
+      turns: [turn({ model: "opus", apiProvider: null })],
+    });
+
+    expect(sessionModelText(session)).toBe("opus");
+  });
+
+  it("says CLI default when nothing is known", () => {
+    expect(sessionModelText(sessionOf({}))).toBe("CLI default");
+  });
+});
+
+describe("servedModel", () => {
+  it("prefers the reported model over the requested one", () => {
+    expect(servedModel(turn({ effectiveModel: "reported" }))).toBe("reported");
+  });
+
+  it("uses the requested model when none was reported", () => {
+    expect(servedModel(turn({}))).toBe("openai/gpt-oss-20b");
+  });
+
+  it("is null when neither is known", () => {
+    expect(servedModel(turn({ model: null }))).toBeNull();
   });
 });
 

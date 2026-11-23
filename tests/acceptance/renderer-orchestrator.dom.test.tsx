@@ -129,8 +129,20 @@ function runningSnapshot(): Parameters<typeof makeSnapshot>[0] {
         status: "running",
         currentNodeId: "build",
         nodes: [
-          { id: "build", status: "running", visits: 1, result: null },
-          { id: "review", status: "idle", visits: 0, result: null },
+          {
+            id: "build",
+            status: "running",
+            visits: 1,
+            result: null,
+            model: null,
+          },
+          {
+            id: "review",
+            status: "idle",
+            visits: 0,
+            result: null,
+            model: null,
+          },
         ],
       }),
     ],
@@ -305,6 +317,55 @@ it("timeline_says_when_the_orchestrator_has_run_no_flows", async () => {
   expect(within(timeline).getByText("No flows yet.")).toBeTruthy();
 });
 
+it("flow_node_and_timeline_show_model", async () => {
+  const client = clientWith({
+    ...runningSnapshot(),
+    flowRuns: [
+      ownedRun({
+        nodes: [
+          {
+            id: "build",
+            status: "running",
+            visits: 1,
+            result: null,
+            model: null,
+          },
+          {
+            id: "review",
+            status: "done",
+            visits: 1,
+            result: "ok",
+            model: "gpt-6.1-sol",
+          },
+        ],
+      }),
+    ],
+    flowSessions: [
+      {
+        runId: "run-a",
+        view: nodeSession({ currentModel: "claude-opus-5-5" }),
+      },
+    ],
+  });
+  renderWithServices(<App />, client);
+  const timeline = await findTimeline();
+
+  expect(timeline.querySelector(".timeline-models")?.textContent).toBe(
+    "build · claude-opus-5-5, review · gpt-6.1-sol",
+  );
+
+  fireEvent.click(within(timeline).getByRole("button", { name: "Show graph" }));
+
+  const review = await findGraphNode("review");
+  expect(review.querySelector(".flow-node-model")?.textContent).toBe(
+    "gpt-6.1-sol",
+  );
+  const build = await findGraphNode("build");
+  expect(build.querySelector(".flow-node-model")?.textContent).toBe(
+    "claude-opus-5-5",
+  );
+});
+
 it("show_graph_opens_the_run_graph_and_its_node_opens_the_node_session_with_a_way_back", async () => {
   const client = clientWith(runningSnapshot());
   renderWithServices(<App />, client);
@@ -362,7 +423,15 @@ it("a_user_flow_after_the_orchestrator_stopped_is_shown_instead_of_the_old_focus
       origin: "user",
       status: "running",
       currentNodeId: "build",
-      nodes: [{ id: "build", status: "running", visits: 1, result: null }],
+      nodes: [
+        {
+          id: "build",
+          status: "running",
+          visits: 1,
+          result: null,
+          model: null,
+        },
+      ],
     }),
   );
   client.emit({

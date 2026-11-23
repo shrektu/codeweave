@@ -90,6 +90,7 @@ it("truncates_a_long_node_result_and_points_to_node_result", () => {
             status: FlowNodeRunStatus.done,
             visits: 1,
             result: long,
+            model: null,
           },
         ],
       }),

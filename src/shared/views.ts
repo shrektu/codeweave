@@ -204,6 +204,7 @@ export const SessionViewSchema = z.strictObject({
   lastTurn: LastTurnViewSchema.nullable(),
   turnInFlight: z.boolean(),
   flowRef: FlowRefSchema.nullable(),
+  currentModel: z.string().nullable(),
   turns: z.array(TurnRouteViewSchema),
   orchestrate: z.boolean(),
 });
@@ -287,6 +288,7 @@ export const FlowRunViewSchema = z.strictObject({
       status: z.enum(FlowNodeRunStatus),
       visits: z.int(),
       result: z.string().nullable(),
+      model: z.string().nullable(),
     }),
   ),
   decision: z

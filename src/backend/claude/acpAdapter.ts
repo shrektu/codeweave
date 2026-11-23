@@ -16,7 +16,6 @@ import {
   type PromptResponse,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
-  type SessionConfigOption,
   type SessionUpdate,
   type SetSessionConfigOptionRequest,
   type SetSessionConfigOptionResponse,
@@ -49,7 +48,13 @@ import {
 } from "../constants";
 import type { StopResult } from "../process/container";
 
-import { isAuthError, mapPromptError, mapSessionUpdate } from "./acpEvents";
+import {
+  isAuthError,
+  mapPromptError,
+  mapSessionUpdate,
+  modelOf,
+  modelValueOf,
+} from "./acpEvents";
 import { buildClaudeLaunch } from "./launch";
 import { buildNewSessionRequest } from "./toolAccess";
 
@@ -147,13 +152,6 @@ function connect(stream: Stream, handlers: ClientHandlers): AcpPeer {
   };
 }
 
-function modelOf(
-  options: readonly SessionConfigOption[] | null | undefined,
-): string | null {
-  const option = options?.find((item) => item.id === MODEL_CONFIG_ID);
-  return option?.type === "select" ? option.currentValue : null;
-}
-
 function toPermissionOption(
   option: AcpPermissionOption,
 ): Extract<AgentEvent, { type: "permission_request" }>["options"][number] {
@@ -170,7 +168,8 @@ class ClaudeAcpSession implements AgentHandle {
   private readonly exitSignal: Promise<void>;
   private resolveExit: () => void = () => undefined;
   private sessionId = "";
-  private currentModel: string | null = null;
+  private selectedModel: string | null = null;
+  private announcedModel: string | null = null;
   private stderrText = "";
   private exited = false;
   private exitEmitted = false;
@@ -218,6 +217,9 @@ class ClaudeAcpSession implements AgentHandle {
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
+    if (this.announcedModel !== null) {
+      listener({ type: "model", model: this.announcedModel });
+    }
     return () => {
       this.listeners.delete(listener);
     };
@@ -293,23 +295,25 @@ class ClaudeAcpSession implements AgentHandle {
       buildNewSessionRequest(spec.cwd, spec.tools),
     );
     this.sessionId = session.sessionId;
-    this.currentModel = modelOf(session.configOptions);
+    this.selectedModel = modelValueOf(session.configOptions);
+    this.announcedModel = modelOf(session.configOptions);
     if (spec.profile === PermissionProfile.bypass) {
       await this.setProfile(spec.profile);
     }
   }
 
   private async selectModel(model: string | null): Promise<void> {
-    if (model !== null && model !== this.currentModel) {
+    if (model !== null && model !== this.selectedModel) {
       const updated = await this.peer.setSessionConfigOption({
         sessionId: this.sessionId,
         configId: MODEL_CONFIG_ID,
         value: model,
       });
-      this.currentModel = modelOf(updated.configOptions) ?? model;
+      this.selectedModel = modelValueOf(updated.configOptions) ?? model;
+      this.announcedModel = modelOf(updated.configOptions) ?? model;
     }
-    if (this.currentModel !== null) {
-      this.emit({ type: "model", model: this.currentModel });
+    if (this.announcedModel !== null) {
+      this.emit({ type: "model", model: this.announcedModel });
     }
   }
 
