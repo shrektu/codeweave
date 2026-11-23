@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readdir, readFile, realpath } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 
 import { DEFAULT_FLOW_ROUNDS } from "../domain/constants";
@@ -112,6 +112,16 @@ function failure(
   return { file, source, messages: [errorText(error)] };
 }
 
+async function unreadableRoot(root: string): Promise<unknown> {
+  try {
+    return (await stat(root)).isDirectory()
+      ? null
+      : new Error(`${root} is not a folder`);
+  } catch (error) {
+    return isMissing(error) ? null : error;
+  }
+}
+
 async function markdownNames(
   root: string,
   source: DefinitionSource,
@@ -125,10 +135,10 @@ async function markdownNames(
       .toSorted();
     return { ok: true, value: names };
   } catch (error) {
-    if (isMissing(error)) {
-      return { ok: true, value: [] };
-    }
-    return { ok: false, error: failure(dir, source, error) };
+    const cause = isMissing(error) ? await unreadableRoot(root) : error;
+    return cause === null
+      ? { ok: true, value: [] }
+      : { ok: false, error: failure(dir, source, cause) };
   }
 }
 
