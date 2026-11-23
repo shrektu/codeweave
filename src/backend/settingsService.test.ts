@@ -36,6 +36,7 @@ describe("settings service", () => {
     expect(await service.get()).toEqual({
       permissionProfile: "bypass",
       effectLevel: "auto",
+      appearance: "system",
       claudeExecutable: null,
       codexExecutable: null,
       agyExecutable: null,
@@ -56,6 +57,7 @@ describe("settings service", () => {
     const expected = {
       permissionProfile: "plan",
       effectLevel: "auto",
+      appearance: "system",
       claudeExecutable: null,
       codexExecutable: null,
       agyExecutable: null,
@@ -105,6 +107,7 @@ describe("settings service", () => {
     expect(view).toEqual({
       permissionProfile: "ask",
       effectLevel: "low",
+      appearance: "system",
       claudeExecutable: "/opt/claude",
       codexExecutable: null,
       agyExecutable: null,
@@ -263,6 +266,7 @@ describe("settings service", () => {
     expect(await service.get()).toEqual({
       permissionProfile: "unattended",
       effectLevel: "full",
+      appearance: "system",
       claudeExecutable: null,
       codexExecutable: null,
       agyExecutable: null,

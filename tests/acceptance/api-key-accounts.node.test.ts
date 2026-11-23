@@ -260,6 +260,7 @@ it("legacy_storage_files_load_unchanged", async () => {
       version: 1,
       permissionProfile: "ask",
       effectLevel: "low",
+      appearance: "system",
       claudeExecutable: null,
     }),
   );
@@ -286,6 +287,7 @@ it("legacy_storage_files_load_unchanged", async () => {
   expect(settings).toEqual({
     permissionProfile: "ask",
     effectLevel: "low",
+    appearance: "system",
     claudeExecutable: null,
     codexExecutable: null,
     agyExecutable: null,

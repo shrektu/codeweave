@@ -14,6 +14,7 @@ import { z } from "zod";
 import { ApiAuth } from "../domain/apiProviders";
 import { TaskClass, TaskClassSchema } from "../domain/taskClass";
 import {
+  Appearance,
   EffectLevel,
   PermissionProfile,
   ProviderId,
@@ -58,6 +59,10 @@ export const SettingsFileSchema = z.object({
   version: z.literal(STORAGE_VERSION),
   permissionProfile: z.enum(PermissionProfile),
   effectLevel: z.enum(EffectLevel),
+  appearance: z
+    .enum(Appearance)
+    .default(Appearance.system)
+    .catch(Appearance.system),
   claudeExecutable: z.string().nullable(),
   codexExecutable: z.string().nullable().default(null),
   agyExecutable: z.string().nullable().default(null),
@@ -119,6 +124,7 @@ const DEFAULT_SETTINGS: SettingsFile = {
   version: STORAGE_VERSION,
   permissionProfile: PermissionProfile.bypass,
   effectLevel: EffectLevel.auto,
+  appearance: Appearance.system,
   claudeExecutable: null,
   codexExecutable: null,
   agyExecutable: null,

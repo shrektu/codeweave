@@ -81,6 +81,39 @@ test("settings_dialog_opens_and_closes", async () => {
   });
 });
 
+test("app_switches_light_and_dark_appearance", async () => {
+  await withApp(async (app) => {
+    const page = await app.firstWindow();
+    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
+      BACKEND_READY_TEXT,
+    );
+    const html = page.locator("html");
+    const labelColor = (): Promise<string> =>
+      page.evaluate(() => getComputedStyle(document.body).color);
+    const nativeDark = (): Promise<boolean> =>
+      app.evaluate(({ nativeTheme }) => nativeTheme.shouldUseDarkColors);
+
+    await page.getByRole("button", { name: "Settings" }).click();
+    const dialog = page.getByRole("dialog", { name: "Settings" });
+    await dialog.getByRole("radio", { name: "Dark" }).click();
+    await expect(html).toHaveAttribute("data-theme", "dark");
+    await expect.poll(nativeDark).toBe(true);
+    const darkLabel = await labelColor();
+
+    await dialog.getByRole("radio", { name: "Light" }).click();
+
+    await expect(html).toHaveAttribute("data-theme", "light");
+    await expect.poll(nativeDark).toBe(false);
+    expect(await labelColor()).not.toBe(darkLabel);
+
+    await dialog.getByRole("radio", { name: "Dark" }).click();
+
+    await expect(html).toHaveAttribute("data-theme", "dark");
+    await expect.poll(nativeDark).toBe(true);
+    expect(await labelColor()).toBe(darkLabel);
+  });
+});
+
 test("dialog_escape_closes_and_traps_focus", async () => {
   await withApp(async (app) => {
     const page = await app.firstWindow();

@@ -16,6 +16,7 @@ import {
 import { RouteSource } from "../domain/routing";
 import { TaskClass, TaskClassSchema } from "../domain/taskClass";
 import {
+  Appearance,
   DefinitionSource,
   EdgeKind,
   EffectLevel,
@@ -313,6 +314,7 @@ export type FlowRunView = z.infer<typeof FlowRunViewSchema>;
 export const SettingsViewSchema = z.strictObject({
   permissionProfile: z.enum(PermissionProfile),
   effectLevel: z.enum(EffectLevel),
+  appearance: z.enum(Appearance),
   claudeExecutable: z.string().nullable(),
   codexExecutable: z.string().nullable(),
   agyExecutable: z.string().nullable(),

@@ -61,6 +61,8 @@ export const OPEN_UPDATE_RELEASE_CHANNEL = "codeweave:open-update-release";
 
 export const UPDATE_AVAILABLE_CHANNEL = "codeweave:update-available";
 
+export const SET_THEME_SOURCE_CHANNEL = "codeweave:set-theme-source";
+
 export const GET_GPU_ACCELERATED_CHANNEL = "codeweave:get-gpu-accelerated";
 
 export const GPU_ACCELERATED_CHANNEL = "codeweave:gpu-accelerated";

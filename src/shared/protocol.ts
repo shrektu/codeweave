@@ -6,6 +6,7 @@ import { FlowDecision } from "../domain/flowRun";
 import { AgentSchema, FlowSchema } from "../domain/flows";
 import { TaskClassSchema } from "../domain/taskClass";
 import {
+  Appearance,
   DefinitionSource,
   EffectLevel,
   PermissionProfile,
@@ -88,6 +89,7 @@ const SettingsPatchSchema = z
   .strictObject({
     permissionProfile: z.enum(PermissionProfile).optional(),
     effectLevel: z.enum(EffectLevel).optional(),
+    appearance: z.enum(Appearance).optional(),
     claudeExecutable: z.string().nullable().optional(),
     codexExecutable: z.string().nullable().optional(),
     agyExecutable: z.string().nullable().optional(),

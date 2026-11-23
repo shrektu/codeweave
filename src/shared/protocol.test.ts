@@ -104,6 +104,7 @@ const VALID_REQUESTS: [string, unknown][] = [
   ["accounts/move", { id: "acc", direction: "up" }],
   ["settings/get", {}],
   ["settings/set", { effectLevel: "low" }],
+  ["settings/set", { appearance: "light" }],
   ["settings/set", { claudeExecutable: null }],
   ["switchLog/list", {}],
   ["flows/list", { cwd: "/work" }],
@@ -439,6 +440,10 @@ const INVALID_REQUESTS: [string, unknown][] = [
     request("settings/set", { effectLevel: "max" }),
   ],
   [
+    "settings/set with unknown appearance",
+    request("settings/set", { appearance: "neon" }),
+  ],
+  [
     "settings/set with numeric executable",
     request("settings/set", { claudeExecutable: 4 }),
   ],
@@ -658,6 +663,7 @@ describe("EventSchema", () => {
   const settings = {
     permissionProfile: "ask",
     effectLevel: "full",
+    appearance: "system",
     claudeExecutable: "/usr/bin/claude",
     codexExecutable: null,
     agyExecutable: null,

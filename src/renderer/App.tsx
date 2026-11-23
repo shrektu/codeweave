@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useState,
   type Dispatch,
   type JSX,
@@ -8,6 +9,7 @@ import {
 
 import { isRunOpen } from "../domain/flowState";
 import {
+  Appearance as AppearanceSetting,
   DefinitionSource,
   EffectLevel as EffectSetting,
   FlowRunOrigin,
@@ -63,6 +65,12 @@ import {
 } from "./format";
 import type { IpcClient } from "./ipc";
 import { useApp } from "./services";
+import {
+  applyTheme,
+  readStoredAppearance,
+  storeAppearance,
+  useResolvedTheme,
+} from "./theme";
 import { useTerminalDock } from "./terminal/useTerminalDock";
 import {
   agentEditorPinsFolder,
@@ -601,6 +609,27 @@ export function App(): JSX.Element {
   useEffect(() => {
     document.documentElement.dataset.fx = level;
   }, [level]);
+
+  const savedAppearance = state.snapshot?.settings.appearance;
+  const appearance =
+    savedAppearance ?? readStoredAppearance() ?? AppearanceSetting.system;
+  const theme = useResolvedTheme(appearance);
+
+  useLayoutEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
+
+  useEffect(() => {
+    if (savedAppearance === undefined) {
+      return;
+    }
+    storeAppearance(savedAppearance);
+    void window.codeweave.setThemeSource(savedAppearance);
+  }, [savedAppearance]);
+
+  useEffect(() => {
+    document.documentElement.dataset.platform = window.codeweave.platform;
+  }, []);
 
   useEffect(() => {
     let active = true;

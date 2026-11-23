@@ -10,6 +10,8 @@ export function makeCodeweaveApi(
     getAvailableUpdate: () => Promise.resolve(null),
     onUpdateAvailable: () => () => undefined,
     openUpdateRelease: () => Promise.resolve(),
+    platform: "linux",
+    setThemeSource: () => Promise.resolve(),
     ...overrides,
   };
 }

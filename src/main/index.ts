@@ -7,9 +7,11 @@ import {
   dialog,
   ipcMain,
   MessageChannelMain,
+  nativeTheme,
   safeStorage,
   shell,
   utilityProcess,
+  type BrowserWindowConstructorOptions,
   type IpcMainInvokeEvent,
   type OpenDialogOptions,
   type UtilityProcess,
@@ -24,6 +26,7 @@ import {
   OPEN_UPDATE_RELEASE_CHANNEL,
   PICK_FOLDER_CHANNEL,
   PORT_CHANNEL,
+  SET_THEME_SOURCE_CHANNEL,
   UPDATE_AVAILABLE_CHANNEL,
 } from "../shared/constants";
 import { RUN_ID_ENV } from "../backend/constants";
@@ -50,6 +53,7 @@ import {
   requestBackendShutdown,
   SHUTDOWN_TIMEOUT_MS,
 } from "./shutdown";
+import { themeSourceOf } from "./themeSource";
 import {
   createUpdateNotifier,
   openAvailableRelease,
@@ -62,6 +66,10 @@ Reflect.deleteProperty(process.env, RUN_ID_ENV);
 
 const RENDERER_INDEX_PATH = join(import.meta.dirname, "../renderer/index.html");
 const LINUX_PLATFORM = "linux";
+const DARWIN_PLATFORM = "darwin";
+const DARK_WINDOW_BACKGROUND = "#1c1c1e";
+const LIGHT_WINDOW_BACKGROUND = "#ffffff";
+const TRANSPARENT_WINDOW_BACKGROUND = "#00000000";
 const WINDOW_WIDTH = 1440;
 const WINDOW_HEIGHT = 900;
 
@@ -189,11 +197,26 @@ function connectWindowToBackend(
   window.webContents.postMessage(PORT_CHANNEL, null, [port2]);
 }
 
+function windowAppearance(): BrowserWindowConstructorOptions {
+  if (process.platform === DARWIN_PLATFORM) {
+    return {
+      vibrancy: "under-window",
+      visualEffectState: "followWindow",
+      backgroundColor: TRANSPARENT_WINDOW_BACKGROUND,
+    };
+  }
+  return {
+    backgroundColor: nativeTheme.shouldUseDarkColors
+      ? DARK_WINDOW_BACKGROUND
+      : LIGHT_WINDOW_BACKGROUND,
+  };
+}
+
 function createWindow(backend: UtilityProcess): void {
   const window = new BrowserWindow({
     width: WINDOW_WIDTH,
     height: WINDOW_HEIGHT,
-    backgroundColor: "#05070d",
+    ...windowAppearance(),
     ...(process.platform === LINUX_PLATFORM
       ? {
           icon: linuxWindowIcon(
@@ -261,6 +284,12 @@ if (app.requestSingleInstanceLock()) {
   app.on("second-instance", focusExistingWindow);
   void app.whenReady().then(() => {
     ipcMain.handle(PICK_FOLDER_CHANNEL, (event) => pickFolder(event));
+    ipcMain.handle(SET_THEME_SOURCE_CHANNEL, (event, value: unknown): void => {
+      const source = themeSourceOf(value);
+      if (fromApp(event) && source !== null) {
+        nativeTheme.themeSource = source;
+      }
+    });
     const notifier = createNotifier();
     registerUpdateHandlers(notifier);
     app.on("before-quit", () => {
