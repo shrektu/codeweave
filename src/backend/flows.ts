@@ -12,6 +12,7 @@ import {
   type FlowDefinition,
   type ParseResult,
 } from "../domain/flows";
+import { DefinitionSource } from "../domain/types";
 import { IpcError, IpcErrorCode } from "../shared/protocol";
 import type {
   AgentView,
@@ -21,6 +22,7 @@ import type {
 } from "../shared/views";
 
 import { replaceFileAtomically } from "./atomicFile";
+import type { DefinitionRoots } from "./definitionLibrary";
 import { KeyedMutex } from "./keyedMutex";
 
 export const FLOWS_DIR = "flows";
@@ -61,6 +63,7 @@ interface LoadedAgentFile {
 }
 
 interface SaveFlowParams {
+  readonly source: DefinitionSource;
   readonly file: string;
   readonly revision: string;
   readonly flow: FlowDefinition;
@@ -72,12 +75,25 @@ type LoadedFile<T> =
 
 interface ParsedFile<T> {
   readonly file: string;
+  readonly source: DefinitionSource;
   readonly value: T;
 }
 
 interface LoadedDir<T> {
   readonly files: ParsedFile<T>[];
   readonly errors: FlowFileError[];
+}
+
+interface SourceFiles {
+  readonly flows: LoadedDir<LoadedFlow>;
+  readonly agents: LoadedDir<LoadedAgentFile>;
+}
+
+type Sources = Record<DefinitionSource, SourceFiles>;
+
+export interface AgentIdentity {
+  readonly file: string;
+  readonly id: string;
 }
 
 function errorText(error: unknown): string {
@@ -88,16 +104,21 @@ export function isMissing(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
-function failure(file: string, error: unknown): FlowFileError {
-  return { file, messages: [errorText(error)] };
+function failure(
+  file: string,
+  source: DefinitionSource,
+  error: unknown,
+): FlowFileError {
+  return { file, source, messages: [errorText(error)] };
 }
 
 async function markdownNames(
-  cwd: string,
+  root: string,
+  source: DefinitionSource,
   dir: string,
 ): Promise<LoadedFile<string[]>> {
   try {
-    const entries = await readdir(join(cwd, dir), { withFileTypes: true });
+    const entries = await readdir(join(root, dir), { withFileTypes: true });
     const names = entries
       .filter((entry) => entry.isFile() && isMarkdownName(entry.name))
       .map((entry) => entry.name)
@@ -107,16 +128,17 @@ async function markdownNames(
     if (isMissing(error)) {
       return { ok: true, value: [] };
     }
-    return { ok: false, error: failure(dir, error) };
+    return { ok: false, error: failure(dir, source, error) };
   }
 }
 
 async function loadDir<T>(
-  cwd: string,
+  root: string,
+  source: DefinitionSource,
   dir: string,
   parse: (markdown: string) => ParseResult<T>,
 ): Promise<LoadedDir<T>> {
-  const names = await markdownNames(cwd, dir);
+  const names = await markdownNames(root, source, dir);
   if (!names.ok) {
     return { files: [], errors: [names.error] };
   }
@@ -124,12 +146,12 @@ async function loadDir<T>(
     names.value.map(async (name): Promise<LoadedFile<ParsedFile<T>>> => {
       const file = `${dir}/${name}`;
       try {
-        const parsed = parse(await readFile(join(cwd, file), "utf8"));
+        const parsed = parse(await readFile(join(root, file), "utf8"));
         return parsed.ok
-          ? { ok: true, value: { file, value: parsed.value } }
-          : { ok: false, error: { file, messages: parsed.errors } };
+          ? { ok: true, value: { file, source, value: parsed.value } }
+          : { ok: false, error: { file, source, messages: parsed.errors } };
       } catch (error) {
-        return { ok: false, error: failure(file, error) };
+        return { ok: false, error: failure(file, source, error) };
       }
     }),
   );
@@ -149,25 +171,33 @@ function usedBy(
 ): AgentView["usedBy"] {
   return flows
     .filter(({ value }) => value.definition.nodes.some((n) => n.agent === id))
-    .map(({ file, value }) => ({ file, title: value.definition.title }));
+    .map(({ file, source, value }) => ({
+      file,
+      source,
+      title: value.definition.title,
+    }));
 }
 
 function agentViews(
-  { file, value: { documents, revision } }: ParsedFile<LoadedAgentFile>,
+  { file, source, value: { documents, revision } }: ParsedFile<LoadedAgentFile>,
   flows: readonly ParsedFile<LoadedFlow>[],
+  hiddenIds: ReadonlySet<string>,
 ): AgentView[] {
-  return documents.map(({ definition, body }) => ({
-    id: definition.id,
-    file,
-    revision,
-    role: definition.role,
-    provider: definition.provider,
-    model: definition.model ?? null,
-    permissionProfile: definition.permissionProfile,
-    taskClass: definition.taskClass ?? null,
-    body,
-    usedBy: usedBy(definition.id, flows),
-  }));
+  return documents
+    .filter(({ definition }) => !hiddenIds.has(definition.id))
+    .map(({ definition, body }) => ({
+      id: definition.id,
+      file,
+      source,
+      revision,
+      role: definition.role,
+      provider: definition.provider,
+      model: definition.model ?? null,
+      permissionProfile: definition.permissionProfile,
+      taskClass: definition.taskClass ?? null,
+      body,
+      usedBy: usedBy(definition.id, flows),
+    }));
 }
 
 function parseLoadedAgents(markdown: string): ParseResult<LoadedAgentFile> {
@@ -193,13 +223,15 @@ function parseLoadedFlow(markdown: string): ParseResult<LoadedFlow> {
     : parsed;
 }
 
-function flowView(
-  file: string,
-  { definition, revision }: LoadedFlow,
-): FlowView {
+function flowView({
+  file,
+  source,
+  value: { definition, revision },
+}: ParsedFile<LoadedFlow>): FlowView {
   return {
     id: definition.id,
     file,
+    source,
     revision,
     title: definition.title,
     maxRounds: definition.maxRounds ?? DEFAULT_FLOW_ROUNDS,
@@ -219,12 +251,13 @@ function flowView(
 }
 
 function duplicateIdError(
-  file: string,
+  { file, source }: ParsedFile<LoadedFlow>,
   id: string,
   firstFile: string,
 ): FlowFileError {
   return {
     file,
+    source,
     messages: [`Duplicate flow id "${id}" (already defined in ${firstFile})`],
   };
 }
@@ -238,50 +271,160 @@ function deduplicate(valid: readonly ParsedFile<LoadedFlow>[]): Deduplicated {
   const firstFiles = new Map<string, string>();
   const flows: FlowView[] = [];
   const errors: FlowFileError[] = [];
-  for (const { file, value } of valid) {
-    const { id } = value.definition;
+  for (const parsed of valid) {
+    const { id } = parsed.value.definition;
     const firstFile = firstFiles.get(id);
     if (firstFile === undefined) {
-      firstFiles.set(id, file);
-      flows.push(flowView(file, value));
+      firstFiles.set(id, parsed.file);
+      flows.push(flowView(parsed));
     } else {
-      errors.push(duplicateIdError(file, id, firstFile));
+      errors.push(duplicateIdError(parsed, id, firstFile));
     }
   }
   return { flows, errors };
 }
 
-export async function listFlows(cwd: string): Promise<FlowsList> {
-  const [flowFiles, agentFiles] = await Promise.all([
-    loadDir(cwd, FLOWS_DIR, parseLoadedFlow),
-    loadDir(cwd, AGENTS_DIR, parseLoadedAgents),
+function emptyDir<T>(): LoadedDir<T> {
+  return { files: [], errors: [] };
+}
+
+async function loadSource(
+  root: string,
+  source: DefinitionSource,
+): Promise<SourceFiles> {
+  const [flows, agents] = await Promise.all([
+    loadDir(root, source, FLOWS_DIR, parseLoadedFlow),
+    loadDir(root, source, AGENTS_DIR, parseLoadedAgents),
   ]);
-  const agents = agentFiles.files.flatMap(({ value }) =>
-    value.documents.map(({ definition }) => definition),
+  return { flows, agents };
+}
+
+async function realpathOrNull(path: string): Promise<string | null> {
+  try {
+    return await realpath(path);
+  } catch (error) {
+    if (!isMissing(error)) {
+      console.warn(`The definition folder ${path} cannot be resolved`, error);
+    }
+    return null;
+  }
+}
+
+async function sameDirectory(first: string, second: string): Promise<boolean> {
+  const [firstPath, secondPath] = await Promise.all([
+    realpathOrNull(first),
+    realpathOrNull(second),
+  ]);
+  return firstPath !== null && firstPath === secondPath;
+}
+
+async function loadSources(roots: DefinitionRoots): Promise<Sources> {
+  const shared = await sameDirectory(roots.project, roots.library);
+  const [project, library] = await Promise.all([
+    loadSource(roots.project, DefinitionSource.project),
+    shared
+      ? { flows: emptyDir<LoadedFlow>(), agents: emptyDir<LoadedAgentFile>() }
+      : loadSource(roots.library, DefinitionSource.library),
+  ]);
+  return { project, library };
+}
+
+function agentIds(dir: LoadedDir<LoadedAgentFile>): string[] {
+  return dir.files.flatMap(({ value }) =>
+    value.documents.map(({ definition }) => definition.id),
   );
-  const validated = flowFiles.files.map(({ file, value }) => ({
-    file,
-    loaded: value,
-    messages: validateFlow(value.definition, agents),
-  }));
-  const unique = deduplicate(
-    validated
-      .filter(({ messages }) => messages.length === 0)
-      .map(({ file, loaded }) => ({ file, value: loaded })),
+}
+
+function effectiveAgentIds({ project, library }: Sources): string[] {
+  const projectIds = agentIds(project.agents);
+  const shadowed = new Set(projectIds);
+  return [
+    ...projectIds,
+    ...agentIds(library.agents).filter((id) => !shadowed.has(id)),
+  ];
+}
+
+function identities(dir: LoadedDir<LoadedAgentFile>): AgentIdentity[] {
+  return dir.files.flatMap(({ file, value }) =>
+    value.documents.map(({ definition }) => ({ file, id: definition.id })),
   );
+}
+
+export async function loadAgentIdentities(
+  roots: DefinitionRoots,
+): Promise<Record<DefinitionSource, AgentIdentity[]>> {
+  const { project, library } = await loadSources(roots);
   return {
-    flows: unique.flows,
-    agents: agentFiles.files.flatMap((file) =>
-      agentViews(file, flowFiles.files),
+    project: identities(project.agents),
+    library: identities(library.agents),
+  };
+}
+
+interface CheckedFlows {
+  readonly valid: ParsedFile<LoadedFlow>[];
+  readonly invalid: FlowFileError[];
+}
+
+function checkFlows(
+  files: readonly ParsedFile<LoadedFlow>[],
+  agentIdList: readonly string[],
+): CheckedFlows {
+  const agents = agentIdList.map((id) => ({ id }));
+  const checked = files.map((parsed) => ({
+    parsed,
+    messages: validateFlow(parsed.value.definition, agents),
+  }));
+  return {
+    valid: checked.flatMap(({ parsed, messages }) =>
+      messages.length === 0 ? [parsed] : [],
     ),
-    errors: [
-      ...flowFiles.errors,
-      ...validated
-        .filter(({ messages }) => messages.length > 0)
-        .map(({ file, messages }) => ({ file, messages })),
-      ...unique.errors,
-      ...agentFiles.errors,
+    invalid: checked.flatMap(({ parsed, messages }) =>
+      messages.length > 0
+        ? [{ file: parsed.file, source: parsed.source, messages }]
+        : [],
+    ),
+  };
+}
+
+function flowIds(files: readonly ParsedFile<LoadedFlow>[]): Set<string> {
+  return new Set(files.map(({ value }) => value.definition.id));
+}
+
+export async function listFlows(roots: DefinitionRoots): Promise<FlowsList> {
+  const sources = await loadSources(roots);
+  const { project, library } = sources;
+  const agentIdList = effectiveAgentIds(sources);
+  const projectChecked = checkFlows(project.flows.files, agentIdList);
+  const shadowedFlows = flowIds(project.flows.files);
+  const libraryFlows = library.flows.files.filter(
+    ({ value }) => !shadowedFlows.has(value.definition.id),
+  );
+  const libraryChecked = checkFlows(libraryFlows, agentIdList);
+  const projectUnique = deduplicate(projectChecked.valid);
+  const libraryUnique = deduplicate(libraryChecked.valid);
+  const parsedFlows = [...project.flows.files, ...library.flows.files];
+  const shadowedAgents = new Set(agentIds(project.agents));
+  return {
+    flows: [...projectUnique.flows, ...libraryUnique.flows],
+    agents: [
+      ...project.agents.files.flatMap((file) =>
+        agentViews(file, parsedFlows, new Set()),
+      ),
+      ...library.agents.files.flatMap((file) =>
+        agentViews(file, parsedFlows, shadowedAgents),
+      ),
     ],
+    errors: [
+      ...project.flows.errors,
+      ...projectChecked.invalid,
+      ...projectUnique.errors,
+      ...project.agents.errors,
+      ...library.flows.errors,
+      ...libraryChecked.invalid,
+      ...libraryUnique.errors,
+      ...library.agents.errors,
+    ],
+    locations: { project: roots.project, library: roots.library },
   };
 }
 
@@ -295,7 +438,7 @@ export function isInside(parent: string, child: string): boolean {
 }
 
 export async function resolveDefinitionFile(
-  cwd: string,
+  root: string,
   dir: DefinitionDir,
   file: string,
 ): Promise<string> {
@@ -308,8 +451,8 @@ export async function resolveDefinitionFile(
   }
   try {
     const [definitionsDir, target] = await Promise.all([
-      realpath(join(cwd, dir)),
-      realpath(join(cwd, file)),
+      realpath(join(root, dir)),
+      realpath(join(root, file)),
     ]);
     if (!isInside(definitionsDir, target)) {
       throw new IpcError(
@@ -331,26 +474,26 @@ export async function resolveDefinitionFile(
 
 const workspaceLocks = new KeyedMutex();
 
-async function workspaceKey(cwd: string): Promise<string> {
+async function workspaceKey(root: string): Promise<string> {
   try {
-    return await realpath(cwd);
+    return await realpath(root);
   } catch (error) {
     if (isMissing(error)) {
-      return cwd;
+      return root;
     }
     throw error;
   }
 }
 
 export async function withWorkspaceLock<T>(
-  cwd: string,
+  root: string,
   task: () => Promise<T>,
 ): Promise<T> {
-  return workspaceLocks.run(await workspaceKey(cwd), task);
+  return workspaceLocks.run(await workspaceKey(root), task);
 }
 
 async function applyFlowSave(
-  cwd: string,
+  roots: DefinitionRoots,
   target: string,
   { revision, flow }: SaveFlowParams,
 ): Promise<void> {
@@ -368,10 +511,9 @@ async function applyFlowSave(
       "Changing the flow id is not supported",
     );
   }
-  const agentFiles = await loadDir(cwd, AGENTS_DIR, parseAgentDocuments);
-  const agents = agentFiles.files.flatMap(({ value }) =>
-    value.map(({ definition }) => definition),
-  );
+  const agents = effectiveAgentIds(await loadSources(roots)).map((id) => ({
+    id,
+  }));
   const messages = validateFlow(flow, agents);
   if (messages.length > 0) {
     throw new IpcError(IpcErrorCode.VALIDATION, messages.join("; "));
@@ -384,12 +526,13 @@ async function applyFlowSave(
 }
 
 export async function saveFlow(
-  cwd: string,
+  roots: DefinitionRoots,
   params: SaveFlowParams,
 ): Promise<FlowsList> {
-  await withWorkspaceLock(cwd, async () => {
-    const target = await resolveDefinitionFile(cwd, FLOWS_DIR, params.file);
-    await applyFlowSave(cwd, target, params);
+  const root = roots[params.source];
+  await withWorkspaceLock(root, async () => {
+    const target = await resolveDefinitionFile(root, FLOWS_DIR, params.file);
+    await applyFlowSave(roots, target, params);
   });
-  return listFlows(cwd);
+  return listFlows(roots);
 }

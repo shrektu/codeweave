@@ -12,32 +12,36 @@ import {
   type AgentDocument,
   type ParseResult,
 } from "../domain/flows";
+import { DefinitionSource } from "../domain/types";
 import { IpcError, IpcErrorCode, type ParamsMap } from "../shared/protocol";
 import type { AgentView, FlowsList } from "../shared/views";
 
 import { createFileExclusively, replaceFileAtomically } from "./atomicFile";
+import type { DefinitionRoots } from "./definitionLibrary";
 import {
   AGENTS_DIR,
   contentRevision,
   isInside,
   listFlows,
+  loadAgentIdentities,
   MARKDOWN_EXTENSION,
   resolveDefinitionFile,
   withWorkspaceLock,
+  type AgentIdentity,
 } from "./flows";
 
 const STALE_MESSAGE = "The agent file changed on disk";
-const ESCAPING_DIR_MESSAGE = `${AGENTS_DIR}/ must stay inside the project`;
 
 type CreateParams = Omit<ParamsMap["agents/create"], "cwd">;
 type SaveParams = Omit<ParamsMap["agents/save"], "cwd">;
 type DeleteParams = Omit<ParamsMap["agents/delete"], "cwd">;
+type AgentIds = Record<DefinitionSource, AgentIdentity[]>;
 
 interface CurrentFile {
   readonly target: string;
   readonly text: string;
   readonly documents: AgentDocument[];
-  readonly list: FlowsList;
+  readonly ids: AgentIds;
   readonly agent: AgentView;
 }
 
@@ -73,14 +77,32 @@ function assertValid(messages: readonly string[]): void {
   }
 }
 
-async function ensureAgentsDir(cwd: string): Promise<string> {
-  await mkdir(join(cwd, AGENTS_DIR), { recursive: true });
-  const [root, agentsDir] = await Promise.all([
-    realpath(cwd),
-    realpath(join(cwd, AGENTS_DIR)),
+function assertNotOverridden(
+  source: DefinitionSource,
+  id: string,
+  projectIds: readonly AgentIdentity[],
+): void {
+  if (
+    source === DefinitionSource.library &&
+    projectIds.some((other) => other.id === id)
+  ) {
+    throw validation(
+      `Agent "${id}" is already defined in the project, which overrides the library`,
+    );
+  }
+}
+
+async function ensureAgentsDir(
+  root: string,
+  source: DefinitionSource,
+): Promise<string> {
+  await mkdir(join(root, AGENTS_DIR), { recursive: true });
+  const [realRoot, agentsDir] = await Promise.all([
+    realpath(root),
+    realpath(join(root, AGENTS_DIR)),
   ]);
-  if (!isInside(root, agentsDir)) {
-    throw validation(ESCAPING_DIR_MESSAGE);
+  if (!isInside(realRoot, agentsDir)) {
+    throw validation(`${AGENTS_DIR}/ must stay inside the ${source} folder`);
   }
   return agentsDir;
 }
@@ -113,10 +135,12 @@ function notFound(file: string, id: string): IpcError {
 export function listedAgent(
   list: FlowsList,
   file: string,
+  source: DefinitionSource,
   id: string,
 ): AgentView {
   const found = list.agents.find(
-    (agent) => agent.file === file && agent.id === id,
+    (agent) =>
+      agent.file === file && agent.source === source && agent.id === id,
   );
   if (found === undefined) {
     throw notFound(file, id);
@@ -125,17 +149,31 @@ export function listedAgent(
 }
 
 async function loadCurrent(
-  cwd: string,
-  { file, id, revision }: Pick<SaveParams, "file" | "id" | "revision">,
+  roots: DefinitionRoots,
+  {
+    source,
+    file,
+    id,
+    revision,
+  }: Pick<SaveParams, "source" | "file" | "id" | "revision">,
 ): Promise<CurrentFile> {
-  const target = await resolveDefinitionFile(cwd, AGENTS_DIR, file);
+  const target = await resolveDefinitionFile(roots[source], AGENTS_DIR, file);
   const text = await readFile(target, "utf8");
   if (contentRevision(text) !== revision) {
     throw new IpcError(IpcErrorCode.CONFLICT, STALE_MESSAGE);
   }
   const documents = unwrap(parseAgentDocuments(text));
-  const list = await listFlows(cwd);
-  return { target, text, documents, list, agent: listedAgent(list, file, id) };
+  const [list, ids] = await Promise.all([
+    listFlows(roots),
+    loadAgentIdentities(roots),
+  ]);
+  return {
+    target,
+    text,
+    documents,
+    ids,
+    agent: listedAgent(list, file, source, id),
+  };
 }
 
 function findDocument(
@@ -151,16 +189,14 @@ function findDocument(
 }
 
 function otherIds(
-  { documents, list }: CurrentFile,
+  { ids }: CurrentFile,
+  source: DefinitionSource,
   file: string,
   id: string,
 ): string[] {
-  return [
-    ...list.agents.filter((agent) => agent.file !== file).map(({ id }) => id),
-    ...documents
-      .map(({ definition }) => definition.id)
-      .filter((other) => other !== id),
-  ];
+  return ids[source]
+    .filter((other) => other.file !== file || other.id !== id)
+    .map((other) => other.id);
 }
 
 function normalizedBody(body: string): string {
@@ -218,12 +254,16 @@ function movesFile(
   );
 }
 
-async function applySave(cwd: string, params: SaveParams): Promise<void> {
-  const { file, id, agent, body } = params;
-  const current = await loadCurrent(cwd, params);
+async function applySave(
+  roots: DefinitionRoots,
+  params: SaveParams,
+): Promise<void> {
+  const { source, file, id, agent, body } = params;
+  const current = await loadCurrent(roots, params);
   findDocument(current, file, id);
-  assertValid(validateAgent(agent, body, otherIds(current, file, id)));
+  assertValid(validateAgent(agent, body, otherIds(current, source, file, id)));
   if (agent.id !== id) {
+    assertNotOverridden(source, agent.id, current.ids.project);
     assertUnused(id, current.agent.usedBy);
   }
   const updated = unwrap(serializeAgentBlock(current.text, id, agent, body));
@@ -235,9 +275,12 @@ async function applySave(cwd: string, params: SaveParams): Promise<void> {
   }
 }
 
-async function applyDelete(cwd: string, params: DeleteParams): Promise<void> {
+async function applyDelete(
+  roots: DefinitionRoots,
+  params: DeleteParams,
+): Promise<void> {
   const { file, id } = params;
-  const current = await loadCurrent(cwd, params);
+  const current = await loadCurrent(roots, params);
   findDocument(current, file, id);
   assertUnused(id, current.agent.usedBy);
   const remaining = unwrap(removeAgentBlock(current.text, id));
@@ -249,36 +292,40 @@ async function applyDelete(cwd: string, params: DeleteParams): Promise<void> {
 }
 
 export async function createAgent(
-  cwd: string,
-  { agent, body }: CreateParams,
+  roots: DefinitionRoots,
+  { source = DefinitionSource.project, agent, body }: CreateParams,
 ): Promise<FlowsList> {
-  await withWorkspaceLock(cwd, async () => {
-    const { agents } = await listFlows(cwd);
+  const root = roots[source];
+  await withWorkspaceLock(root, async () => {
+    const ids = await loadAgentIdentities(roots);
     assertValid(
       validateAgent(
         agent,
         body,
-        agents.map(({ id }) => id),
+        ids[source].map(({ id }) => id),
       ),
     );
-    const agentsDir = await ensureAgentsDir(cwd);
+    assertNotOverridden(source, agent.id, ids.project);
+    const agentsDir = await ensureAgentsDir(root, source);
     await createExclusively(agentsDir, agent.id, newAgentFile(agent, body));
   });
-  return listFlows(cwd);
+  return listFlows(roots);
 }
 
 export async function saveAgent(
-  cwd: string,
+  roots: DefinitionRoots,
   params: SaveParams,
 ): Promise<FlowsList> {
-  await withWorkspaceLock(cwd, () => applySave(cwd, params));
-  return listFlows(cwd);
+  await withWorkspaceLock(roots[params.source], () => applySave(roots, params));
+  return listFlows(roots);
 }
 
 export async function deleteAgent(
-  cwd: string,
+  roots: DefinitionRoots,
   params: DeleteParams,
 ): Promise<FlowsList> {
-  await withWorkspaceLock(cwd, () => applyDelete(cwd, params));
-  return listFlows(cwd);
+  await withWorkspaceLock(roots[params.source], () =>
+    applyDelete(roots, params),
+  );
+  return listFlows(roots);
 }

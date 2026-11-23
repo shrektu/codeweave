@@ -315,6 +315,7 @@ describe("saveParamsOf", () => {
 
     expect(saveParamsOf("/work", base, draft)).toEqual({
       cwd: "/work",
+      source: "project",
       file: "flows/ship.md",
       revision: "rev-1",
       flow: {
@@ -329,6 +330,16 @@ describe("saveParamsOf", () => {
         edges: [{ from: "build", to: "review", kind: "hands_off_to" }],
       },
     });
+  });
+});
+
+describe("saveParamsOf source", () => {
+  it("save_params_carry_the_source_of_a_library_flow", () => {
+    const started = makeFlow({ source: "library" });
+
+    const params = saveParamsOf("/work", baseOf(started), draftOf(started));
+
+    expect(params.source).toBe("library");
   });
 });
 

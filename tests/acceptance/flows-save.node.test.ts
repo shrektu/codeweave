@@ -125,6 +125,7 @@ it("flows_save_rewrites_front_matter_and_keeps_body", async () => {
 
   const result = await handlersFor(cwd)["flows/save"]({
     cwd,
+    source: "project",
     file: FLOW_FILE,
     revision,
     flow: EDITED_FLOW,
@@ -167,6 +168,7 @@ it.each(["flows/my flow.md", "flows/café.md", "flows/日本語 flow.md"])(
 
     const result = await handlersFor(cwd)["flows/save"]({
       cwd,
+      source: "project",
       file,
       revision,
       flow: EDITED_FLOW,
@@ -192,6 +194,7 @@ it.each(["flows/..draft.md", "flows/..md"])(
 
     const result = await handlersFor(cwd)["flows/save"]({
       cwd,
+      source: "project",
       file,
       revision,
       flow: EDITED_FLOW,
@@ -213,6 +216,7 @@ it("flows_save_rejects_stale_revision", async () => {
   await expect(
     handlersFor(cwd)["flows/save"]({
       cwd,
+      source: "project",
       file: FLOW_FILE,
       revision,
       flow: EDITED_FLOW,
@@ -251,6 +255,7 @@ it("flows_save_rejects_path_outside_flows_dir", async () => {
     await expect(
       handlersFor(cwd)["flows/save"]({
         cwd,
+        source: "project",
         file,
         revision,
         flow: EDITED_FLOW,
@@ -271,6 +276,7 @@ it("flows_save_reports_missing_file_as_not_found", async () => {
   await expect(
     handlersFor(cwd)["flows/save"]({
       cwd,
+      source: "project",
       file: "flows/gone.md",
       revision: "abc",
       flow: EDITED_FLOW,
@@ -293,6 +299,7 @@ it("flows_save_rejects_invalid_flow_and_id_change", async () => {
   await expect(
     handlersFor(cwd)["flows/save"]({
       cwd,
+      source: "project",
       file: FLOW_FILE,
       revision,
       flow: unknownAgent,
@@ -304,6 +311,7 @@ it("flows_save_rejects_invalid_flow_and_id_change", async () => {
   await expect(
     handlersFor(cwd)["flows/save"]({
       cwd,
+      source: "project",
       file: FLOW_FILE,
       revision,
       flow: renamed,
@@ -344,6 +352,7 @@ it("flows_save_keeps_entry_comments_and_unknown_keys", async () => {
 
   await handlersFor(cwd)["flows/save"]({
     cwd,
+    source: "project",
     file: FLOW_FILE,
     revision,
     flow: {
@@ -376,8 +385,20 @@ it("flows_save_concurrent_same_revision_one_conflicts", async () => {
   const second: FlowDefinition = { ...EDITED_FLOW, title: "Second writer" };
 
   const outcomes = await Promise.allSettled([
-    handlers["flows/save"]({ cwd, file: FLOW_FILE, revision, flow: first }),
-    handlers["flows/save"]({ cwd, file: FLOW_FILE, revision, flow: second }),
+    handlers["flows/save"]({
+      cwd,
+      source: "project",
+      file: FLOW_FILE,
+      revision,
+      flow: first,
+    }),
+    handlers["flows/save"]({
+      cwd,
+      source: "project",
+      file: FLOW_FILE,
+      revision,
+      flow: second,
+    }),
   ]);
 
   const fulfilled = outcomes.filter(
@@ -422,6 +443,7 @@ it("flows_save_removes_anchored_node_entry", async () => {
 
   const result = await handlersFor(cwd)["flows/save"]({
     cwd,
+    source: "project",
     file: FLOW_FILE,
     revision,
     flow: {
@@ -467,6 +489,7 @@ it("flows_save_rejects_recursive_alias_with_validation_error", async () => {
   await expect(
     handlersFor(cwd)["flows/save"]({
       cwd,
+      source: "project",
       file: FLOW_FILE,
       revision,
       flow: {
@@ -512,6 +535,7 @@ it("flows_save_keeps_alias_to_removed_max_rounds", async () => {
 
   const result = await handlersFor(cwd)["flows/save"]({
     cwd,
+    source: "project",
     file: FLOW_FILE,
     revision,
     flow: {
@@ -554,6 +578,7 @@ it("flows_save_rejects_reused_anchor_names", async () => {
   await expect(
     handlersFor(cwd)["flows/save"]({
       cwd,
+      source: "project",
       file: FLOW_FILE,
       revision,
       flow: {
@@ -594,6 +619,7 @@ it("flows_save_keeps_alias_to_anchored_max_rounds_key", async () => {
 
   const result = await handlersFor(cwd)["flows/save"]({
     cwd,
+    source: "project",
     file: FLOW_FILE,
     revision,
     flow: {
@@ -621,6 +647,7 @@ it.skipIf(process.platform === "win32")(
 
     await handlersFor(cwd)["flows/save"]({
       cwd,
+      source: "project",
       file: FLOW_FILE,
       revision,
       flow: EDITED_FLOW,

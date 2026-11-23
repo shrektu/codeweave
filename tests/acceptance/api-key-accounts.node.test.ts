@@ -294,6 +294,7 @@ it("legacy_storage_files_load_unchanged", async () => {
     updateCheck: true,
     updateChannel: "stable",
     defaultTaskClass: "standard",
+    definitionLibrary: null,
   });
 });
 

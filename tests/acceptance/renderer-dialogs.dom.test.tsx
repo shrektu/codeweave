@@ -65,6 +65,10 @@ function settingsClient(): FakeIpcClient {
       updateCheck: patch.updateCheck ?? current.updateCheck,
       updateChannel: patch.updateChannel ?? current.updateChannel,
       defaultTaskClass: patch.defaultTaskClass ?? current.defaultTaskClass,
+      definitionLibrary:
+        patch.definitionLibrary === undefined
+          ? current.definitionLibrary
+          : patch.definitionLibrary,
     };
     client.emit({ v: 7, event: "settings/changed", payload: current });
     return current;
@@ -94,6 +98,7 @@ function configDirInput(): HTMLInputElement {
 const CLAUDE_SAVE_INDEX = 0;
 const CODEX_SAVE_INDEX = 1;
 const AGY_SAVE_INDEX = 3;
+const LIBRARY_SAVE_INDEX = 5;
 
 function saveButton(index: number): HTMLElement {
   const button = screen.getAllByRole("button", { name: "Save" })[index];
@@ -207,6 +212,33 @@ it("settings_dialog_saves_agy_executable", async () => {
     expect(client.requests).toContainEqual({
       method: "settings/set",
       params: { agyExecutable: null },
+    });
+  });
+});
+
+it("settings_dialog_saves_the_flow_library_folder_and_null_when_empty", async () => {
+  const client = settingsClient();
+  renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
+  const input = await screen.findByLabelText("Flow library folder");
+  expect(input.getAttribute("placeholder")).toBe(
+    "Default: Codeweave data folder/library",
+  );
+
+  fireEvent.change(input, { target: { value: "~/codeweave-library" } });
+  fireEvent.click(saveButton(LIBRARY_SAVE_INDEX));
+  await waitFor(() => {
+    expect(client.requests).toContainEqual({
+      method: "settings/set",
+      params: { definitionLibrary: "~/codeweave-library" },
+    });
+  });
+
+  fireEvent.change(input, { target: { value: "" } });
+  fireEvent.click(saveButton(LIBRARY_SAVE_INDEX));
+  await waitFor(() => {
+    expect(client.requests).toContainEqual({
+      method: "settings/set",
+      params: { definitionLibrary: null },
     });
   });
 });

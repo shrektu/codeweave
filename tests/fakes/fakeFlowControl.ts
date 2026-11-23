@@ -41,6 +41,7 @@ export const SAMPLE_FLOWS: FlowsList = {
     {
       id: "review",
       file: "review.md",
+      source: "project",
       revision: "r1",
       title: "Review flow",
       maxRounds: 3,
@@ -55,6 +56,7 @@ export const SAMPLE_FLOWS: FlowsList = {
   ],
   agents: [],
   errors: [],
+  locations: { project: "/work/repo", library: "/data/library" },
 };
 
 export const SAMPLE_RUN: FlowRunView = {

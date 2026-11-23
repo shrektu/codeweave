@@ -8,13 +8,20 @@ import {
   type AgentDraft,
 } from "../agentDraft";
 import { parseProviderId } from "../flowDraft";
-import { PROVIDER_IDS, PROVIDER_LABELS } from "../format";
+import {
+  DEFINITION_SOURCE_LABELS,
+  DEFINITION_SOURCES,
+  parseDefinitionSource,
+  PROVIDER_IDS,
+  PROVIDER_LABELS,
+} from "../format";
 import { PROFILE_OPTIONS } from "../profileOptions";
 import type { AgentSession } from "../useAgentEditor";
 
 import { AgentModelField } from "./AgentModelField";
 import { Dialog } from "./Dialog";
 import { EditFeedback } from "./EditFeedback";
+import { SourceBadge } from "./SourceBadge";
 
 const NO_TASK_CLASS_LABEL = "—";
 const CONFLICT_MESSAGE =
@@ -206,18 +213,58 @@ function BodyField({
   );
 }
 
+function SourceSelect({
+  draft,
+  disabled,
+  onChange,
+}: DraftFieldProps): JSX.Element {
+  const id = useId();
+  return (
+    <div className="field">
+      <label htmlFor={id}>Location</label>
+      <select
+        id={id}
+        value={draft.source}
+        disabled={disabled}
+        onChange={(event) => {
+          const source = parseDefinitionSource(event.target.value);
+          if (source !== null) {
+            onChange({ ...draft, source });
+          }
+        }}
+      >
+        {DEFINITION_SOURCES.map((source) => (
+          <option key={source} value={source}>
+            {DEFINITION_SOURCE_LABELS[source]}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function Fields({
   draft,
   disabled,
   reasonId,
   idLocked,
+  sourceLocked,
   onChange,
-}: DraftFieldProps & { reasonId: string; idLocked: boolean }): JSX.Element {
+}: DraftFieldProps & {
+  reasonId: string;
+  idLocked: boolean;
+  sourceLocked: boolean;
+}): JSX.Element {
   const set = (change: Partial<AgentDraft>): void => {
     onChange({ ...draft, ...change });
   };
   return (
     <>
+      {sourceLocked ? (
+        <SourceBadge source={draft.source} />
+      ) : (
+        <SourceSelect draft={draft} disabled={disabled} onChange={onChange} />
+      )}
       <TextField
         label="Id"
         value={draft.id}
@@ -274,7 +321,9 @@ function UsedBy({
       <h3 className="sec">Used by</h3>
       <ul className="flow-errors">
         {view.usedBy.map((flow) => (
-          <li key={flow.file}>{`${flow.title} (${flow.file})`}</li>
+          <li key={`${flow.source}:${flow.file}`}>
+            {`${flow.title} (${flow.file})`}
+          </li>
         ))}
       </ul>
       <p id={reasonId} className="agent-hint">
@@ -296,7 +345,10 @@ function DeleteDialog({
   onClose: () => void;
 }): JSX.Element {
   const others = list.agents.filter(
-    (agent) => agent.file === view.file && agent.id !== view.id,
+    (agent) =>
+      agent.file === view.file &&
+      agent.source === view.source &&
+      agent.id !== view.id,
   ).length;
   return (
     <Dialog title={`Delete ${view.id}?`} onClose={onClose}>
@@ -436,6 +488,7 @@ export function AgentForm({
         disabled={saving}
         reasonId={reasonId}
         idLocked={usedByReason(view) !== null}
+        sourceLocked={view !== null}
         onChange={onChange}
       />
       <UsedBy view={view} reasonId={reasonId} />

@@ -236,6 +236,16 @@ function SettingsForm({ settings }: { settings: SettingsView }): JSX.Element {
           onPatch({ terminalShell });
         }}
       />
+      <ExecutableField
+        id="definition-library"
+        label="Flow library folder"
+        current={settings.definitionLibrary}
+        placeholder="Default: Codeweave data folder/library"
+        help="Shared agents and flows. A project definition overrides a library one with the same id."
+        onSave={(definitionLibrary) => {
+          onPatch({ definitionLibrary });
+        }}
+      />
       {save.error !== null && <p className="error">{save.error}</p>}
     </>
   );

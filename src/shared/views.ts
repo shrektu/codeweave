@@ -16,6 +16,7 @@ import {
 import { RouteSource } from "../domain/routing";
 import { TaskClass, TaskClassSchema } from "../domain/taskClass";
 import {
+  DefinitionSource,
   EdgeKind,
   EffectLevel,
   FlowPlacement,
@@ -210,6 +211,7 @@ export type SessionView = z.infer<typeof SessionViewSchema>;
 export const AgentViewSchema = z.strictObject({
   id: z.string(),
   file: z.string(),
+  source: z.enum(DefinitionSource),
   revision: z.string(),
   role: z.string(),
   provider: z.enum(ProviderId),
@@ -217,13 +219,20 @@ export const AgentViewSchema = z.strictObject({
   permissionProfile: z.enum(PermissionProfile),
   taskClass: TaskClassSchema.nullable(),
   body: z.string(),
-  usedBy: z.array(z.strictObject({ file: z.string(), title: z.string() })),
+  usedBy: z.array(
+    z.strictObject({
+      file: z.string(),
+      source: z.enum(DefinitionSource),
+      title: z.string(),
+    }),
+  ),
 });
 export type AgentView = z.infer<typeof AgentViewSchema>;
 
 export const FlowViewSchema = z.strictObject({
   id: z.string(),
   file: z.string(),
+  source: z.enum(DefinitionSource),
   revision: z.string(),
   title: z.string(),
   maxRounds: z.int(),
@@ -248,6 +257,7 @@ export type FlowView = z.infer<typeof FlowViewSchema>;
 
 export const FlowFileErrorSchema = z.strictObject({
   file: z.string(),
+  source: z.enum(DefinitionSource),
   messages: z.array(z.string()),
 });
 export type FlowFileError = z.infer<typeof FlowFileErrorSchema>;
@@ -256,6 +266,7 @@ export const FlowsListSchema = z.strictObject({
   flows: z.array(FlowViewSchema),
   agents: z.array(AgentViewSchema),
   errors: z.array(FlowFileErrorSchema),
+  locations: z.strictObject({ project: z.string(), library: z.string() }),
 });
 export type FlowsList = z.infer<typeof FlowsListSchema>;
 
@@ -310,6 +321,7 @@ export const SettingsViewSchema = z.strictObject({
   updateCheck: z.boolean(),
   updateChannel: z.enum(UpdateChannel),
   defaultTaskClass: TaskClassSchema,
+  definitionLibrary: z.string().nullable(),
 });
 export type SettingsView = z.infer<typeof SettingsViewSchema>;
 

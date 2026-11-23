@@ -56,6 +56,7 @@ const SETTINGS_EVENT = {
     updateCheck: true,
     updateChannel: "stable",
     defaultTaskClass: "standard",
+    definitionLibrary: null,
   },
 };
 

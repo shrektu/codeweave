@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { expect, it } from "vitest";
@@ -35,6 +36,7 @@ it("settings_without_update_fields_load_with_defaults", async () => {
     store,
     broadcast: () => undefined,
     postUpdaterConfig: () => undefined,
+    homeDir: tmpdir(),
   }).get();
 
   expect(settings.updateCheck).toBe(true);
@@ -52,6 +54,7 @@ it("old settings load with standard task class", async () => {
     store,
     broadcast: () => undefined,
     postUpdaterConfig: () => undefined,
+    homeDir: tmpdir(),
   }).get();
 
   expect(settings.defaultTaskClass).toBe("standard");
@@ -64,6 +67,7 @@ it("default task class round trips through settings", async () => {
     store: createJsonStore(dir),
     broadcast: () => undefined,
     postUpdaterConfig: () => undefined,
+    homeDir: tmpdir(),
   });
 
   const afterSet = await service.set({ defaultTaskClass: "light" });
@@ -79,6 +83,7 @@ it("settings_round_trip_update_fields", async () => {
     store: createJsonStore(dir),
     broadcast: () => undefined,
     postUpdaterConfig: () => undefined,
+    homeDir: tmpdir(),
   });
 
   const afterSet = await service.set({
@@ -89,6 +94,7 @@ it("settings_round_trip_update_fields", async () => {
     store: createJsonStore(dir),
     broadcast: () => undefined,
     postUpdaterConfig: () => undefined,
+    homeDir: tmpdir(),
   }).get();
 
   expect(afterSet.updateCheck).toBe(false);
@@ -112,6 +118,7 @@ it("settings_set_without_update_fields_keeps_them", async () => {
     store: createJsonStore(dir),
     broadcast: () => undefined,
     postUpdaterConfig: () => undefined,
+    homeDir: tmpdir(),
   });
 
   const view = await service.set({ effectLevel: "full" });

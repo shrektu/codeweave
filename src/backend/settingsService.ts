@@ -1,5 +1,7 @@
+import { isAbsolute, join } from "node:path";
+
 import { ProviderId } from "../domain/types";
-import type { ParamsMap } from "../shared/protocol";
+import { IpcError, IpcErrorCode, type ParamsMap } from "../shared/protocol";
 import { UPDATER_CONFIG_MESSAGE_TYPE } from "../shared/constants";
 import type { UpdaterConfigMessage } from "../shared/updates";
 import type { SettingsView } from "../shared/views";
@@ -12,7 +14,13 @@ export interface SettingsServiceDeps {
   store: JsonStore;
   broadcast: ConnectionRegistry["broadcast"];
   postUpdaterConfig: PostUpdaterConfig;
+  homeDir: string;
 }
+
+const HOME_MARKER = "~";
+const HOME_PREFIXES = ["~/", "~\\"] as const;
+const RELATIVE_LIBRARY_MESSAGE =
+  "The flow library folder must be an absolute path";
 
 export type PostUpdaterConfig = (message: UpdaterConfigMessage) => void;
 
@@ -46,6 +54,34 @@ export function configuredExecutable(
   return field === undefined ? null : settings[field];
 }
 
+function expandHome(path: string, homeDir: string): string {
+  if (path === HOME_MARKER) {
+    return homeDir;
+  }
+  return HOME_PREFIXES.some((prefix) => path.startsWith(prefix))
+    ? join(homeDir, path.slice(HOME_MARKER.length + 1))
+    : path;
+}
+
+function libraryFolder(
+  value: string | null | undefined,
+  current: string | null,
+  homeDir: string,
+): string | null {
+  if (value === undefined) {
+    return current;
+  }
+  const trimmed = value?.trim() ?? "";
+  if (trimmed === "") {
+    return null;
+  }
+  const expanded = expandHome(trimmed, homeDir);
+  if (!isAbsolute(expanded)) {
+    throw new IpcError(IpcErrorCode.VALIDATION, RELATIVE_LIBRARY_MESSAGE);
+  }
+  return expanded;
+}
+
 function toView(settings: SettingsFile): SettingsView {
   return {
     permissionProfile: settings.permissionProfile,
@@ -58,6 +94,7 @@ function toView(settings: SettingsFile): SettingsView {
     updateCheck: settings.updateCheck,
     updateChannel: settings.updateChannel,
     defaultTaskClass: settings.defaultTaskClass,
+    definitionLibrary: settings.definitionLibrary,
   };
 }
 
@@ -75,6 +112,7 @@ export function createSettingsService({
   store,
   broadcast,
   postUpdaterConfig,
+  homeDir,
 }: SettingsServiceDeps): SettingsService {
   const serialized = createSerializer();
   return {
@@ -112,6 +150,11 @@ export function createSettingsService({
           updateCheck: patch.updateCheck ?? current.updateCheck,
           updateChannel: patch.updateChannel ?? current.updateChannel,
           defaultTaskClass: patch.defaultTaskClass ?? current.defaultTaskClass,
+          definitionLibrary: libraryFolder(
+            patch.definitionLibrary,
+            current.definitionLibrary,
+            homeDir,
+          ),
         };
         await store.writeSettings(next);
         const view = toView(next);

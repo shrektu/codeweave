@@ -1,5 +1,6 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
 
+import type { DefinitionSource } from "../domain/types";
 import type { AgentView, FlowsList } from "../shared/views";
 
 import {
@@ -16,7 +17,13 @@ import { useAsyncAction, type AsyncAction } from "./useAsyncAction";
 
 export type AgentTarget =
   | { kind: "new" }
-  | { kind: "existing"; file: string; revision: string; id: string };
+  | {
+      kind: "existing";
+      source: DefinitionSource;
+      file: string;
+      revision: string;
+      id: string;
+    };
 
 export interface AgentSession {
   cwd: string;
@@ -59,6 +66,7 @@ function sessionOf(cwd: string, view: AgentView): AgentSession {
     cwd,
     target: {
       kind: "existing",
+      source: view.source,
       file: view.file,
       revision: view.revision,
       id: view.id,
@@ -82,9 +90,15 @@ function sendSave(
   const { cwd, target, draft } = session;
   const agent = toAgentDefinition(draft);
   return target.kind === "new"
-    ? client.request("agents/create", { cwd, agent, body: draft.body })
+    ? client.request("agents/create", {
+        cwd,
+        source: draft.source,
+        agent,
+        body: draft.body,
+      })
     : client.request("agents/save", {
         cwd,
+        source: target.source,
         file: target.file,
         revision: target.revision,
         id: target.id,
@@ -103,6 +117,7 @@ function sendDelete(
   }
   return client.request("agents/delete", {
     cwd,
+    source: target.source,
     file: target.file,
     revision: target.revision,
     id: target.id,

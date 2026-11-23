@@ -1,7 +1,7 @@
 import { MAX_FLOW_ROUNDS, MIN_FLOW_ROUNDS } from "../domain/constants";
 import { validateFlow, type FlowDefinition } from "../domain/flows";
 import type { TaskClass } from "../domain/taskClass";
-import { EdgeKind, ProviderId } from "../domain/types";
+import { DefinitionSource, EdgeKind, ProviderId } from "../domain/types";
 import type { ParamsMap } from "../shared/protocol";
 import type { AgentView, FlowView } from "../shared/views";
 
@@ -29,6 +29,7 @@ export interface FlowDraft {
 
 export interface FlowBase {
   flowId: string;
+  source: DefinitionSource;
   file: string;
   revision: string;
 }
@@ -174,7 +175,12 @@ export function setMaxRounds(draft: FlowDraft, rounds: number): DraftResult {
 }
 
 export function baseOf(view: FlowView): FlowBase {
-  return { flowId: view.id, file: view.file, revision: view.revision };
+  return {
+    flowId: view.id,
+    source: view.source,
+    file: view.file,
+    revision: view.revision,
+  };
 }
 
 export function saveParamsOf(
@@ -184,6 +190,7 @@ export function saveParamsOf(
 ): ParamsMap["flows/save"] {
   return {
     cwd,
+    source: base.source,
     file: base.file,
     revision: base.revision,
     flow: toDefinition(draft),

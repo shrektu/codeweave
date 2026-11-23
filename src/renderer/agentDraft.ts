@@ -1,10 +1,15 @@
 import { validateAgent } from "../domain/agentFile";
 import type { AgentDefinition } from "../domain/flows";
 import type { TaskClass } from "../domain/taskClass";
-import { PermissionProfile, ProviderId } from "../domain/types";
+import {
+  DefinitionSource,
+  PermissionProfile,
+  ProviderId,
+} from "../domain/types";
 import type { AgentView } from "../shared/views";
 
 export interface AgentDraft {
+  source: DefinitionSource;
   id: string;
   role: string;
   provider: ProviderId;
@@ -15,6 +20,7 @@ export interface AgentDraft {
 }
 
 const DRAFT_KEYS: readonly (keyof AgentDraft)[] = [
+  "source",
   "id",
   "role",
   "provider",
@@ -26,6 +32,7 @@ const DRAFT_KEYS: readonly (keyof AgentDraft)[] = [
 
 export function emptyAgentDraft(): AgentDraft {
   return {
+    source: DefinitionSource.project,
     id: "",
     role: "",
     provider: ProviderId.claude,
@@ -38,6 +45,7 @@ export function emptyAgentDraft(): AgentDraft {
 
 export function agentDraftOf(view: AgentView): AgentDraft {
   return {
+    source: view.source,
     id: view.id,
     role: view.role,
     provider: view.provider,
@@ -67,6 +75,7 @@ export function agentDraftErrors(
   originalId: string | null,
 ): string[] {
   const otherIds = agents
+    .filter((agent) => agent.source === draft.source)
     .filter((agent) => agent.id !== originalId)
     .map((agent) => agent.id);
   return validateAgent(toAgentDefinition(draft), draft.body, otherIds);

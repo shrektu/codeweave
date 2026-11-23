@@ -27,6 +27,7 @@ const FLOWS: FlowsList = {
     {
       id: "solo",
       file: "flows/solo.md",
+      source: "project",
       revision: "r1",
       title: "Solo",
       maxRounds: 2,
@@ -38,6 +39,7 @@ const FLOWS: FlowsList = {
     {
       id: "coder",
       file: "agents/coder.md",
+      source: "project",
       revision: "r2",
       role: "Writes the change",
       provider: ProviderId.claude,
@@ -49,6 +51,7 @@ const FLOWS: FlowsList = {
     },
   ],
   errors: [],
+  locations: { project: WORK_DIR, library: "/library" },
 };
 const RUNNING_VIEW: SessionView = {
   id: "session-1",
@@ -79,6 +82,7 @@ const GATED_FLOWS: FlowsList = {
     {
       id: "gated",
       file: "flows/gated.md",
+      source: "project",
       revision: "r3",
       title: "Gated",
       maxRounds: 2,

@@ -139,6 +139,22 @@ flow run without restarting the app.
 
 ![The Agents tab with an agent open](docs/screenshots/agent-editor.png)
 
+### Flow library
+
+Agents and flows you use in many repositories can live in one library folder
+instead of being copied into each repository. Codeweave reads the `agents/`
+and `flows/` folders of the library together with the repository's own. Set
+the folder under Settings → Flow library folder (an absolute path; `~` stands
+for your home folder); when it is empty, Codeweave uses `library` in its data
+folder.
+
+- A repository definition with the same id overrides the library one.
+- The Flow and Agents tabs and the orchestrator's `list_flows` mark each
+  definition as Project or Library.
+- Editing a library definition writes to the library folder; a new agent goes
+  to the place you pick in its Location field.
+- Flows from the library still run in the opened repository.
+
 ## OpenCode accounts
 
 OpenCode accounts sign in with an API key or, for OpenCode Go and OpenCode Zen,

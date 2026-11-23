@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { makeTempDir } from "../../tests/fakes/processHelpers";
@@ -9,17 +11,21 @@ async function setup(): Promise<{
   service: ReturnType<typeof createSettingsService>;
   store: ReturnType<typeof createJsonStore>;
   broadcast: ReturnType<typeof vi.fn>;
+  homeDir: string;
 }> {
   const store = createJsonStore(await makeTempDir());
+  const homeDir = await makeTempDir();
   const broadcast = vi.fn();
   return {
     service: createSettingsService({
       store,
       broadcast,
       postUpdaterConfig: () => undefined,
+      homeDir,
     }),
     store,
     broadcast,
+    homeDir,
   };
 }
 
@@ -38,6 +44,7 @@ describe("settings service", () => {
       updateCheck: true,
       updateChannel: "stable",
       defaultTaskClass: "standard",
+      definitionLibrary: null,
     });
   });
 
@@ -57,6 +64,7 @@ describe("settings service", () => {
       updateCheck: true,
       updateChannel: "stable",
       defaultTaskClass: "standard",
+      definitionLibrary: null,
     };
     expect(view).toEqual(expected);
     expect(await store.readSettings()).toEqual({ version: 1, ...expected });
@@ -105,6 +113,7 @@ describe("settings service", () => {
       updateCheck: true,
       updateChannel: "stable",
       defaultTaskClass: "standard",
+      definitionLibrary: null,
     });
   });
 
@@ -178,6 +187,71 @@ describe("settings service", () => {
     expect(configuredExecutable(settings, "codex")).toBeNull();
   });
 
+  it("set_rejects_a_relative_flow_library_path", async () => {
+    const { service, store } = await setup();
+
+    await expect(
+      service.set({ definitionLibrary: "shared/flows" }),
+    ).rejects.toMatchObject({
+      code: "VALIDATION",
+      message: "The flow library folder must be an absolute path",
+    });
+
+    expect((await store.readSettings()).definitionLibrary).toBeNull();
+  });
+
+  it("set_expands_a_leading_tilde_in_the_flow_library_path", async () => {
+    const { service, store, homeDir } = await setup();
+
+    const view = await service.set({ definitionLibrary: "~/shared" });
+    const alone = await service.set({ definitionLibrary: "~" });
+    const backslash = await service.set({ definitionLibrary: "~\\shared" });
+
+    expect(view.definitionLibrary).toBe(join(homeDir, "shared"));
+    expect(alone.definitionLibrary).toBe(homeDir);
+    expect(backslash.definitionLibrary).toBe(join(homeDir, "shared"));
+    expect((await store.readSettings()).definitionLibrary).toBe(
+      join(homeDir, "shared"),
+    );
+  });
+
+  it("set_keeps_an_absolute_flow_library_path_as_given", async () => {
+    const { service } = await setup();
+    const library = await makeTempDir();
+
+    const view = await service.set({ definitionLibrary: library });
+
+    expect(view.definitionLibrary).toBe(library);
+  });
+
+  it("set_blank_flow_library_resets_to_the_default", async () => {
+    const { service } = await setup();
+    await service.set({ definitionLibrary: await makeTempDir() });
+
+    const blank = await service.set({ definitionLibrary: "  " });
+    const stillNull = await service.set({ effectLevel: "low" });
+
+    expect(blank.definitionLibrary).toBeNull();
+    expect(stillNull.definitionLibrary).toBeNull();
+  });
+
+  it("set_null_flow_library_resets_to_the_default", async () => {
+    const { service } = await setup();
+    await service.set({ definitionLibrary: await makeTempDir() });
+
+    const view = await service.set({ definitionLibrary: null });
+
+    expect(view.definitionLibrary).toBeNull();
+  });
+
+  it("set_does_not_expand_a_tilde_user_path", async () => {
+    const { service } = await setup();
+
+    await expect(
+      service.set({ definitionLibrary: "~other/shared" }),
+    ).rejects.toMatchObject({ code: "VALIDATION" });
+  });
+
   it("concurrent_sets_do_not_lose_updates", async () => {
     const { service } = await setup();
 
@@ -197,6 +271,7 @@ describe("settings service", () => {
       updateCheck: true,
       updateChannel: "stable",
       defaultTaskClass: "standard",
+      definitionLibrary: null,
     });
   });
 });

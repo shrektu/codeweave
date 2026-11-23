@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { join } from "node:path";
 import { z } from "zod";
 
 import {
@@ -11,6 +12,8 @@ import {
 import { FlowDecision } from "../../domain/flowRun";
 import { FlowPlacement } from "../../domain/types";
 import { IpcError } from "../../shared/protocol";
+import type { FlowsList } from "../../shared/views";
+import { FLOWS_DIR } from "../flows";
 import type { FlowControl } from "./control";
 
 export const FlowToolName = {
@@ -52,6 +55,20 @@ function jsonResult(value: unknown): CallToolResult {
   return textResult(JSON.stringify(value, null, JSON_INDENT));
 }
 
+function flowsResult(list: FlowsList): CallToolResult {
+  const { flows, errors, locations } = list;
+  if (flows.length > 0) {
+    return jsonResult(list);
+  }
+  const looked = [locations.project, locations.library]
+    .map((root) => join(root, FLOWS_DIR))
+    .join(" and ");
+  const message = `No flows found. Looked in ${looked}; set the flow library folder in Settings to use shared flows.`;
+  return errors.length === 0
+    ? textResult(message)
+    : textResult(`${message}\n\n${JSON.stringify(errors, null, JSON_INDENT)}`);
+}
+
 function errorResult(message: string): CallToolResult {
   return { isError: true, content: [{ type: "text", text: message }] };
 }
@@ -87,9 +104,9 @@ function registerQueryTools(server: McpServer, control: FlowControl): void {
     FlowToolName.listFlows,
     {
       description:
-        "List the flows you can run, with their nodes, agents and any flow file errors; call this first to pick a flowId.",
+        "List the flows you can run from the project and the user's flow library, each with its source, nodes, agents and any flow file errors; call this first to pick a flowId.",
     },
-    () => guarded(async () => jsonResult(await control.listFlows())),
+    () => guarded(async () => flowsResult(await control.listFlows())),
   );
   server.registerTool(
     FlowToolName.flowStatus,
