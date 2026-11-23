@@ -233,6 +233,7 @@ export function makeSettings(
     definitionLibrary: null,
     defaultWorkspace: null,
     defaultWorkspaceResolved: "/home/user",
+    recentFolders: [],
     ...overrides,
   };
 }

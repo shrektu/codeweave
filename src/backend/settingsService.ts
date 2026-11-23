@@ -1,4 +1,4 @@
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, posix, win32, type PlatformPath } from "node:path";
 
 import { ProviderId } from "../domain/types";
 import { IpcError, IpcErrorCode, type ParamsMap } from "../shared/protocol";
@@ -7,6 +7,7 @@ import type { UpdaterConfigMessage } from "../shared/updates";
 import type { SettingsView } from "../shared/views";
 
 import type { ConnectionRegistry } from "./connections";
+import { RECENT_FOLDERS_LIMIT } from "./constants";
 import { createSerializer } from "./serialize";
 import type { JsonStore, SettingsFile } from "./storage";
 
@@ -23,12 +24,16 @@ const RELATIVE_LIBRARY_MESSAGE =
   "The flow library folder must be an absolute path";
 const RELATIVE_WORKSPACE_MESSAGE =
   "The default workspace must be an absolute path";
+const WINDOWS_PLATFORM = "win32";
+const WINDOWS_SEPARATOR = "\\";
+const POSIX_SEPARATOR = "/";
 
 export type PostUpdaterConfig = (message: UpdaterConfigMessage) => void;
 
 export interface SettingsService {
   get(): Promise<SettingsView>;
   set(patch: ParamsMap["settings/set"]): Promise<SettingsView>;
+  recordFolder(folder: string): Promise<void>;
 }
 
 type ExecutableSetting = keyof Pick<
@@ -85,6 +90,37 @@ function folderSetting(
   return expanded;
 }
 
+function pathsFor(platform: NodeJS.Platform): PlatformPath {
+  return platform === WINDOWS_PLATFORM ? win32 : posix;
+}
+
+function folderKey(folder: string, platform: NodeJS.Platform): string {
+  const resolved = pathsFor(platform).resolve(folder);
+  return platform === WINDOWS_PLATFORM
+    ? resolved.replaceAll(WINDOWS_SEPARATOR, POSIX_SEPARATOR).toLowerCase()
+    : resolved;
+}
+
+export function withRecentFolder(
+  recent: readonly string[],
+  folder: string,
+  platform: NodeJS.Platform = process.platform,
+): readonly string[] {
+  const paths = pathsFor(platform);
+  if (!paths.isAbsolute(folder)) {
+    return recent;
+  }
+  const key = folderKey(folder, platform);
+  const [first] = recent;
+  if (first !== undefined && folderKey(first, platform) === key) {
+    return recent;
+  }
+  return [
+    paths.resolve(folder),
+    ...recent.filter((entry) => folderKey(entry, platform) !== key),
+  ].slice(0, RECENT_FOLDERS_LIMIT);
+}
+
 function toView(settings: SettingsFile, homeDir: string): SettingsView {
   return {
     permissionProfile: settings.permissionProfile,
@@ -101,6 +137,7 @@ function toView(settings: SettingsFile, homeDir: string): SettingsView {
     definitionLibrary: settings.definitionLibrary,
     defaultWorkspace: settings.defaultWorkspace,
     defaultWorkspaceResolved: settings.defaultWorkspace ?? homeDir,
+    recentFolders: [...settings.recentFolders],
   };
 }
 
@@ -121,13 +158,33 @@ export function createSettingsService({
   homeDir,
 }: SettingsServiceDeps): SettingsService {
   const serialized = createSerializer();
+  const publish = async (next: SettingsFile): Promise<SettingsView> => {
+    await store.writeSettings(next);
+    const view = toView(next, homeDir);
+    broadcast("settings/changed", view);
+    return view;
+  };
   return {
+    recordFolder: (folder) =>
+      serialized(async () => {
+        const current = await store.readSettings();
+        const recentFolders = withRecentFolder(current.recentFolders, folder);
+        if (recentFolders !== current.recentFolders) {
+          await publish({ ...current, recentFolders: [...recentFolders] });
+        }
+      }),
     async get(): Promise<SettingsView> {
       return toView(await store.readSettings(), homeDir);
     },
     set: (patch) =>
       serialized(async () => {
         const current = await store.readSettings();
+        const definitionLibrary = folderSetting(
+          patch.definitionLibrary,
+          current.definitionLibrary,
+          homeDir,
+          RELATIVE_LIBRARY_MESSAGE,
+        );
         const next: SettingsFile = {
           ...current,
           permissionProfile:
@@ -157,22 +214,19 @@ export function createSettingsService({
           updateCheck: patch.updateCheck ?? current.updateCheck,
           updateChannel: patch.updateChannel ?? current.updateChannel,
           defaultTaskClass: patch.defaultTaskClass ?? current.defaultTaskClass,
-          definitionLibrary: folderSetting(
-            patch.definitionLibrary,
-            current.definitionLibrary,
-            homeDir,
-            RELATIVE_LIBRARY_MESSAGE,
-          ),
+          definitionLibrary,
           defaultWorkspace: folderSetting(
             patch.defaultWorkspace,
             current.defaultWorkspace,
             homeDir,
             RELATIVE_WORKSPACE_MESSAGE,
           ),
+          recentFolders:
+            patch.definitionLibrary === undefined || definitionLibrary === null
+              ? current.recentFolders
+              : [...withRecentFolder(current.recentFolders, definitionLibrary)],
         };
-        await store.writeSettings(next);
-        const view = toView(next, homeDir);
-        broadcast("settings/changed", view);
+        const view = await publish(next);
         postUpdaterConfig(toUpdaterConfigMessage(next));
         return view;
       }),

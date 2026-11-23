@@ -5,7 +5,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { PermissionProfile } from "../../src/domain/types";
 import { AccountsDialog } from "../../src/renderer/components/AccountsDialog";
@@ -13,6 +13,7 @@ import { SettingsDialog } from "../../src/renderer/components/SettingsDialog";
 import { IpcRemoteError } from "../../src/renderer/ipc";
 import { IpcErrorCode } from "../../src/shared/protocol";
 import { makeCodeweaveApi } from "../fakes/fakeCodeweaveApi";
+import { pathFieldValue, shownPath, typePath } from "./pathFieldHelpers";
 import {
   createFakeIpcClient,
   makeAccount,
@@ -30,14 +31,20 @@ const CLAUDE_BYPASS_DESCRIPTION = "Claude runs every tool without asking.";
 const CLAUDE_BYPASS_WARNING =
   "In Bypass mode Claude never asks, so Codeweave cannot block dangerous commands.";
 
+beforeEach(() => {
+  window.codeweave = makeCodeweaveApi();
+});
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
 
-function settingsClient(): FakeIpcClient {
+function settingsClient(
+  overrides: Parameters<typeof makeSettings>[0] = {},
+): FakeIpcClient {
   const client = createFakeIpcClient();
-  let current = makeSettings();
+  let current = makeSettings(overrides);
   client.respond("sessions/snapshot", makeSnapshot({ settings: current }));
   client.on("settings/set", (patch) => {
     current = {
@@ -77,6 +84,7 @@ function settingsClient(): FakeIpcClient {
           : patch.defaultWorkspace,
       defaultWorkspaceResolved:
         patch.defaultWorkspace ?? current.defaultWorkspaceResolved,
+      recentFolders: current.recentFolders,
     };
     client.emit({ v: 7, event: "settings/changed", payload: current });
     return current;
@@ -99,8 +107,8 @@ function accountsClient(configDirs: string[] = []): FakeIpcClient {
   return client;
 }
 
-function configDirInput(): HTMLInputElement {
-  return screen.getByLabelText<HTMLInputElement>("Config directory");
+function configDir(): string | null {
+  return pathFieldValue("Config directory");
 }
 
 const CLAUDE_SAVE_INDEX = 0;
@@ -158,9 +166,9 @@ it("settings_dialog_sends_effect_level", async () => {
 it("settings_dialog_saves_executable_and_null_when_empty", async () => {
   const client = settingsClient();
   renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
-  const input = await screen.findByLabelText("Claude executable");
+  await screen.findByRole("group", { name: "Claude executable path" });
 
-  fireEvent.change(input, { target: { value: "/opt/claude/bin/claude" } });
+  typePath("Claude executable", "/opt/claude/bin/claude");
   fireEvent.click(saveButton(CLAUDE_SAVE_INDEX));
   await waitFor(() => {
     expect(client.requests).toContainEqual({
@@ -169,7 +177,7 @@ it("settings_dialog_saves_executable_and_null_when_empty", async () => {
     });
   });
 
-  fireEvent.change(input, { target: { value: "" } });
+  typePath("Claude executable", "");
   fireEvent.click(saveButton(CLAUDE_SAVE_INDEX));
   await waitFor(() => {
     expect(client.requests).toContainEqual({
@@ -182,9 +190,9 @@ it("settings_dialog_saves_executable_and_null_when_empty", async () => {
 it("settings_dialog_saves_codex_executable", async () => {
   const client = settingsClient();
   renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
-  const input = await screen.findByLabelText("Codex executable");
+  await screen.findByRole("group", { name: "Codex executable path" });
 
-  fireEvent.change(input, { target: { value: "/opt/codex/bin/codex" } });
+  typePath("Codex executable", "/opt/codex/bin/codex");
   fireEvent.click(saveButton(CODEX_SAVE_INDEX));
   await waitFor(() => {
     expect(client.requests).toContainEqual({
@@ -193,7 +201,7 @@ it("settings_dialog_saves_codex_executable", async () => {
     });
   });
 
-  fireEvent.change(input, { target: { value: "" } });
+  typePath("Codex executable", "");
   fireEvent.click(saveButton(CODEX_SAVE_INDEX));
   await waitFor(() => {
     expect(client.requests).toContainEqual({
@@ -206,9 +214,9 @@ it("settings_dialog_saves_codex_executable", async () => {
 it("settings_dialog_saves_agy_executable", async () => {
   const client = settingsClient();
   renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
-  const input = await screen.findByLabelText("Gemini executable (agy)");
+  await screen.findByRole("group", { name: "Gemini executable (agy) path" });
 
-  fireEvent.change(input, { target: { value: "/opt/agy/bin/agy" } });
+  typePath("Gemini executable (agy)", "/opt/agy/bin/agy");
   fireEvent.click(saveButton(AGY_SAVE_INDEX));
   await waitFor(() => {
     expect(client.requests).toContainEqual({
@@ -217,7 +225,7 @@ it("settings_dialog_saves_agy_executable", async () => {
     });
   });
 
-  fireEvent.change(input, { target: { value: "" } });
+  typePath("Gemini executable (agy)", "");
   fireEvent.click(saveButton(AGY_SAVE_INDEX));
   await waitFor(() => {
     expect(client.requests).toContainEqual({
@@ -230,12 +238,12 @@ it("settings_dialog_saves_agy_executable", async () => {
 it("settings_dialog_saves_the_flow_library_folder_and_null_when_empty", async () => {
   const client = settingsClient();
   renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
-  const input = await screen.findByLabelText("Flow library folder");
-  expect(input.getAttribute("placeholder")).toBe(
-    "Default: Codeweave data folder/library",
-  );
+  await screen.findByRole("group", { name: "Flow library folder path" });
+  expect(
+    screen.getByText("Default: Codeweave data folder/library"),
+  ).toBeTruthy();
 
-  fireEvent.change(input, { target: { value: "~/codeweave-library" } });
+  typePath("Flow library folder", "~/codeweave-library");
   fireEvent.click(saveButton(LIBRARY_SAVE_INDEX));
   await waitFor(() => {
     expect(client.requests).toContainEqual({
@@ -244,7 +252,7 @@ it("settings_dialog_saves_the_flow_library_folder_and_null_when_empty", async ()
     });
   });
 
-  fireEvent.change(input, { target: { value: "" } });
+  typePath("Flow library folder", "");
   fireEvent.click(saveButton(LIBRARY_SAVE_INDEX));
   await waitFor(() => {
     expect(client.requests).toContainEqual({
@@ -257,12 +265,12 @@ it("settings_dialog_saves_the_flow_library_folder_and_null_when_empty", async ()
 it("settings_dialog_saves_the_default_workspace_text_and_null_when_empty", async () => {
   const client = settingsClient();
   renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
-  const input = await screen.findByLabelText("Default workspace");
-  expect(input.getAttribute("placeholder")).toBe(
-    `Home folder (${HOME_FOLDER})`,
-  );
+  const field = await screen.findByRole("group", {
+    name: "Default workspace path",
+  });
+  expect(within(field).getByText(`Home folder (${HOME_FOLDER})`)).toBeTruthy();
 
-  fireEvent.change(input, { target: { value: "~/work" } });
+  typePath("Default workspace", "~/work");
   fireEvent.click(saveButton(WORKSPACE_SAVE_INDEX));
   await waitFor(() => {
     expect(client.requests).toContainEqual({
@@ -271,7 +279,7 @@ it("settings_dialog_saves_the_default_workspace_text_and_null_when_empty", async
     });
   });
 
-  fireEvent.change(input, { target: { value: "" } });
+  typePath("Default workspace", "");
   fireEvent.click(saveButton(WORKSPACE_SAVE_INDEX));
   await waitFor(() => {
     expect(client.requests).toContainEqual({
@@ -281,42 +289,109 @@ it("settings_dialog_saves_the_default_workspace_text_and_null_when_empty", async
   });
 });
 
-it("settings_dialog_default_workspace_choose_saves_the_picked_folder", async () => {
+it("settings_dialog_default_workspace_picker_fills_the_field_and_save_sends_it", async () => {
   window.codeweave = makeCodeweaveApi({
     pickFolder: () => Promise.resolve(PICKED_WORKSPACE),
   });
   const client = settingsClient();
   renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
-  await screen.findByLabelText("Default workspace");
+  const field = await screen.findByRole("group", {
+    name: "Default workspace path",
+  });
 
-  fireEvent.click(screen.getByRole("button", { name: "Choose…" }));
+  fireEvent.click(within(field).getByRole("button", { name: "Choose…" }));
 
+  await waitFor(() => {
+    expect(pathFieldValue("Default workspace")).toBe(PICKED_WORKSPACE);
+  });
+  expect(client.requests).not.toContainEqual(
+    expect.objectContaining({ method: "settings/set" }),
+  );
+  fireEvent.click(saveButton(WORKSPACE_SAVE_INDEX));
   await waitFor(() => {
     expect(client.requests).toContainEqual({
       method: "settings/set",
       params: { defaultWorkspace: PICKED_WORKSPACE },
     });
   });
-  expect(
-    screen.getByLabelText<HTMLInputElement>("Default workspace").value,
-  ).toBe(PICKED_WORKSPACE);
 });
 
-it("settings_dialog_default_workspace_choose_cancelled_saves_nothing", async () => {
+it("settings_dialog_default_workspace_picker_cancelled_changes_nothing", async () => {
   const pickFolder = vi.fn(() => Promise.resolve(null));
   window.codeweave = makeCodeweaveApi({ pickFolder });
   const client = settingsClient();
   renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
-  await screen.findByLabelText("Default workspace");
+  const field = await screen.findByRole("group", {
+    name: "Default workspace path",
+  });
 
-  fireEvent.click(screen.getByRole("button", { name: "Choose…" }));
+  fireEvent.click(within(field).getByRole("button", { name: "Choose…" }));
   await waitFor(() => {
     expect(pickFolder).toHaveBeenCalledTimes(1);
   });
 
+  expect(pathFieldValue("Default workspace")).toBeNull();
   expect(client.requests.filter((r) => r.method === "settings/set")).toEqual(
     [],
   );
+});
+
+it("settings_flow_library_picker_fills_the_field_and_save_sends_it", async () => {
+  window.codeweave = makeCodeweaveApi({
+    pickFolder: () => Promise.resolve("/home/user/libs/shared"),
+  });
+  const client = settingsClient();
+  renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
+  const field = await screen.findByRole("group", {
+    name: "Flow library folder path",
+  });
+
+  fireEvent.click(within(field).getByRole("button", { name: "Choose…" }));
+
+  await waitFor(() => {
+    expect(pathFieldValue("Flow library folder")).toBe(
+      "/home/user/libs/shared",
+    );
+  });
+  expect(shownPath("~/libs/shared", field)).not.toBeNull();
+  expect(client.requests).not.toContainEqual(
+    expect.objectContaining({ method: "settings/set" }),
+  );
+  fireEvent.click(saveButton(LIBRARY_SAVE_INDEX));
+  await waitFor(() => {
+    expect(client.requests).toContainEqual({
+      method: "settings/set",
+      params: { definitionLibrary: "/home/user/libs/shared" },
+    });
+  });
+});
+
+it("settings_flow_library_lists_recent_folders_including_stale_ones", async () => {
+  const client = settingsClient({
+    recentFolders: ["/home/user/projects/live", "/gone/forever"],
+  });
+  renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
+  const field = await screen.findByRole("group", {
+    name: "Flow library folder path",
+  });
+
+  fireEvent.click(within(field).getByRole("button", { name: "Recent" }));
+  expect(
+    within(field).getByRole("button", { name: "~/projects/live" }),
+  ).toBeTruthy();
+  fireEvent.click(within(field).getByRole("button", { name: "/gone/forever" }));
+
+  expect(pathFieldValue("Flow library folder")).toBe("/gone/forever");
+});
+
+it("settings_executable_fields_have_no_recent_menu", async () => {
+  const client = settingsClient({ recentFolders: ["/home/user/projects"] });
+  renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
+  const field = await screen.findByRole("group", {
+    name: "Claude executable path",
+  });
+
+  expect(within(field).queryByRole("button", { name: "Recent" })).toBeNull();
 });
 
 it("bypass_texts_do_not_name_claude", async () => {
@@ -353,7 +428,7 @@ it("accounts_dialog_prefills_default_dir", async () => {
   );
 
   await waitFor(() => {
-    expect(configDirInput().value).toBe(SUGGESTED_DIR);
+    expect(configDir()).toBe(SUGGESTED_DIR);
   });
   expect(screen.getByRole("dialog", { name: "Accounts" })).toBeTruthy();
 });
@@ -365,7 +440,7 @@ it("accounts_dialog_adds_account", async () => {
   });
   renderWithServices(<AccountsDialog onClose={vi.fn<() => void>()} />, client);
   await waitFor(() => {
-    expect(configDirInput().value).toBe(SUGGESTED_DIR);
+    expect(configDir()).toBe(SUGGESTED_DIR);
   });
 
   fireEvent.change(screen.getByLabelText("Label"), {
@@ -392,7 +467,7 @@ it("accounts_dialog_adds_codex_account_with_provider", async () => {
   });
   renderWithServices(<AccountsDialog onClose={vi.fn<() => void>()} />, client);
   await waitFor(() => {
-    expect(configDirInput().value).toBe(SUGGESTED_DIR);
+    expect(configDir()).toBe(SUGGESTED_DIR);
   });
 
   const agent = screen.getByLabelText<HTMLSelectElement>("Agent");
@@ -455,7 +530,7 @@ it("accounts_dialog_adds_gemini_account_with_provider", async () => {
   });
   renderWithServices(<AccountsDialog onClose={vi.fn<() => void>()} />, client);
   await waitFor(() => {
-    expect(configDirInput().value).toBe(SUGGESTED_DIR);
+    expect(configDir()).toBe(SUGGESTED_DIR);
   });
 
   fireEvent.change(screen.getByLabelText("Agent"), {
@@ -507,7 +582,7 @@ it("accounts_dialog_rejects_empty_label", async () => {
   const client = accountsClient();
   renderWithServices(<AccountsDialog onClose={vi.fn<() => void>()} />, client);
   await waitFor(() => {
-    expect(configDirInput().value).toBe(SUGGESTED_DIR);
+    expect(configDir()).toBe(SUGGESTED_DIR);
   });
 
   fireEvent.change(screen.getByLabelText("Label"), {

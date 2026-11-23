@@ -11,7 +11,11 @@ import {
   type Account,
 } from "../domain/types";
 
-import { createJsonStore, StorageCorruptError } from "./storage";
+import {
+  createJsonStore,
+  StorageCorruptError,
+  type SettingsFile,
+} from "./storage";
 
 const account: Account = {
   id: "acc-1",
@@ -41,13 +45,14 @@ describe("json store", () => {
       defaultTaskClass: "standard",
       definitionLibrary: null,
       defaultWorkspace: null,
+      recentFolders: [],
     });
   });
 
   it("accounts_and_settings_round_trip", async () => {
     const dir = join(await makeTempDir(), "nested");
     const store = createJsonStore(dir);
-    const settings = {
+    const settings: SettingsFile = {
       version: 1,
       permissionProfile: PermissionProfile.plan,
       effectLevel: "low",
@@ -62,7 +67,8 @@ describe("json store", () => {
       defaultTaskClass: "heavy",
       definitionLibrary: "/srv/library",
       defaultWorkspace: "/srv/work",
-    } as const;
+      recentFolders: ["/srv/a", "/srv/b"],
+    };
 
     await store.writeAccounts([account]);
     await store.writeSettings(settings);
@@ -308,6 +314,7 @@ describe("json store writes", () => {
         defaultTaskClass: "standard",
         definitionLibrary: null,
         defaultWorkspace: null,
+        recentFolders: [],
       }),
     ).rejects.toBeInstanceOf(StorageCorruptError);
 

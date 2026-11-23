@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -23,8 +24,10 @@ import {
   GET_AVAILABLE_UPDATE_CHANNEL,
   GET_GPU_ACCELERATED_CHANNEL,
   GPU_ACCELERATED_CHANNEL,
+  HOME_DIR_ARG,
   OPEN_EXTERNAL_LINK_CHANNEL,
   OPEN_UPDATE_RELEASE_CHANNEL,
+  PICK_FILE_CHANNEL,
   PICK_FOLDER_CHANNEL,
   PORT_CHANNEL,
   SET_THEME_SOURCE_CHANNEL,
@@ -92,11 +95,14 @@ function rendererEntry(): string {
   );
 }
 
-async function pickFolder(event: IpcMainInvokeEvent): Promise<string | null> {
-  if (!isAppUrl(event.senderFrame?.url ?? "", rendererEntry())) {
+async function pickPath(
+  event: IpcMainInvokeEvent,
+  properties: NonNullable<OpenDialogOptions["properties"]>,
+): Promise<string | null> {
+  if (!fromApp(event)) {
     return null;
   }
-  const options: OpenDialogOptions = { properties: ["openDirectory"] };
+  const options: OpenDialogOptions = { properties };
   const parent = BrowserWindow.fromWebContents(event.sender);
   const result = parent
     ? await dialog.showOpenDialog(parent, options)
@@ -233,6 +239,7 @@ function createWindow(backend: UtilityProcess): void {
       sandbox: true,
       nodeIntegration: false,
       preload: join(import.meta.dirname, "../preload/index.cjs"),
+      additionalArguments: [`${HOME_DIR_ARG}=${homedir()}`],
     },
   });
   const rendererUrl = process.env.ELECTRON_RENDERER_URL;
@@ -285,7 +292,10 @@ if (userDataOverride !== null) {
 if (app.requestSingleInstanceLock()) {
   app.on("second-instance", focusExistingWindow);
   void app.whenReady().then(() => {
-    ipcMain.handle(PICK_FOLDER_CHANNEL, (event) => pickFolder(event));
+    ipcMain.handle(PICK_FOLDER_CHANNEL, (event) =>
+      pickPath(event, ["openDirectory"]),
+    );
+    ipcMain.handle(PICK_FILE_CHANNEL, (event) => pickPath(event, ["openFile"]));
     ipcMain.handle(SET_THEME_SOURCE_CHANNEL, (event, value: unknown): void => {
       const source = themeSourceOf(value);
       if (fromApp(event) && source !== null) {

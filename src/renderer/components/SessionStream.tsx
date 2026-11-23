@@ -27,10 +27,12 @@ import {
 import { sessionModelText, turnBadge } from "../routingText";
 import { useApp, useServices } from "../services";
 import { useAsyncAction, type AsyncAction } from "../useAsyncAction";
+import { useRecentFolders } from "../useRecentFolders";
 
 import { Markdown } from "../markdown/Markdown";
 
 import { Composer } from "./Composer";
+import { PathField } from "./PathField";
 import { PermissionCard } from "./PermissionCard";
 import { ToolCard } from "./ToolCard";
 
@@ -258,10 +260,10 @@ function TaskStart({
   );
 }
 
-// eslint-disable-next-line max-lines-per-function
 function StartPrompt({ draft }: { draft: StartDraft }): JSX.Element {
   const { client, state } = useApp();
   const { start, setUnsent } = draft;
+  const recent = useRecentFolders();
   const [pending, setPending] = useState<PendingStart | null>(null);
   const [chosen, setChosen] = useState(NO_CHOICE);
   const [picked, setPicked] = useState<SelectableProvider | null>(null);
@@ -294,13 +296,9 @@ function StartPrompt({ draft }: { draft: StartDraft }): JSX.Element {
     }
   };
 
-  const chooseFolder = (): void => {
+  const chooseFolder = (cwd: string): void => {
     setUnsent(null);
     void start.run(async () => {
-      const cwd = await window.codeweave.pickFolder();
-      if (cwd === null) {
-        return;
-      }
       const choices = orchestrating ? [] : await listChoices(cwd);
       if (choices.length === 0) {
         await startSession(cwd, undefined);
@@ -361,14 +359,15 @@ function StartPrompt({ draft }: { draft: StartDraft }): JSX.Element {
         provider={provider}
         orchestrating={orchestrating}
       />
-      <button
-        type="button"
-        className="btn"
+      <PathField
+        value={null}
+        kind="folder"
+        label="Project folder"
+        chooseLabel="Choose folder…"
+        recent={recent}
         disabled={start.pending}
-        onClick={chooseFolder}
-      >
-        Choose folder…
-      </button>
+        onChange={chooseFolder}
+      />
       {pending !== null && (
         <>
           <label className="field">

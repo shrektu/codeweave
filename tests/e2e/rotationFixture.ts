@@ -142,6 +142,7 @@ export function rotationSettings(profile: PermissionProfile): SettingsFile {
     defaultTaskClass: "standard",
     definitionLibrary: null,
     defaultWorkspace: null,
+    recentFolders: [],
   };
 }
 

@@ -4,7 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { makeTempDir } from "../../tests/fakes/processHelpers";
 
-import { configuredExecutable, createSettingsService } from "./settingsService";
+import {
+  configuredExecutable,
+  createSettingsService,
+  withRecentFolder,
+} from "./settingsService";
 import { createJsonStore } from "./storage";
 
 async function setup(): Promise<{
@@ -48,6 +52,7 @@ describe("settings service", () => {
       definitionLibrary: null,
       defaultWorkspace: null,
       defaultWorkspaceResolved: homeDir,
+      recentFolders: [],
     });
   });
 
@@ -70,6 +75,7 @@ describe("settings service", () => {
       defaultTaskClass: "standard",
       definitionLibrary: null,
       defaultWorkspace: null,
+      recentFolders: [],
     };
     const expectedView = { ...expected, defaultWorkspaceResolved: homeDir };
     expect(view).toEqual(expectedView);
@@ -123,6 +129,7 @@ describe("settings service", () => {
       definitionLibrary: null,
       defaultWorkspace: null,
       defaultWorkspaceResolved: homeDir,
+      recentFolders: [],
     });
   });
 
@@ -284,6 +291,89 @@ describe("settings service", () => {
       definitionLibrary: null,
       defaultWorkspace: null,
       defaultWorkspaceResolved: homeDir,
+      recentFolders: [],
     });
+  });
+
+  it("recent_folders_are_deduped_newest_first_capped_and_absolute", async () => {
+    const { service } = await setup();
+    const folders = Array.from(
+      { length: 10 },
+      (_, index) => `/work/project-${index.toString()}`,
+    );
+
+    for (const folder of folders) {
+      await service.recordFolder(folder);
+    }
+    await service.recordFolder("relative/project");
+    await service.recordFolder("/work/project-5");
+    const view = await service.get();
+
+    expect(view.recentFolders).toEqual([
+      "/work/project-5",
+      "/work/project-9",
+      "/work/project-8",
+      "/work/project-7",
+      "/work/project-6",
+      "/work/project-4",
+      "/work/project-3",
+      "/work/project-2",
+    ]);
+  });
+
+  it("recording_a_folder_broadcasts_and_keeps_other_settings", async () => {
+    const { service, broadcast } = await setup();
+    await service.set({ effectLevel: "full" });
+    broadcast.mockClear();
+
+    await service.recordFolder("/work/app");
+
+    expect(broadcast).toHaveBeenCalledOnce();
+    expect(broadcast).toHaveBeenCalledWith(
+      "settings/changed",
+      expect.objectContaining({
+        effectLevel: "full",
+        recentFolders: ["/work/app"],
+      }),
+    );
+  });
+
+  it("setting_the_flow_library_records_it_as_recent", async () => {
+    const { service, homeDir } = await setup();
+
+    const view = await service.set({ definitionLibrary: "~/shared" });
+
+    expect(view.recentFolders).toEqual([join(homeDir, "shared")]);
+  });
+
+  it("recent_folder_repeat_use_does_not_rewrite_settings", async () => {
+    const { service, store, broadcast } = await setup();
+    const writes = vi.spyOn(store, "writeSettings");
+
+    await service.recordFolder("/work/app");
+    await service.recordFolder("/work/app");
+
+    expect((await service.get()).recentFolders).toEqual(["/work/app"]);
+    expect(writes).toHaveBeenCalledTimes(1);
+    expect(broadcast).toHaveBeenCalledTimes(1);
+  });
+
+  it("recent_folder_trailing_separator_deduped", async () => {
+    const { service } = await setup();
+
+    await service.recordFolder("/a/proj/");
+    await service.recordFolder("/a/proj");
+
+    expect((await service.get()).recentFolders).toEqual(["/a/proj"]);
+  });
+
+  it("recent_folder_windows_case_deduped", () => {
+    const first = withRecentFolder([], "C:\\x", "win32");
+    const second = withRecentFolder(first, "c:\\x", "win32");
+    const third = withRecentFolder(second, "C:/x", "win32");
+
+    expect(first).toEqual(["C:\\x"]);
+    expect(second).toBe(first);
+    expect(third).toBe(first);
   });
 });

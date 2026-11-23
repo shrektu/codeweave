@@ -60,6 +60,7 @@ const SETTINGS_EVENT = {
     definitionLibrary: null,
     defaultWorkspace: null,
     defaultWorkspaceResolved: "/home/user",
+    recentFolders: [],
   },
 };
 

@@ -35,6 +35,8 @@ import {
   type FakeGpuAcceleration,
 } from "../fakes/fakeCodeweaveApi";
 
+import { shownPath } from "./pathFieldHelpers";
+
 const DOCK_STORAGE_KEY = "codeweave.terminalDock";
 const SESSION_CWD = "/home/user/project";
 const PICKED_CWD = "/home/user/picked";
@@ -707,16 +709,25 @@ it("settings_terminal_shell_field_persists_the_value", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
 
-  const field = within(dialog).getByLabelText("Terminal shell");
-  expect((field as HTMLInputElement).value).toBe("/bin/zsh");
+  const field = within(dialog).getByRole("group", {
+    name: "Terminal shell path",
+  });
+  expect(shownPath("/bin/zsh", field)?.getAttribute("title")).toBe("/bin/zsh");
   expect(
     within(dialog).getByText("Leave empty to detect your shell automatically."),
   ).toBeTruthy();
-  fireEvent.change(field, { target: { value: "/usr/bin/fish" } });
   const container = field.parentElement;
   if (container === null) {
     throw new Error("The field has no container");
   }
+  const typeShell = (value: string): void => {
+    fireEvent.click(within(field).getByRole("button", { name: "Edit path" }));
+    fireEvent.change(within(field).getByRole("textbox"), {
+      target: { value },
+    });
+    fireEvent.click(within(field).getByRole("button", { name: "Use path" }));
+  };
+  typeShell("/usr/bin/fish");
   fireEvent.click(within(container).getByRole("button", { name: "Save" }));
 
   await waitFor(() => {
@@ -725,7 +736,7 @@ it("settings_terminal_shell_field_persists_the_value", async () => {
     ]);
   });
 
-  fireEvent.change(field, { target: { value: "" } });
+  typeShell("");
   fireEvent.click(within(container).getByRole("button", { name: "Save" }));
 
   await waitFor(() => {

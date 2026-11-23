@@ -682,6 +682,7 @@ describe("EventSchema", () => {
     definitionLibrary: null,
     defaultWorkspace: null,
     defaultWorkspaceResolved: "/home/user",
+    recentFolders: [],
   };
   const logEntry = {
     at: 1,

@@ -1,9 +1,10 @@
-import { Folder, FolderOpen } from "lucide-react";
+import { Folder } from "lucide-react";
 import type { JSX } from "react";
 
-import { useAsyncAction } from "../useAsyncAction";
+import { useRecentFolders } from "../useRecentFolders";
 
 import { Icon } from "./Icon";
+import { PathField } from "./PathField";
 
 export function PickFolderButton({
   label,
@@ -14,27 +15,17 @@ export function PickFolderButton({
   primary: boolean;
   onPick: (cwd: string) => void;
 }): JSX.Element {
-  const pick = useAsyncAction();
+  const recent = useRecentFolders();
   return (
-    <>
-      <button
-        type="button"
-        className={primary ? "btn pri" : "btn"}
-        disabled={pick.pending}
-        onClick={() => {
-          void pick.run(async () => {
-            const cwd = await window.codeweave.pickFolder();
-            if (cwd !== null) {
-              onPick(cwd);
-            }
-          });
-        }}
-      >
-        <Icon icon={FolderOpen} />
-        {label}
-      </button>
-      {pick.error !== null && <p className="error">{pick.error}</p>}
-    </>
+    <PathField
+      value={null}
+      kind="folder"
+      label="Project folder"
+      chooseLabel={label}
+      primary={primary}
+      recent={recent}
+      onChange={onPick}
+    />
   );
 }
 

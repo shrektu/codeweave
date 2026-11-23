@@ -57,6 +57,10 @@ export const TEST_AGENT_ENV_ARG = "--codeweave-test-agent-env";
 
 export const PICK_FOLDER_CHANNEL = "codeweave:pick-folder";
 
+export const PICK_FILE_CHANNEL = "codeweave:pick-file";
+
+export const HOME_DIR_ARG = "--codeweave-home";
+
 export const GET_AVAILABLE_UPDATE_CHANNEL = "codeweave:get-available-update";
 
 export const OPEN_UPDATE_RELEASE_CHANNEL = "codeweave:open-update-release";

@@ -151,6 +151,7 @@ export async function createCodexRotationWorkspace(
       defaultTaskClass: "standard",
       definitionLibrary: null,
       defaultWorkspace: null,
+      recentFolders: [],
     });
     return { root, userData, repo, accountA, accountB, dispose };
   } catch (error) {

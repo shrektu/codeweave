@@ -11,6 +11,7 @@ import {
   FlowRunViewSchema,
   FlowViewSchema,
   SessionViewSchema,
+  SettingsViewSchema,
   ToolCallViewSchema,
 } from "./views";
 
@@ -68,6 +69,32 @@ it("api_account_with_an_unknown_auth_is_rejected", () => {
   });
 
   expect(parsed.success).toBe(false);
+});
+
+it("settings_view_schema_requires_the_recent_folders_list", () => {
+  const withoutRecent = {
+    permissionProfile: "ask",
+    effectLevel: "auto",
+    appearance: "system",
+    claudeExecutable: null,
+    codexExecutable: null,
+    agyExecutable: null,
+    opencodeExecutable: null,
+    terminalShell: null,
+    updateCheck: true,
+    updateChannel: "stable",
+    defaultTaskClass: "standard",
+    definitionLibrary: null,
+    defaultWorkspace: null,
+    defaultWorkspaceResolved: "/home/user",
+  };
+  const view = { ...withoutRecent, recentFolders: ["/work/app"] };
+
+  expect(SettingsViewSchema.safeParse(view).success).toBe(true);
+  expect(SettingsViewSchema.safeParse(withoutRecent).success).toBe(false);
+  expect(
+    SettingsViewSchema.safeParse({ ...view, recentFolders: [1] }).success,
+  ).toBe(false);
 });
 
 it("tool_call_view_schema_accepts_diffs", () => {

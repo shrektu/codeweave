@@ -37,6 +37,7 @@ import {
   createRepo,
   readEffectLines,
 } from "./rotationFixture";
+import { typeConfigDirectory } from "./pathFieldE2e";
 
 const ROOT_DIR = join(import.meta.dirname, "..", "..");
 const USER_DATA_DIR_ENV = "CODEWEAVE_USER_DATA_DIR";
@@ -69,7 +70,7 @@ async function addAccount(
   const dialog = page.getByRole("dialog", { name: "Accounts" });
   await dialog.getByLabel("Agent").selectOption({ label: AGENT_OPTION });
   await dialog.getByLabel("Label", { exact: true }).fill(spec.label);
-  await dialog.getByLabel("Config directory").fill(configDir);
+  await typeConfigDirectory(dialog, configDir);
   const apiProvider = spec.provider ?? API_PROVIDER_VALUE;
   await dialog.getByLabel("API provider").selectOption(apiProvider);
   await dialog

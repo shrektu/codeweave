@@ -5,8 +5,10 @@ import {
   GET_AVAILABLE_UPDATE_CHANNEL,
   GET_GPU_ACCELERATED_CHANNEL,
   GPU_ACCELERATED_CHANNEL,
+  HOME_DIR_ARG,
   OPEN_EXTERNAL_LINK_CHANNEL,
   OPEN_UPDATE_RELEASE_CHANNEL,
+  PICK_FILE_CHANNEL,
   PICK_FOLDER_CHANNEL,
   PORT_CHANNEL,
   SET_THEME_SOURCE_CHANNEL,
@@ -27,6 +29,13 @@ function toAvailableUpdate(value: unknown): AvailableUpdate | null {
   return null;
 }
 
+function homeDirFromArgv(argv: readonly string[]): string | null {
+  const prefix = `${HOME_DIR_ARG}=`;
+  const match = argv.find((arg) => arg.startsWith(prefix));
+  const value = match?.slice(prefix.length) ?? "";
+  return value === "" ? null : value;
+}
+
 const gpuAcceleration = createGpuAccelerationState({
   fetch: () => ipcRenderer.invoke(GET_GPU_ACCELERATED_CHANNEL),
   subscribe: (handler) => {
@@ -41,6 +50,9 @@ const api: CodeweaveApi = {
   onGpuAcceleratedChanged: (listener) => gpuAcceleration.onChanged(listener),
   pickFolder: (): Promise<string | null> =>
     ipcRenderer.invoke(PICK_FOLDER_CHANNEL) as Promise<string | null>,
+  pickFile: (): Promise<string | null> =>
+    ipcRenderer.invoke(PICK_FILE_CHANNEL) as Promise<string | null>,
+  homeDir: homeDirFromArgv(process.argv),
   getAvailableUpdate: async (): Promise<AvailableUpdate | null> =>
     toAvailableUpdate(await ipcRenderer.invoke(GET_AVAILABLE_UPDATE_CHANNEL)),
   onUpdateAvailable: (listener) => {

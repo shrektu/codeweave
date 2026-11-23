@@ -7,6 +7,8 @@ export function makeCodeweaveApi(
     isGpuAccelerated: () => true,
     onGpuAcceleratedChanged: () => () => undefined,
     pickFolder: () => Promise.resolve(null),
+    pickFile: () => Promise.resolve(null),
+    homeDir: "/home/user",
     getAvailableUpdate: () => Promise.resolve(null),
     onUpdateAvailable: () => () => undefined,
     openUpdateRelease: () => Promise.resolve(),

@@ -1,10 +1,4 @@
-import {
-  ChevronDown,
-  FolderOpen,
-  RotateCcw,
-  SquareTerminal,
-  X,
-} from "lucide-react";
+import { ChevronDown, RotateCcw, SquareTerminal, X } from "lucide-react";
 import { useState, type JSX } from "react";
 
 import { TerminalStatus } from "../../domain/types";
@@ -16,9 +10,11 @@ import { requestPendingClose } from "../terminal/attachments";
 import { clampDockHeight, DOCK_DEFAULT_HEIGHT_PX } from "../terminal/dockSize";
 import { DEFAULT_TERMINAL_SIZE } from "../terminal/size";
 import { useAsyncAction } from "../useAsyncAction";
+import { useRecentFolders } from "../useRecentFolders";
 
 import { DockSplitter } from "./DockSplitter";
 import { ICON_SIZE_SMALL_PX, Icon } from "./Icon";
+import { PathField } from "./PathField";
 import { TerminalSurface } from "./TerminalSurface";
 
 const PATH_SEPARATOR = /[\\/]/;
@@ -41,26 +37,18 @@ function PickFolderBody({
 }: {
   onPicked: (folder: string) => void;
 }): JSX.Element {
-  const pick = useAsyncAction();
+  const recent = useRecentFolders();
   return (
     <div className="terminal-message">
-      <button
-        type="button"
-        className="btn pri"
-        disabled={pick.pending}
-        onClick={() => {
-          void pick.run(async () => {
-            const folder = await window.codeweave.pickFolder();
-            if (folder !== null) {
-              onPicked(folder);
-            }
-          });
-        }}
-      >
-        <Icon icon={FolderOpen} />
-        Open in folder…
-      </button>
-      {pick.error !== null && <p className="error">{pick.error}</p>}
+      <PathField
+        value={null}
+        kind="folder"
+        label="Terminal folder"
+        chooseLabel="Open in folder…"
+        primary
+        recent={recent}
+        onChange={onPicked}
+      />
     </div>
   );
 }

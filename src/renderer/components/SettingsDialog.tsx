@@ -15,8 +15,10 @@ import { PROFILE_OPTIONS } from "../profileOptions";
 import { TASK_CLASS_LABELS } from "../routingText";
 import { useApp } from "../services";
 import { useAsyncAction } from "../useAsyncAction";
+import { useRecentFolders } from "../useRecentFolders";
 
 import { Dialog, type DialogProps } from "./Dialog";
+import { PathField, type PathKind } from "./PathField";
 import { RadioOption } from "./RadioOption";
 
 type SettingsPatch = ParamsMap["settings/set"];
@@ -177,9 +179,9 @@ interface ExecutableFieldProps {
   id: string;
   label: string;
   current: string | null;
+  kind?: PathKind;
   placeholder?: string;
   help?: string;
-  pickFolder?: () => Promise<string | null>;
   onSave: (value: string | null) => void;
 }
 
@@ -187,56 +189,39 @@ function ExecutableField({
   id,
   label,
   current,
+  kind = "file",
   placeholder = "Found on PATH",
   help,
-  pickFolder,
   onSave,
 }: ExecutableFieldProps): JSX.Element {
-  const [executable, setExecutable] = useState(current ?? "");
-  const pick = useAsyncAction();
+  const [path, setPath] = useState(current ?? "");
+  const recent = useRecentFolders();
   return (
     <div className="field group-row">
       <label htmlFor={id}>{label}</label>
       {help !== undefined && <p className="empty">{help}</p>}
       <div className="field-control">
-        <input
+        <PathField
           id={id}
-          type="text"
+          kind={kind}
+          label={label}
+          value={path === "" ? null : path}
           placeholder={placeholder}
-          value={executable}
-          onChange={(event) => {
-            setExecutable(event.target.value);
-          }}
+          recent={recent}
+          onChange={setPath}
+          trailing={
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                onSave(path === "" ? null : path);
+              }}
+            >
+              Save
+            </button>
+          }
         />
-        <button
-          type="button"
-          className="btn"
-          onClick={() => {
-            onSave(executable === "" ? null : executable);
-          }}
-        >
-          Save
-        </button>
-        {pickFolder !== undefined && (
-          <button
-            type="button"
-            className="btn"
-            disabled={pick.pending}
-            onClick={() => {
-              void pick.run(async () => {
-                const picked = await pickFolder();
-                if (picked !== null) {
-                  setExecutable(picked);
-                  onSave(picked);
-                }
-              });
-            }}
-          >
-            Choose…
-          </button>
-        )}
       </div>
-      {pick.error !== null && <p className="error">{pick.error}</p>}
     </div>
   );
 }
@@ -256,67 +241,68 @@ function SettingsForm({ settings }: { settings: SettingsView }): JSX.Element {
       <RoutingFieldset settings={settings} onPatch={onPatch} />
       <UpdatesFieldset settings={settings} onPatch={onPatch} />
       <SettingsGroup title="Agent executables">
-      <ExecutableField
-        id="claude-executable"
-        label={EXECUTABLE_SETTING_LABELS[ProviderId.claude]}
-        current={settings.claudeExecutable}
-        onSave={(claudeExecutable) => {
-          onPatch({ claudeExecutable });
-        }}
-      />
-      <ExecutableField
-        id="codex-executable"
-        label={EXECUTABLE_SETTING_LABELS[ProviderId.codex]}
-        current={settings.codexExecutable}
-        onSave={(codexExecutable) => {
-          onPatch({ codexExecutable });
-        }}
-      />
-      <ExecutableField
-        id="opencode-executable"
-        label={EXECUTABLE_SETTING_LABELS[ProviderId.opencode]}
-        current={settings.opencodeExecutable}
-        onSave={(opencodeExecutable) => {
-          onPatch({ opencodeExecutable });
-        }}
-      />
-      <ExecutableField
-        id="agy-executable"
-        label={EXECUTABLE_SETTING_LABELS[ProviderId.gemini]}
-        current={settings.agyExecutable}
-        onSave={(agyExecutable) => {
-          onPatch({ agyExecutable });
-        }}
-      />
+        <ExecutableField
+          id="claude-executable"
+          label={EXECUTABLE_SETTING_LABELS[ProviderId.claude]}
+          current={settings.claudeExecutable}
+          onSave={(claudeExecutable) => {
+            onPatch({ claudeExecutable });
+          }}
+        />
+        <ExecutableField
+          id="codex-executable"
+          label={EXECUTABLE_SETTING_LABELS[ProviderId.codex]}
+          current={settings.codexExecutable}
+          onSave={(codexExecutable) => {
+            onPatch({ codexExecutable });
+          }}
+        />
+        <ExecutableField
+          id="opencode-executable"
+          label={EXECUTABLE_SETTING_LABELS[ProviderId.opencode]}
+          current={settings.opencodeExecutable}
+          onSave={(opencodeExecutable) => {
+            onPatch({ opencodeExecutable });
+          }}
+        />
+        <ExecutableField
+          id="agy-executable"
+          label={EXECUTABLE_SETTING_LABELS[ProviderId.gemini]}
+          current={settings.agyExecutable}
+          onSave={(agyExecutable) => {
+            onPatch({ agyExecutable });
+          }}
+        />
       </SettingsGroup>
       <SettingsGroup title="Terminal and library">
-      <ExecutableField
-        id="terminal-shell"
-        label="Terminal shell"
-        current={settings.terminalShell}
-        placeholder="Detected automatically"
-        help="Leave empty to detect your shell automatically."
-        onSave={(terminalShell) => {
-          onPatch({ terminalShell });
-        }}
-      />
-      <ExecutableField
-        id="definition-library"
-        label="Flow library folder"
-        current={settings.definitionLibrary}
-        placeholder="Default: Codeweave data folder/library"
-        help="Shared agents and flows. A project definition overrides a library one with the same id."
-        onSave={(definitionLibrary) => {
-          onPatch({ definitionLibrary });
-        }}
-      />
+        <ExecutableField
+          id="terminal-shell"
+          label="Terminal shell"
+          current={settings.terminalShell}
+          placeholder="Detected automatically"
+          help="Leave empty to detect your shell automatically."
+          onSave={(terminalShell) => {
+            onPatch({ terminalShell });
+          }}
+        />
+        <ExecutableField
+          id="definition-library"
+          kind="folder"
+          label="Flow library folder"
+          current={settings.definitionLibrary}
+          placeholder="Default: Codeweave data folder/library"
+          help="Shared agents and flows. A project definition overrides a library one with the same id."
+          onSave={(definitionLibrary) => {
+            onPatch({ definitionLibrary });
+          }}
+        />
         <ExecutableField
           id="default-workspace"
+          kind="folder"
           label="Default workspace"
           current={settings.defaultWorkspace}
           placeholder={`Home folder (${settings.defaultWorkspaceResolved})`}
           help="Where a session starts when you do not choose a folder."
-          pickFolder={() => window.codeweave.pickFolder()}
           onSave={(defaultWorkspace) => {
             onPatch({ defaultWorkspace });
           }}

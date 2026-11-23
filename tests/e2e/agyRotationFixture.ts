@@ -25,6 +25,7 @@ import {
 } from "../fakes/agyHomeGuard";
 
 import { writeKeyringPreload } from "./opencodeRotationFixture";
+import { typeConfigDirectory } from "./pathFieldE2e";
 
 export const AGY_ACCOUNT_LABEL = "A";
 export const AGY_PATH_ERROR =
@@ -237,7 +238,7 @@ export async function addGeminiAccount(
   const dialog = page.getByRole("dialog", { name: "Accounts" });
   await dialog.getByLabel("Agent").selectOption({ label: GEMINI_OPTION });
   await dialog.getByLabel("Label", { exact: true }).fill(AGY_ACCOUNT_LABEL);
-  await dialog.getByLabel("Config directory").fill(configDir);
+  await typeConfigDirectory(dialog, configDir);
   await submitAccount(page, AGY_ACCOUNT_LABEL);
 }
 

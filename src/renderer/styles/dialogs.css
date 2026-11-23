@@ -174,6 +174,119 @@
   min-width: 0;
 }
 
+.path-field {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.field-control > .path-field {
+  flex: 1 1 0;
+}
+
+.path-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.path-value {
+  container-type: inline-size;
+  display: flex;
+  flex: 1 1 10rem;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--label);
+  font: var(--text-sm) var(--font-mono);
+}
+
+.path-head {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: calc(
+    round(
+        down,
+        calc(100cqw - attr(data-tail-length type(<number>), 0) * 1ch),
+        1ch
+      ) +
+      0.5px
+  );
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.path-tail {
+  flex: none;
+}
+
+.path-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.path-placeholder {
+  color: var(--label-3);
+  font-family: var(--font-sans);
+}
+
+.path-recent-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  z-index: 10;
+  margin: var(--space-1) 0 0;
+  padding: var(--space-1);
+  list-style: none;
+  border: 1px solid var(--separator-strong);
+  border-radius: var(--radius-m);
+  background: var(--surface-1);
+}
+
+.path-recent-item {
+  container-type: inline-size;
+  display: flex;
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--label);
+  font: var(--text-sm) var(--font-mono);
+  text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease);
+}
+
+.path-recent-item:hover,
+.path-recent-item:focus-visible {
+  background: var(--hover);
+}
+
+.path-recent-item:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.path-edit {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.dialog .path-edit input[type="text"] {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+}
+
 .radio-option {
   display: grid;
   grid-template-columns: auto 1fr;
