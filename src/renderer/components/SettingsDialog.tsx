@@ -1,4 +1,4 @@
-import { useState, type JSX } from "react";
+import { useState, type JSX, type ReactNode } from "react";
 
 import {
   Appearance,
@@ -46,10 +46,24 @@ const CHANNEL_OPTIONS: readonly { value: UpdateChannel; label: string }[] = [
 const BYPASS_WARNING =
   "In Bypass mode the agent never asks, so Codeweave cannot block dangerous commands.";
 
+function SettingsGroup({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}): JSX.Element {
+  return (
+    <fieldset className="settings-group">
+      <legend className="sec">{title}</legend>
+      <div className="group">{children}</div>
+    </fieldset>
+  );
+}
+
 function ProfileFieldset({ settings, onPatch }: PatchProps): JSX.Element {
   return (
-    <fieldset>
-      <legend className="sec">Permission profile</legend>
+    <SettingsGroup title="Permission profile">
       {PROFILE_OPTIONS.map((option) => (
         <RadioOption
           key={option.value}
@@ -65,14 +79,13 @@ function ProfileFieldset({ settings, onPatch }: PatchProps): JSX.Element {
       {settings.permissionProfile === PermissionProfile.bypass && (
         <p className="warning">{BYPASS_WARNING}</p>
       )}
-    </fieldset>
+    </SettingsGroup>
   );
 }
 
 function AppearanceFieldset({ settings, onPatch }: PatchProps): JSX.Element {
   return (
-    <fieldset>
-      <legend className="sec">Appearance</legend>
+    <SettingsGroup title="Appearance">
       {APPEARANCE_OPTIONS.map((option) => (
         <RadioOption
           key={option.value}
@@ -84,14 +97,13 @@ function AppearanceFieldset({ settings, onPatch }: PatchProps): JSX.Element {
           }}
         />
       ))}
-    </fieldset>
+    </SettingsGroup>
   );
 }
 
 function EffectsFieldset({ settings, onPatch }: PatchProps): JSX.Element {
   return (
-    <fieldset>
-      <legend className="sec">Visual effects</legend>
+    <SettingsGroup title="Visual effects">
       {EFFECT_OPTIONS.map((option) => (
         <RadioOption
           key={option.value}
@@ -103,15 +115,14 @@ function EffectsFieldset({ settings, onPatch }: PatchProps): JSX.Element {
           }}
         />
       ))}
-    </fieldset>
+    </SettingsGroup>
   );
 }
 
 function RoutingFieldset({ settings, onPatch }: PatchProps): JSX.Element {
   return (
-    <fieldset>
-      <legend className="sec">Task routing</legend>
-      <label>
+    <SettingsGroup title="Task routing">
+      <label className="group-row">
         Default task class
         <select
           value={settings.defaultTaskClass}
@@ -129,15 +140,14 @@ function RoutingFieldset({ settings, onPatch }: PatchProps): JSX.Element {
           ))}
         </select>
       </label>
-    </fieldset>
+    </SettingsGroup>
   );
 }
 
 function UpdatesFieldset({ settings, onPatch }: PatchProps): JSX.Element {
   return (
-    <fieldset>
-      <legend className="sec">Updates</legend>
-      <label>
+    <SettingsGroup title="Updates">
+      <label className="group-row check-row">
         <input
           type="checkbox"
           checked={settings.updateCheck}
@@ -159,7 +169,7 @@ function UpdatesFieldset({ settings, onPatch }: PatchProps): JSX.Element {
           }}
         />
       ))}
-    </fieldset>
+    </SettingsGroup>
   );
 }
 
@@ -182,27 +192,29 @@ function ExecutableField({
 }: ExecutableFieldProps): JSX.Element {
   const [executable, setExecutable] = useState(current ?? "");
   return (
-    <div className="field">
+    <div className="field group-row">
       <label htmlFor={id}>{label}</label>
       {help !== undefined && <p className="empty">{help}</p>}
-      <input
-        id={id}
-        type="text"
-        placeholder={placeholder}
-        value={executable}
-        onChange={(event) => {
-          setExecutable(event.target.value);
-        }}
-      />
-      <button
-        type="button"
-        className="btn"
-        onClick={() => {
-          onSave(executable === "" ? null : executable);
-        }}
-      >
-        Save
-      </button>
+      <div className="field-control">
+        <input
+          id={id}
+          type="text"
+          placeholder={placeholder}
+          value={executable}
+          onChange={(event) => {
+            setExecutable(event.target.value);
+          }}
+        />
+        <button
+          type="button"
+          className="btn"
+          onClick={() => {
+            onSave(executable === "" ? null : executable);
+          }}
+        >
+          Save
+        </button>
+      </div>
     </div>
   );
 }
@@ -221,6 +233,7 @@ function SettingsForm({ settings }: { settings: SettingsView }): JSX.Element {
       <EffectsFieldset settings={settings} onPatch={onPatch} />
       <RoutingFieldset settings={settings} onPatch={onPatch} />
       <UpdatesFieldset settings={settings} onPatch={onPatch} />
+      <SettingsGroup title="Agent executables">
       <ExecutableField
         id="claude-executable"
         label={EXECUTABLE_SETTING_LABELS[ProviderId.claude]}
@@ -253,6 +266,8 @@ function SettingsForm({ settings }: { settings: SettingsView }): JSX.Element {
           onPatch({ agyExecutable });
         }}
       />
+      </SettingsGroup>
+      <SettingsGroup title="Terminal and library">
       <ExecutableField
         id="terminal-shell"
         label="Terminal shell"
@@ -273,6 +288,7 @@ function SettingsForm({ settings }: { settings: SettingsView }): JSX.Element {
           onPatch({ definitionLibrary });
         }}
       />
+      </SettingsGroup>
       {save.error !== null && <p className="error">{save.error}</p>}
     </>
   );

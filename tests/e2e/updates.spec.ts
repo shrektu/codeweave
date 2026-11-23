@@ -15,6 +15,8 @@ const SETTINGS_FILE = "settings.json";
 const FEED_FILE_PATTERN = /^\/latest.*\.yml$/;
 const BANNER_TEXT = "Codeweave 99.0.0 is available.";
 const QUIET_PERIOD_MS = 5000;
+const NARROW_WINDOW = { width: 1024, height: 768 };
+const MIN_TEXT_WIDTH_PX = 100;
 const SANDBOX_FLAGS =
   process.env.CI !== undefined && process.platform === "linux"
     ? ["--no-sandbox"]
@@ -114,6 +116,30 @@ test("update_banner_shows_the_version_announced_by_the_feed", async () => {
         page.getByRole("button", { name: "View release" }),
       ).toBeVisible();
       expect(feed.requests()).toBeGreaterThan(0);
+    });
+  } finally {
+    await feed.close();
+  }
+});
+
+test("update_banner_visible_in_narrow_window", async () => {
+  const feed = await startFeed();
+  try {
+    await withApp({ feed }, async (app) => {
+      const page = await app.firstWindow();
+      await page.setViewportSize(NARROW_WINDOW);
+      await page.waitForFunction(
+        (width) => window.innerWidth <= width,
+        NARROW_WINDOW.width,
+      );
+
+      const text = page.getByText(BANNER_TEXT);
+      await expect(text).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "View release" }),
+      ).toBeVisible();
+      const box = await text.boundingBox();
+      expect(box?.width ?? 0).toBeGreaterThan(MIN_TEXT_WIDTH_PX);
     });
   } finally {
     await feed.close();

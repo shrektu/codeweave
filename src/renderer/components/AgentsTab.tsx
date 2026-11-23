@@ -1,3 +1,4 @@
+import { Plus } from "lucide-react";
 import { useState, type JSX } from "react";
 
 import type { AgentView, FlowFileError, FlowsList } from "../../shared/views";
@@ -10,6 +11,7 @@ import { AgentForm } from "./AgentForm";
 import { Dialog } from "./Dialog";
 import { FlowErrors } from "./FlowErrors";
 import { FolderPrompt, PickFolderButton } from "./FolderControls";
+import { Icon } from "./Icon";
 import { SourceBadge } from "./SourceBadge";
 
 const AGENT_FILE_PREFIX = "agents/";
@@ -42,6 +44,7 @@ function AgentList({
           onChoose({ kind: "new" });
         }}
       >
+        <Icon icon={Plus} />
         New agent
       </button>
       {agents.length === 0 && <p className="empty">No agents found.</p>}
@@ -51,6 +54,7 @@ function AgentList({
             <button
               type="button"
               className="agent-row"
+              data-provider={agent.provider}
               aria-current={agent.id === selectedId ? "true" : undefined}
               onClick={() => {
                 onChoose({ kind: "open", id: agent.id });

@@ -359,7 +359,7 @@ function DeleteDialog({
           : `The file stays because it also holds ${others.toString()} other ${others === 1 ? "agent" : "agents"}.`}
       </p>
       <div className="dialog-actions">
-        <button type="button" className="btn pri" onClick={onConfirm}>
+        <button type="button" className="btn pri danger" onClick={onConfirm}>
           Delete agent
         </button>
       </div>
@@ -386,7 +386,7 @@ function DeleteButton({
     <>
       <button
         type="button"
-        className="btn"
+        className="btn danger"
         disabled={disabled || reason !== null}
         aria-describedby={reason === null ? undefined : reasonId}
         title={reason ?? undefined}

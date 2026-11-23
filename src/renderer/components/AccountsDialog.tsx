@@ -1,3 +1,4 @@
+import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
 import { useState, type JSX } from "react";
 
 import { ApiAuth } from "../../domain/apiProviders";
@@ -25,6 +26,7 @@ import {
   withPickedModel,
 } from "./ApiAccountFields";
 import { Dialog, type DialogProps } from "./Dialog";
+import { Icon } from "./Icon";
 import { ModelCatalogDialog } from "./ModelCatalogDialog";
 import { SignIn } from "./SignIn";
 
@@ -59,36 +61,39 @@ function AccountRow({
         </small>
         <button
           type="button"
-          className="btn"
+          className="icon-btn"
           aria-label="Move up"
+          title="Move up"
           disabled={disabled || isFirst}
           onClick={() => {
             onMove(account.id, "up");
           }}
         >
-          ↑
+          <Icon icon={ArrowUp} />
         </button>
         <button
           type="button"
-          className="btn"
+          className="icon-btn"
           aria-label="Move down"
+          title="Move down"
           disabled={disabled || isLast}
           onClick={() => {
             onMove(account.id, "down");
           }}
         >
-          ↓
+          <Icon icon={ArrowDown} />
         </button>
         <button
           type="button"
-          className="btn"
+          className="icon-btn danger"
           aria-label="Remove"
+          title="Remove"
           disabled={disabled}
           onClick={() => {
             onRemove(account.id);
           }}
         >
-          ✕
+          <Icon icon={Trash2} />
         </button>
       </div>
       {account.api === null ? (

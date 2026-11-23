@@ -10,9 +10,11 @@ import { useAppState } from "../store";
 import {
   DECISION_LABELS,
   STATUS_LABELS,
+  STATUS_TONES,
   outcomeText,
   reasonText,
 } from "./FlowRunPanel";
+import { StatusPill } from "./StatusPill";
 
 const WAITING_FOR_ORCHESTRATOR = "Waiting for the orchestrator";
 const IN_PLACE_LABEL = "In place";
@@ -61,7 +63,9 @@ function TimelineRun({
     <li className="timeline-run">
       <div className="timeline-head">
         <strong>{run.flowTitle}</strong>
-        <span className="pill">{statusText(run)}</span>
+        <StatusPill tone={STATUS_TONES[run.status]}>
+          {statusText(run)}
+        </StatusPill>
         <span>{placementText(run)}</span>
         <span>{`Round ${run.round.toString()} of ${run.maxRounds.toString()}`}</span>
         <div className="spacer" />

@@ -51,6 +51,7 @@ import { PROVIDER_LABELS, nodeModelOf } from "../format";
 import { useElementSize } from "../useElementSize";
 
 import { FlowEdge } from "./FlowEdge";
+import { StatusPill, StatusTone } from "./StatusPill";
 
 interface FlowGraphBaseProps {
   flow: FlowView;
@@ -110,6 +111,15 @@ const STATE_LABELS: Readonly<Record<FlowNodeState, string>> = {
   [FlowNodeState.error]: "Error",
 };
 
+const STATE_TONES: Readonly<Record<FlowNodeState, StatusTone>> = {
+  [FlowNodeState.idle]: StatusTone.neutral,
+  [FlowNodeState.working]: StatusTone.active,
+  [FlowNodeState.awaitingPermission]: StatusTone.waiting,
+  [FlowNodeState.rateLimited]: StatusTone.waiting,
+  [FlowNodeState.done]: StatusTone.success,
+  [FlowNodeState.error]: StatusTone.danger,
+};
+
 const HANDLE_POSITIONS: Readonly<
   Record<FlowDirection, { target: Position; source: Position }>
 > = {
@@ -132,7 +142,9 @@ function FlowNodeCardView({ id, data }: NodeProps<FlowGraphNode>): JSX.Element {
       />
       <div className="flow-node-head">
         <span className="flow-node-id">{id}</span>
-        <span className="pill flow-state">{STATE_LABELS[data.state]}</span>
+        <StatusPill tone={STATE_TONES[data.state]} className="flow-state">
+          {STATE_LABELS[data.state]}
+        </StatusPill>
       </div>
       <p className="flow-node-role">{data.role}</p>
       {data.model !== null && (

@@ -30,6 +30,10 @@ pre {
   color: var(--label-2);
 }
 
+svg.lucide {
+  flex: none;
+}
+
 button,
 input,
 select,
@@ -39,7 +43,8 @@ summary {
     background-color var(--duration-fast) var(--ease),
     color var(--duration-fast) var(--ease),
     border-color var(--duration-fast) var(--ease),
-    box-shadow var(--duration-fast) var(--ease);
+    box-shadow var(--duration-fast) var(--ease),
+    opacity var(--duration-fast) var(--ease);
 }
 
 input[type="text"],
@@ -47,16 +52,40 @@ input[type="password"],
 input[type="number"],
 select,
 textarea {
-  background: var(--surface-2);
+  min-height: 28px;
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface-1);
   border: 1px solid var(--separator-strong);
   border-radius: var(--radius-s);
   color: var(--label);
   font: var(--text-md) / var(--leading) var(--font-sans);
 }
 
+textarea {
+  padding: var(--space-2);
+}
+
+input[type="text"]:focus-visible,
+input[type="password"]:focus-visible,
+input[type="number"]:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-color: var(--accent);
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 input[type="checkbox"],
 input[type="radio"] {
   accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  flex: none;
 }
 
 input::placeholder,
@@ -70,22 +99,34 @@ textarea::placeholder {
 }
 
 .btn {
-  font: 500 var(--text-sm) var(--font-sans);
-  padding: var(--space-1) var(--space-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: 28px;
+  padding: 0 var(--space-3);
+  font: 500 var(--text-sm) / 1 var(--font-sans);
   border-radius: var(--radius-s);
   border: 1px solid var(--separator-strong);
   background: var(--surface-1);
+  box-shadow: var(--shadow-1);
   color: var(--label);
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .btn:hover:not(:disabled) {
   background: var(--surface-3);
 }
 
+.btn:active:not(:disabled) {
+  filter: brightness(0.94);
+}
+
 .btn.pri {
   border-color: var(--accent);
   background: var(--accent);
+  box-shadow: none;
   color: var(--on-accent);
 }
 
@@ -94,7 +135,80 @@ textarea::placeholder {
   filter: brightness(1.08);
 }
 
+.btn.plain {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--label-2);
+}
+
+.btn.plain:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--label);
+}
+
+.btn.plain[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.btn.small {
+  min-height: 24px;
+  padding: 0 var(--space-2);
+}
+
+.btn.danger {
+  color: var(--danger);
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
+
+.btn.pri.danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--on-accent);
+}
+
+.btn.pri.danger:hover:not(:disabled) {
+  background: var(--danger);
+  filter: brightness(1.08);
+}
+
+.btn:focus-visible,
+.btn.plain:focus-visible,
+.btn.pri:focus-visible,
+.btn.pri.danger:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--label-2);
+  cursor: pointer;
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--label);
+}
+
+.icon-btn.danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
 .btn:disabled,
+.icon-btn:disabled,
 .send:disabled,
 .composer textarea:disabled {
   opacity: 0.45;
@@ -123,10 +237,56 @@ button.pill[aria-pressed="true"] {
   border-color: var(--accent);
 }
 
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--label-2);
+  font: 500 var(--text-xs) / 1.4 var(--font-sans);
+  white-space: nowrap;
+}
+
+.status-pill[data-tone="active"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.status-pill[data-tone="waiting"] {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.status-pill[data-tone="success"] {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.status-pill[data-tone="danger"] {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.status-pill[data-tone="active"] svg {
+  animation: spin calc(var(--duration) * 6) linear infinite;
+}
+
+html[data-fx="low"] .status-pill svg {
+  animation: none;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .sec {
-  font: 600 var(--text-xs) var(--font-sans);
-  letter-spacing: 0.06em;
-  color: var(--label-3);
+  font: 600 var(--text-xs) / var(--leading-tight) var(--font-sans);
+  letter-spacing: 0.05em;
+  color: var(--label-2);
   text-transform: uppercase;
 }
 
@@ -137,13 +297,33 @@ button.pill[aria-pressed="true"] {
 
 .empty-state {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: center;
   gap: var(--space-2);
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+}
+
+.empty-state .empty {
+  max-width: 36ch;
+}
+
+.empty-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: var(--space-1);
+  border-radius: var(--radius-m);
+  background: var(--surface-3);
+  color: var(--label-2);
 }
 
 .empty-title {
-  font: 500 var(--text-lg) var(--font-sans);
+  font: 600 var(--text-lg) / var(--leading-tight) var(--font-sans);
+  color: var(--label);
 }
 
 .error {
@@ -154,21 +334,22 @@ button.pill[aria-pressed="true"] {
 .warning {
   color: var(--warning);
   font-size: var(--text-sm);
-  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
   background: var(--warning-soft);
-  border-radius: var(--radius-m);
+  border-radius: var(--radius-s);
   padding: var(--space-2) var(--space-3);
 }
 
 .badge {
-  font: var(--text-xs) var(--font-mono);
+  font: 500 var(--text-xs) var(--font-sans);
   color: var(--warning);
-  border: 1px solid var(--separator-strong);
-  border-radius: var(--radius-s);
-  padding: 0 6px;
-  margin-right: 6px;
+  background: var(--warning-soft);
+  border-radius: 999px;
+  padding: 1px var(--space-2);
+  margin-right: var(--space-2);
 }
 
 .badge.warn {
-  color: var(--label);
+  background: var(--surface-3);
+  color: var(--label-2);
 }

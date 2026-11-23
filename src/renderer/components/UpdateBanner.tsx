@@ -1,6 +1,9 @@
+import { Download } from "lucide-react";
 import { useEffect, useState, type JSX } from "react";
 
 import type { AvailableUpdate } from "../../shared/api";
+
+import { ICON_SIZE_SMALL_PX, Icon } from "./Icon";
 
 export function UpdateBanner(): JSX.Element | null {
   const [update, setUpdate] = useState<AvailableUpdate | null>(null);
@@ -25,10 +28,11 @@ export function UpdateBanner(): JSX.Element | null {
   }
   return (
     <div role="status" className="update-banner">
-      <span>{`Codeweave ${update.version} is available.`}</span>
+      <Icon icon={Download} size={ICON_SIZE_SMALL_PX} />
+      <span className="update-text">{`Codeweave ${update.version} is available.`}</span>
       <button
         type="button"
-        className="pill"
+        className="btn small"
         onClick={() => {
           void window.codeweave.openUpdateRelease();
         }}
@@ -37,7 +41,7 @@ export function UpdateBanner(): JSX.Element | null {
       </button>
       <button
         type="button"
-        className="pill"
+        className="btn plain small"
         onClick={() => {
           setDismissed(update.version);
         }}
