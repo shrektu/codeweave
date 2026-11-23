@@ -82,6 +82,20 @@ it("header_toolbar_buttons_keep_names", async () => {
   vi.unstubAllEnvs();
 });
 
+it("update_banner_sits_outside_the_header", async () => {
+  window.codeweave = makeCodeweaveApi({
+    getAvailableUpdate: () => Promise.resolve({ version: "99.0.0" }),
+  });
+  renderWithServices(<App />, appClient());
+
+  const text = await screen.findByText("Codeweave 99.0.0 is available.");
+  const banner = text.closest('[role="status"]');
+
+  expect(banner).not.toBeNull();
+  expect(banner?.closest(".app-header")).toBeNull();
+  expect(banner?.closest(".app-notices")).not.toBeNull();
+});
+
 it("segmented_tabs_mark_current", async () => {
   renderWithServices(<App />, appClient());
 

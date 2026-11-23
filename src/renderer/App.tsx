@@ -705,7 +705,6 @@ export function App(): JSX.Element {
             </button>
           ))}
         </div>
-        <UpdateBanner />
         <div className="spacer" />
         <output
           className="backend-status"
@@ -750,6 +749,9 @@ export function App(): JSX.Element {
           <span className="toolbar-label">Settings</span>
         </button>
       </header>
+      <div className="app-notices">
+        <UpdateBanner />
+      </div>
       <Sidebar
         onManageAccounts={() => {
           setOpenDialog("accounts");
