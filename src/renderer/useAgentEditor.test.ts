@@ -13,6 +13,7 @@ function existingSession(role: string = VIEW.role): AgentSession {
     cwd: CWD,
     target: {
       kind: "existing",
+      source: VIEW.source,
       file: VIEW.file,
       revision: VIEW.revision,
       id: VIEW.id,

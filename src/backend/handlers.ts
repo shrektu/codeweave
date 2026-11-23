@@ -1,9 +1,12 @@
+import { homedir } from "node:os";
+
 import { SWITCH_LOG_SNAPSHOT_LIMIT } from "../shared/constants";
 import { IpcError, IpcErrorCode } from "../shared/protocol";
 
 import { createAccountsService, type AccountsService } from "./accountsService";
 import type { ConnectionRegistry } from "./connections";
 import { createAgent, deleteAgent, saveAgent } from "./agents";
+import { createDefinitionRoots } from "./definitionLibrary";
 import { listFlows, saveFlow } from "./flows";
 import type { FlowRunService } from "./flowRuns";
 import type { IpcHandlers } from "./ipcServer";
@@ -91,7 +94,9 @@ export function createHandlers({
     store,
     broadcast,
     postUpdaterConfig,
+    homeDir: homedir(),
   });
+  const definitionRoots = createDefinitionRoots({ store, userData });
   return {
     ping: () => ({ pong: true, backendPid: process.pid }),
     "sessions/snapshot": async () => ({
@@ -150,11 +155,15 @@ export function createHandlers({
     "switchLog/list": async () => ({
       entries: await store.readSwitchLog(SWITCH_LOG_SNAPSHOT_LIMIT),
     }),
-    "flows/list": ({ cwd }) => listFlows(cwd),
-    "flows/save": ({ cwd, ...params }) => saveFlow(cwd, params),
-    "agents/create": ({ cwd, ...params }) => createAgent(cwd, params),
-    "agents/save": ({ cwd, ...params }) => saveAgent(cwd, params),
-    "agents/delete": ({ cwd, ...params }) => deleteAgent(cwd, params),
+    "flows/list": async ({ cwd }) => listFlows(await definitionRoots(cwd)),
+    "flows/save": async ({ cwd, ...params }) =>
+      saveFlow(await definitionRoots(cwd), params),
+    "agents/create": async ({ cwd, ...params }) =>
+      createAgent(await definitionRoots(cwd), params),
+    "agents/save": async ({ cwd, ...params }) =>
+      saveAgent(await definitionRoots(cwd), params),
+    "agents/delete": async ({ cwd, ...params }) =>
+      deleteAgent(await definitionRoots(cwd), params),
     "flow/start": (params) => flowRuns.start(params),
     "flow/stop": async ({ runId }) => {
       const stopped = flowRuns.isOpen(runId);

@@ -6,6 +6,7 @@ import { FlowDecision } from "../domain/flowRun";
 import { AgentSchema, FlowSchema } from "../domain/flows";
 import { TaskClassSchema } from "../domain/taskClass";
 import {
+  DefinitionSource,
   EffectLevel,
   PermissionProfile,
   ProviderId,
@@ -95,6 +96,7 @@ const SettingsPatchSchema = z
     updateCheck: z.boolean().optional(),
     updateChannel: z.enum(UpdateChannel).optional(),
     defaultTaskClass: TaskClassSchema.optional(),
+    definitionLibrary: z.string().nullable().optional(),
   })
   .refine((patch) => Object.values(patch).some((value) => value !== undefined));
 
@@ -167,17 +169,20 @@ export const ParamsSchemas = {
   "flows/list": z.strictObject({ cwd: NonEmptyString }),
   "flows/save": z.strictObject({
     cwd: NonEmptyString,
+    source: z.enum(DefinitionSource),
     file: NonEmptyString,
     revision: NonEmptyString,
     flow: FlowSchema,
   }),
   "agents/create": z.strictObject({
     cwd: NonEmptyString,
+    source: z.enum(DefinitionSource).optional(),
     agent: AgentSchema,
     body: z.string(),
   }),
   "agents/save": z.strictObject({
     cwd: NonEmptyString,
+    source: z.enum(DefinitionSource),
     file: NonEmptyString,
     revision: NonEmptyString,
     id: NonEmptyString,
@@ -186,6 +191,7 @@ export const ParamsSchemas = {
   }),
   "agents/delete": z.strictObject({
     cwd: NonEmptyString,
+    source: z.enum(DefinitionSource),
     file: NonEmptyString,
     revision: NonEmptyString,
     id: NonEmptyString,

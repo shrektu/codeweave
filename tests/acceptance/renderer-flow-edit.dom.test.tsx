@@ -165,6 +165,7 @@ it("flow_edit_adds_node_and_saves_wire_flow", async () => {
     expect(savedRequests(client)).toEqual([
       {
         cwd: SESSION_CWD,
+        source: "project",
         file: "flows/ship.md",
         revision: "rev-1",
         flow: {
@@ -184,6 +185,30 @@ it("flow_edit_adds_node_and_saves_wire_flow", async () => {
   await screen.findByRole("button", { name: "Edit" }, WAIT_OPTIONS);
   expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   expect(await findGraphNode("docs")).toBeTruthy();
+});
+
+it("editing_a_library_flow_saves_with_source_library", async () => {
+  const library = makeFlow({ source: "library", revision: "rev-lib" });
+  const client = appClient(makeFlowsList({ flows: [library] }));
+  client.respond("flows/save", makeFlowsList({ flows: [library] }));
+  await startEditing(client);
+
+  addNode("docs", "reviewer", "codex");
+  await findGraphNode("docs");
+  await waitFor(() => {
+    expect(saveButton().disabled).toBe(false);
+  });
+  fireEvent.click(saveButton());
+
+  await waitFor(() => {
+    expect(savedRequests(client)).toEqual([
+      expect.objectContaining({
+        source: "library",
+        file: "flows/ship.md",
+        revision: "rev-lib",
+      }),
+    ]);
+  }, WAIT_OPTIONS);
 });
 
 it("flow_edit_removes_node_and_its_edges", async () => {
@@ -223,6 +248,7 @@ it("flow_edit_removes_node_and_its_edges", async () => {
     expect(savedRequests(client)).toEqual([
       {
         cwd: SESSION_CWD,
+        source: "project",
         file: "flows/ship.md",
         revision: "rev-1",
         flow: {
@@ -255,6 +281,7 @@ it("flow_edit_adds_edge_with_kind_and_gate_via_form", async () => {
     expect(savedRequests(client)).toEqual([
       {
         cwd: SESSION_CWD,
+        source: "project",
         file: "flows/ship.md",
         revision: "rev-1",
         flow: {
@@ -299,6 +326,7 @@ it("flow_edit_changes_agent_and_provider", async () => {
     expect(savedRequests(client)).toEqual([
       {
         cwd: SESSION_CWD,
+        source: "project",
         file: "flows/ship.md",
         revision: "rev-1",
         flow: {
@@ -334,6 +362,7 @@ it("flow_edit_sets_max_rounds", async () => {
     expect(savedRequests(client)).toEqual([
       {
         cwd: SESSION_CWD,
+        source: "project",
         file: "flows/ship.md",
         revision: "rev-1",
         flow: {
@@ -658,6 +687,7 @@ it("flow_edit_stale_draft_after_reload_sends_base_revision", async () => {
   expect(savedRequests(client)).toEqual([
     {
       cwd: SESSION_CWD,
+      source: "project",
       file: "flows/ship.md",
       revision: "rev-1",
       flow: {
@@ -717,6 +747,7 @@ it("flow_edit_max_rounds_accepts_clear_and_retype", async () => {
     expect(savedRequests(client)).toEqual([
       {
         cwd: SESSION_CWD,
+        source: "project",
         file: "flows/ship.md",
         revision: "rev-1",
         flow: {
@@ -796,6 +827,7 @@ it("flow_graph_edge_selection_edits_kind_gate_and_removes", async () => {
     expect(savedRequests(client)).toEqual([
       {
         cwd: SESSION_CWD,
+        source: "project",
         file: "flows/ship.md",
         revision: "rev-1",
         flow: {
@@ -949,6 +981,7 @@ it("flow inspector sets the node task class", async () => {
     expect(savedRequests(client)).toEqual([
       {
         cwd: SESSION_CWD,
+        source: "project",
         file: "flows/ship.md",
         revision: "rev-1",
         flow: {

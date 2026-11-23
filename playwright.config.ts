@@ -12,6 +12,7 @@ export default defineConfig({
     "agyRotation.spec.ts",
     "agyEditDiff.spec.ts",
     "flowRun.spec.ts",
+    "flowLibrary.spec.ts",
     "agentEditor.spec.ts",
     "orchestrator.spec.ts",
   ],

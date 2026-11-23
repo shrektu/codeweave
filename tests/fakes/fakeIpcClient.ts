@@ -3,8 +3,9 @@ import { createElement, type ReactElement } from "react";
 
 import { ApiProviderId } from "../../src/domain/apiProviders";
 import { TaskClass } from "../../src/domain/taskClass";
-import { EdgeKind } from "../../src/domain/types";
 import {
+  DefinitionSource,
+  EdgeKind,
   EffectLevel,
   FlowPlacement,
   FlowRunOrigin,
@@ -227,6 +228,7 @@ export function makeSettings(
     updateCheck: true,
     updateChannel: UpdateChannel.stable,
     defaultTaskClass: TaskClass.standard,
+    definitionLibrary: null,
     ...overrides,
   };
 }
@@ -289,6 +291,7 @@ export function makeAgent(overrides: Partial<AgentView> = {}): AgentView {
   return {
     id: "implementer",
     file: "agents/implementer.md",
+    source: DefinitionSource.project,
     revision: "agent-rev-1",
     role: "Implements the planned change",
     provider: ProviderId.claude,
@@ -305,6 +308,7 @@ export function makeFlow(overrides: Partial<FlowView> = {}): FlowView {
   return {
     id: "ship",
     file: "flows/ship.md",
+    source: DefinitionSource.project,
     revision: "rev-1",
     title: "Ship it",
     maxRounds: 2,
@@ -324,6 +328,7 @@ export function makeFlowsList(overrides: Partial<FlowsList> = {}): FlowsList {
     flows: [makeFlow()],
     agents: [makeAgent(), makeAgent({ id: "reviewer", role: "Reviews diffs" })],
     errors: [],
+    locations: { project: "/home/user/project", library: "/data/library" },
     ...overrides,
   };
 }

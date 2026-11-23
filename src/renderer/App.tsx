@@ -7,7 +7,11 @@ import {
 } from "react";
 
 import { isRunOpen } from "../domain/flowState";
-import { EffectLevel as EffectSetting, FlowRunOrigin } from "../domain/types";
+import {
+  DefinitionSource,
+  EffectLevel as EffectSetting,
+  FlowRunOrigin,
+} from "../domain/types";
 import type {
   FlowRunView,
   FlowsList,
@@ -29,6 +33,7 @@ import { OrchestratorTimeline } from "./components/OrchestratorTimeline";
 import { SessionStream } from "./components/SessionStream";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar } from "./components/Sidebar";
+import { SourceBadge } from "./components/SourceBadge";
 import { SwitchLog } from "./components/SwitchLog";
 import { TerminalDock } from "./components/TerminalDock";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -49,6 +54,7 @@ import {
   type FlowSelection,
 } from "./flowDraft";
 import {
+  DEFINITION_SOURCE_LABELS,
   focusedRunOf,
   isSessionLive,
   latestOpenRunOf,
@@ -318,11 +324,14 @@ function FlowPicker({
           >
             {list.flows.map((candidate) => (
               <option key={candidate.id} value={candidate.id}>
-                {candidate.title}
+                {candidate.source === DefinitionSource.library
+                  ? `${candidate.title} (${DEFINITION_SOURCE_LABELS[candidate.source]})`
+                  : candidate.title}
               </option>
             ))}
           </select>
         )}
+        {flow !== undefined && <SourceBadge source={flow.source} />}
         {(flow !== undefined || missing) && (
           <FlowToolbar
             editing={draft !== null}
@@ -331,7 +340,10 @@ function FlowPicker({
               flow !== undefined &&
               !reloading &&
               !locked &&
-              !list.errors.some((error) => error.file === flow.file)
+              !list.errors.some(
+                (error) =>
+                  error.file === flow.file && error.source === flow.source,
+              )
             }
             editHint={locked ? RUN_LOCK_MESSAGE : undefined}
             canSave={canSave}

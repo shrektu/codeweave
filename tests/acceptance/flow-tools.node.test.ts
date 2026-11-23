@@ -1,5 +1,6 @@
 import { request } from "node:http";
 import { connect as connectSocket } from "node:net";
+import { join } from "node:path";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -156,6 +157,37 @@ describe("flow tool server discovery", () => {
     const { text, isError } = await callText(client, "list_flows", {});
     expect(isError).toBe(false);
     expect(JSON.parse(text)).toEqual(SAMPLE_FLOWS);
+  });
+
+  it("says where it looked when list_flows finds no flows", async () => {
+    const { client, control } = await connectedControl();
+    control.flows = {
+      flows: [],
+      agents: [],
+      errors: [
+        { file: "flows/bad.md", source: "library", messages: ["Broken"] },
+      ],
+      locations: { project: join("work", "repo"), library: join("lib", "x") },
+    };
+    const { text, isError } = await callText(client, "list_flows", {});
+    expect(isError).toBe(false);
+    expect(text).toBe(
+      `No flows found. Looked in ${join("work", "repo", "flows")} and ${join("lib", "x", "flows")}; set the flow library folder in Settings to use shared flows.\n\n${JSON.stringify(control.flows.errors, null, 2)}`,
+    );
+  });
+
+  it("says where it looked without an errors section when there are none", async () => {
+    const { client, control } = await connectedControl();
+    control.flows = {
+      flows: [],
+      agents: [],
+      errors: [],
+      locations: { project: join("work", "repo"), library: join("lib", "x") },
+    };
+    const { text } = await callText(client, "list_flows", {});
+    expect(text).toBe(
+      `No flows found. Looked in ${join("work", "repo", "flows")} and ${join("lib", "x", "flows")}; set the flow library folder in Settings to use shared flows.`,
+    );
   });
 
   it("forwards start_flow with the default placement in place", async () => {

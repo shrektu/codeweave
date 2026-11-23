@@ -27,6 +27,7 @@ import {
   makeFlowsList,
   makePermission,
   makeSession,
+  makeSettings,
   makeSnapshot,
   renderWithServices,
   type FakeIpcClient,
@@ -335,9 +336,14 @@ it("flow_tab_lists_file_errors", async () => {
     "flows/list",
     makeFlowsList({
       errors: [
-        { file: "flows/bad.md", messages: ["Missing YAML frontmatter"] },
+        {
+          file: "flows/bad.md",
+          source: "project",
+          messages: ["Missing YAML frontmatter"],
+        },
         {
           file: "agents/x.md",
+          source: "library",
           messages: ["Agent 1: id: Required", "Agent 2: role: Required"],
         },
       ],
@@ -349,12 +355,12 @@ it("flow_tab_lists_file_errors", async () => {
 
   expect(
     await screen.findByText(
-      "Could not read flows/bad.md: Missing YAML frontmatter",
+      "Could not read flows/bad.md (Project): Missing YAML frontmatter",
     ),
   ).toBeTruthy();
   expect(
     screen.getByText(
-      "Could not read agents/x.md: Agent 1: id: Required; Agent 2: role: Required",
+      "Could not read agents/x.md (Library): Agent 1: id: Required; Agent 2: role: Required",
     ),
   ).toBeTruthy();
 });
@@ -404,9 +410,64 @@ it("flow_tab_shows_request_failure", async () => {
   expect(await screen.findByText("backend exploded")).toBeTruthy();
 });
 
+it("flow_tab_shows_the_source_of_the_flow", async () => {
+  const client = appClient();
+  client.respond(
+    "flows/list",
+    makeFlowsList({
+      flows: [
+        makeFlow({ source: "library" }),
+        makeFlow({
+          id: "solo",
+          title: "Solo",
+          file: "flows/solo.md",
+          source: "project",
+        }),
+      ],
+    }),
+  );
+
+  renderWithServices(<App />, client);
+  fireEvent.click(await screen.findByRole("tab", { name: "Flow" }));
+
+  const picker = await screen.findByRole("combobox", { name: "Flow" });
+  expect(
+    within(picker)
+      .getAllByRole("option")
+      .map((option) => option.textContent),
+  ).toEqual(["Ship it (Library)", "Solo"]);
+  expect(document.querySelector(".source-badge")?.textContent).toBe("Library");
+  fireEvent.change(picker, { target: { value: "solo" } });
+  await waitFor(() => {
+    expect(document.querySelector(".source-badge")?.textContent).toBe(
+      "Project",
+    );
+  });
+});
+
+it("flow_tab_reloads_when_the_flow_library_setting_changes", async () => {
+  const client = appClient();
+  client.respond("flows/list", makeFlowsList());
+  renderWithServices(<App />, client);
+  fireEvent.click(await screen.findByRole("tab", { name: "Flow" }));
+  await findNode("build");
+
+  client.emit({
+    v: 7,
+    event: "settings/changed",
+    payload: makeSettings({ definitionLibrary: "/srv/library" }),
+  });
+
+  await waitFor(() => {
+    expect(
+      client.requests.filter((request) => request.method === "flows/list"),
+    ).toHaveLength(2);
+  });
+});
+
 it("flow_tab_reports_when_no_flows_exist", async () => {
   const client = appClient();
-  client.respond("flows/list", { flows: [], agents: [], errors: [] });
+  client.respond("flows/list", makeFlowsList({ flows: [], agents: [] }));
 
   renderWithServices(<App />, client);
   fireEvent.click(await screen.findByRole("tab", { name: "Flow" }));
@@ -477,7 +538,7 @@ it("start_prompt_omits_flow_ref_for_none", async () => {
 });
 
 it("start_prompt_starts_right_away_without_flows", async () => {
-  const client = startPromptClient({ flows: [], agents: [], errors: [] });
+  const client = startPromptClient(makeFlowsList({ flows: [], agents: [] }));
   renderWithServices(<SessionStream />, client);
 
   fireEvent.click(

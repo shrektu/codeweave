@@ -46,6 +46,13 @@ export const FlowPlacement = {
 } as const;
 export type FlowPlacement = (typeof FlowPlacement)[keyof typeof FlowPlacement];
 
+export const DefinitionSource = {
+  project: "project",
+  library: "library",
+} as const;
+export type DefinitionSource =
+  (typeof DefinitionSource)[keyof typeof DefinitionSource];
+
 export const FlowRunOrigin = {
   user: "user",
   orchestrator: "orchestrator",

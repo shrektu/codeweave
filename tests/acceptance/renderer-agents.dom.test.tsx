@@ -188,6 +188,7 @@ it("edit_and_save_sends_params_and_stays_on_saved_agent", async () => {
     expect(requestsOf(client, "agents/save")).toEqual([
       {
         cwd: CWD,
+        source: "project",
         file: "agents/implementer.md",
         revision: "agent-rev-1",
         id: "implementer",
@@ -318,6 +319,7 @@ it("create_new_agent_sends_create", async () => {
     expect(requestsOf(client, "agents/create")).toEqual([
       {
         cwd: CWD,
+        source: "project",
         agent: {
           id: "tester",
           role: "Runs the tests",
@@ -352,6 +354,7 @@ it("delete_requires_confirmation_then_sends_delete", async () => {
     expect(requestsOf(client, "agents/delete")).toEqual([
       {
         cwd: CWD,
+        source: "project",
         file: "agents/reviewer.md",
         revision: "agent-rev-2",
         id: "reviewer",
@@ -362,6 +365,92 @@ it("delete_requires_confirmation_then_sends_delete", async () => {
     expect(screen.queryByLabelText("Id")).toBeNull();
   }, WAIT_OPTIONS);
   expect(listText()).not.toContain("Reviews diffs");
+});
+
+const LIBRARY_REVIEWER = makeAgent({
+  id: "librarian",
+  file: "agents/librarian.md",
+  source: "library",
+  revision: "agent-rev-5",
+  role: "Shared reviewer",
+});
+
+it("agents_tab_shows_the_source_of_each_agent", async () => {
+  await showAgentsTab(appClient([IMPLEMENTER, LIBRARY_REVIEWER]));
+
+  const rows = within(screen.getByRole("list", { name: "Agents" }))
+    .getAllByRole("button")
+    .map((row) => row.textContent);
+
+  expect(rows[0]).toContain("Project");
+  expect(rows[0]).not.toContain("Library");
+  expect(rows[1]).toContain("Library");
+});
+
+it("editing_a_library_agent_sends_source_library", async () => {
+  const client = appClient([IMPLEMENTER, LIBRARY_REVIEWER]);
+  client.respond("agents/save", listOf([IMPLEMENTER, LIBRARY_REVIEWER]));
+  await openAgentsTab(client, "librarian");
+
+  type("Role", "Edited shared reviewer");
+  fireEvent.click(button("Save"));
+
+  await waitFor(() => {
+    expect(requestsOf(client, "agents/save")).toEqual([
+      expect.objectContaining({
+        source: "library",
+        file: "agents/librarian.md",
+        id: "librarian",
+      }),
+    ]);
+  }, WAIT_OPTIONS);
+});
+
+it("deleting_a_library_agent_sends_source_library", async () => {
+  const client = appClient([IMPLEMENTER, LIBRARY_REVIEWER]);
+  client.respond("agents/delete", listOf([IMPLEMENTER]));
+  await openAgentsTab(client, "librarian");
+
+  fireEvent.click(button("Delete"));
+  fireEvent.click(await screen.findByRole("button", { name: "Delete agent" }));
+
+  await waitFor(() => {
+    expect(requestsOf(client, "agents/delete")).toEqual([
+      {
+        cwd: CWD,
+        source: "library",
+        file: "agents/librarian.md",
+        revision: "agent-rev-5",
+        id: "librarian",
+      },
+    ]);
+  }, WAIT_OPTIONS);
+});
+
+it("a_new_agent_can_be_created_in_the_library", async () => {
+  const client = appClient();
+  client.respond("agents/create", listOf([IMPLEMENTER, LIBRARY_REVIEWER]));
+  await showAgentsTab(client);
+
+  fireEvent.click(button("New agent"));
+  await screen.findByLabelText("Id");
+  expect(select("Location").value).toBe("project");
+  fireEvent.change(select("Location"), { target: { value: "library" } });
+  type("Id", "librarian");
+  type("Role", "Shared reviewer");
+  fireEvent.click(button("Save"));
+
+  await waitFor(() => {
+    expect(requestsOf(client, "agents/create")).toEqual([
+      expect.objectContaining({ source: "library" }),
+    ]);
+  }, WAIT_OPTIONS);
+});
+
+it("the_source_of_an_existing_agent_cannot_be_changed", async () => {
+  await openAgentsTab(appClient([IMPLEMENTER, LIBRARY_REVIEWER]), "librarian");
+
+  expect(screen.queryByLabelText("Location")).toBeNull();
 });
 
 it("delete_confirmation_says_file_stays_when_agents_share_it", async () => {
@@ -383,7 +472,7 @@ it("delete_confirmation_says_file_stays_when_agents_share_it", async () => {
 
 it("delete_and_rename_disabled_when_used_by_flow", async () => {
   const used = makeAgent({
-    usedBy: [{ file: "flows/ship.md", title: "Ship it" }],
+    usedBy: [{ file: "flows/ship.md", source: "project", title: "Ship it" }],
   });
   const client = appClient([used, REVIEWER]);
   await openAgentsTab(client, "implementer");

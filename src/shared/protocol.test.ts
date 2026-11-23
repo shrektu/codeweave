@@ -116,6 +116,7 @@ const VALID_REQUESTS: [string, unknown][] = [
     "flows/save",
     {
       cwd: "/work",
+      source: "project",
       file: "flows/ship.md",
       revision: "abc",
       flow: {
@@ -129,9 +130,19 @@ const VALID_REQUESTS: [string, unknown][] = [
   ],
   ["agents/create", { cwd: "/work", agent: SAVE_AGENT, body: "Instructions" }],
   [
+    "agents/create",
+    {
+      cwd: "/work",
+      source: "library",
+      agent: SAVE_AGENT,
+      body: "Instructions",
+    },
+  ],
+  [
     "agents/save",
     {
       cwd: "/work",
+      source: "library",
       file: "agents/coder.md",
       revision: "abc",
       id: "coder",
@@ -141,8 +152,16 @@ const VALID_REQUESTS: [string, unknown][] = [
   ],
   [
     "agents/delete",
-    { cwd: "/work", file: "agents/coder.md", revision: "abc", id: "coder" },
+    {
+      cwd: "/work",
+      source: "project",
+      file: "agents/coder.md",
+      revision: "abc",
+      id: "coder",
+    },
   ],
+  ["settings/set", { definitionLibrary: "/srv/library" }],
+  ["settings/set", { definitionLibrary: null }],
   ["settings/set", { terminalShell: "/bin/zsh" }],
   ["settings/set", { terminalShell: null }],
   ["terminal/open", { cwd: "/work", cols: 2, rows: 1 }],
@@ -431,12 +450,70 @@ const INVALID_REQUESTS: [string, unknown][] = [
   ],
   [
     "flows/save without revision",
-    request("flows/save", { cwd: "/w", file: "flows/a.md", flow: SAVE_FLOW }),
+    request("flows/save", {
+      cwd: "/w",
+      source: "project",
+      file: "flows/a.md",
+      flow: SAVE_FLOW,
+    }),
+  ],
+  [
+    "flows/save without source",
+    request("flows/save", {
+      cwd: "/w",
+      file: "flows/a.md",
+      revision: "r",
+      flow: SAVE_FLOW,
+    }),
+  ],
+  [
+    "flows/save with unknown source",
+    request("flows/save", {
+      cwd: "/w",
+      source: "shared",
+      file: "flows/a.md",
+      revision: "r",
+      flow: SAVE_FLOW,
+    }),
+  ],
+  [
+    "agents/save without source",
+    request("agents/save", {
+      cwd: "/w",
+      file: "agents/a.md",
+      revision: "r",
+      id: "a",
+      agent: SAVE_AGENT,
+      body: "b",
+    }),
+  ],
+  [
+    "agents/delete without source",
+    request("agents/delete", {
+      cwd: "/w",
+      file: "agents/a.md",
+      revision: "r",
+      id: "a",
+    }),
+  ],
+  [
+    "agents/create with unknown source",
+    request("agents/create", {
+      cwd: "/w",
+      source: "shared",
+      agent: SAVE_AGENT,
+      body: "b",
+    }),
+  ],
+  [
+    "settings/set with a non-string flow library",
+    request("settings/set", { definitionLibrary: 5 }),
   ],
   [
     "flows/save with maxRounds above the limit",
     request("flows/save", {
       cwd: "/w",
+      source: "project",
       file: "flows/a.md",
       revision: "r",
       flow: { ...SAVE_FLOW, maxRounds: 11 },
@@ -446,6 +523,7 @@ const INVALID_REQUESTS: [string, unknown][] = [
     "flows/save with unknown node provider",
     request("flows/save", {
       cwd: "/w",
+      source: "project",
       file: "flows/a.md",
       revision: "r",
       flow: { ...SAVE_FLOW, nodes: [{ id: "a", agent: "c", provider: "x" }] },
@@ -455,6 +533,7 @@ const INVALID_REQUESTS: [string, unknown][] = [
     "flows/save with extra param",
     request("flows/save", {
       cwd: "/w",
+      source: "project",
       file: "flows/a.md",
       revision: "r",
       flow: SAVE_FLOW,
@@ -477,6 +556,7 @@ const INVALID_REQUESTS: [string, unknown][] = [
     "agents/save without revision",
     request("agents/save", {
       cwd: "/w",
+      source: "project",
       file: "agents/a.md",
       id: "a",
       agent: SAVE_AGENT,
@@ -487,6 +567,7 @@ const INVALID_REQUESTS: [string, unknown][] = [
     "agents/save with empty id",
     request("agents/save", {
       cwd: "/w",
+      source: "project",
       file: "agents/a.md",
       revision: "r",
       id: "",
@@ -498,6 +579,7 @@ const INVALID_REQUESTS: [string, unknown][] = [
     "agents/delete with extra param",
     request("agents/delete", {
       cwd: "/w",
+      source: "project",
       file: "agents/a.md",
       revision: "r",
       id: "a",
@@ -584,6 +666,7 @@ describe("EventSchema", () => {
     updateCheck: true,
     updateChannel: "stable",
     defaultTaskClass: "standard",
+    definitionLibrary: null,
   };
   const logEntry = {
     at: 1,

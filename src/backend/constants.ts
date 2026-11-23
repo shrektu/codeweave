@@ -196,6 +196,7 @@ export const MCP_TOOL_NAME_SEPARATOR = "__";
 export const AUTHORIZATION_HEADER = "Authorization";
 export const BEARER_SCHEME = "Bearer";
 
+export const DEFINITION_LIBRARY_DIR_NAME = "library";
 export const FLOW_BRANCH_PREFIX = "codeweave/";
 export const FLOW_WORKTREE_INFIX = "-cw-";
 export const FLOW_RUN_SHORT_ID_LENGTH = 8;

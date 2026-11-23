@@ -1252,6 +1252,14 @@ html[data-fx="low"] .terminal-dock {
   font-size: 12px;
 }
 
+.source-badge {
+  border: 1px solid var(--muted);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 0 6px;
+}
+
 .agent-form .field {
   align-items: stretch;
 }

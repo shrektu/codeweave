@@ -24,7 +24,8 @@ interface LoadedFlows {
 }
 
 export function useFlowsLoad(cwd: string | null): FlowsSource {
-  const { client } = useApp();
+  const { client, state } = useApp();
+  const library = state.snapshot?.settings.definitionLibrary ?? null;
   const [loaded, setLoaded] = useState<LoadedFlows | null>(null);
   const [reloadCount, setReloadCount] = useState(0);
 
@@ -51,7 +52,7 @@ export function useFlowsLoad(cwd: string | null): FlowsSource {
     return () => {
       active = false;
     };
-  }, [client, cwd, reloadCount]);
+  }, [client, cwd, reloadCount, library]);
 
   return {
     load: loaded?.cwd === cwd ? loaded.load : { status: "loading" },

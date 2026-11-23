@@ -1,7 +1,11 @@
 import { ApiAuth, ApiProviderId } from "../domain/apiProviders";
 import { isRunOpen } from "../domain/flowState";
 import { LimitPeriod } from "../domain/limitWindows";
-import { LimitAvailability, ProviderId } from "../domain/types";
+import {
+  DefinitionSource,
+  LimitAvailability,
+  ProviderId,
+} from "../domain/types";
 import type {
   AccountView,
   FlowRunView,
@@ -100,6 +104,20 @@ export type SelectableProvider =
   | typeof ProviderId.codex
   | typeof ProviderId.gemini
   | typeof ProviderId.opencode;
+
+export const DEFINITION_SOURCE_LABELS: Readonly<
+  Record<DefinitionSource, string>
+> = {
+  [DefinitionSource.project]: "Project",
+  [DefinitionSource.library]: "Library",
+};
+
+export const DEFINITION_SOURCES: readonly DefinitionSource[] =
+  Object.values(DefinitionSource);
+
+export function parseDefinitionSource(value: string): DefinitionSource | null {
+  return DEFINITION_SOURCES.find((source) => source === value) ?? null;
+}
 
 export const PROVIDER_LABELS: Readonly<Record<SelectableProvider, string>> = {
   [ProviderId.claude]: "Claude",

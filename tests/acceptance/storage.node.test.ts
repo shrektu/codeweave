@@ -1,4 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { expect, it } from "vitest";
@@ -28,6 +29,7 @@ it("settings_without_codex_executable_loads", async () => {
     store,
     broadcast: () => undefined,
     postUpdaterConfig: () => undefined,
+    homeDir: tmpdir(),
   });
   const view = await service.set({ codexExecutable: "/opt/codex" });
 
@@ -44,6 +46,7 @@ it("settings_without_codex_executable_loads", async () => {
     updateCheck: true,
     updateChannel: "stable",
     defaultTaskClass: "standard",
+    definitionLibrary: null,
   });
 });
 
@@ -61,6 +64,7 @@ it("settings_without_agy_executable_loads", async () => {
     store,
     broadcast: () => undefined,
     postUpdaterConfig: () => undefined,
+    homeDir: tmpdir(),
   });
   const view = await service.set({ agyExecutable: "/opt/agy" });
 
@@ -86,6 +90,7 @@ it("settings_without_terminal_shell_still_load", async () => {
     store,
     broadcast: () => undefined,
     postUpdaterConfig: () => undefined,
+    homeDir: tmpdir(),
   });
   const view = await service.set({ terminalShell: "/bin/zsh" });
 
@@ -129,6 +134,7 @@ it("storage_refuses_to_overwrite_corrupt_file", async () => {
       updateCheck: true,
       updateChannel: "stable",
       defaultTaskClass: "standard",
+      definitionLibrary: null,
     }),
   ).rejects.toBeInstanceOf(StorageCorruptError);
 

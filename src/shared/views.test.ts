@@ -133,6 +133,7 @@ it("session_view_with_diffs_passes_session_view_schema", () => {
 const FLOW_VIEW = {
   id: "ship",
   file: "flows/ship.md",
+  source: "project",
   revision: "abc",
   title: "Ship",
   maxRounds: 2,
@@ -156,12 +157,16 @@ it("flow_view_schema_requires_resolved_defaults", () => {
   expect(FlowViewSchema.safeParse(withoutRounds).success).toBe(false);
   expect(FlowViewSchema.safeParse(withoutProvider).success).toBe(false);
   expect(FlowViewSchema.safeParse(withoutTaskClass).success).toBe(false);
+  const { source: omittedSource, ...withoutSource } = FLOW_VIEW;
+  expect(omittedSource).toBe("project");
+  expect(FlowViewSchema.safeParse(withoutSource).success).toBe(false);
 });
 
 it("agent_view_schema_requires_body", () => {
   const agent = {
     id: "coder",
     file: "agents/coder.md",
+    source: "project",
     revision: "abc",
     role: "Codes",
     provider: "claude",
@@ -181,6 +186,7 @@ it("agent_view_schema_requires_file_revision_model_task_class_and_used_by", () =
   const agent = {
     id: "coder",
     file: "agents/coder.md",
+    source: "project",
     revision: "abc",
     role: "Codes",
     provider: "claude",
@@ -188,7 +194,7 @@ it("agent_view_schema_requires_file_revision_model_task_class_and_used_by", () =
     permissionProfile: "plan",
     taskClass: "standard",
     body: "Prose",
-    usedBy: [{ file: "flows/ship.md", title: "Ship" }],
+    usedBy: [{ file: "flows/ship.md", source: "project", title: "Ship" }],
   };
 
   expect(AgentViewSchema.safeParse(agent).success).toBe(true);
@@ -201,7 +207,15 @@ it("agent_view_schema_requires_file_revision_model_task_class_and_used_by", () =
   expect(
     AgentViewSchema.safeParse({
       ...agent,
-      usedBy: [{ file: "flows/ship.md", title: "Ship", extra: 1 }],
+      usedBy: [
+        { file: "flows/ship.md", source: "project", title: "Ship", extra: 1 },
+      ],
+    }).success,
+  ).toBe(false);
+  expect(
+    AgentViewSchema.safeParse({
+      ...agent,
+      usedBy: [{ file: "flows/ship.md", title: "Ship" }],
     }).success,
   ).toBe(false);
 });

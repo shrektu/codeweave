@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { expect, it, vi } from "vitest";
 
 import { listFlows } from "../../src/backend/flows";
+import { projectRoots } from "../fakes/definitionRoots";
 import { createHandlers } from "../../src/backend/handlers";
 import { createJsonStore } from "../../src/backend/storage";
 import {
@@ -99,13 +100,14 @@ it("flows_list_reports_broken_file_beside_valid_flow", async () => {
     "agents/coder.md": CODER_AGENT,
   });
 
-  const result = await listFlows(cwd);
+  const result = await listFlows(projectRoots(cwd));
 
   expect(result).toEqual({
     flows: [
       {
         id: "ship",
         file: "flows/a-ship.md",
+        source: "project",
         revision: sha256(VALID_FLOW),
         title: "Ship it",
         maxRounds: 2,
@@ -119,6 +121,7 @@ it("flows_list_reports_broken_file_beside_valid_flow", async () => {
       {
         id: "coder",
         file: "agents/coder.md",
+        source: "project",
         revision: sha256(CODER_AGENT),
         role: "Writes code",
         provider: "claude",
@@ -127,19 +130,21 @@ it("flows_list_reports_broken_file_beside_valid_flow", async () => {
         taskClass: null,
         body: "Prompt",
         usedBy: [
-          { file: "flows/a-ship.md", title: "Ship it" },
-          { file: "flows/b-broken.md", title: "Broken" },
+          { file: "flows/a-ship.md", source: "project", title: "Ship it" },
+          { file: "flows/b-broken.md", source: "project", title: "Broken" },
         ],
       },
     ],
     errors: [
       {
         file: "flows/b-broken.md",
+        source: "project",
         messages: [
           'Edge "build" -> "nowhere" references unknown node "nowhere"',
         ],
       },
     ],
+    locations: projectRoots(cwd),
   });
 });
 
@@ -158,7 +163,7 @@ with two lines
 `,
   });
 
-  const result = await listFlows(cwd);
+  const result = await listFlows(projectRoots(cwd));
 
   expect(result.flows[0]?.file).toBe("flows/ship.md");
   expect(result.flows[0]?.revision).toBe(sha256(VALID_FLOW));
@@ -175,7 +180,7 @@ it("flows_list_defaults_provider_gate_and_rounds", async () => {
     "agents/coder.md": CODER_AGENT,
   });
 
-  const result = await listFlows(cwd);
+  const result = await listFlows(projectRoots(cwd));
 
   const defaults = result.flows.find((flow) => flow.id === "ship");
   const tuned = result.flows.find((flow) => flow.id === "tuned");
@@ -195,7 +200,7 @@ it("flow view exposes node task class", async () => {
     "agents/coder.md": CODER_AGENT,
   });
 
-  const result = await listFlows(cwd);
+  const result = await listFlows(projectRoots(cwd));
 
   expect(result.flows[0]?.nodes.map((node) => node.taskClass)).toEqual([
     "heavy",
@@ -206,13 +211,18 @@ it("flow view exposes node task class", async () => {
 it("flows_list_without_dirs_returns_empty", async () => {
   const cwd = await makeTempDir();
 
-  expect(await listFlows(cwd)).toEqual({ flows: [], agents: [], errors: [] });
+  expect(await listFlows(projectRoots(cwd))).toEqual({
+    flows: [],
+    agents: [],
+    errors: [],
+    locations: projectRoots(cwd),
+  });
 });
 
 it("flows_list_without_flows_dir_returns_agents_only", async () => {
   const cwd = await project({ "agents/coder.md": CODER_AGENT });
 
-  const result = await listFlows(cwd);
+  const result = await listFlows(projectRoots(cwd));
 
   expect(result.flows).toEqual([]);
   expect(result.errors).toEqual([]);
@@ -228,7 +238,7 @@ it("flows_list_sorts_files_by_name", async () => {
     "agents/coder.md": CODER_AGENT,
   });
 
-  const result = await listFlows(cwd);
+  const result = await listFlows(projectRoots(cwd));
 
   expect(result.flows.map((flow) => flow.id)).toEqual(["ship", "zed"]);
   expect(result.errors.map((error) => error.file)).toEqual([
@@ -246,7 +256,7 @@ it("flows_list_ignores_non_markdown_entries", async () => {
   });
   await mkdir(join(cwd, FLOWS_DIR, "nested.md"));
 
-  const result = await listFlows(cwd);
+  const result = await listFlows(projectRoots(cwd));
 
   expect(result.flows.map((flow) => flow.id)).toEqual(["ship"]);
   expect(result.errors).toEqual([]);
@@ -260,23 +270,28 @@ it("flows_list_merges_agents_from_all_files", async () => {
     "flows/ship.md": VALID_FLOW,
   });
 
-  const result = await listFlows(cwd);
+  const result = await listFlows(projectRoots(cwd));
 
   expect(result.agents.map((agent) => agent.id)).toEqual(["coder", "tester"]);
   expect(result.errors).toEqual([
-    { file: "agents/c.md", messages: ["Missing YAML frontmatter"] },
+    {
+      file: "agents/c.md",
+      source: "project",
+      messages: ["Missing YAML frontmatter"],
+    },
   ]);
 });
 
 it("flows_list_rejects_flow_using_unknown_agent", async () => {
   const cwd = await project({ "flows/ship.md": VALID_FLOW });
 
-  const result = await listFlows(cwd);
+  const result = await listFlows(projectRoots(cwd));
 
   expect(result.flows).toEqual([]);
   expect(result.errors).toEqual([
     {
       file: "flows/ship.md",
+      source: "project",
       messages: ['Node "build" uses unknown agent "coder"'],
     },
   ]);
@@ -290,7 +305,7 @@ it.runIf(CHMOD_DENIES)("flows_list_unreadable_dir_reports_error", async () => {
   await chmod(join(cwd, FLOWS_DIR), 0o000);
 
   try {
-    const result = await listFlows(cwd);
+    const result = await listFlows(projectRoots(cwd));
 
     expect(result.flows).toEqual([]);
     expect(result.agents.map((agent) => agent.id)).toEqual(["coder"]);
@@ -312,7 +327,7 @@ it.runIf(CHMOD_DENIES)("flows_list_unreadable_file_reports_error", async () => {
   await chmod(locked, 0o000);
 
   try {
-    const result = await listFlows(cwd);
+    const result = await listFlows(projectRoots(cwd));
 
     expect(result.flows.map((flow) => flow.id)).toEqual(["ship"]);
     expect(result.errors).toHaveLength(1);
@@ -355,12 +370,13 @@ it("flows_list_reports_duplicate_flow_id", async () => {
     "agents/coder.md": CODER_AGENT,
   });
 
-  const result = await listFlows(cwd);
+  const result = await listFlows(projectRoots(cwd));
 
   expect(result.flows.map((flow) => flow.title)).toEqual(["Ship it"]);
   expect(result.errors).toEqual([
     {
       file: "flows/b.md",
+      source: "project",
       messages: ['Duplicate flow id "ship" (already defined in flows/a.md)'],
     },
   ]);

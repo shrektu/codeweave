@@ -10,6 +10,7 @@ import { AgentForm } from "./AgentForm";
 import { Dialog } from "./Dialog";
 import { FlowErrors } from "./FlowErrors";
 import { FolderPrompt, PickFolderButton } from "./FolderControls";
+import { SourceBadge } from "./SourceBadge";
 
 const AGENT_FILE_PREFIX = "agents/";
 const MISSING_MESSAGE = "This agent is no longer on disk.";
@@ -59,7 +60,8 @@ function AgentList({
               <span className="agent-role">{agent.role}</span>{" "}
               <span className="agent-provider">
                 {PROVIDER_LABELS[agent.provider]}
-              </span>
+              </span>{" "}
+              <SourceBadge source={agent.source} />
             </button>
           </li>
         ))}

@@ -14,6 +14,7 @@ import {
 } from "../domain/types";
 import { EXECUTABLE_SETTING_LABELS } from "../shared/constants";
 import { IpcError, IpcErrorCode } from "../shared/protocol";
+import type { FlowsList } from "../shared/views";
 
 import {
   AgentStartFailure,
@@ -50,6 +51,7 @@ import {
 import { buildAgentEnv } from "./env";
 import { resolveExecutable } from "./executable";
 import { execText } from "./exec";
+import { createDefinitionRoots } from "./definitionLibrary";
 import { listFlows } from "./flows";
 import { createFlowRunService } from "./flowRuns";
 import type { FlowToolServer } from "./flowTools/server";
@@ -661,11 +663,14 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     secrets: createSecretSource(keyStore),
   });
   const terminals = createTerminals(deps, container, store, lockKeyResolver);
+  const definitionRoots = createDefinitionRoots({ store, userData });
+  const listProjectFlows = async (cwd: string): Promise<FlowsList> =>
+    listFlows(await definitionRoots(cwd));
   const flowRuns = createFlowRunService({
     sessions: (runId) => sessions.forRun(runId),
     releaseSessions: (runId) => sessions.release(runId),
     mainSessionLive: () => sessions.main.isLive(),
-    listFlows,
+    listFlows: listProjectFlows,
     inspectWorktree: deps.inspectWorktree,
     broadcast: deps.broadcast,
     newRunId: deps.newRunId,
@@ -674,7 +679,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     main: sessions.main,
     flowRuns,
     flowWorktrees: createFlowWorktrees({ exec: execText }),
-    listFlows,
+    listFlows: listProjectFlows,
     newRunId: deps.newRunId,
     ...(deps.startToolServer === undefined
       ? {}

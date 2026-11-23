@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { PermissionProfile, ProviderId } from "../domain/types";
+import {
+  DefinitionSource,
+  PermissionProfile,
+  ProviderId,
+} from "../domain/types";
 import { makeAgent } from "../../tests/fakes/fakeIpcClient";
 
 import {
@@ -25,6 +29,7 @@ function draft(overrides: Partial<AgentDraft> = {}): AgentDraft {
 describe("emptyAgentDraft", () => {
   it("defaults to claude with the ask profile and empty text", () => {
     expect(emptyAgentDraft()).toEqual({
+      source: "project",
       id: "",
       role: "",
       provider: "claude",
@@ -39,6 +44,7 @@ describe("emptyAgentDraft", () => {
 describe("agentDraftOf", () => {
   it("copies every field of the view", () => {
     expect(agentDraftOf(VIEW)).toEqual({
+      source: "project",
       id: "implementer",
       role: "Implements the planned change",
       provider: "claude",
@@ -107,6 +113,21 @@ describe("agentDraftErrors", () => {
     ]);
   });
 
+  it("only counts agents of the same source as taken ids", () => {
+    const library = [makeAgent({ id: "reviewer", source: "library" })];
+
+    expect(
+      agentDraftErrors(draft({ id: "reviewer" }), library, "implementer"),
+    ).toEqual([]);
+    expect(
+      agentDraftErrors(
+        draft({ id: "reviewer", source: DefinitionSource.library }),
+        library,
+        null,
+      ),
+    ).toEqual(['Agent id "reviewer" is already used by another agent']);
+  });
+
   it("reports a blank role and a fence line in the body", () => {
     expect(
       agentDraftErrors(
@@ -127,6 +148,7 @@ describe("isAgentDraftChanged", () => {
   });
 
   it.each<[string, Partial<AgentDraft>]>([
+    ["source", { source: DefinitionSource.library }],
     ["id", { id: "other" }],
     ["role", { role: "Other role" }],
     ["provider", { provider: ProviderId.codex }],

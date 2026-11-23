@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAgent, saveAgent } from "../../src/backend/agents";
 import { listFlows } from "../../src/backend/flows";
 import type { AgentDefinition } from "../../src/domain/flows";
+import { projectRoots } from "../fakes/definitionRoots";
 import { makeTempDir } from "../fakes/processHelpers";
 
 const faults = vi.hoisted(() => ({
@@ -95,7 +96,10 @@ describe.each(UNSUPPORTED_CODES)("when link() fails with %s", (code) => {
     const cwd = await project({});
     faults.linkCode = code;
 
-    const result = await createAgent(cwd, { agent: CODER, body: "Prompt" });
+    const result = await createAgent(projectRoots(cwd), {
+      agent: CODER,
+      body: "Prompt",
+    });
 
     expect(await agentFiles(cwd)).toEqual(["coder.md"]);
     expect(await readFile(join(cwd, CODER_FILE), "utf8")).toBe(CODER_TEXT);
@@ -104,10 +108,11 @@ describe.each(UNSUPPORTED_CODES)("when link() fails with %s", (code) => {
 
   it("rename_agent_without_hard_links_moves_the_file", async () => {
     const cwd = await project({ [CODER_FILE]: CODER_TEXT });
-    const { agents } = await listFlows(cwd);
+    const { agents } = await listFlows(projectRoots(cwd));
     faults.linkCode = code;
 
-    await saveAgent(cwd, {
+    await saveAgent(projectRoots(cwd), {
+      source: "project",
       file: CODER_FILE,
       revision: agents[0]?.revision ?? "",
       id: "coder",
@@ -126,7 +131,7 @@ describe.each(UNSUPPORTED_CODES)("when link() fails with %s", (code) => {
     faults.linkCode = code;
 
     await expect(
-      createAgent(cwd, { agent: CODER, body: "Other" }),
+      createAgent(projectRoots(cwd), { agent: CODER, body: "Other" }),
     ).rejects.toThrow("An agent file named coder.md already exists");
 
     expect(await agentFiles(cwd)).toEqual(["coder.md"]);
@@ -140,7 +145,7 @@ describe("link failures outside the fallback set", () => {
     faults.linkCode = "EACCES";
 
     await expect(
-      createAgent(cwd, { agent: CODER, body: "Prompt" }),
+      createAgent(projectRoots(cwd), { agent: CODER, body: "Prompt" }),
     ).rejects.toThrow("link failed: EACCES");
 
     expect(await agentFiles(cwd)).toEqual([]);
@@ -154,7 +159,7 @@ describe("rename failure after the placeholder was reserved", () => {
     faults.renameFails = true;
 
     await expect(
-      createAgent(cwd, { agent: CODER, body: "Prompt" }),
+      createAgent(projectRoots(cwd), { agent: CODER, body: "Prompt" }),
     ).rejects.toThrow("rename exploded");
 
     expect(await agentFiles(cwd)).toEqual([]);

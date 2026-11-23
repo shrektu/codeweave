@@ -25,6 +25,7 @@ import {
   fakeSessions,
   fakeTerminals,
 } from "../fakes/fakeSessions";
+import { projectRoots } from "../fakes/definitionRoots";
 import { fakeOrchestrator } from "../fakes/fakeOrchestrator";
 import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
@@ -170,20 +171,20 @@ async function createAgent(
 
 async function saveAgent(
   cwd: string,
-  params: Omit<ParamsMap["agents/save"], "cwd">,
+  params: Omit<ParamsMap["agents/save"], "cwd" | "source">,
 ): Promise<FlowsList> {
   const handlers = handlersFor(cwd);
   expect(handlers).toHaveProperty("agents/save");
-  return handlers["agents/save"]({ cwd, ...params });
+  return handlers["agents/save"]({ cwd, source: "project", ...params });
 }
 
 async function deleteAgent(
   cwd: string,
-  params: Omit<ParamsMap["agents/delete"], "cwd">,
+  params: Omit<ParamsMap["agents/delete"], "cwd" | "source">,
 ): Promise<FlowsList> {
   const handlers = handlersFor(cwd);
   expect(handlers).toHaveProperty("agents/delete");
-  return handlers["agents/delete"]({ cwd, ...params });
+  return handlers["agents/delete"]({ cwd, source: "project", ...params });
 }
 
 async function listed(cwd: string): Promise<FlowsList> {
@@ -790,6 +791,7 @@ it("delete_waits_for_flow_save_lock", async () => {
   const outcomes = await Promise.allSettled([
     handlers["flows/save"]({
       cwd,
+      source: "project",
       file: FLOW_FILE,
       revision: flowRevision,
       flow: SHIP_WITH_REVIEWER,
@@ -853,7 +855,7 @@ function flowRunRig(): {
     sessions: () => sessions,
     releaseSessions: () => Promise.resolve(),
     mainSessionLive: () => false,
-    listFlows,
+    listFlows: (cwd) => listFlows(projectRoots(cwd)),
     inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),
     broadcast: () => undefined,
     newRunId: () => "run-1",

@@ -66,6 +66,7 @@ export const SettingsFileSchema = z.object({
   updateCheck: z.boolean().default(true),
   updateChannel: z.enum(UpdateChannel).default(UpdateChannel.stable),
   defaultTaskClass: TaskClassSchema.default(TaskClass.standard),
+  definitionLibrary: z.string().nullable().default(null),
 });
 
 const SwitchLogEntrySchema = z.object({
@@ -126,6 +127,7 @@ const DEFAULT_SETTINGS: SettingsFile = {
   updateCheck: true,
   updateChannel: UpdateChannel.stable,
   defaultTaskClass: TaskClass.standard,
+  definitionLibrary: null,
 };
 
 export class StorageCorruptError extends Error {
