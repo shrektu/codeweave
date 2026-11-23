@@ -23,6 +23,7 @@ import {
   GET_AVAILABLE_UPDATE_CHANNEL,
   GET_GPU_ACCELERATED_CHANNEL,
   GPU_ACCELERATED_CHANNEL,
+  OPEN_EXTERNAL_LINK_CHANNEL,
   OPEN_UPDATE_RELEASE_CHANNEL,
   PICK_FOLDER_CHANNEL,
   PORT_CHANNEL,
@@ -36,6 +37,7 @@ import { UpdaterConfigMessageSchema } from "../shared/updates";
 import { VaultRequestSchema } from "../shared/vault";
 
 import { isAppUrl } from "./appUrl";
+import { openFromApp } from "./externalLink";
 import {
   buildBackendArgs,
   TEST_AGENT_ENV_VAR,
@@ -290,6 +292,11 @@ if (app.requestSingleInstanceLock()) {
         nativeTheme.themeSource = source;
       }
     });
+    ipcMain.handle(
+      OPEN_EXTERNAL_LINK_CHANNEL,
+      (event, url: unknown): Promise<void> =>
+        openFromApp(fromApp(event), url, (link) => shell.openExternal(link)),
+    );
     const notifier = createNotifier();
     registerUpdateHandlers(notifier);
     app.on("before-quit", () => {

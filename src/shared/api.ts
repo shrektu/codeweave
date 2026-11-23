@@ -15,6 +15,7 @@ export interface CodeweaveApi {
     listener: (update: AvailableUpdate | null) => void,
   ) => () => void;
   openUpdateRelease: () => Promise<void>;
+  openLink: (url: string) => Promise<void>;
   platform: string;
   setThemeSource: (appearance: Appearance) => Promise<void>;
 }

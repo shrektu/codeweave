@@ -15,6 +15,27 @@ export const MockScenario = {
 } as const;
 export type MockScenario = (typeof MockScenario)[keyof typeof MockScenario];
 
+export const MARKDOWN_REPLY = [
+  "## Report",
+  "",
+  "| file | lines |",
+  "| ---- | ----- |",
+  "| a.ts | 10 |",
+  "",
+  "```ts",
+  "const total: number = 1;",
+  "```",
+  "",
+  "```bash",
+  "$ echo codeweave-copy",
+  "codeweave-copy",
+  "```",
+  "",
+  "<b>raw html</b>",
+  "",
+  "Read [the docs](https://example.com/docs).",
+].join("\n");
+
 const LOOPBACK_HOST = "127.0.0.1";
 const MESSAGES_PATH = "/v1/messages";
 const COUNT_TOKENS_PATH = "/count_tokens";

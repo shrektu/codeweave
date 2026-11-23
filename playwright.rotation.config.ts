@@ -14,6 +14,7 @@ export default defineConfig({
     "opencodeRotation.spec.ts",
     "agyRotation.spec.ts",
     "agyEditDiff.spec.ts",
+    "transcript.spec.ts",
   ],
   timeout: TEST_TIMEOUT_MS,
   workers: 1,
