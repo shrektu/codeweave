@@ -702,7 +702,7 @@ describe("EventSchema", () => {
     round: 2,
     maxRounds: 2,
     currentNodeId: null,
-    nodes: [{ id: "a", status: "done", visits: 2, result: "ok" }],
+    nodes: [{ id: "a", status: "done", visits: 2, result: "ok", model: null }],
     decision: { reason: "rounds_exhausted", nodeId: "a" },
     decisions: [],
     failure: null,

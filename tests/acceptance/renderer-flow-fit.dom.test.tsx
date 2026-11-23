@@ -38,6 +38,7 @@ it("flow_fit_allows_zoom_below_default_min", async () => {
       flow={makeFlow()}
       agents={[makeAgent()]}
       session={null}
+      flowSessions={[]}
       onOpenSession={vi.fn()}
     />,
   );

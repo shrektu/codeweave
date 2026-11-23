@@ -7,6 +7,7 @@ import {
 } from "./permissionRecords";
 import {
   INITIAL_SESSION_STATE,
+  applyServedModel,
   recordTurnRoute,
   reduceSession,
   reservePromptSeq,
@@ -414,16 +415,17 @@ describe("session reducer: turn routes", () => {
     expect(next.turns.map((turn) => turn.promptSeq)).toEqual([3, 4]);
   });
 
-  it("a model event fills the effective model of the latest turn", () => {
+  it("a served model fills the effective model of the latest turn", () => {
     const withTurns = recordTurnRoute(
       recordTurnRoute(INITIAL_SESSION_STATE, GROQ_TURN),
       { ...CEREBRAS_TURN, promptSeq: 4 },
     );
 
-    const state = reduceSession(withTurns, {
-      type: "model",
-      model: "qwen-3.8-27b-0925",
-    });
+    const state = applyServedModel(
+      withTurns,
+      "qwen-3.8-27b-0925",
+      "acc-cerebras",
+    );
 
     expect(state.turns.map((turn) => turn.effectiveModel)).toEqual([
       null,
@@ -431,12 +433,69 @@ describe("session reducer: turn routes", () => {
     ]);
   });
 
-  it("a model event without a turn changes nothing", () => {
+  it("rotation_model_not_written_into_previous_turn_reducer", () => {
+    const withTurn = recordTurnRoute(INITIAL_SESSION_STATE, GROQ_TURN);
+
+    const state = applyServedModel(withTurn, "qwen-3.8-27b", "acc-cerebras");
+
+    expect(state.currentModel).toBe("qwen-3.8-27b");
+    expect(state.turns.map((turn) => turn.effectiveModel)).toEqual([null]);
+  });
+
+  it("a model event alone never writes a turn", () => {
+    const withTurn = recordTurnRoute(INITIAL_SESSION_STATE, GROQ_TURN);
+
+    const state = reduceSession(withTurn, { type: "model", model: "m-1" });
+
+    expect(state.currentModel).toBe("m-1");
+    expect(state.turns.map((turn) => turn.effectiveModel)).toEqual([null]);
+  });
+
+  it("model_event_before_first_turn_sets_current_model", () => {
     const state = reduceSession(INITIAL_SESSION_STATE, {
       type: "model",
-      model: "any",
+      model: "gpt-6.1-sol",
     });
 
-    expect(state).toEqual(INITIAL_SESSION_STATE);
+    expect(state.currentModel).toBe("gpt-6.1-sol");
+    expect(state.turns).toEqual([]);
+  });
+
+  it("model_event_after_turn_end_updates_current_model_only", () => {
+    const ended = reduceAll([
+      { type: "model", model: "first-model" },
+      { type: "turn_end", stopReason: "end_turn" },
+      { type: "model", model: "second-model" },
+    ]);
+
+    expect(ended.currentModel).toBe("second-model");
+    expect(ended.turns).toEqual([]);
+  });
+
+  it("turn start keeps the current model", () => {
+    const named = reduceSession(INITIAL_SESSION_STATE, {
+      type: "model",
+      model: "kept-model",
+    });
+
+    expect(recordTurnRoute(named, GROQ_TURN).currentModel).toBe("kept-model");
+  });
+
+  it.each(["", "<synthetic>"])("model name %j is ignored", (model) => {
+    const named = applyServedModel(
+      recordTurnRoute(INITIAL_SESSION_STATE, GROQ_TURN),
+      "real-model",
+      "acc-groq",
+    );
+
+    const state = applyServedModel(named, model, "acc-groq");
+    const viaEvent = reduceSession(named, { type: "model", model });
+
+    expect(viaEvent).toBe(named);
+
+    expect(state.currentModel).toBe("real-model");
+    expect(state.turns.map((turn) => turn.effectiveModel)).toEqual([
+      "real-model",
+    ]);
   });
 });

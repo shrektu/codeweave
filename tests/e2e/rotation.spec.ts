@@ -83,6 +83,14 @@ test("rotation_ui_shows_switch_after_card_click", async () => {
       /Idle on B/,
       { timeout: STEP_TIMEOUT_MS },
     );
+    await expect(page.locator(".session-head .session-model")).toContainText(
+      "claude-mock",
+      { timeout: STEP_TIMEOUT_MS },
+    );
+    await expect(page.locator(".turn-badge").first()).toContainText(
+      "claude-mock",
+      { timeout: STEP_TIMEOUT_MS },
+    );
     const toolTexts = await page.locator(".card.tool").allInnerTexts();
     expect(toolTexts.length).toBeGreaterThan(0);
     expect(toolTexts.join("\n")).not.toContain("```");

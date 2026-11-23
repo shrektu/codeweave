@@ -268,6 +268,7 @@ function FlowPicker({
   session,
   sessionLive,
   flowRun,
+  flowSessions,
   runFocused,
   editor,
   reloading,
@@ -280,6 +281,7 @@ function FlowPicker({
   session: SessionView | null;
   sessionLive: boolean;
   flowRun: FlowRunView | null;
+  flowSessions: Snapshot["flowSessions"];
   runFocused: boolean;
   editor: FlowEditor;
   reloading: boolean;
@@ -386,6 +388,7 @@ function FlowPicker({
           agents={list.agents}
           session={session}
           run={runOfFlow}
+          flowSessions={flowSessions}
           onOpenSession={onOpenSession}
         />
       ) : (
@@ -395,6 +398,7 @@ function FlowPicker({
             flow={flow}
             agents={list.agents}
             session={session}
+            flowSessions={flowSessions}
             locked={editor.saving}
             draft={editor.session.draft}
             selection={editor.session.selection}
@@ -433,6 +437,7 @@ function FlowTabBody({
   session,
   sessionLive,
   flowRun,
+  flowSessions,
   runFocused,
   source,
   editor,
@@ -443,6 +448,7 @@ function FlowTabBody({
   session: SessionView | null;
   sessionLive: boolean;
   flowRun: FlowRunView | null;
+  flowSessions: Snapshot["flowSessions"];
   runFocused: boolean;
   source: FlowsSource;
   editor: FlowEditor;
@@ -466,6 +472,7 @@ function FlowTabBody({
           session={session}
           sessionLive={sessionLive}
           flowRun={flowRun}
+          flowSessions={flowSessions}
           runFocused={runFocused}
           editor={editor}
           reloading={source.reloading}
@@ -554,6 +561,7 @@ function FlowTab({
         session={session?.cwd === cwd ? session : null}
         sessionLive={isSessionLive(session)}
         flowRun={flowRun}
+        flowSessions={state.snapshot?.flowSessions ?? []}
         runFocused={focusedRun !== null}
         source={source}
         editor={editor}

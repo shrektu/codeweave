@@ -216,6 +216,8 @@ const RATE_LIMITED: AgentEvent = {
 
 interface ToolRigOptions {
   readonly events?: Readonly<Record<string, readonly AgentEvent[]>>;
+  readonly replayed?: Readonly<Record<string, readonly AgentEvent[]>>;
+  readonly contextFailure?: Error;
   readonly startFailure?: string;
 }
 
@@ -229,6 +231,7 @@ interface ToolRig {
 function toolHandle(
   spec: AgentStartSpec,
   events: readonly AgentEvent[],
+  replayed: readonly AgentEvent[],
   prompts: Record<string, string[]>,
 ): AgentHandle {
   const listeners = new Set<(event: AgentEvent) => void>();
@@ -237,6 +240,9 @@ function toolHandle(
     runId: spec.runId,
     subscribe: (listener) => {
       listeners.add(listener);
+      replayed.forEach((event) => {
+        listener(event);
+      });
       return () => {
         listeners.delete(listener);
       };
@@ -275,6 +281,7 @@ async function openToolRig(options: ToolRigOptions = {}): Promise<ToolRig> {
               handle: toolHandle(
                 spec,
                 options.events?.[spec.account.id] ?? [],
+                options.replayed?.[spec.account.id] ?? [],
                 prompts,
               ),
             }
@@ -296,7 +303,10 @@ async function openToolRig(options: ToolRigOptions = {}): Promise<ToolRig> {
     leaseModes: createLeaseModes(),
     now: () => 1_700_000_000_000,
     schedule: () => () => undefined,
-    inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),
+    inspectWorktree: (dir) =>
+      options.contextFailure === undefined
+        ? Promise.resolve({ isRepo: false, cwd: dir })
+        : Promise.reject(options.contextFailure),
     newRunId: () => {
       runs += 1;
       return `run-${String(runs)}`;
@@ -370,6 +380,46 @@ it("passes_tools_on_rotation_and_repeats_the_preamble_for_the_new_handle", async
   ]);
   expect(rig.prompts[ACCOUNT.id]).toEqual([`${PREAMBLE}${PREAMBLE_GAP}go`]);
   expect(rig.prompts[ACCOUNT_B.id]?.[0]?.startsWith(PREAMBLE)).toBe(true);
+});
+
+it("rotation_model_not_written_into_previous_turn", async () => {
+  const rig = await openToolRig({
+    events: { [ACCOUNT.id]: [RATE_LIMITED] },
+    replayed: { [ACCOUNT_B.id]: [{ type: "model", model: "model-b" }] },
+    contextFailure: new Error("worktree gone"),
+  });
+  await rig.service.start({ cwd: rig.cwd });
+
+  await rig.service.prompt("go");
+  await settled(() => {
+    expect(rig.specs.map((spec) => spec.account.id)).toEqual([
+      ACCOUNT.id,
+      ACCOUNT_B.id,
+    ]);
+    expect(rig.service.view()?.turnInFlight).toBe(false);
+    expect(rig.service.view()?.currentModel).toBe("model-b");
+  });
+
+  expect(rig.service.view()?.turns).toEqual([
+    expect.objectContaining({ accountId: ACCOUNT.id, effectiveModel: null }),
+  ]);
+});
+
+it("opencode_repeat_turn_keeps_served_model", async () => {
+  const rig = await openToolRig({
+    replayed: { [ACCOUNT.id]: [{ type: "model", model: "served-a" }] },
+  });
+  await rig.service.start({ cwd: rig.cwd });
+
+  await rig.service.prompt("first");
+  await untilIdle(rig.service);
+  await rig.service.prompt("second");
+  await untilIdle(rig.service);
+
+  expect(rig.service.view()?.turns.map((turn) => turn.effectiveModel)).toEqual([
+    "served-a",
+    "served-a",
+  ]);
 });
 
 it("masks_the_flow_tool_token_in_events_and_errors", async () => {

@@ -74,6 +74,10 @@ async function expectRotationShown(page: Page): Promise<void> {
     /Idle on B/,
     { timeout: STEP_TIMEOUT_MS },
   );
+  await expect(page.locator(".session-head .session-model")).toContainText(
+    "mock-model",
+    { timeout: STEP_TIMEOUT_MS },
+  );
 }
 
 test("codex_rotation_ui_shows_switch_and_exhausted_account", async () => {

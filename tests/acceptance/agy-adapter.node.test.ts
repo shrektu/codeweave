@@ -717,6 +717,15 @@ describe("agy adapter model reporting", () => {
     ]);
   });
 
+  it("agy_without_requested_model_shows_cli_default", async () => {
+    const { rig, handle, events } = await readyHandle();
+    rig.container.scriptTurn(replyTurn(CONV, "one"));
+
+    await handle.prompt("one", { model: null });
+
+    expect(events.filter((event) => event.type === "model")).toEqual([]);
+  });
+
   it("agy reports the model on every turn", async () => {
     const { rig, handle, events } = await readyHandle();
     rig.container.scriptTurn(replyTurn(CONV, "one"));

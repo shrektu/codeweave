@@ -86,6 +86,24 @@ export function focusedRunOf(
   return snapshot.flowRuns.find((run) => run.runId === focusedRunId) ?? null;
 }
 
+export function nodeModelOf(
+  run: FlowRunView,
+  nodeId: string,
+  flowSessions: Snapshot["flowSessions"],
+): string | null {
+  const live = flowSessions.find(
+    (entry) =>
+      entry.runId === run.runId &&
+      entry.view.flowRef?.flowId === run.flowId &&
+      entry.view.flowRef.nodeId === nodeId,
+  );
+  return (
+    live?.view.currentModel ??
+    run.nodes.find((node) => node.id === nodeId)?.model ??
+    null
+  );
+}
+
 export function latestRunOf(
   runs: readonly FlowRunView[],
   cwd: string,

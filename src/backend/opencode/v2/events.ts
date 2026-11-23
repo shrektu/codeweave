@@ -13,6 +13,7 @@ import {
   TOOL_KIND_FETCH,
 } from "../constants";
 import { PERMISSION_OPTIONS, SessionScope } from "../events";
+import { servedModelName } from "../servedModel";
 
 import {
   DEFAULT_TOOL_TITLE,
@@ -271,12 +272,13 @@ export function createV2EventMapper(
     if (event.type !== OpencodeV2EventType.stepStarted) {
       return [...mapText(event), ...mapTool(event)];
     }
-    const { id } = event.data.model;
-    if (id === reportedModel) {
+    const { id, providerID } = event.data.model;
+    const model = servedModelName(providerID, id);
+    if (model === reportedModel) {
       return [];
     }
-    reportedModel = id;
-    return [{ type: "model", model: id }];
+    reportedModel = model;
+    return [{ type: "model", model }];
   }
 
   return {

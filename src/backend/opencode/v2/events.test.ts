@@ -47,10 +47,10 @@ function asked(sessionID: string, data: object): OpencodeV2Event {
   return event("permission.asked", { id: "per_1", sessionID, ...data });
 }
 
-function stepStarted(modelId: string): OpencodeV2Event {
+function stepStarted(modelId: string, providerID?: string): OpencodeV2Event {
   return event("session.step.started", {
     sessionID: OWN,
-    model: { id: modelId },
+    model: { id: modelId, ...(providerID === undefined ? {} : { providerID }) },
   });
 }
 
@@ -469,5 +469,14 @@ describe("v2 model events", () => {
     expect(mapper.map(stepStarted("glm"))).toEqual([
       { type: "model", model: "glm" },
     ]);
+  });
+
+  it("opencode_provider_prefix_not_doubled", () => {
+    const mapper = createV2EventMapper(OWN, CWD);
+
+    expect(mapper.map(stepStarted("llama", "groq"))).toEqual([
+      { type: "model", model: "groq/llama" },
+    ]);
+    expect(mapper.map(stepStarted("groq/llama", "groq"))).toEqual([]);
   });
 });

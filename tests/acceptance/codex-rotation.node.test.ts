@@ -143,6 +143,64 @@ describe("codex rotation through the backend", () => {
   });
 });
 
+describe("codex session model through the backend", () => {
+  it("thread_start_model_is_the_session_current_model_before_any_prompt", async () => {
+    const rig = await openRig({ accounts: [ACCOUNT_CODEX_A] });
+    rig.codexContainer.config.threadModel = "gpt-5-codex";
+
+    await rig.call("session/start", { cwd: rig.cwd, provider: "codex" });
+
+    const view = await rig.session();
+    expect(view.currentModel).toBe("gpt-5-codex");
+    expect(view.turns).toEqual([]);
+  });
+
+  it("session_without_a_reported_model_has_no_current_model", async () => {
+    const rig = await openRig({ accounts: [ACCOUNT_CODEX_A] });
+
+    await rig.call("session/start", { cwd: rig.cwd, provider: "codex" });
+
+    expect((await rig.session()).currentModel).toBeNull();
+  });
+
+  it("codex_default_turn_shows_announced_model", async () => {
+    const rig = await openRig({ accounts: [ACCOUNT_CODEX_A] });
+    rig.codexContainer.config.threadModel = "gpt-5-codex";
+    await rig.call("session/start", { cwd: rig.cwd, provider: "codex" });
+
+    await rig.call("session/prompt", { text: "hello" });
+
+    await settled(async () => {
+      const view = await rig.session();
+      expect(view.turnInFlight).toBe(false);
+      expect(view.turns).toEqual([
+        expect.objectContaining({
+          model: null,
+          effectiveModel: "gpt-5-codex",
+        }),
+      ]);
+    });
+  });
+
+  it("current_model_follows_the_account_after_rotation", async () => {
+    const rig = await openRig({
+      accounts: [ACCOUNT_CODEX_A, ACCOUNT_CODEX_B],
+    });
+    rig.codexContainer.config.threadModel = "gpt-5-codex";
+
+    await rotateCodexA(rig);
+
+    await settled(async () => {
+      const view = await rig.session();
+      expect(view.phase).toEqual({
+        phase: "running",
+        accountId: ACCOUNT_CODEX_B.id,
+      });
+      expect(view.currentModel).toBe("gpt-5-codex");
+    });
+  });
+});
+
 describe("session provider selection", () => {
   it("codex_session_without_codex_accounts_starts_on_shared_subscription", async () => {
     const rig = await openRig({ accounts: [ACCOUNT_A, ACCOUNT_B] });

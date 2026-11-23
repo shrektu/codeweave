@@ -263,6 +263,61 @@ it.each<[RotationPhaseView, string]>([
   expect(screen.getByText("/home/user/project")).toBeTruthy();
 });
 
+function renderHeader(session: ReturnType<typeof makeSession>): void {
+  const state = readyState(
+    makeSnapshot({
+      accounts: [
+        makeAccount({ id: "acc-1", label: "Work", provider: "codex" }),
+      ],
+      session,
+    }),
+  );
+  renderWithServices(
+    <SessionStream />,
+    createFakeIpcClient(),
+    staticStore(state),
+  );
+}
+
+it("session_header_shows_provider_account_model", () => {
+  renderHeader(
+    makeSession({
+      activeProvider: "codex",
+      currentModel: "gpt-6.1-sol",
+    }),
+  );
+
+  const model = screen.getByLabelText("Model in use");
+  expect(model.textContent).toBe("gpt-6.1-sol");
+  expect(model.className).toBe("session-model");
+  expect(document.querySelector(".session-provider")?.textContent).toBe(
+    "Codex",
+  );
+  expect(document.querySelector(".session-account")?.textContent).toBe("Work");
+  expect(document.querySelector(".session-identity")?.textContent).toBe(
+    "Codex · Work · gpt-6.1-sol",
+  );
+  expect(screen.getByText("Idle on Work")).toBeTruthy();
+});
+
+it("session_header_says_cli_default_when_no_model_is_reported", () => {
+  renderHeader(makeSession({ activeProvider: "codex", currentModel: null }));
+
+  expect(screen.getByLabelText("Model in use").textContent).toBe("CLI default");
+});
+
+it("session_header_shows_a_dash_without_an_active_account", () => {
+  renderHeader(
+    makeSession({
+      activeProvider: "codex",
+      activeAccountId: null,
+      phase: { phase: "halted" },
+    }),
+  );
+
+  expect(document.querySelector(".session-account")?.textContent).toBe("—");
+});
+
 it.each<[RotationPhaseView]>([
   [{ phase: "stopped" }],
   [{ phase: "failed", reason: "spawn failed", runningAccountId: null }],
@@ -410,7 +465,7 @@ function renderTurns(turns: TurnRouteView[]): void {
 }
 
 it("turn badge shows the routed model and class", async () => {
-  renderTurns([makeTurn({ effectiveModel: "openai/gpt-oss-20b" })]);
+  renderTurns([makeTurn({ effectiveModel: "groq/openai/gpt-oss-20b" })]);
 
   const badge = await screen.findByText("groq/openai/gpt-oss-20b · light");
   expect(badge.getAttribute("title")).toBe(

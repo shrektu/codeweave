@@ -518,3 +518,15 @@ pre.diff {
 .send:hover:not(:disabled) {
   filter: brightness(1.08);
 }
+
+.session-identity {
+  overflow: hidden;
+  color: var(--label-2);
+  font: var(--text-xs) / var(--leading) var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-model {
+  color: var(--label);
+}

@@ -3,7 +3,7 @@ import { isAutoModel } from "../domain/modelChoice";
 import { MODEL_TIERS } from "../domain/modelTiers";
 import { isModelAllowed, RouteSource } from "../domain/routing";
 import { TaskClass } from "../domain/taskClass";
-import type { AccountView, TurnRouteView } from "../shared/views";
+import type { AccountView, SessionView, TurnRouteView } from "../shared/views";
 
 export const TASK_CLASS_LABELS: Readonly<Record<TaskClass, string>> = {
   [TaskClass.light]: "Light",
@@ -24,8 +24,15 @@ export interface TurnBadge {
   readonly description: string;
 }
 
+export function servedModel(turn: TurnRouteView): string | null {
+  return turn.effectiveModel ?? turn.model;
+}
+
 function modelLabel(turn: TurnRouteView): string {
-  const model = turn.effectiveModel ?? turn.model;
+  if (turn.effectiveModel !== null) {
+    return turn.effectiveModel;
+  }
+  const { model } = turn;
   if (model === null) {
     return CLI_DEFAULT_MODEL_LABEL;
   }
@@ -33,6 +40,14 @@ function modelLabel(turn: TurnRouteView): string {
   return turn.apiProvider === null || model.startsWith(prefix)
     ? model
     : `${prefix}${model}`;
+}
+
+export function sessionModelText(session: SessionView): string {
+  const last = session.turns.at(-1);
+  return (
+    session.currentModel ??
+    (last === undefined ? CLI_DEFAULT_MODEL_LABEL : modelLabel(last))
+  );
 }
 
 function classLabel(turn: TurnRouteView): string {

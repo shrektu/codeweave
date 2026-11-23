@@ -24,7 +24,7 @@ import {
   shownSessionOf,
   type SelectableProvider,
 } from "../format";
-import { turnBadge } from "../routingText";
+import { sessionModelText, turnBadge } from "../routingText";
 import { useApp, useServices } from "../services";
 import { useAsyncAction } from "../useAsyncAction";
 
@@ -33,6 +33,9 @@ import { Markdown } from "../markdown/Markdown";
 import { Composer } from "./Composer";
 import { PermissionCard } from "./PermissionCard";
 import { ToolCard } from "./ToolCard";
+
+const IDENTITY_SEPARATOR = " · ";
+const NO_ACCOUNT_LABEL = "—";
 
 interface SessionBodyProps {
   session: SessionView;
@@ -314,6 +317,35 @@ function StartPrompt(): JSX.Element {
   );
 }
 
+function SessionIdentity({
+  session,
+  accounts,
+}: {
+  session: SessionView;
+  accounts: readonly AccountView[];
+}): JSX.Element {
+  const provider = PROVIDER_LABELS[session.activeProvider];
+  const account =
+    session.activeAccountId === null
+      ? NO_ACCOUNT_LABEL
+      : accountLabel(accounts, session.activeAccountId);
+  const model = sessionModelText(session);
+  return (
+    <span
+      className="session-identity"
+      title={[provider, account, model].join(IDENTITY_SEPARATOR)}
+    >
+      <span className="session-provider">{provider}</span>
+      {IDENTITY_SEPARATOR}
+      <span className="session-account">{account}</span>
+      {IDENTITY_SEPARATOR}
+      <span className="session-model" aria-label="Model in use">
+        {model}
+      </span>
+    </span>
+  );
+}
+
 function SessionBody({
   session,
   runId,
@@ -330,6 +362,7 @@ function SessionBody({
     <>
       <div className="session-head">
         <span className="cwd">{session.cwd}</span>
+        <SessionIdentity session={session} accounts={accounts} />
         <span className="phase">
           {phaseText(session.phase, accounts, session.turnInFlight)}
         </span>

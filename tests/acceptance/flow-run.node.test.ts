@@ -362,12 +362,14 @@ it("flow_run_two_nodes_hands_off_and_finishes_done", async () => {
       status: "done",
       visits: 1,
       result: "Implemented the login form",
+      model: null,
     },
     {
       id: "review",
       status: "done",
       visits: 1,
       result: "Looks correct.\nVERDICT: APPROVED",
+      model: null,
     },
   ]);
   expect(view.round).toBe(1);

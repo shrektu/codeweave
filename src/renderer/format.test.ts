@@ -18,10 +18,40 @@ import {
   shownSessionOf,
   limitPercent,
   limitWindowLabel,
+  nodeModelOf,
 } from "./format";
 
 const STOPPED_MAIN = makeSession({ id: "main", phase: { phase: "stopped" } });
 const NODE_SESSION = makeSession({ id: "node" });
+
+it("flow_graph_ignores_foreign_session_model_unit", () => {
+  const run = makeFlowRun({
+    runId: "run-1",
+    flowId: "ship",
+    nodes: [
+      {
+        id: "build",
+        status: "done",
+        visits: 1,
+        result: "x",
+        model: "recorded",
+      },
+    ],
+  });
+  const flowRef = { flowId: "ship", nodeId: "build" };
+  const foreign = [
+    {
+      runId: "run-2",
+      view: makeSession({ flowRef, currentModel: "stranger" }),
+    },
+  ];
+  const own = [
+    { runId: "run-1", view: makeSession({ flowRef, currentModel: "live" }) },
+  ];
+
+  expect(nodeModelOf(run, "build", foreign)).toBe("recorded");
+  expect(nodeModelOf(run, "build", own)).toBe("live");
+});
 
 it("shown_session_prefers_the_open_run_node_session_over_a_stopped_main", () => {
   const snapshot = makeSnapshot({

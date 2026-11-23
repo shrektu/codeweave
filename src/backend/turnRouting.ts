@@ -108,8 +108,12 @@ export function recordTurn(input: RecordTurnInput): RecordedTurn {
     overrides: prompt.overrides,
     promptSeq: prompt.seq,
   });
+  const entry =
+    route.model === null
+      ? { ...route.entry, effectiveModel: state.currentModel }
+      : route.entry;
   return {
-    state: recordTurnRoute(state, route.entry),
+    state: recordTurnRoute(state, entry),
     model: route.model,
   };
 }

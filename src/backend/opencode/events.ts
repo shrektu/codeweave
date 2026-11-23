@@ -33,6 +33,7 @@ import type {
   TextPart,
   ToolPart,
 } from "./protocol";
+import { servedModelName } from "./servedModel";
 
 export const SessionScope = {
   own: "own",
@@ -45,6 +46,7 @@ interface MessageInfo {
   readonly id: string;
   readonly role: string;
   readonly modelID?: string | undefined;
+  readonly providerID?: string | undefined;
 }
 
 export interface OpencodeEventMapper {
@@ -246,15 +248,15 @@ export function createEventMapper(
 
   function mapMessage(info: MessageInfo): AgentEvent[] {
     roles.set(info.id, info.role);
-    if (
-      info.role !== OpencodeRole.assistant ||
-      info.modelID === undefined ||
-      info.modelID === reportedModel
-    ) {
+    if (info.role !== OpencodeRole.assistant || info.modelID === undefined) {
       return [];
     }
-    reportedModel = info.modelID;
-    return [{ type: "model", model: info.modelID }];
+    const model = servedModelName(info.providerID, info.modelID);
+    if (model === reportedModel) {
+      return [];
+    }
+    reportedModel = model;
+    return [{ type: "model", model }];
   }
 
   function mapTool(part: ToolPart): AgentEvent[] {

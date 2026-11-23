@@ -1,4 +1,5 @@
 import type { ApiProviderId } from "./apiProviders";
+import { SYNTHETIC_MODEL_NAME } from "./constants";
 import type { AgentEvent, FileDiff, ToolCallStatus } from "./events";
 import {
   createPermissionRecord,
@@ -52,6 +53,7 @@ export interface SessionState {
   readonly previousTurnLog: readonly TurnLogEntry[];
   readonly permissions: readonly PermissionRecord[];
   readonly lastTurn: LastTurn | null;
+  readonly currentModel: string | null;
   readonly nextSeq: number;
 }
 
@@ -63,6 +65,7 @@ export const INITIAL_SESSION_STATE: SessionState = {
   previousTurnLog: [],
   permissions: [],
   lastTurn: null,
+  currentModel: null,
   nextSeq: 0,
 };
 
@@ -245,14 +248,29 @@ export function recordTurnRoute(
   };
 }
 
-function applyEffectiveModel(state: SessionState, model: string): SessionState {
-  const last = state.turns.at(-1);
-  return last === undefined
+function withCurrentModel(state: SessionState, model: string): SessionState {
+  return model === "" || model === SYNTHETIC_MODEL_NAME
     ? state
+    : { ...state, currentModel: model };
+}
+
+export function applyServedModel(
+  state: SessionState,
+  model: string,
+  accountId: string,
+): SessionState {
+  const named = withCurrentModel(state, model);
+  const last = named.turns.at(-1);
+  return named === state || last?.accountId !== accountId
+    ? named
     : {
-        ...state,
-        turns: state.turns.with(-1, { ...last, effectiveModel: model }),
+        ...named,
+        turns: named.turns.with(-1, { ...last, effectiveModel: model }),
       };
+}
+
+export function resetCurrentModel(state: SessionState): SessionState {
+  return { ...state, currentModel: null };
 }
 
 export function reduceSession(
@@ -285,7 +303,7 @@ export function reduceSession(
     case "process_exit":
       return { ...state, permissions: expireAll(state.permissions) };
     case "model":
-      return applyEffectiveModel(state, event.model);
+      return withCurrentModel(state, event.model);
     case "permission_settled":
       return settlePermission(state, event);
     case "rate_limit":

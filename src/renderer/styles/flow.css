@@ -486,3 +486,14 @@ html[data-fx="low"] .flow-graph .react-flow__edge.animated path {
   resize: vertical;
   min-height: 160px;
 }
+
+.flow-node-model {
+  color: var(--label-2);
+  font: var(--text-xs) / var(--leading) var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.timeline-models {
+  color: var(--label-2);
+  font: var(--text-xs) / var(--leading) var(--font-mono);
+}

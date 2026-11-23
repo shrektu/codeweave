@@ -237,6 +237,9 @@ class CodexAppServerSession implements AgentHandle {
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
+    if (this.model !== null) {
+      listener({ type: "model", model: this.model });
+    }
     return () => {
       this.listeners.delete(listener);
     };

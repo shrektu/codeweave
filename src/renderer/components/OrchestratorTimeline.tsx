@@ -2,8 +2,8 @@ import type { JSX } from "react";
 
 import { FlowRunStatus } from "../../domain/flowRun";
 import { FlowPlacement, FlowRunOrigin } from "../../domain/types";
-import type { FlowRunView } from "../../shared/views";
-import { orchestratedRunsOf } from "../format";
+import type { FlowRunView, Snapshot } from "../../shared/views";
+import { nodeModelOf, orchestratedRunsOf } from "../format";
 import { useServices } from "../services";
 import { useAppState } from "../store";
 
@@ -17,6 +17,8 @@ import {
 const WAITING_FOR_ORCHESTRATOR = "Waiting for the orchestrator";
 const IN_PLACE_LABEL = "In place";
 const WORKTREE_LABEL = "Worktree";
+const NODE_MODEL_SEPARATOR = " · ";
+const MODELS_SEPARATOR = ", ";
 
 function statusText(run: FlowRunView): string {
   return run.origin === FlowRunOrigin.orchestrator &&
@@ -34,14 +36,27 @@ function placementText(run: FlowRunView): string {
     : `${WORKTREE_LABEL} · ${run.branch}`;
 }
 
+function nodeModelLines(
+  run: FlowRunView,
+  flowSessions: Snapshot["flowSessions"],
+): string[] {
+  return run.nodes.flatMap((node) => {
+    const model = nodeModelOf(run, node.id, flowSessions);
+    return model === null ? [] : [`${node.id}${NODE_MODEL_SEPARATOR}${model}`];
+  });
+}
+
 function TimelineRun({
   run,
+  flowSessions,
   onShowGraph,
 }: {
   run: FlowRunView;
+  flowSessions: Snapshot["flowSessions"];
   onShowGraph: (runId: string) => void;
 }): JSX.Element {
   const outcome = outcomeText(run);
+  const models = nodeModelLines(run, flowSessions);
   return (
     <li className="timeline-run">
       <div className="timeline-head">
@@ -69,6 +84,9 @@ function TimelineRun({
           )}
         </p>
       ))}
+      {models.length > 0 && (
+        <p className="timeline-models">{models.join(MODELS_SEPARATOR)}</p>
+      )}
       {outcome !== null && <p className="flow-run-outcome">{outcome}</p>}
     </li>
   );
@@ -96,6 +114,7 @@ export function OrchestratorTimeline({
             <TimelineRun
               key={run.runId}
               run={run}
+              flowSessions={state.snapshot?.flowSessions ?? []}
               onShowGraph={(runId) => {
                 store.focusRun(runId);
                 onShowGraph();

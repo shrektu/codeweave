@@ -822,6 +822,7 @@ const RUNNING_VIEW: SessionView = {
   lastTurn: null,
   turnInFlight: true,
   flowRef: { flowId: "solo", nodeId: "build" },
+  currentModel: null,
   turns: [],
   orchestrate: false,
 };

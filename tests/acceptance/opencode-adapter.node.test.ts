@@ -811,8 +811,23 @@ describe("opencode adapter: model reporting", () => {
     await handle.prompt("two", { model: null });
 
     expect(events.filter((event) => event.type === "model")).toEqual([
-      { type: "model", model: "openai/gpt-oss-20b" },
-      { type: "model", model: "openai/gpt-oss-20b" },
+      { type: "model", model: "groq/openai/gpt-oss-20b" },
+      { type: "model", model: "groq/openai/gpt-oss-20b" },
+    ]);
+  });
+
+  it("served_model_includes_provider_id", async () => {
+    const rig = await createOpencodeRig({ api: GROQ_API });
+    const { handle, events } = await startOpencodeHandle(rig);
+    opencodeServerOf(rig).assistantModel = {
+      providerID: "groq",
+      modelID: "groq/llama-3.3-70b",
+    };
+
+    await handle.prompt("one", { model: null });
+
+    expect(events.filter((event) => event.type === "model")).toEqual([
+      { type: "model", model: "groq/llama-3.3-70b" },
     ]);
   });
 
@@ -828,8 +843,8 @@ describe("opencode adapter: model reporting", () => {
     await handle.prompt("two", { model: null });
 
     expect(events.filter((event) => event.type === "model")).toEqual([
-      { type: "model", model: "openai/gpt-oss-20b" },
-      { type: "model", model: "openai/gpt-oss-20b" },
+      { type: "model", model: "groq/openai/gpt-oss-20b" },
+      { type: "model", model: "groq/openai/gpt-oss-20b" },
     ]);
   });
 });
@@ -843,7 +858,7 @@ describe("opencode adapter: stale model reports", () => {
     server.enqueue([{ type: "wait_abort" }, { type: "idle" }]);
     const first = handle.prompt("one", { model: null });
     await vi.waitFor(() => {
-      expect(events).toContainEqual({ type: "model", model: "model-a" });
+      expect(events).toContainEqual({ type: "model", model: "groq/model-a" });
     });
     await handle.cancel();
     await first;
@@ -874,7 +889,7 @@ describe("opencode adapter: stale model reports", () => {
 
     expect(
       events.slice(seen).filter((event) => event.type === "model"),
-    ).toEqual([{ type: "model", model: "model-b" }]);
+    ).toEqual([{ type: "model", model: "groq/model-b" }]);
   });
 });
 

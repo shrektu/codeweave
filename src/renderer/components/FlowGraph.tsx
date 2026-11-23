@@ -27,6 +27,7 @@ import type {
   FlowRunView,
   FlowView,
   SessionView,
+  Snapshot,
 } from "../../shared/views";
 import { errorMessage } from "../errorMessage";
 import {
@@ -46,7 +47,7 @@ import {
   type FlowLayoutEdge,
   type FlowSize,
 } from "../flowLayout";
-import { PROVIDER_LABELS } from "../format";
+import { PROVIDER_LABELS, nodeModelOf } from "../format";
 import { useElementSize } from "../useElementSize";
 
 import { FlowEdge } from "./FlowEdge";
@@ -56,6 +57,7 @@ interface FlowGraphBaseProps {
   agents: readonly AgentView[];
   session: SessionView | null;
   run?: FlowRunView | null;
+  flowSessions: Snapshot["flowSessions"];
   onOpenSession: () => void;
 }
 
@@ -82,6 +84,7 @@ type FlowNodeData = Record<string, unknown> & {
   provider: ProviderId | null;
   custom: boolean;
   editable: boolean;
+  model: string | null;
 };
 type FlowGraphNode = Node<FlowNodeData, "flowNode">;
 
@@ -132,6 +135,9 @@ function FlowNodeCardView({ id, data }: NodeProps<FlowGraphNode>): JSX.Element {
         <span className="pill flow-state">{STATE_LABELS[data.state]}</span>
       </div>
       <p className="flow-node-role">{data.role}</p>
+      {data.model !== null && (
+        <span className="flow-node-model">{data.model}</span>
+      )}
       {data.editable && data.provider !== null && (
         <p className="flow-node-provider">
           {PROVIDER_LABELS[data.provider]}
@@ -249,15 +255,20 @@ function activeNodeOf(
   return isRunOpen(run.status) ? run.currentNodeId : null;
 }
 
-function sameStates(a: NodeStates, b: NodeStates): boolean {
+function sameEntries<T>(
+  a: ReadonlyMap<string, T>,
+  b: ReadonlyMap<string, T>,
+): boolean {
   return (
-    a.size === b.size && [...a].every(([id, state]) => b.get(id) === state)
+    a.size === b.size && [...a].every(([id, value]) => b.get(id) === value)
   );
 }
 
-function useStableStates(next: NodeStates): NodeStates {
+function useStableEntries<T>(
+  next: ReadonlyMap<string, T>,
+): ReadonlyMap<string, T> {
   const [stable, setStable] = useState(next);
-  if (sameStates(stable, next)) {
+  if (sameEntries(stable, next)) {
     return stable;
   }
   setStable(next);
@@ -270,9 +281,26 @@ interface GraphSource {
   flow: FlowView;
   agents: readonly AgentView[];
   states: NodeStates;
+  models: ReadonlyMap<string, string>;
   activeNodeId: string | null;
   editable: boolean;
   selection: FlowSelection;
+}
+
+function modelsOf(
+  flow: FlowView,
+  run: FlowRunView | null,
+  flowSessions: Snapshot["flowSessions"],
+): ReadonlyMap<string, string> {
+  if (run === null) {
+    return new Map();
+  }
+  return new Map(
+    flow.nodes.flatMap((node) => {
+      const model = nodeModelOf(run, node.id, flowSessions);
+      return model === null ? [] : [[node.id, model] as const];
+    }),
+  );
 }
 
 function layoutEdgeKey(edge: FlowLayoutEdge): string | null {
@@ -287,6 +315,7 @@ function buildGraph({
   flow,
   agents,
   states,
+  models,
   activeNodeId,
   editable,
   selection,
@@ -311,6 +340,7 @@ function buildGraph({
           provider: flowNode?.provider ?? agent?.provider ?? null,
           custom: (flowNode?.provider ?? null) !== null,
           editable,
+          model: models.get(node.id) ?? null,
         },
       };
     }),
@@ -431,7 +461,14 @@ function useFitOnChange(layout: FlowLayout | null, size: FlowSize): void {
 }
 
 function FlowCanvas(props: FlowGraphProps): JSX.Element {
-  const { flow, agents, session, run = null, onOpenSession } = props;
+  const {
+    flow,
+    agents,
+    session,
+    run = null,
+    flowSessions,
+    onOpenSession,
+  } = props;
   const editable = props.editable === true;
   const draft = props.editable === true ? props.draft : null;
   const shown = useMemo<FlowView>(
@@ -445,8 +482,9 @@ function FlowCanvas(props: FlowGraphProps): JSX.Element {
     layouts === null ? FlowDirection.RIGHT : chooseDirection(layouts, size);
   const layout = layouts?.[direction] ?? null;
   useFitOnChange(layout, size);
-  const states = useStableStates(statesOf(shown, session, run));
+  const states = useStableEntries(statesOf(shown, session, run));
   const activeNodeId = activeNodeOf(shown, session, run);
+  const models = useStableEntries(modelsOf(shown, run, flowSessions));
   const graph = useMemo(
     () =>
       layout
@@ -456,6 +494,7 @@ function FlowCanvas(props: FlowGraphProps): JSX.Element {
             flow: shown,
             agents,
             states,
+            models,
             activeNodeId,
             editable,
             selection,
@@ -467,6 +506,7 @@ function FlowCanvas(props: FlowGraphProps): JSX.Element {
       shown,
       agents,
       states,
+      models,
       activeNodeId,
       editable,
       selection,

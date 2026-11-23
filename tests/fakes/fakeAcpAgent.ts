@@ -123,6 +123,7 @@ export interface FakeAcpConfig {
   newSessionError?: FakeRpcFailure;
   setConfigOptionError?: FakeRpcFailure;
   sessionModel?: string;
+  defaultModelDescription?: string;
   stderrText?: string;
 }
 
@@ -133,13 +134,22 @@ export interface ConfigCall {
 
 const MODEL_CONFIG_ID = "model";
 
-function modelConfigOption(current: string): SessionConfigOption {
+function modelConfigOption(
+  current: string,
+  description?: string,
+): SessionConfigOption {
   return {
     id: MODEL_CONFIG_ID,
     name: "Model",
     type: "select",
     currentValue: current,
-    options: [{ value: current, name: current }],
+    options: [
+      {
+        value: current,
+        name: current,
+        ...(description === undefined ? {} : { description }),
+      },
+    ],
   };
 }
 
@@ -255,7 +265,12 @@ export class FakeAcpAgent {
             ...(this.config.sessionModel === undefined
               ? {}
               : {
-                  configOptions: [modelConfigOption(this.config.sessionModel)],
+                  configOptions: [
+                    modelConfigOption(
+                      this.config.sessionModel,
+                      this.config.defaultModelDescription,
+                    ),
+                  ],
                 }),
           };
         },

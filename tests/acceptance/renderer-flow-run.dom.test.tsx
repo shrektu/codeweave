@@ -271,8 +271,20 @@ it("flow_run_shows_running_node_states_from_session", async () => {
     openRun({
       round: 1,
       nodes: [
-        { id: "build", status: "running", visits: 1, result: null },
-        { id: "review", status: "queued", visits: 0, result: null },
+        {
+          id: "build",
+          status: "running",
+          visits: 1,
+          result: null,
+          model: null,
+        },
+        {
+          id: "review",
+          status: "queued",
+          visits: 0,
+          result: null,
+          model: null,
+        },
       ],
     }),
   );
@@ -306,8 +318,20 @@ it("flow_run_shows_done_and_failed_nodes_from_flow_changed", async () => {
     openRun({
       round: 1,
       nodes: [
-        { id: "build", status: "running", visits: 1, result: null },
-        { id: "review", status: "queued", visits: 0, result: null },
+        {
+          id: "build",
+          status: "running",
+          visits: 1,
+          result: null,
+          model: null,
+        },
+        {
+          id: "review",
+          status: "queued",
+          visits: 0,
+          result: null,
+          model: null,
+        },
       ],
     }),
   );
@@ -319,8 +343,20 @@ it("flow_run_shows_done_and_failed_nodes_from_flow_changed", async () => {
       round: 1,
       currentNodeId: "review",
       nodes: [
-        { id: "build", status: "done", visits: 1, result: "Built it." },
-        { id: "review", status: "running", visits: 1, result: null },
+        {
+          id: "build",
+          status: "done",
+          visits: 1,
+          result: "Built it.",
+          model: null,
+        },
+        {
+          id: "review",
+          status: "running",
+          visits: 1,
+          result: null,
+          model: null,
+        },
       ],
     }),
   );
@@ -334,8 +370,20 @@ it("flow_run_shows_done_and_failed_nodes_from_flow_changed", async () => {
       failure: "review crashed",
       currentNodeId: null,
       nodes: [
-        { id: "build", status: "done", visits: 1, result: "Built it." },
-        { id: "review", status: "failed", visits: 1, result: null },
+        {
+          id: "build",
+          status: "done",
+          visits: 1,
+          result: "Built it.",
+          model: null,
+        },
+        {
+          id: "review",
+          status: "failed",
+          visits: 1,
+          result: null,
+          model: null,
+        },
       ],
     }),
   );
@@ -348,8 +396,20 @@ it("flow_run_lists_node_results_collapsed", async () => {
   const client = appClient({
     flowRun: openRun({
       nodes: [
-        { id: "build", status: "done", visits: 2, result: "Built it." },
-        { id: "review", status: "running", visits: 1, result: null },
+        {
+          id: "build",
+          status: "done",
+          visits: 2,
+          result: "Built it.",
+          model: null,
+        },
+        {
+          id: "review",
+          status: "running",
+          visits: 1,
+          result: null,
+          model: null,
+        },
       ],
     }),
   });
@@ -397,8 +457,8 @@ it("flow_run_approval_banner_sends_decision", async () => {
         status: "awaiting_decision",
         round: 2,
         nodes: [
-          { id: "build", status: "done", visits: 2, result: "x" },
-          { id: "review", status: "done", visits: 2, result: "y" },
+          { id: "build", status: "done", visits: 2, result: "x", model: null },
+          { id: "review", status: "done", visits: 2, result: "y", model: null },
         ],
         decision: { reason: item.reason, nodeId: item.nodeId },
       }),
@@ -444,9 +504,9 @@ it("flow_run_banner_uses_paused_reviewer_count", async () => {
       status: "awaiting_decision",
       round: 5,
       nodes: [
-        { id: "build", status: "done", visits: 3, result: "x" },
-        { id: "review", status: "done", visits: 3, result: "y" },
-        { id: "other", status: "done", visits: 5, result: "z" },
+        { id: "build", status: "done", visits: 3, result: "x", model: null },
+        { id: "review", status: "done", visits: 3, result: "y", model: null },
+        { id: "other", status: "done", visits: 5, result: "z", model: null },
       ],
       decision: { reason: "rounds_exhausted", nodeId: "review" },
     }),
@@ -641,8 +701,20 @@ it("flow_run_running_node_ignores_previous_session_state", async () => {
       round: 1,
       currentNodeId: "review",
       nodes: [
-        { id: "build", status: "done", visits: 1, result: "Built it." },
-        { id: "review", status: "running", visits: 1, result: null },
+        {
+          id: "build",
+          status: "done",
+          visits: 1,
+          result: "Built it.",
+          model: null,
+        },
+        {
+          id: "review",
+          status: "running",
+          visits: 1,
+          result: null,
+          model: null,
+        },
       ],
     }),
     session: runSession({

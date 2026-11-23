@@ -383,7 +383,7 @@ it("adapter model event fills the turn", async () => {
   expect(view.turns).toEqual([
     expect.objectContaining({
       model: "openai/gpt-oss-20b",
-      effectiveModel: "gpt-oss-20b-0925",
+      effectiveModel: "groq/gpt-oss-20b-0925",
     }),
   ]);
 });
@@ -423,8 +423,8 @@ it("every turn gets its effective model", async () => {
   const view = await promptOn(rig, "second", "light");
 
   expect(view.turns.map((turn) => turn.effectiveModel)).toEqual([
-    "gpt-oss-20b-0925",
-    "gpt-oss-20b-0925",
+    "groq/gpt-oss-20b-0925",
+    "groq/gpt-oss-20b-0925",
   ]);
 });
 

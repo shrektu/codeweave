@@ -198,6 +198,18 @@ it("warms_up_before_deleting_the_key_file", async () => {
   ]);
 });
 
+it("served_model_includes_provider_id", async () => {
+  const { events } = await runScript([
+    { type: "started" },
+    { type: "step", model: `${PROVIDER}/${MODEL}` },
+    { type: "succeeded" },
+  ]);
+
+  expect(events.filter((event) => event.type === "model")).toEqual([
+    { type: "model", model: "groq/llama-3.3-70b" },
+  ]);
+});
+
 it("text_turn_ends_with_end_turn", async () => {
   const { events } = await runScript([
     { type: "started" },
@@ -208,7 +220,7 @@ it("text_turn_ends_with_end_turn", async () => {
   ]);
 
   expect(events).toEqual([
-    { type: "model", model: MODEL },
+    { type: "model", model: `${PROVIDER}/${MODEL}` },
     { type: "text", messageId: "msg_1:0", text: "Hel" },
     { type: "text", messageId: "msg_1:0", text: "lo" },
     { type: "turn_end", stopReason: "end_turn" },
@@ -392,7 +404,7 @@ it("stale_long_retry_does_not_rate_limit_the_next_turn", async () => {
   await handle.prompt("second", { model: null });
 
   expect(events).toEqual([
-    { type: "model", model: MODEL },
+    { type: "model", model: `${PROVIDER}/${MODEL}` },
     { type: "text", messageId: "msg_1:0", text: "Hi" },
     { type: "turn_end", stopReason: "end_turn" },
   ]);
