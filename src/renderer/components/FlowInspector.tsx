@@ -1,3 +1,4 @@
+import { Trash2 } from "lucide-react";
 import { useState, type JSX, type SyntheticEvent } from "react";
 
 import { MAX_FLOW_ROUNDS, MIN_FLOW_ROUNDS } from "../../domain/constants";
@@ -28,6 +29,8 @@ import {
 } from "../flowDraft";
 import { EDGE_LABELS } from "../flowLayout";
 import { PROVIDER_IDS, PROVIDER_LABELS } from "../format";
+
+import { Icon } from "./Icon";
 
 export interface FlowInspectorProps {
   draft: FlowDraft;
@@ -421,12 +424,13 @@ function NodeEditor({
       />
       <button
         type="button"
-        className="btn"
+        className="btn danger"
         onClick={() => {
           onDraftChange(removeNode(draft, node.id));
           onSelectionChange(null);
         }}
       >
+        <Icon icon={Trash2} />
         Remove node
       </button>
     </section>
@@ -465,12 +469,13 @@ function EdgeEditor({
       />
       <button
         type="button"
-        className="btn"
+        className="btn danger"
         onClick={() => {
           onDraftChange(removeEdge(draft, key));
           onSelectionChange(null);
         }}
       >
+        <Icon icon={Trash2} />
         Remove edge
       </button>
       <Notice message={notice} />

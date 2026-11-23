@@ -1,4 +1,7 @@
+import { X } from "lucide-react";
 import { useEffect, useId, useRef, type JSX, type ReactNode } from "react";
+
+import { Icon } from "./Icon";
 
 export interface DialogProps {
   onClose: () => void;
@@ -36,15 +39,21 @@ export function Dialog({
         onClose();
       }}
     >
-      <h2 id={titleId} className="dialog-title">
-        {title}
-      </h2>
-      {children}
-      <div className="dialog-actions">
-        <button type="button" className="btn" onClick={onClose}>
-          Close
+      <header className="dialog-header">
+        <h2 id={titleId} className="dialog-title">
+          {title}
+        </h2>
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="Close"
+          title="Close"
+          onClick={onClose}
+        >
+          <Icon icon={X} />
         </button>
-      </div>
+      </header>
+      <div className="dialog-body">{children}</div>
     </dialog>
   );
 }

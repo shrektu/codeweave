@@ -1,17 +1,13 @@
 .app {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(240px, 300px);
   grid-template-rows: 52px minmax(0, 1fr);
   height: 100vh;
-  gap: var(--space-2);
-  padding: var(--space-2);
+  min-width: 0;
 }
 
 .glass {
   background: var(--surface);
-  border: 1px solid var(--separator);
-  border-radius: var(--radius-l);
-  box-shadow: var(--shadow-1);
   backdrop-filter: var(--blur);
 }
 
@@ -20,30 +16,81 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  min-width: 0;
   padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--separator);
 }
 
 .logo {
-  font: 600 var(--text-lg) var(--font-sans);
-  letter-spacing: 0.02em;
   display: flex;
+  flex: none;
   align-items: center;
   gap: var(--space-2);
+  font: 600 var(--text-lg) / 1 var(--font-sans);
+  letter-spacing: -0.01em;
 }
 
-.logo i {
-  width: 22px;
-  height: 22px;
+.logo-mark {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
   border-radius: var(--radius-s);
   background: var(--accent);
+  color: var(--on-accent);
 }
 
 .spacer {
   flex: 1;
 }
 
+.toolbar-btn {
+  flex: none;
+}
+
+@media (max-width: 1000px) {
+  .toolbar-btn {
+    padding: 0 var(--space-2);
+  }
+
+  .toolbar-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+.backend-status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  color: var(--label-2);
+  font: var(--text-sm) var(--font-sans);
+  white-space: nowrap;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--label-3);
+}
+
+.backend-status[data-state="ready"] .status-dot {
+  background: var(--success);
+}
+
+.backend-status[data-state="unavailable"] .status-dot {
+  background: var(--danger);
+}
+
 .panel {
-  padding: var(--space-3);
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -51,37 +98,68 @@
   min-width: 0;
 }
 
+.panel > h2.sec {
+  flex: none;
+}
+
+.app > .sidebar {
+  background: transparent;
+  backdrop-filter: none;
+  padding: var(--space-4) var(--space-3);
+}
+
 .centre-column {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
   min-height: 0;
   min-width: 0;
+  border-inline: 1px solid var(--separator);
+  background: var(--surface-1);
+}
+
+.centre-column .panel {
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.centre-column .panel > h2.sec {
+  color: var(--label);
+  font: 600 var(--text-sm) / var(--leading-tight) var(--font-sans);
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .tabs {
-  display: flex;
-  gap: var(--space-2);
-}
-
-.tab {
-  font: 500 var(--text-sm) var(--font-sans);
-  padding: var(--space-1) var(--space-4);
-  border-radius: 999px;
-  border: 1px solid var(--separator-strong);
-  background: none;
-  color: var(--label-2);
-  cursor: pointer;
-}
-
-.tab:hover {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-s);
   background: var(--surface-3);
 }
 
+.tab {
+  padding: 3px var(--space-4);
+  border: 0;
+  border-radius: calc(var(--radius-s) - 2px);
+  background: transparent;
+  color: var(--label-2);
+  font: 500 var(--text-sm) / 1.4 var(--font-sans);
+  cursor: pointer;
+}
+
+.tab:hover:not([aria-selected="true"]) {
+  color: var(--label);
+}
+
 .tab[aria-selected="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--control-selected);
+  box-shadow: var(--shadow-1);
+  color: var(--label);
+}
+
+.tab[aria-selected="true"]:focus-visible {
+  box-shadow: var(--focus-ring);
 }
 
 .tab-panel {
@@ -99,11 +177,16 @@
 .side-column {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
   min-height: 0;
   min-width: 0;
 }
 
 .side-column > .panel {
   flex: 1 1 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.side-column > .panel + .panel {
+  border-top: 1px solid var(--separator);
 }

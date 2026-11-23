@@ -1,3 +1,4 @@
+import { Play, Square } from "lucide-react";
 import { useState, type JSX } from "react";
 
 import {
@@ -9,6 +10,9 @@ import { isRunOpen } from "../../domain/flowState";
 import type { FlowRunView, FlowView } from "../../shared/views";
 import { useApp } from "../services";
 import { useAsyncAction, type AsyncAction } from "../useAsyncAction";
+
+import { Icon } from "./Icon";
+import { StatusPill, StatusTone } from "./StatusPill";
 
 const SESSION_LIVE_MESSAGE = "End the current session to run a flow.";
 const EDITING_MESSAGE = "Save or discard your edits to run the flow.";
@@ -49,6 +53,14 @@ export const STATUS_LABELS: Readonly<Record<FlowRunStatus, string>> = {
   [FlowRunStatus.done]: "Done",
   [FlowRunStatus.failed]: "Failed",
   [FlowRunStatus.stopped]: "Stopped",
+};
+
+export const STATUS_TONES: Readonly<Record<FlowRunStatus, StatusTone>> = {
+  [FlowRunStatus.running]: StatusTone.active,
+  [FlowRunStatus.awaitingDecision]: StatusTone.waiting,
+  [FlowRunStatus.done]: StatusTone.success,
+  [FlowRunStatus.failed]: StatusTone.danger,
+  [FlowRunStatus.stopped]: StatusTone.neutral,
 };
 
 function reviewsText({ round, maxRounds }: FlowRunView): string {
@@ -163,7 +175,9 @@ function OpenRun({
     <div className="flow-run-open">
       <div className="flow-run-head">
         <strong>{run.flowTitle}</strong>
-        <span className="pill">{STATUS_LABELS[run.status]}</span>
+        <StatusPill tone={STATUS_TONES[run.status]}>
+          {STATUS_LABELS[run.status]}
+        </StatusPill>
         <span>{reviewsText(run)}</span>
         {run.currentNodeId !== null && (
           <span>{`Node: ${run.currentNodeId}`}</span>
@@ -179,6 +193,7 @@ function OpenRun({
             );
           }}
         >
+          <Icon icon={Square} />
           Stop flow
         </button>
       </div>
@@ -236,6 +251,7 @@ function RunForm({
             );
           }}
         >
+          <Icon icon={Play} />
           Run flow
         </button>
         {disabledReason !== null && (

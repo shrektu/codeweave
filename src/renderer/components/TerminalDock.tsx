@@ -1,3 +1,10 @@
+import {
+  ChevronDown,
+  FolderOpen,
+  RotateCcw,
+  SquareTerminal,
+  X,
+} from "lucide-react";
 import { useState, type JSX } from "react";
 
 import { TerminalStatus } from "../../domain/types";
@@ -11,6 +18,7 @@ import { DEFAULT_TERMINAL_SIZE } from "../terminal/size";
 import { useAsyncAction } from "../useAsyncAction";
 
 import { DockSplitter } from "./DockSplitter";
+import { ICON_SIZE_SMALL_PX, Icon } from "./Icon";
 import { TerminalSurface } from "./TerminalSurface";
 
 const PATH_SEPARATOR = /[\\/]/;
@@ -49,6 +57,7 @@ function PickFolderBody({
           });
         }}
       >
+        <Icon icon={FolderOpen} />
         Open in folder…
       </button>
       {pick.error !== null && <p className="error">{pick.error}</p>}
@@ -79,6 +88,7 @@ function ExitedBody({ terminal }: { terminal: TerminalView }): JSX.Element {
           );
         }}
       >
+        <Icon icon={RotateCcw} />
         Restart
       </button>
       {restart.error !== null && <p className="error">{restart.error}</p>}
@@ -136,20 +146,33 @@ function DockHeader({ terminal, label, onHide }: DockHeaderProps): JSX.Element {
 
   return (
     <header className="terminal-header">
-      <h2 className="sec">Terminal</h2>
-      <span className="terminal-label">{label}</span>
+      <h2 className="sec">
+        <Icon icon={SquareTerminal} size={ICON_SIZE_SMALL_PX} />
+        Terminal
+      </h2>
+      <span className="terminal-label" title={label}>
+        {label}
+      </span>
       <div className="spacer" />
       {close.error !== null && <span className="error">{close.error}</span>}
       <button
         type="button"
-        className="btn"
+        className="icon-btn"
+        aria-label="Close"
+        title="Close terminal"
         disabled={close.pending}
         onClick={closeTerminal}
       >
-        Close
+        <Icon icon={X} />
       </button>
-      <button type="button" className="btn" onClick={onHide}>
-        Hide
+      <button
+        type="button"
+        className="icon-btn"
+        aria-label="Hide"
+        title="Hide terminal"
+        onClick={onHide}
+      >
+        <Icon icon={ChevronDown} />
       </button>
     </header>
   );

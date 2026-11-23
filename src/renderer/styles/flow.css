@@ -1,22 +1,30 @@
 .flow-graph .react-flow {
   --xy-background-color: transparent;
   --xy-background-pattern-color: var(--separator-strong);
-  --xy-edge-stroke: var(--label-2);
+  --xy-edge-stroke: var(--separator-strong);
   --xy-edge-stroke-width: 1.5;
   --xy-edge-label-color: var(--label-2);
-  --xy-edge-label-background-color: var(--surface-2);
+  --xy-edge-label-background-color: var(--surface-1);
+  --xy-handle-background-color: var(--surface-1);
+  --xy-handle-border-color: var(--separator-strong);
 }
 
 .flow-graph {
   flex: 1 1 0;
   min-height: 320px;
+  min-width: 0;
   border: 1px solid var(--separator);
   border-radius: var(--radius-m);
+  background: var(--surface-1);
   overflow: hidden;
 }
 
 html[data-fx="low"] .flow-graph .react-flow__edge.animated path {
   animation: none;
+}
+
+.flow-graph .react-flow__edge.animated .flow-edge {
+  stroke: var(--accent);
 }
 
 .flow-edge[data-kind="hands_off_to"] {
@@ -37,39 +45,128 @@ html[data-fx="low"] .flow-graph .react-flow__edge.animated path {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--separator-strong);
+  border: 1px solid var(--separator);
   border-radius: 999px;
-  background: var(--surface-2);
+  background: var(--surface-1);
   color: var(--label-2);
   font: var(--text-xs) var(--font-mono);
   white-space: nowrap;
   pointer-events: none;
 }
 
-.flow-node[data-provider="claude"] {
-  border-left: 3px solid var(--claude);
+.flow-node {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 220px;
+  height: 96px;
+  padding: calc(var(--space-3) - 2px) var(--space-3) calc(var(--space-3) - 2px)
+    var(--space-4);
+  overflow: hidden;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-m);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-1);
+  color: var(--label);
+  transition:
+    border-color var(--duration-fast) var(--ease),
+    box-shadow var(--duration-fast) var(--ease);
 }
 
-.flow-node[data-provider="codex"] {
-  border-left: 3px solid var(--codex);
+.flow-node[data-provider]::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--provider);
 }
 
-.flow-node[data-provider="gemini"] {
-  border-left: 3px solid var(--gemini);
+.flow-node.session {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  cursor: pointer;
 }
 
-.flow-node[data-provider="opencode"] {
-  border-left: 3px solid var(--opencode);
+.flow-node[data-state="working"] {
+  border-color: var(--accent);
+}
+
+.flow-node-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.flow-node-id {
+  min-width: 0;
+  overflow: hidden;
+  font: 600 var(--text-md) var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-node-head .status-pill {
+  flex: none;
+}
+
+.flow-node-role {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--label-2);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.flow-node-provider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--label-2);
+  font: var(--text-xs) var(--font-sans);
+}
+
+.flow-custom {
+  padding: 1px var(--space-2);
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.flow-graph.editing .flow-node-role {
+  -webkit-line-clamp: 2;
+}
+
+.flow-graph.editing .react-flow__node {
+  cursor: pointer;
+}
+
+.flow-graph.editing .react-flow__handle {
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--accent);
+  background: var(--surface-1);
+  cursor: crosshair;
+}
+
+.flow-graph.editing .react-flow__node.selected .flow-node {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.flow-graph.editing .react-flow__edge.selected .flow-edge {
+  stroke: var(--accent);
+  stroke-width: 2.5;
 }
 
 .flow-picker {
   align-self: flex-start;
-  background: var(--surface-2);
-  border: 1px solid var(--separator-strong);
-  border-radius: var(--radius-s);
-  color: var(--label);
-  font: var(--text-sm) var(--font-mono);
-  padding: 6px var(--space-3);
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--text-sm);
 }
 
 .flow-errors {
@@ -81,6 +178,7 @@ html[data-fx="low"] .flow-graph .react-flow__edge.animated path {
 
 .flow-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
 }
@@ -88,35 +186,31 @@ html[data-fx="low"] .flow-graph .react-flow__edge.animated path {
 .flow-run {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--separator);
   border-radius: var(--radius-m);
+  background: var(--surface-2);
 }
 
 .flow-run-form,
 .flow-run-open {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 .flow-run-label {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  font-size: var(--text-sm);
-  color: var(--label-3);
+  color: var(--label-2);
+  font: 500 var(--text-xs) var(--font-sans);
 }
 
 .flow-run-label textarea {
   resize: vertical;
-  background: var(--surface-2);
-  border: 1px solid var(--separator-strong);
-  border-radius: var(--radius-s);
-  color: var(--label);
-  font: var(--text-md) var(--font-sans);
-  padding: 6px var(--space-3);
+  font-weight: 400;
 }
 
 .flow-run-head,
@@ -128,22 +222,26 @@ html[data-fx="low"] .flow-graph .react-flow__edge.animated path {
   font-size: var(--text-sm);
 }
 
+.flow-run-head > span:not(.status-pill) {
+  color: var(--label-2);
+}
+
 .flow-run-task {
   margin: 0;
   overflow: hidden;
+  color: var(--label-2);
+  font-size: var(--text-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--label-3);
-  font-size: var(--text-sm);
 }
 
 .flow-run-banner {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--accent);
+  padding: var(--space-3);
   border-radius: var(--radius-s);
+  background: var(--warning-soft);
 }
 
 .flow-run-banner p {
@@ -162,29 +260,37 @@ html[data-fx="low"] .flow-graph .react-flow__edge.animated path {
   font-size: var(--text-sm);
 }
 
+.flow-run-results details {
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--separator);
+}
+
 .flow-run-results summary {
+  color: var(--label-2);
   cursor: pointer;
+  font-weight: 500;
 }
 
 .flow-run-results pre {
-  margin: var(--space-1) 0 0;
   max-height: 160px;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
   overflow: auto;
-  white-space: pre-wrap;
+  border-radius: var(--radius-s);
+  background: var(--code-bg);
   font: var(--text-sm) var(--font-mono);
 }
 
 .tab-panel > .orchestrator-timeline {
   flex: 0 0 auto;
   max-height: 40%;
-  margin-bottom: var(--space-2);
+  border-bottom: 1px solid var(--separator);
 }
 
 .timeline {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
   margin: 0;
   padding: 0;
 }
@@ -193,10 +299,18 @@ html[data-fx="low"] .flow-graph .react-flow__edge.animated path {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--separator);
-  border-radius: var(--radius-m);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--separator);
   font-size: var(--text-sm);
+}
+
+.timeline-run:first-child {
+  padding-top: 0;
+}
+
+.timeline-run:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
 .timeline-run p {
@@ -210,10 +324,15 @@ html[data-fx="low"] .flow-graph .react-flow__edge.animated path {
   gap: var(--space-2);
 }
 
+.timeline-head > span:not(.status-pill) {
+  color: var(--label-2);
+}
+
 .timeline-log {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+  color: var(--label-2);
 }
 
 .timeline-note {
@@ -225,8 +344,8 @@ html[data-fx="low"] .flow-graph .react-flow__edge.animated path {
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--accent);
   border-radius: var(--radius-s);
+  background: var(--accent-soft);
   font-size: var(--text-sm);
 }
 
@@ -234,7 +353,7 @@ html[data-fx="low"] .flow-graph .react-flow__edge.animated path {
   flex: 1 1 0;
   min-height: 0;
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 .flow-editor .flow-graph {
@@ -243,20 +362,18 @@ html[data-fx="low"] .flow-graph .react-flow__edge.animated path {
 }
 
 .flow-inspector {
-  flex: 0 0 240px;
+  flex: 0 0 260px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid var(--separator);
-  border-radius: var(--radius-m);
+  gap: var(--space-4);
+  min-width: 0;
   overflow: auto;
 }
 
 .flow-inspector-fields {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -267,138 +384,54 @@ html[data-fx="low"] .flow-graph .react-flow__edge.animated path {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-m);
+  background: var(--surface-2);
+}
+
+.flow-inspector .inspector-section::before {
+  content: attr(aria-label);
+  color: var(--label);
+  font: 600 var(--text-sm) / var(--leading-tight) var(--font-sans);
+  overflow-wrap: anywhere;
+}
+
+.flow-inspector .field {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+  color: var(--label-2);
+  font: 500 var(--text-xs) var(--font-sans);
+}
+
+.flow-inspector .check-field {
+  color: var(--label);
+  font-size: var(--text-sm);
 }
 
 .flow-inspector select,
 .flow-inspector input[type="text"],
 .flow-inspector input[type="number"] {
   width: 100%;
-  background: var(--surface-2);
-  border: 1px solid var(--separator-strong);
-  border-radius: var(--radius-s);
-  color: var(--label);
-  font: var(--text-sm) var(--font-mono);
-  padding: 6px var(--space-3);
-}
-
-.flow-node-provider {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font: var(--text-xs) var(--font-mono);
-  color: var(--label-2);
-}
-
-.flow-custom {
-  padding: 1px 6px;
-  border: 1px solid var(--warning);
-  border-radius: 999px;
-  color: var(--warning);
-}
-
-.flow-graph.editing .flow-node-role {
-  -webkit-line-clamp: 2;
-}
-
-.flow-graph.editing .react-flow__node {
-  cursor: pointer;
-}
-
-.flow-graph.editing .react-flow__handle {
-  width: 10px;
-  height: 10px;
-  border: 1px solid var(--accent);
-  background: var(--surface-2);
-  cursor: crosshair;
-}
-
-.flow-graph.editing .react-flow__node.selected .flow-node {
-  border-color: var(--accent);
-}
-
-.flow-graph.editing .react-flow__edge.selected .flow-edge {
-  stroke: var(--accent);
-  stroke-width: 2.5;
-}
-
-.flow-node {
-  width: 220px;
-  height: 96px;
-  padding: var(--space-3);
-  border-radius: var(--radius-m);
-  border: 1px solid var(--separator-strong);
-  background: var(--surface-2);
-  color: var(--label);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  overflow: hidden;
-}
-
-.flow-node.session {
-  border-color: var(--accent);
-  box-shadow: var(--shadow-1);
-  cursor: pointer;
-}
-
-.flow-node-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.flow-node-id {
-  font: 500 var(--text-md) var(--font-mono);
-}
-
-.flow-node-role {
-  font-size: var(--text-xs);
-  color: var(--label-2);
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-}
-
-.flow-state {
-  padding: 2px var(--space-2);
-}
-
-.flow-node[data-state="working"] .flow-state {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.flow-node[data-state="awaiting_permission"] .flow-state,
-.flow-node[data-state="rate_limited"] .flow-state {
-  color: var(--warning);
-  border-color: var(--warning);
-}
-
-.flow-node[data-state="done"] .flow-state {
-  color: var(--success);
-  border-color: var(--success);
-}
-
-.flow-node[data-state="error"] .flow-state {
-  color: var(--danger);
-  border-color: var(--danger);
+  font-size: var(--text-sm);
 }
 
 .agents-tab {
   overflow: auto;
+  container-type: inline-size;
 }
 
 .agents-layout {
   display: grid;
   grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
-  gap: var(--space-4);
+  gap: var(--space-5);
   align-items: start;
 }
 
-@media (max-width: 760px) {
+@container (max-width: 640px) {
   .agents-layout {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -409,77 +442,119 @@ html[data-fx="low"] .flow-graph .react-flow__edge.animated path {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: var(--space-2);
+  gap: var(--space-3);
   min-width: 0;
+}
+
+.agent-list-pane > .btn {
+  align-self: flex-start;
 }
 
 .agent-list {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
   margin: 0;
   padding: 0;
 }
 
 .agent-row {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--space-2);
   width: 100%;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--separator);
+  border: 0;
   border-radius: var(--radius-s);
-  background: none;
+  background: transparent;
   color: var(--label);
   font: var(--text-sm) var(--font-sans);
   text-align: left;
   cursor: pointer;
 }
 
+.agent-row::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--provider);
+}
+
 .agent-row:hover {
-  background: var(--surface-3);
+  background: var(--hover);
 }
 
 .agent-row[aria-current="true"] {
-  border-color: var(--accent);
   background: var(--accent-soft);
 }
 
 .agent-id {
-  font: 500 var(--text-sm) var(--font-mono);
+  order: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  font: 600 var(--text-sm) var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.agent-role,
-.agent-provider,
+.agent-provider {
+  order: 2;
+  color: var(--label-3);
+  font-size: var(--text-xs);
+}
+
+.agent-row .source-badge {
+  order: 3;
+}
+
+.agent-role {
+  order: 4;
+  flex-basis: 100%;
+  overflow: hidden;
+  padding-left: var(--space-4);
+  color: var(--label-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .agent-hint {
   color: var(--label-2);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
 }
 
 .source-badge {
-  border: 1px solid var(--label-2);
+  padding: 1px var(--space-2);
   border-radius: 999px;
+  background: var(--surface-3);
   color: var(--label-2);
-  font-size: var(--text-xs);
-  padding: 0 6px;
+  font: 500 var(--text-xs) var(--font-sans);
+}
+
+.agent-form > .source-badge {
+  align-self: flex-start;
 }
 
 .agent-form .field {
   align-items: stretch;
+  gap: var(--space-1);
+  color: var(--label-2);
+  font: 500 var(--text-xs) var(--font-sans);
 }
 
 .agent-form input[type="text"],
 .agent-form select,
 .agent-form textarea {
   width: 100%;
-  background: var(--surface-2);
-  border: 1px solid var(--separator-strong);
-  border-radius: var(--radius-s);
-  color: var(--label);
   font: var(--text-sm) var(--font-mono);
-  padding: 6px var(--space-3);
+}
+
+.agent-form select {
+  font-family: var(--font-sans);
 }
 
 .agent-form textarea {
@@ -496,4 +571,9 @@ html[data-fx="low"] .flow-graph .react-flow__edge.animated path {
 .timeline-models {
   color: var(--label-2);
   font: var(--text-xs) / var(--leading) var(--font-mono);
+}
+
+.agent-form > .flow-toolbar {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--separator);
 }

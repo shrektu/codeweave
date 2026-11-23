@@ -44,6 +44,16 @@ function themeBlock(css: string, theme: string): string {
   return block;
 }
 
+function keepsSize(css: string, selector: string): boolean {
+  return [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].some((match) => {
+    const selectors = (match[1] ?? "").split(",").map((part) => part.trim());
+    return (
+      selectors.includes(selector) &&
+      /flex-shrink:\s*0\b|flex:\s*none\b/.test(match[2] ?? "")
+    );
+  });
+}
+
 function colourLiteralsIn(path: string): string[] {
   const name = path.slice(STYLES_DIR.length + 1);
   return matchesOf(COLOUR_LITERAL, read(path)).map(
@@ -73,6 +83,13 @@ describe("styles", () => {
     );
 
     expect(offenders).toEqual([]);
+  });
+
+  it("dialog_lists_do_not_shrink_in_dialog_body", () => {
+    const css = read(join(STYLES_DIR, "dialogs.css"));
+
+    expect(keepsSize(css, ".account-list")).toBe(true);
+    expect(keepsSize(css, ".catalog-list")).toBe(true);
   });
 
   it("tokens_define_same_names_in_both_themes", () => {

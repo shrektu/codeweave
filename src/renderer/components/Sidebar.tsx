@@ -56,7 +56,7 @@ export function Sidebar({ onManageAccounts }: SidebarProps): JSX.Element {
       ?.activeAccountId ?? null;
 
   return (
-    <section className="glass panel" aria-label="Accounts">
+    <section className="glass panel sidebar" aria-label="Accounts">
       <h2 className="sec">Accounts</h2>
       {accounts.length === 0 ? (
         <p className="empty">No accounts yet</p>

@@ -6,19 +6,37 @@
   overflow: hidden;
 }
 
+.centre-column .terminal-dock {
+  background: var(--surface-2);
+}
+
 html[data-fx="low"] .terminal-dock {
   backdrop-filter: none;
 }
 
 .terminal-splitter {
-  flex: 0 0 6px;
+  position: relative;
+  flex: 0 0 8px;
   cursor: row-resize;
   touch-action: none;
 }
 
-.terminal-splitter:hover,
-.terminal-splitter:focus-visible {
+.terminal-splitter::after {
+  content: "";
+  position: absolute;
+  inset: 50% 0 auto;
+  height: 1px;
   background: var(--separator-strong);
+  transition: background-color var(--duration-fast) var(--ease);
+}
+
+.terminal-splitter:hover::after,
+.terminal-splitter:focus-visible::after {
+  height: 2px;
+  background: var(--accent);
+}
+
+.terminal-splitter:focus-visible {
   outline: none;
   box-shadow: none;
 }
@@ -28,7 +46,14 @@ html[data-fx="low"] .terminal-dock {
   align-items: center;
   gap: var(--space-2);
   flex: 0 0 auto;
-  padding: var(--space-1) var(--space-3) var(--space-2);
+  padding: 0 var(--space-3) var(--space-1);
+}
+
+.terminal-header .sec {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 .terminal-label {
@@ -45,7 +70,7 @@ html[data-fx="low"] .terminal-dock {
   flex: 1 1 0;
   flex-direction: column;
   min-height: 0;
-  padding: 0 var(--space-3) var(--space-2);
+  padding: 0 var(--space-3) var(--space-3);
 }
 
 .terminal-host {
@@ -53,6 +78,10 @@ html[data-fx="low"] .terminal-dock {
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-s);
+  outline: 1px solid var(--separator);
+  outline-offset: -1px;
   background: var(--terminal-bg);
 }
 
@@ -67,5 +96,5 @@ html[data-fx="low"] .terminal-dock {
   align-items: flex-start;
   justify-content: center;
   gap: var(--space-2);
-  padding: 0 var(--space-3) var(--space-2);
+  padding: 0 var(--space-3) var(--space-3);
 }

@@ -1,4 +1,12 @@
 import {
+  Pencil,
+  Settings,
+  SquareTerminal,
+  Users,
+  Waypoints,
+  Workflow,
+} from "lucide-react";
+import {
   useEffect,
   useLayoutEffect,
   useState,
@@ -30,6 +38,7 @@ import { FlowGraph } from "./components/FlowGraph";
 import { FlowInspector } from "./components/FlowInspector";
 import { FlowRunPanel } from "./components/FlowRunPanel";
 import { FolderPrompt, PickFolderButton } from "./components/FolderControls";
+import { Icon } from "./components/Icon";
 import { LimitsPanel } from "./components/LimitsPanel";
 import { OrchestratorTimeline } from "./components/OrchestratorTimeline";
 import { SessionStream } from "./components/SessionStream";
@@ -235,6 +244,7 @@ function FlowToolbar({
         title={editHint}
         onClick={onEdit}
       >
+        <Icon icon={Pencil} />
         Edit
       </button>
     );
@@ -381,7 +391,13 @@ function FlowPicker({
       {missing || runFlowMissing ? (
         <p className="error">{FLOW_MISSING_MESSAGE}</p>
       ) : flow === undefined ? (
-        <p className="empty">No flows found in this folder.</p>
+        <div className="empty-state">
+          <span className="empty-icon" aria-hidden="true">
+            <Icon icon={Workflow} />
+          </span>
+          <p className="empty-title">No flows yet</p>
+          <p className="empty">No flows found in this folder.</p>
+        </div>
       ) : editor.session === null || locked ? (
         <FlowGraph
           flow={flow}
@@ -666,53 +682,11 @@ export function App(): JSX.Element {
     <div className="app">
       <header className="glass app-header">
         <div className="logo">
-          <i />
-          CODEWEAVE
+          <span className="logo-mark" aria-hidden="true">
+            <Icon icon={Waypoints} />
+          </span>
+          Codeweave
         </div>
-        <UpdateBanner />
-        <div className="spacer" />
-        <output
-          className="pill"
-          aria-label="Backend"
-          data-pid={backend.state === "ready" ? backend.pid : undefined}
-          title={backend.state === "unavailable" ? backend.message : undefined}
-        >
-          {backendText(backend)}
-        </output>
-        <button
-          type="button"
-          className="pill"
-          aria-pressed={dock.open}
-          title="Toggle terminal (Ctrl+`)"
-          onClick={dock.toggle}
-        >
-          Terminal
-        </button>
-        <button
-          type="button"
-          className="pill"
-          onClick={() => {
-            setOpenDialog("accounts");
-          }}
-        >
-          Accounts
-        </button>
-        <button
-          type="button"
-          className="pill"
-          onClick={() => {
-            setOpenDialog("settings");
-          }}
-        >
-          Settings
-        </button>
-      </header>
-      <Sidebar
-        onManageAccounts={() => {
-          setOpenDialog("accounts");
-        }}
-      />
-      <div className="centre-column" ref={columnRef}>
         <div role="tablist" aria-label="Views" className="tabs">
           {CENTRE_TABS.map((tab) => (
             <button
@@ -731,6 +705,57 @@ export function App(): JSX.Element {
             </button>
           ))}
         </div>
+        <UpdateBanner />
+        <div className="spacer" />
+        <output
+          className="backend-status"
+          data-state={backend.state}
+          aria-label="Backend"
+          data-pid={backend.state === "ready" ? backend.pid : undefined}
+          title={backend.state === "unavailable" ? backend.message : undefined}
+        >
+          <span className="status-dot" aria-hidden="true" />
+          {backendText(backend)}
+        </output>
+        <button
+          type="button"
+          className="btn plain toolbar-btn"
+          aria-pressed={dock.open}
+          title="Toggle terminal (Ctrl+`)"
+          onClick={dock.toggle}
+        >
+          <Icon icon={SquareTerminal} />
+          <span className="toolbar-label">Terminal</span>
+        </button>
+        <button
+          type="button"
+          className="btn plain toolbar-btn"
+          title="Accounts"
+          onClick={() => {
+            setOpenDialog("accounts");
+          }}
+        >
+          <Icon icon={Users} />
+          <span className="toolbar-label">Accounts</span>
+        </button>
+        <button
+          type="button"
+          className="btn plain toolbar-btn"
+          title="Settings"
+          onClick={() => {
+            setOpenDialog("settings");
+          }}
+        >
+          <Icon icon={Settings} />
+          <span className="toolbar-label">Settings</span>
+        </button>
+      </header>
+      <Sidebar
+        onManageAccounts={() => {
+          setOpenDialog("accounts");
+        }}
+      />
+      <div className="centre-column" ref={columnRef}>
         <div
           role="tabpanel"
           id={`panel-${centreTab}`}
