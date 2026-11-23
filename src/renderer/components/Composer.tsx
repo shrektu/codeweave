@@ -172,6 +172,7 @@ function SessionComposer(): JSX.Element {
         type="button"
         className="send"
         aria-label="Send"
+        title="Send"
         disabled={!enabled || text.trim() === ""}
         onClick={() => {
           void submit();
