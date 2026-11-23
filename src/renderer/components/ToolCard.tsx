@@ -3,7 +3,10 @@ import { useState, type JSX } from "react";
 import type { DiffOmission, FileChange } from "../../domain/events";
 import type { FileDiffView, ToolCallView } from "../../shared/views";
 
+import { CodeBlock } from "../markdown/CodeBlock";
+
 export const OUTPUT_PREVIEW_CHARS = 2000;
+export const OUTPUT_PREVIEW_LINES = 12;
 
 const STATUS_LABELS: Record<ToolCallView["status"], string> = {
   pending: "Pending",
@@ -95,12 +98,46 @@ export interface ToolCardProps {
   tool: ToolCallView;
 }
 
-export function ToolCard({ tool }: ToolCardProps): JSX.Element {
+function previewOf(output: string, expanded: boolean): string {
+  if (expanded) {
+    return output;
+  }
+  const lines = output.split("\n");
+  const byLines = lines.slice(0, OUTPUT_PREVIEW_LINES).join("\n");
+  return byLines.length > OUTPUT_PREVIEW_CHARS
+    ? byLines.slice(0, OUTPUT_PREVIEW_CHARS)
+    : byLines;
+}
+
+function ToolOutput({ output }: { output: string }): JSX.Element {
   const [expanded, setExpanded] = useState(false);
+  const shown = previewOf(output, expanded);
+  const truncated = shown.length < output.length;
+  const lineCount = output.split("\n").length;
+  return (
+    <>
+      <pre className="tool-output">{shown}</pre>
+      {(truncated || expanded) && (
+        <button
+          type="button"
+          className="btn"
+          onClick={() => {
+            setExpanded(!expanded);
+          }}
+        >
+          {expanded ? "Show less" : `Show all ${lineCount.toString()} lines`}
+        </button>
+      )}
+    </>
+  );
+}
+
+export function ToolCard({ tool }: ToolCardProps): JSX.Element {
   const output = tool.output ?? "";
-  const truncated = output.length > OUTPUT_PREVIEW_CHARS;
-  const shownOutput =
-    truncated && !expanded ? output.slice(0, OUTPUT_PREVIEW_CHARS) : output;
+  const command =
+    tool.command !== undefined && tool.command !== tool.title
+      ? tool.command
+      : null;
 
   return (
     <div className="card tool">
@@ -111,21 +148,13 @@ export function ToolCard({ tool }: ToolCardProps): JSX.Element {
           {STATUS_LABELS[tool.status]}
         </span>
       </div>
-      {tool.command !== undefined && tool.command !== tool.title && (
-        <pre>{tool.command}</pre>
-      )}
-      {output !== "" && <pre>{shownOutput}</pre>}
-      {truncated && (
-        <button
-          type="button"
-          className="btn"
-          onClick={() => {
-            setExpanded(!expanded);
-          }}
-        >
-          {expanded ? "Show less" : "Show more"}
-        </button>
-      )}
+      {command !== null &&
+        (tool.kind === "execute" ? (
+          <CodeBlock language="bash" text={command} pasteable={false} />
+        ) : (
+          <pre className="tool-output">{command}</pre>
+        ))}
+      {output !== "" && <ToolOutput key={tool.toolCallId} output={output} />}
       {tool.diffs?.map((diff, index) => (
         <DiffBlock key={`${String(index)}:${diff.path}`} diff={diff} />
       ))}

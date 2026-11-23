@@ -28,6 +28,8 @@ import { turnBadge } from "../routingText";
 import { useApp, useServices } from "../services";
 import { useAsyncAction } from "../useAsyncAction";
 
+import { Markdown } from "../markdown/Markdown";
+
 import { Composer } from "./Composer";
 import { PermissionCard } from "./PermissionCard";
 import { ToolCard } from "./ToolCard";
@@ -120,7 +122,11 @@ function StreamEntry({
     case "turn":
       return <TurnBadgeEntry turn={item.turn} />;
     case "message":
-      return <li className="card">{item.message.text}</li>;
+      return (
+        <li className="card msg">
+          <Markdown text={item.message.text} />
+        </li>
+      );
     case "tool":
       return (
         <li>

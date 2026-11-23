@@ -15,6 +15,7 @@ export default defineConfig({
     "flowLibrary.spec.ts",
     "agentEditor.spec.ts",
     "orchestrator.spec.ts",
+    "transcript.spec.ts",
   ],
   timeout: TEST_TIMEOUT_MS,
   workers: 1,

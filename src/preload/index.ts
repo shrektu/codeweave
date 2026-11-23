@@ -5,6 +5,7 @@ import {
   GET_AVAILABLE_UPDATE_CHANNEL,
   GET_GPU_ACCELERATED_CHANNEL,
   GPU_ACCELERATED_CHANNEL,
+  OPEN_EXTERNAL_LINK_CHANNEL,
   OPEN_UPDATE_RELEASE_CHANNEL,
   PICK_FOLDER_CHANNEL,
   PORT_CHANNEL,
@@ -53,6 +54,9 @@ const api: CodeweaveApi = {
   },
   openUpdateRelease: async (): Promise<void> => {
     await ipcRenderer.invoke(OPEN_UPDATE_RELEASE_CHANNEL);
+  },
+  openLink: async (url): Promise<void> => {
+    await ipcRenderer.invoke(OPEN_EXTERNAL_LINK_CHANNEL, url);
   },
   platform: process.platform,
   setThemeSource: async (appearance): Promise<void> => {

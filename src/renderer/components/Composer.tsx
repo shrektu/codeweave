@@ -1,3 +1,4 @@
+import { ArrowUp } from "lucide-react";
 import { useId, useState, type JSX, type KeyboardEvent } from "react";
 
 import { parseTaskClass, TASK_CLASS_ORDER } from "../../domain/taskClass";
@@ -176,7 +177,7 @@ function SessionComposer(): JSX.Element {
           void submit();
         }}
       >
-        ↑
+        <ArrowUp size={16} aria-hidden="true" />
       </button>
     </div>
   );
