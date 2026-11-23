@@ -86,6 +86,7 @@ function toView(settings: SettingsFile): SettingsView {
   return {
     permissionProfile: settings.permissionProfile,
     effectLevel: settings.effectLevel,
+    appearance: settings.appearance,
     claudeExecutable: settings.claudeExecutable,
     codexExecutable: settings.codexExecutable,
     agyExecutable: settings.agyExecutable,
@@ -127,6 +128,7 @@ export function createSettingsService({
           permissionProfile:
             patch.permissionProfile ?? current.permissionProfile,
           effectLevel: patch.effectLevel ?? current.effectLevel,
+          appearance: patch.appearance ?? current.appearance,
           claudeExecutable:
             patch.claudeExecutable === undefined
               ? current.claudeExecutable

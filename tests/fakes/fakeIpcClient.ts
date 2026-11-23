@@ -220,6 +220,7 @@ export function makeSettings(
   return {
     permissionProfile: PermissionProfile.ask,
     effectLevel: EffectLevel.auto,
+    appearance: "system",
     claudeExecutable: null,
     codexExecutable: null,
     agyExecutable: null,

@@ -42,6 +42,7 @@ function settingsClient(): FakeIpcClient {
     current = {
       permissionProfile: patch.permissionProfile ?? current.permissionProfile,
       effectLevel: patch.effectLevel ?? current.effectLevel,
+      appearance: patch.appearance ?? current.appearance,
       claudeExecutable:
         patch.claudeExecutable === undefined
           ? current.claudeExecutable

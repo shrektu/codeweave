@@ -15,6 +15,7 @@ export interface FakeXterm extends TerminalHandle {
   readonly host: HTMLElement;
   readonly writes: string[];
   readonly levels: EffectLevel[];
+  themeRefreshes: number;
   renderer: TerminalRenderer;
   fitSize: TerminalSize | null;
   disposed: boolean;
@@ -37,6 +38,7 @@ export function createFakeXtermFactory(): FakeXtermFactory {
       host,
       writes: [],
       levels: [level],
+      themeRefreshes: 0,
       fitSize: FAKE_FIT_SIZE,
       disposed: false,
       focused: false,
@@ -64,6 +66,9 @@ export function createFakeXtermFactory(): FakeXtermFactory {
       },
       setLevel(next): void {
         this.levels.push(next);
+      },
+      refreshTheme(): void {
+        this.themeRefreshes += 1;
       },
       setGpuAccelerated(accelerated): void {
         const next = chooseTerminalRenderer({

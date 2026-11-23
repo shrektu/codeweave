@@ -683,6 +683,25 @@ it("terminal_follows_the_effect_level_setting", async () => {
   });
 });
 
+it("terminal_theme_updates_on_theme_change", async () => {
+  const rig = setup({ session: makeSession() });
+  await openDock();
+  const terminal = await openedTerminal(rig);
+  const before = terminal.themeRefreshes;
+
+  document.documentElement.dataset.theme = "light";
+
+  await waitFor(() => {
+    expect(terminal.themeRefreshes).toBe(before + 1);
+  });
+
+  document.documentElement.dataset.theme = "dark";
+
+  await waitFor(() => {
+    expect(terminal.themeRefreshes).toBe(before + 2);
+  });
+});
+
 it("settings_terminal_shell_field_persists_the_value", async () => {
   const rig = setup({ settings: makeSettings({ terminalShell: "/bin/zsh" }) });
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));

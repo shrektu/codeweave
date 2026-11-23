@@ -30,6 +30,7 @@ export interface UseTerminal {
 }
 
 const STARTING: TerminalState = { kind: "starting" };
+const THEME_ATTRIBUTE = "data-theme";
 
 export function useTerminal(
   cwd: string,
@@ -74,6 +75,18 @@ export function useTerminal(
   useEffect(() => {
     connectionRef.current?.setGpuAccelerated(gpuAccelerated);
   }, [gpuAccelerated]);
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      connectionRef.current?.refreshTheme();
+    });
+    observer.observe(document.documentElement, {
+      attributeFilter: [THEME_ATTRIBUTE],
+    });
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   const current = outcome?.cwd === cwd && outcome.attempt === attempt;
   return {

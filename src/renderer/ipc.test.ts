@@ -48,6 +48,7 @@ const SETTINGS_EVENT = {
   payload: {
     permissionProfile: "plan",
     effectLevel: "low",
+    appearance: "system",
     claudeExecutable: null,
     codexExecutable: null,
     agyExecutable: null,

@@ -27,6 +27,7 @@ export interface TerminalHandle {
   fit(): TerminalSize | null;
   setLevel(level: EffectLevel): void;
   setGpuAccelerated(accelerated: boolean): void;
+  refreshTheme(): void;
   focus(): void;
   dispose(): void;
 }
@@ -100,6 +101,9 @@ export function createXtermTerminal(
     },
     setGpuAccelerated(accelerated): void {
       renderer.setGpuAccelerated(accelerated);
+    },
+    refreshTheme(): void {
+      terminal.options.theme = readTerminalTheme();
     },
     focus(): void {
       terminal.focus();

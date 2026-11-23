@@ -34,6 +34,13 @@ export const EffectLevel = {
 } as const;
 export type EffectLevel = (typeof EffectLevel)[keyof typeof EffectLevel];
 
+export const Appearance = {
+  system: "system",
+  light: "light",
+  dark: "dark",
+} as const;
+export type Appearance = (typeof Appearance)[keyof typeof Appearance];
+
 export const UpdateChannel = {
   stable: "stable",
   beta: "beta",

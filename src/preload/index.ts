@@ -8,6 +8,7 @@ import {
   OPEN_UPDATE_RELEASE_CHANNEL,
   PICK_FOLDER_CHANNEL,
   PORT_CHANNEL,
+  SET_THEME_SOURCE_CHANNEL,
   UPDATE_AVAILABLE_CHANNEL,
 } from "../shared/constants";
 
@@ -52,6 +53,10 @@ const api: CodeweaveApi = {
   },
   openUpdateRelease: async (): Promise<void> => {
     await ipcRenderer.invoke(OPEN_UPDATE_RELEASE_CHANNEL);
+  },
+  platform: process.platform,
+  setThemeSource: async (appearance): Promise<void> => {
+    await ipcRenderer.invoke(SET_THEME_SOURCE_CHANNEL, appearance);
   },
 };
 

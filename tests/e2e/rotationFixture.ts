@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { STORAGE_VERSION } from "../../src/backend/constants";
 import { createJsonStore, type SettingsFile } from "../../src/backend/storage";
 import {
+  Appearance,
   EffectLevel,
   ProviderId,
   type Account,
@@ -104,6 +105,7 @@ export function rotationSettings(profile: PermissionProfile): SettingsFile {
     version: STORAGE_VERSION,
     permissionProfile: profile,
     effectLevel: EffectLevel.auto,
+    appearance: Appearance.system,
     claudeExecutable: null,
     codexExecutable: null,
     agyExecutable: null,

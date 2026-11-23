@@ -1,3 +1,5 @@
+import type { Appearance } from "../domain/types";
+
 export interface AvailableUpdate {
   version: string;
 }
@@ -13,6 +15,8 @@ export interface CodeweaveApi {
     listener: (update: AvailableUpdate | null) => void,
   ) => () => void;
   openUpdateRelease: () => Promise<void>;
+  platform: string;
+  setThemeSource: (appearance: Appearance) => Promise<void>;
 }
 
 declare global {

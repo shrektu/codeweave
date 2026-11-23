@@ -1,6 +1,7 @@
 import { useState, type JSX } from "react";
 
 import {
+  Appearance,
   EffectLevel,
   PermissionProfile,
   ProviderId,
@@ -24,6 +25,12 @@ interface PatchProps {
   settings: SettingsView;
   onPatch: (patch: SettingsPatch) => void;
 }
+
+const APPEARANCE_OPTIONS: readonly { value: Appearance; label: string }[] = [
+  { value: Appearance.system, label: "System" },
+  { value: Appearance.light, label: "Light" },
+  { value: Appearance.dark, label: "Dark" },
+];
 
 const EFFECT_OPTIONS: readonly { value: EffectLevel; label: string }[] = [
   { value: EffectLevel.auto, label: "Auto" },
@@ -58,6 +65,25 @@ function ProfileFieldset({ settings, onPatch }: PatchProps): JSX.Element {
       {settings.permissionProfile === PermissionProfile.bypass && (
         <p className="warning">{BYPASS_WARNING}</p>
       )}
+    </fieldset>
+  );
+}
+
+function AppearanceFieldset({ settings, onPatch }: PatchProps): JSX.Element {
+  return (
+    <fieldset>
+      <legend className="sec">Appearance</legend>
+      {APPEARANCE_OPTIONS.map((option) => (
+        <RadioOption
+          key={option.value}
+          group="appearance"
+          label={option.label}
+          checked={settings.appearance === option.value}
+          onSelect={() => {
+            onPatch({ appearance: option.value });
+          }}
+        />
+      ))}
     </fieldset>
   );
 }
@@ -191,6 +217,7 @@ function SettingsForm({ settings }: { settings: SettingsView }): JSX.Element {
   return (
     <>
       <ProfileFieldset settings={settings} onPatch={onPatch} />
+      <AppearanceFieldset settings={settings} onPatch={onPatch} />
       <EffectsFieldset settings={settings} onPatch={onPatch} />
       <RoutingFieldset settings={settings} onPatch={onPatch} />
       <UpdatesFieldset settings={settings} onPatch={onPatch} />
