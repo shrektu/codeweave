@@ -204,16 +204,23 @@
   font: var(--text-sm) var(--font-mono);
 }
 
+.field-control > .path-field[data-kind="folder"] .path-value {
+  flex-basis: 100%;
+}
+
 .path-head {
   flex: 0 1 auto;
-  min-width: 0;
-  max-width: calc(
-    round(
-        down,
-        calc(100cqw - attr(data-tail-length type(<number>), 0) * 1ch),
-        1ch
-      ) +
-      0.5px
+  min-width: 1ch;
+  max-width: max(
+    1ch,
+    calc(
+      round(
+          down,
+          calc(100cqw - attr(data-tail-length type(<number>), 0) * 1ch),
+          1ch
+        ) +
+        0.5px
+    )
   );
   overflow: hidden;
   text-overflow: ellipsis;
@@ -221,6 +228,9 @@
 
 .path-tail {
   flex: none;
+  max-width: calc(100cqw - 1ch);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .path-actions {

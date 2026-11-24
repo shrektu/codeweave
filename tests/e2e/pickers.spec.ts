@@ -63,7 +63,8 @@ const ALPHA_CHANNEL = 3;
 const LAST_FOLDER = "final-library-folder";
 const LIBRARY_ROW_NAME = "Flow library folder";
 
-async function withLongLibrary(
+async function withLibrary(
+  picked: string,
   run: (page: Page, field: Locator) => Promise<void>,
 ): Promise<void> {
   const userDataDir = await mkdtemp(join(tmpdir(), USER_DATA_PREFIX));
@@ -76,7 +77,7 @@ async function withLongLibrary(
     await app.evaluate(({ dialog }, picked) => {
       dialog.showOpenDialog = () =>
         Promise.resolve({ canceled: false, filePaths: [picked] });
-    }, LONG_LIBRARY);
+    }, picked);
     const page = await app.firstWindow();
     await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
       "Connected",
@@ -92,6 +93,12 @@ async function withLongLibrary(
     await app.close();
     await rm(userDataDir, { recursive: true, force: true });
   }
+}
+
+async function withLongLibrary(
+  run: (page: Page, field: Locator) => Promise<void>,
+): Promise<void> {
+  await withLibrary(LONG_LIBRARY, run);
 }
 
 interface Box {
@@ -259,6 +266,40 @@ test("path_tail_touches_head", async () => {
     await expectTailTouchesHead(
       page,
       page.getByRole("dialog").locator(".path-value"),
+    );
+  });
+});
+
+const OVERSIZED_SEGMENT = join(homedir(), `codeweave-e2e-${"x".repeat(120)}`);
+const CH_TOLERANCE_PX = 0.5;
+
+async function chWidth(locator: Locator): Promise<number> {
+  return locator.evaluate((element) => {
+    const probe = document.createElement("span");
+    probe.style.display = "inline-block";
+    probe.style.width = "1ch";
+    element.appendChild(probe);
+    const width = probe.getBoundingClientRect().width;
+    probe.remove();
+    return width;
+  });
+}
+
+test("path_tail_truncates_when_longer_than_field", async () => {
+  await withLibrary(OVERSIZED_SEGMENT, async (_page, field) => {
+    const value = field.locator(".path-value");
+    const head = value.locator(".path-head");
+    const tail = value.locator(".path-tail");
+    await expect(tail).toContainText("codeweave-e2e-");
+    await value.scrollIntoViewIfNeeded();
+    const valueBox = await boxOf(value);
+    const headBox = await boxOf(head);
+    const tailBox = await boxOf(tail);
+    const ch = await chWidth(head);
+
+    expect(headBox.width).toBeGreaterThanOrEqual(ch - CH_TOLERANCE_PX);
+    expect(tailBox.x + tailBox.width).toBeLessThanOrEqual(
+      valueBox.x + valueBox.width + CH_TOLERANCE_PX,
     );
   });
 });

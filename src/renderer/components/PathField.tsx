@@ -244,7 +244,12 @@ export function PathField({
   const [editing, setEditing] = useState(false);
 
   return (
-    <div className="path-field" role="group" aria-label={`${label} path`}>
+    <div
+      className="path-field"
+      role="group"
+      data-kind={kind}
+      aria-label={`${label} path`}
+    >
       <div className="path-row">
         <PathValue value={value} placeholder={placeholder} />
         <div className="path-actions">
