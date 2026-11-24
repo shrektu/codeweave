@@ -59,6 +59,7 @@ const LONG_LIBRARY = join(
 const SEPARATOR = process.platform === "win32" ? "\\" : "/";
 const INK_THRESHOLD = 60;
 const RGBA_CHANNELS = 4;
+const ALPHA_CHANNEL = 3;
 const LAST_FOLDER = "final-library-folder";
 const LIBRARY_ROW_NAME = "Flow library folder";
 
@@ -185,7 +186,8 @@ function isInk(pixels: Pixels, x: number, y: number): boolean {
   const delta =
     channelDelta(pixels, offset, 0) +
     channelDelta(pixels, offset, 1) +
-    channelDelta(pixels, offset, 2);
+    channelDelta(pixels, offset, 2) +
+    channelDelta(pixels, offset, ALPHA_CHANNEL);
   return delta > INK_THRESHOLD;
 }
 
@@ -197,9 +199,13 @@ function inkColumns(pixels: Pixels): number[] {
 }
 
 function blankColumnsAround(columns: number[], boundary: number): number {
-  const lastHead = Math.max(...columns.filter((x) => x < boundary));
-  const firstTail = Math.min(...columns.filter((x) => x >= boundary));
-  return firstTail - lastHead - 1;
+  const head = columns.filter((x) => x < boundary);
+  const tail = columns.filter((x) => x >= boundary);
+  if (head.length === 0 || tail.length === 0) {
+    const side = head.length === 0 ? "head" : "tail";
+    throw new Error(`no ink found on the ${side} side of the path`);
+  }
+  return Math.min(...tail) - Math.max(...head) - 1;
 }
 
 async function inkGap(
@@ -233,6 +239,11 @@ async function expectTailTouchesHead(page: Page, root: Locator): Promise<void> {
 
 test("path_tail_touches_head", async () => {
   await withLongLibrary(async (page, field) => {
+    await page
+      .getByRole("dialog", { name: "Settings" })
+      .getByRole("radio", { name: "Low", exact: true })
+      .click();
+    await expect(page.locator("html")).toHaveAttribute("data-fx", "low");
     await expectTailTouchesHead(page, field.locator(".path-value"));
 
     await page.keyboard.press("Escape");
