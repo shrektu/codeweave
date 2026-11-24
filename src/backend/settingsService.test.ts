@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -309,16 +309,18 @@ describe("settings service", () => {
     await service.recordFolder("/work/project-5");
     const view = await service.get();
 
-    expect(view.recentFolders).toEqual([
-      "/work/project-5",
-      "/work/project-9",
-      "/work/project-8",
-      "/work/project-7",
-      "/work/project-6",
-      "/work/project-4",
-      "/work/project-3",
-      "/work/project-2",
-    ]);
+    expect(view.recentFolders).toEqual(
+      [
+        "/work/project-5",
+        "/work/project-9",
+        "/work/project-8",
+        "/work/project-7",
+        "/work/project-6",
+        "/work/project-4",
+        "/work/project-3",
+        "/work/project-2",
+      ].map((folder) => resolve(folder)),
+    );
   });
 
   it("recording_a_folder_broadcasts_and_keeps_other_settings", async () => {
@@ -333,7 +335,7 @@ describe("settings service", () => {
       "settings/changed",
       expect.objectContaining({
         effectLevel: "full",
-        recentFolders: ["/work/app"],
+        recentFolders: [resolve("/work/app")],
       }),
     );
   });
@@ -353,7 +355,7 @@ describe("settings service", () => {
     await service.recordFolder("/work/app");
     await service.recordFolder("/work/app");
 
-    expect((await service.get()).recentFolders).toEqual(["/work/app"]);
+    expect((await service.get()).recentFolders).toEqual([resolve("/work/app")]);
     expect(writes).toHaveBeenCalledTimes(1);
     expect(broadcast).toHaveBeenCalledTimes(1);
   });
@@ -364,7 +366,7 @@ describe("settings service", () => {
     await service.recordFolder("/a/proj/");
     await service.recordFolder("/a/proj");
 
-    expect((await service.get()).recentFolders).toEqual(["/a/proj"]);
+    expect((await service.get()).recentFolders).toEqual([resolve("/a/proj")]);
   });
 
   it("recent_folder_windows_case_deduped", () => {
