@@ -327,6 +327,14 @@ it("app_flow_tab_opens_session_tab_on_session_node_click", async () => {
 it("flow_tab_without_session_asks_to_choose_a_folder", async () => {
   const client = appClient(null);
   client.respond("sessions/snapshot", makeSnapshot());
+  client.respond(
+    "flows/list",
+    makeFlowsList({
+      flows: [],
+      agents: [],
+      locations: { project: null, library: "/data/library" },
+    }),
+  );
 
   renderWithServices(<App />, client);
   fireEvent.click(await screen.findByRole("tab", { name: "Flow" }));
@@ -335,8 +343,13 @@ it("flow_tab_without_session_asks_to_choose_a_folder", async () => {
     await screen.findByRole("button", { name: "Choose folder…" }),
   ).toBeTruthy();
   expect(
-    client.requests.some((request) => request.method === "flows/list"),
-  ).toBe(false);
+    await screen.findByText("No flows found in the library."),
+  ).toBeTruthy();
+  expect(
+    client.requests
+      .filter((request) => request.method === "flows/list")
+      .map((request) => request.params),
+  ).toEqual([{}]);
 });
 
 it("flow_tab_lists_file_errors", async () => {

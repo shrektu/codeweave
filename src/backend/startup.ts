@@ -690,7 +690,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
   });
   const terminals = createTerminals(deps, container, store, lockKeyResolver);
   const definitionRoots = createDefinitionRoots({ store, userData });
-  const listProjectFlows = async (cwd: string): Promise<FlowsList> =>
+  const listProjectFlows = async (cwd?: string): Promise<FlowsList> =>
     listFlows(await definitionRoots(cwd));
   const flowRuns = createFlowRunService({
     sessions: (runId) => sessions.forRun(runId),

@@ -17,7 +17,7 @@ const SANDBOX_FLAGS =
   process.env.CI !== undefined && process.platform === "linux"
     ? ["--no-sandbox"]
     : [];
-const LIBRARY_FIELD_NAME = "Flow library folder path";
+const LIBRARY_FIELD_NAME = "Agents and flows library path";
 const SHOWN_LIBRARY = `~${process.platform === "win32" ? "\\" : "/"}codeweave-e2e-library`;
 const PICKED_LIBRARY = join(homedir(), "codeweave-e2e-library");
 
@@ -61,7 +61,7 @@ const INK_THRESHOLD = 60;
 const RGBA_CHANNELS = 4;
 const ALPHA_CHANNEL = 3;
 const LAST_FOLDER = "final-library-folder";
-const LIBRARY_ROW_NAME = "Flow library folder";
+const LIBRARY_ROW_NAME = "Agents and flows library";
 
 async function withLibrary(
   picked: string,

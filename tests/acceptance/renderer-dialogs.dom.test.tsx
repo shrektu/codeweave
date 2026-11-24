@@ -238,12 +238,12 @@ it("settings_dialog_saves_agy_executable", async () => {
 it("settings_dialog_saves_the_flow_library_folder_and_null_when_empty", async () => {
   const client = settingsClient();
   renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
-  await screen.findByRole("group", { name: "Flow library folder path" });
+  await screen.findByRole("group", { name: "Agents and flows library path" });
   expect(
     screen.getByText("Default: Codeweave data folder/library"),
   ).toBeTruthy();
 
-  typePath("Flow library folder", "~/codeweave-library");
+  typePath("Agents and flows library", "~/codeweave-library");
   fireEvent.click(saveButton(LIBRARY_SAVE_INDEX));
   await waitFor(() => {
     expect(client.requests).toContainEqual({
@@ -252,7 +252,7 @@ it("settings_dialog_saves_the_flow_library_folder_and_null_when_empty", async ()
     });
   });
 
-  typePath("Flow library folder", "");
+  typePath("Agents and flows library", "");
   fireEvent.click(saveButton(LIBRARY_SAVE_INDEX));
   await waitFor(() => {
     expect(client.requests).toContainEqual({
@@ -343,13 +343,13 @@ it("settings_flow_library_picker_fills_the_field_and_save_sends_it", async () =>
   const client = settingsClient();
   renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
   const field = await screen.findByRole("group", {
-    name: "Flow library folder path",
+    name: "Agents and flows library path",
   });
 
   fireEvent.click(within(field).getByRole("button", { name: "Choose…" }));
 
   await waitFor(() => {
-    expect(pathFieldValue("Flow library folder")).toBe(
+    expect(pathFieldValue("Agents and flows library")).toBe(
       "/home/user/libs/shared",
     );
   });
@@ -372,7 +372,7 @@ it("settings_flow_library_lists_recent_folders_including_stale_ones", async () =
   });
   renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
   const field = await screen.findByRole("group", {
-    name: "Flow library folder path",
+    name: "Agents and flows library path",
   });
 
   fireEvent.click(within(field).getByRole("button", { name: "Recent" }));
@@ -381,7 +381,7 @@ it("settings_flow_library_lists_recent_folders_including_stale_ones", async () =
   ).toBeTruthy();
   fireEvent.click(within(field).getByRole("button", { name: "/gone/forever" }));
 
-  expect(pathFieldValue("Flow library folder")).toBe("/gone/forever");
+  expect(pathFieldValue("Agents and flows library")).toBe("/gone/forever");
 });
 
 it("settings_executable_fields_have_no_recent_menu", async () => {
@@ -736,4 +736,20 @@ it("settings dialog sets the default task class", async () => {
       screen.getByLabelText<HTMLSelectElement>("Default task class").value,
     ).toBe("heavy");
   });
+});
+
+it("settings_dialog_labels_agents_and_flows_library", async () => {
+  renderWithServices(
+    <SettingsDialog onClose={vi.fn<() => void>()} />,
+    settingsClient(),
+  );
+
+  expect(
+    await screen.findByRole("group", { name: "Agents and flows library path" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      "Where this Codeweave instance stores your agents and flows. A project folder's definitions override library ones with the same id.",
+    ),
+  ).toBeTruthy();
 });

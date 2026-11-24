@@ -4,13 +4,17 @@ import { useState, type JSX } from "react";
 import type { AgentView, FlowFileError, FlowsList } from "../../shared/views";
 import { isAgentDraftChanged } from "../agentDraft";
 import { PROVIDER_LABELS } from "../format";
-import type { AgentEditor, AgentSession } from "../useAgentEditor";
+import {
+  defaultAgentSource,
+  type AgentEditor,
+  type AgentSession,
+} from "../useAgentEditor";
 import { useFlowsLoad, type FlowsSource } from "../useFlowsLoad";
 
 import { AgentForm } from "./AgentForm";
 import { Dialog } from "./Dialog";
 import { FlowErrors } from "./FlowErrors";
-import { FolderPrompt, PickFolderButton } from "./FolderControls";
+import { PickFolderButton } from "./FolderControls";
 import { Icon } from "./Icon";
 import { SourceBadge } from "./SourceBadge";
 
@@ -161,7 +165,11 @@ function isDirty(
   view: AgentView | null,
 ): boolean {
   const known = session?.target.kind === "new" || view !== null;
-  return session !== null && known && isAgentDraftChanged(session.draft, view);
+  return (
+    session !== null &&
+    known &&
+    isAgentDraftChanged(session.draft, view, defaultAgentSource(session.cwd))
+  );
 }
 
 function AgentsWorkspace({
@@ -227,20 +235,13 @@ function AgentsWorkspace({
 }
 
 function AgentsBody({
-  cwd,
   editor,
   source,
-  onPickFolder,
 }: {
-  cwd: string | null;
   editor: AgentEditor;
   source: FlowsSource;
-  onPickFolder: (cwd: string) => void;
 }): JSX.Element {
   const { load } = source;
-  if (cwd === null) {
-    return <FolderPrompt subject="agents" onPick={onPickFolder} />;
-  }
   switch (load.status) {
     case "loading":
       return <p className="empty">Loading agents…</p>;
@@ -269,19 +270,14 @@ export function AgentsTab({
   return (
     <section className="glass panel agents-tab" aria-label="Agents">
       <h2 className="sec">Agents</h2>
-      {cwd !== null && !folderPinned && (
+      {!folderPinned && (
         <PickFolderButton
-          label="Change folder…"
+          label={cwd === null ? "Choose folder…" : "Change folder…"}
           primary={false}
           onPick={onPickFolder}
         />
       )}
-      <AgentsBody
-        cwd={cwd}
-        editor={editor}
-        source={source}
-        onPickFolder={onPickFolder}
-      />
+      <AgentsBody editor={editor} source={source} />
     </section>
   );
 }

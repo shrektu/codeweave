@@ -13,7 +13,11 @@ import {
   type ParseResult,
 } from "../domain/flows";
 import { DefinitionSource } from "../domain/types";
-import { IpcError, IpcErrorCode } from "../shared/protocol";
+import {
+  IpcError,
+  IpcErrorCode,
+  PROJECT_FOLDER_REQUIRED_MESSAGE,
+} from "../shared/protocol";
 import type {
   AgentView,
   FlowFileError,
@@ -328,7 +332,30 @@ async function sameDirectory(first: string, second: string): Promise<boolean> {
   return firstPath !== null && firstPath === secondPath;
 }
 
+export function requireDefinitionRoot(
+  roots: DefinitionRoots,
+  source: DefinitionSource,
+): string {
+  const root = roots[source];
+  if (root === null) {
+    throw new IpcError(
+      IpcErrorCode.VALIDATION,
+      PROJECT_FOLDER_REQUIRED_MESSAGE,
+    );
+  }
+  return root;
+}
+
 async function loadSources(roots: DefinitionRoots): Promise<Sources> {
+  if (roots.project === null) {
+    return {
+      project: {
+        flows: emptyDir<LoadedFlow>(),
+        agents: emptyDir<LoadedAgentFile>(),
+      },
+      library: await loadSource(roots.library, DefinitionSource.library),
+    };
+  }
   const shared = await sameDirectory(roots.project, roots.library);
   const [project, library] = await Promise.all([
     loadSource(roots.project, DefinitionSource.project),
@@ -539,7 +566,7 @@ export async function saveFlow(
   roots: DefinitionRoots,
   params: SaveFlowParams,
 ): Promise<FlowsList> {
-  const root = roots[params.source];
+  const root = requireDefinitionRoot(roots, params.source);
   await withWorkspaceLock(root, async () => {
     const target = await resolveDefinitionFile(root, FLOWS_DIR, params.file);
     await applyFlowSave(roots, target, params);

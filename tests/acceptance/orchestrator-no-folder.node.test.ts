@@ -40,6 +40,7 @@ import {
   restoreEnv,
   toolEndpointOf,
   untilRunStatus,
+  writeFlowFiles,
   type ToolClient,
   type WorkspaceRepos,
 } from "../fakes/orchestratorHarness";
@@ -156,13 +157,31 @@ function flowIds(list: FlowsList): string[] {
   return list.flows.map((flow) => flow.id).toSorted();
 }
 
-it("list_flows_without_repository_lists_from_non_git_default_workspace_and_library", async () => {
-  const { tools, space } = await openNoFolder(["alpha", "beta"]);
+it("list_flows_without_repository_is_library_only_and_ignores_default_workspace_definitions", async () => {
+  const { tools } = await openNoFolder(["alpha", "beta"], {
+    prepare: async ({ workspace }) => {
+      await writeFlowFiles(workspace);
+    },
+  });
 
-  const list = await listed(tools);
+  const libraryOnly = await listed(tools);
+  const withBeta = await listed(tools, "beta");
 
-  expect(list.locations.project).toBe(space.workspace);
-  expect(flowIds(list)).toEqual([LIBRARY_FLOW_ID]);
+  expect(libraryOnly.locations.project).toBeNull();
+  expect(flowIds(libraryOnly)).toEqual([LIBRARY_FLOW_ID]);
+  expect(flowIds(withBeta)).toEqual(["gated", LIBRARY_FLOW_ID, "solo"]);
+});
+
+it("folderless_orchestrator_start_flow_without_repository_ignores_default_workspace_definitions", async () => {
+  const { tools } = await openNoFolder(["alpha", "beta"], {
+    prepare: async ({ workspace }) => {
+      await writeFlowFiles(workspace);
+    },
+  });
+
+  const started = await tools.call("start_flow", startArgs(undefined));
+
+  expect(started.isError).toBe(true);
 });
 
 it("list_flows_with_repository_returns_repo_and_library_definitions_for_relative_tilde_and_absolute_paths", async () => {

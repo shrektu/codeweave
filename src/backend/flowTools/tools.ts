@@ -72,9 +72,10 @@ function flowsResult(list: FlowsList): CallToolResult {
     return jsonResult(list);
   }
   const looked = [locations.project, locations.library]
+    .filter((root): root is string => root !== null)
     .map((root) => join(root, FLOWS_DIR))
     .join(" and ");
-  const message = `No flows found. Looked in ${looked}; set the flow library folder in Settings to use shared flows.`;
+  const message = `No flows found. Looked in ${looked}; set the agents and flows library in Settings to use shared flows.`;
   return errors.length === 0
     ? textResult(message)
     : textResult(`${message}\n\n${JSON.stringify(errors, null, JSON_INDENT)}`);

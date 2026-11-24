@@ -228,6 +228,6 @@ it("flow-library-keeps-its-own-relative-message", async () => {
   );
 
   expect(error.message).toBe(
-    "The flow library folder must be an absolute path",
+    "The agents and flows library must be an absolute path",
   );
 });

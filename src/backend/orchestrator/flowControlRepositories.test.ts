@@ -47,7 +47,7 @@ interface Rig {
   readonly runs: FakeRuns;
   readonly worktrees: FakeWorktrees;
   readonly orchestration: Orchestration;
-  readonly listed: string[];
+  readonly listed: (string | undefined)[];
   readonly inspect: ReturnType<typeof vi.fn<(cwd: string) => void>>;
   readonly space: string;
   readonly alpha: string;
@@ -77,9 +77,10 @@ async function openRig(
   let counter = 0;
   const runs = new FakeRuns();
   const worktrees = new FakeWorktrees();
-  const listed: string[] = [];
+  const listed: (string | undefined)[] = [];
   const orchestration: Orchestration = {
     cwd: options.cwd?.(space) ?? space,
+    explicitFolder: true,
     runs: new Map(),
     sessionId: "orchestrator-session",
     ended: false,

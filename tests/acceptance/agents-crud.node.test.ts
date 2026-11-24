@@ -812,6 +812,7 @@ it("delete_waits_for_flow_save_lock", async () => {
 const RUNNING_VIEW: SessionView = {
   id: "session-1",
   cwd: "/work",
+  explicitFolder: true,
   provider: "claude",
   profile: "unattended",
   phase: { phase: "running", accountId: "acc-a" },
@@ -858,7 +859,7 @@ function flowRunRig(): {
     sessions: () => sessions,
     releaseSessions: () => Promise.resolve(),
     mainSessionLive: () => false,
-    listFlows: (cwd) => listFlows(projectRoots(cwd)),
+    listFlows: (cwd = "") => listFlows(projectRoots(cwd)),
     inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),
     broadcast: () => undefined,
     newRunId: () => "run-1",

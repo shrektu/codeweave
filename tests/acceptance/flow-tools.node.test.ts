@@ -178,7 +178,7 @@ describe("flow tool server discovery", () => {
     const { text, isError } = await callText(client, "list_flows", {});
     expect(isError).toBe(false);
     expect(text).toBe(
-      `No flows found. Looked in ${join("work", "repo", "flows")} and ${join("lib", "x", "flows")}; set the flow library folder in Settings to use shared flows.\n\n${JSON.stringify(control.flows.errors, null, 2)}`,
+      `No flows found. Looked in ${join("work", "repo", "flows")} and ${join("lib", "x", "flows")}; set the agents and flows library in Settings to use shared flows.\n\n${JSON.stringify(control.flows.errors, null, 2)}`,
     );
   });
 
@@ -192,7 +192,7 @@ describe("flow tool server discovery", () => {
     };
     const { text } = await callText(client, "list_flows", {});
     expect(text).toBe(
-      `No flows found. Looked in ${join("work", "repo", "flows")} and ${join("lib", "x", "flows")}; set the flow library folder in Settings to use shared flows.`,
+      `No flows found. Looked in ${join("work", "repo", "flows")} and ${join("lib", "x", "flows")}; set the agents and flows library in Settings to use shared flows.`,
     );
   });
 

@@ -55,3 +55,16 @@ it("roots_follow_a_library_change_without_restart", async () => {
 
   expect([before.library, after.library]).toEqual([first, second]);
 });
+
+it("roots_without_cwd_return_null_project", async () => {
+  const userData = await makeTempDir();
+  const roots = createDefinitionRoots({
+    store: createJsonStore(userData),
+    userData,
+  });
+
+  expect(await roots()).toEqual({
+    project: null,
+    library: join(userData, "library"),
+  });
+});

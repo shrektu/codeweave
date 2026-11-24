@@ -31,6 +31,7 @@ function sessionIn(cwd: string | undefined): SessionView {
   return {
     id: "sess-1",
     cwd: cwd ?? DEFAULT_CWD,
+    explicitFolder: cwd !== undefined,
     provider: "claude",
     profile: "ask",
     phase: { phase: "running", accountId: "acc-1" },
@@ -217,6 +218,14 @@ it("session_start_without_a_folder_records_no_recent_folder", async () => {
   const { handlers } = await rig();
 
   await handlers["session/start"]({});
+
+  expect(await recentOf(handlers)).toEqual([]);
+});
+
+it("flows_list_without_cwd_records_no_recent_folder", async () => {
+  const { handlers } = await rig();
+
+  await handlers["flows/list"]({});
 
   expect(await recentOf(handlers)).toEqual([]);
 });

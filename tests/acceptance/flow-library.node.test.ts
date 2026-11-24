@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 import { createAgent, deleteAgent, saveAgent } from "../../src/backend/agents";
 import { createFlowRunService } from "../../src/backend/flowRuns";
@@ -9,8 +9,13 @@ import { listFlows, saveFlow } from "../../src/backend/flows";
 import type { AgentDefinition, FlowDefinition } from "../../src/domain/flows";
 import type { DefinitionSource } from "../../src/domain/types";
 import type { SessionView } from "../../src/shared/views";
+import { closeRigs, openRig } from "../fakes/backendRig";
 import { fakeSessions } from "../fakes/fakeSessions";
 import { makeTempDir } from "../fakes/processHelpers";
+
+afterEach(async () => {
+  await closeRigs();
+});
 
 const CODER_AGENT = `---
 id: coder
@@ -41,6 +46,7 @@ const LIBRARY_SHIP_FLOW = SHIP_FLOW.replace("Ship it", "Library ship");
 const RUNNING_VIEW: SessionView = {
   id: "session-1",
   cwd: "",
+  explicitFolder: true,
   provider: "claude",
   profile: "plan",
   phase: { phase: "running", accountId: "acc-a" },
@@ -189,7 +195,8 @@ it("a_library_only_flow_runs_in_the_project_cwd", async () => {
     sessions: () => fakeSessions({ start }),
     releaseSessions: () => Promise.resolve(),
     mainSessionLive: () => false,
-    listFlows: (cwd) => listFlows({ project: cwd, library: dirs.library }),
+    listFlows: (cwd) =>
+      listFlows({ project: cwd ?? null, library: dirs.library }),
     inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),
     broadcast: vi.fn(),
     newRunId: () => "run-1",
@@ -777,4 +784,206 @@ it("invalid_project_flow_still_overrides_library_flow", async () => {
   expect(result.errors.map(({ file, source }) => ({ file, source }))).toEqual([
     { file: "flows/ship.md", source: "project" },
   ]);
+});
+
+async function openLibraryRig(
+  library: string,
+): Promise<ReturnType<typeof openRig>> {
+  const rig = await openRig();
+  const settings = await rig.store.readSettings();
+  await rig.store.writeSettings({
+    ...settings,
+    definitionLibrary: library,
+  });
+  return rig;
+}
+
+it("lists_library_definitions_without_a_project_root", async () => {
+  const library = await populate(await makeTempDir(), {
+    "flows/ship.md": LIBRARY_SHIP_FLOW,
+    "agents/coder.md": CODER_AGENT,
+  });
+
+  const direct = await listFlows({ project: null, library });
+
+  expect(direct.errors).toEqual([]);
+  expect(direct.locations).toEqual({ project: null, library });
+  expect(direct.flows.map(({ id, source }) => ({ id, source }))).toEqual([
+    { id: "ship", source: "library" },
+  ]);
+  expect(direct.agents.map(({ id, source }) => ({ id, source }))).toEqual([
+    { id: "coder", source: "library" },
+  ]);
+
+  const rig = await openLibraryRig(library);
+  const listed = await rig.call("flows/list", {});
+
+  expect(listed.errors).toEqual([]);
+  expect(listed.locations).toEqual({ project: null, library });
+  expect(listed.flows.map(({ id, source }) => ({ id, source }))).toEqual([
+    { id: "ship", source: "library" },
+  ]);
+  expect(listed.agents.map(({ id, source }) => ({ id, source }))).toEqual([
+    { id: "coder", source: "library" },
+  ]);
+});
+
+interface ListedAgent {
+  readonly id: string;
+  readonly file: string;
+  readonly revision: string;
+  readonly role: string;
+  readonly source: string;
+}
+
+function requireAgent(
+  list: { readonly agents: readonly ListedAgent[] },
+  id: string,
+): ListedAgent {
+  const found = list.agents.find((agent) => agent.id === id);
+  if (found === undefined) {
+    throw new Error(`Missing agent ${id}`);
+  }
+  return found;
+}
+
+it("creating_editing_and_deleting_without_cwd_writes_to_the_library", async () => {
+  const library = await populate(await makeTempDir(), {
+    "flows/ship.md": LIBRARY_SHIP_FLOW,
+  });
+  const rig = await openLibraryRig(library);
+
+  const created = await rig.call("agents/create", {
+    agent: CODER,
+    body: "Initial prompt",
+  });
+  const createdCoder = requireAgent(created, "coder");
+  expect(createdCoder.source).toBe("library");
+  expect(await text(library, "agents/coder.md")).toContain("Initial prompt");
+
+  const savedAgent = await rig.call("agents/save", {
+    source: "library",
+    file: createdCoder.file,
+    revision: createdCoder.revision,
+    id: "coder",
+    agent: { ...CODER, role: "Updated role" },
+    body: "Updated prompt",
+  });
+  expect(requireAgent(savedAgent, "coder").role).toBe("Updated role");
+  expect(await text(library, "agents/coder.md")).toContain("Updated prompt");
+  const savedFlow = await rig.call("flows/save", {
+    source: "library",
+    file: "flows/ship.md",
+    revision: savedAgent.flows.find(({ id }) => id === "ship")?.revision ?? "",
+    flow: {
+      id: "ship",
+      title: "Edited library ship",
+      nodes: [{ id: "build", agent: "coder" }],
+      edges: [],
+    },
+  });
+  expect(savedFlow.flows).toMatchObject([
+    { id: "ship", title: "Edited library ship", source: "library" },
+  ]);
+  expect(await text(library, "flows/ship.md")).toContain("Edited library ship");
+
+  await rejectedWith(
+    rig.call("agents/delete", {
+      source: "library",
+      file: createdCoder.file,
+      revision: requireAgent(savedFlow, "coder").revision,
+      id: "coder",
+    }),
+    "VALIDATION",
+  );
+
+  const builderCreated = await rig.call("agents/create", {
+    agent: { ...CODER, id: "builder" },
+    body: "Builder prompt",
+  });
+  const builder = requireAgent(builderCreated, "builder");
+  const afterDelete = await rig.call("agents/delete", {
+    source: "library",
+    file: builder.file,
+    revision: builder.revision,
+    id: "builder",
+  });
+  expect(afterDelete.agents.find(({ id }) => id === "builder")).toBeUndefined();
+});
+
+it("project_overlay_still_wins_on_id_clash", async () => {
+  const dirs = await roots(
+    { "flows/ship.md": SHIP_FLOW, "agents/coder.md": CODER_AGENT },
+    {
+      "flows/ship.md": LIBRARY_SHIP_FLOW,
+      "agents/coder.md": LIBRARY_CODER_AGENT,
+    },
+  );
+  const rig = await openLibraryRig(dirs.library);
+
+  const listed = await rig.call("flows/list", {
+    cwd: dirs.project,
+  });
+
+  expect(listed.locations).toEqual(dirs);
+  expect(listed.flows.map(({ title, source }) => ({ title, source }))).toEqual([
+    { title: "Ship it", source: "project" },
+  ]);
+  expect(listed.agents.map(({ role, source }) => ({ role, source }))).toEqual([
+    { role: "Writes code", source: "project" },
+  ]);
+});
+
+it("rejects_project_writes_when_no_project_root_is_provided", async () => {
+  const library = await populate(await makeTempDir(), {
+    "flows/ship.md": LIBRARY_SHIP_FLOW,
+    "agents/coder.md": CODER_AGENT,
+  });
+  const rig = await openLibraryRig(library);
+
+  await rejectedWith(
+    rig.call("flows/save", {
+      source: "project",
+      file: "flows/new.md",
+      revision: null,
+      flow: {
+        id: "new-flow",
+        title: "New flow",
+        nodes: [{ id: "build", agent: "coder" }],
+        edges: [],
+      },
+    } as never),
+    "VALIDATION",
+  );
+  await rejectedWith(
+    rig.call("agents/create", {
+      source: "project",
+      agent: { ...CODER, id: "builder" },
+      body: "Prompt",
+    } as never),
+    "VALIDATION",
+  );
+  await rejectedWith(
+    rig.call("agents/save", {
+      source: "project",
+      file: "agents/coder.md",
+      revision: "",
+      id: "coder",
+      agent: CODER,
+      body: "Prompt",
+    } as never),
+    "VALIDATION",
+  );
+  await rejectedWith(
+    rig.call("agents/delete", {
+      source: "project",
+      file: "agents/coder.md",
+      revision: "",
+      id: "coder",
+    } as never),
+    "VALIDATION",
+  );
+
+  expect(await text(library, "flows/ship.md")).toBe(LIBRARY_SHIP_FLOW);
+  expect(await text(library, "agents/coder.md")).toBe(CODER_AGENT);
 });

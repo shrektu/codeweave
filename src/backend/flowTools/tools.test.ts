@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -240,5 +242,23 @@ describe("flow tool repository argument", () => {
       expect(longest.isError).toBe(false);
       expect(control.calls).toHaveLength(1);
     },
+  );
+});
+
+it("list_flows_with_empty_library_and_no_project_omits_null_location", async () => {
+  const control = new FakeFlowControl();
+  control.flows = {
+    flows: [],
+    agents: [],
+    errors: [],
+    locations: { project: null, library: join("lib", "x") },
+  };
+  const client = await connect(control);
+
+  const { text, isError } = await call(client, "list_flows", {});
+
+  expect(isError).toBe(false);
+  expect(text).toBe(
+    `No flows found. Looked in ${join("lib", "x", "flows")}; set the agents and flows library in Settings to use shared flows.`,
   );
 });

@@ -8,6 +8,7 @@ import {
 import { createElement } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { DefinitionSource } from "../../src/domain/types";
 import { App } from "../../src/renderer/App";
 import { IpcRemoteError } from "../../src/renderer/ipc";
 import { IpcErrorCode } from "../../src/shared/protocol";
@@ -20,6 +21,7 @@ import type {
 import { makeCodeweaveApi } from "../fakes/fakeCodeweaveApi";
 import {
   createFakeIpcClient,
+  makeAgent,
   makeFlow,
   makeFlowRun,
   makeFlowsList,
@@ -169,10 +171,12 @@ it("flow_tab_without_session_picks_folder_and_lists_flows", async () => {
   await openFlowTab(client);
 
   expect(screen.queryByText("Start a session to see its flows.")).toBeNull();
-  expect(requestsOf(client, "flows/list")).toEqual([]);
+  await waitFor(() => {
+    expect(requestsOf(client, "flows/list")).toEqual([{}]);
+  }, WAIT_OPTIONS);
   await pickFolder();
 
-  expect(requestsOf(client, "flows/list")).toEqual([{ cwd: PICKED_CWD }]);
+  expect(requestsOf(client, "flows/list")).toEqual([{}, { cwd: PICKED_CWD }]);
   expect(screen.getByRole("button", { name: "Run flow" })).toBeTruthy();
 
   fireEvent.click(screen.getByRole("tab", { name: "Session" }));
@@ -657,10 +661,11 @@ it("flow_tab_ignores_stopped_session_folder", async () => {
     { name: "Change folder…" },
     RED_WAIT_OPTIONS,
   );
-  expect(requestsOf(client, "flows/list")).toEqual([{ cwd: PICKED_CWD }]);
+  expect(requestsOf(client, "flows/list")).toEqual([{}, { cwd: PICKED_CWD }]);
   fireEvent.click(change);
   await waitFor(() => {
     expect(requestsOf(client, "flows/list")).toEqual([
+      {},
       { cwd: PICKED_CWD },
       { cwd: OTHER_CWD },
     ]);
@@ -817,6 +822,7 @@ it("flow_edit_draft_survives_session_end_with_other_picked_folder", async () => 
   emitSession(client, makeSession({ cwd: SESSION_CWD }));
   await waitFor(() => {
     expect(requestsOf(client, "flows/list")).toEqual([
+      {},
       { cwd: PICKED_CWD },
       { cwd: SESSION_CWD },
     ]);
@@ -876,6 +882,7 @@ it("flow_tab_stays_on_ended_session_folder", async () => {
   emitSession(client, makeSession({ cwd: SESSION_CWD }));
   await waitFor(() => {
     expect(requestsOf(client, "flows/list")).toEqual([
+      {},
       { cwd: PICKED_CWD },
       { cwd: SESSION_CWD },
     ]);
@@ -890,8 +897,80 @@ it("flow_tab_stays_on_ended_session_folder", async () => {
   });
 
   expect(requestsOf(client, "flows/list")).toEqual([
+    {},
     { cwd: PICKED_CWD },
     { cwd: SESSION_CWD },
   ]);
   expect(screen.getByRole("button", { name: "Change folder…" })).toBeTruthy();
+});
+
+it("flow_tab_without_session_lists_library_flows_and_allows_editing", async () => {
+  const libFlow = makeFlow({
+    source: DefinitionSource.library,
+    file: "flows/ship.md",
+    revision: "lib-flow-rev-1",
+  });
+  const libAgents = [
+    makeAgent({ id: "implementer", source: DefinitionSource.library }),
+    makeAgent({ id: "reviewer", source: DefinitionSource.library }),
+  ];
+  const libList = makeFlowsList({
+    flows: [libFlow],
+    agents: libAgents,
+    locations: { project: null, library: "/data/library" },
+  });
+  const client = appClient({ list: libList });
+  client.respond(
+    "flows/save",
+    makeFlowsList({
+      flows: [{ ...libFlow, maxRounds: 3, revision: "lib-flow-rev-2" }],
+      agents: libAgents,
+      locations: { project: null, library: "/data/library" },
+    }),
+  );
+  await openFlowTab(client);
+  await findGraphNode("build");
+
+  expect(requestsOf(client, "flows/list")).toEqual([{}]);
+  expect(screen.queryByText("No folder selected")).toBeNull();
+  typeTask("Run in library");
+  expect(runButton().disabled).toBe(true);
+  expect(
+    screen.getByText("Choose a project folder to run this flow."),
+  ).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.change(await screen.findByLabelText("Max rounds"), {
+    target: { value: "3" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  await waitFor(() => {
+    expect(requestsOf(client, "flows/save")).toHaveLength(1);
+  }, WAIT_OPTIONS);
+  expect(requestsOf(client, "flows/save")[0]).not.toHaveProperty("cwd");
+  expect(requestsOf(client, "flows/save")[0]).toMatchObject({
+    source: "library",
+    file: "flows/ship.md",
+    revision: "lib-flow-rev-1",
+  });
+});
+
+it("folderless_session_does_not_overlay_default_workspace_in_flow_tab", async () => {
+  const libFlow = makeFlow({ source: DefinitionSource.library });
+  const client = appClient({
+    session: makeSession({
+      cwd: "/home/user/default-ws",
+      explicitFolder: false,
+    }),
+    list: makeFlowsList({
+      flows: [libFlow],
+      locations: { project: null, library: "/data/library" },
+    }),
+  });
+  await openFlowTab(client);
+  await findGraphNode("build");
+
+  expect(requestsOf(client, "flows/list")).toEqual([{}]);
+  expect(screen.getByRole("button", { name: "Choose folder…" })).toBeTruthy();
 });

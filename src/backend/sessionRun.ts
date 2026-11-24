@@ -82,6 +82,7 @@ type PermissionRequest = Extract<AgentEvent, { type: "permission_request" }>;
 
 interface RunSpec extends TurnRoutingSpec {
   readonly cwd: string;
+  readonly explicitFolder: boolean;
   readonly profile: PermissionProfile;
   readonly flowRef: FlowRef | null;
   readonly tools: AgentToolAccess | null;
@@ -225,6 +226,7 @@ export class SessionRun {
     return toSessionView({
       id: this.id,
       cwd: this.spec.cwd,
+      explicitFolder: this.spec.explicitFolder,
       provider: this.provider,
       accounts: this.registered,
       profile: this.spec.profile,

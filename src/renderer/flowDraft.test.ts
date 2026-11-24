@@ -341,6 +341,15 @@ describe("saveParamsOf source", () => {
 
     expect(params.source).toBe("library");
   });
+
+  it("save_params_omit_cwd_when_null", () => {
+    const started = makeFlow({ source: "library" });
+
+    const params = saveParamsOf(null, baseOf(started), draftOf(started));
+
+    expect(Object.hasOwn(params, "cwd")).toBe(false);
+    expect(params.source).toBe("library");
+  });
 });
 
 describe("isDraftChanged", () => {

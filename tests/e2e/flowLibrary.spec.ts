@@ -40,7 +40,6 @@ test("library_flow_is_listed_and_runs_without_project_definitions", async () => 
     );
 
     await page.getByRole("tab", { name: "Agents" }).click();
-    await page.getByRole("button", { name: "Choose folder…" }).click();
     const agents = page.getByRole("list", { name: "Agents" });
     await expect(agents.getByText("builder")).toBeVisible();
     await expect(
@@ -48,6 +47,7 @@ test("library_flow_is_listed_and_runs_without_project_definitions", async () => 
     ).toBeVisible();
 
     await page.getByRole("tab", { name: "Flow" }).click();
+    await page.getByRole("button", { name: "Choose folder…" }).click();
     await page.getByLabel("Task").fill(FLOW_TASK);
     await page.getByRole("button", { name: "Run flow" }).click();
     await expect(page.locator(".flow-run-outcome")).toHaveText(

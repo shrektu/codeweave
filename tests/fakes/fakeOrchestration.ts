@@ -23,6 +23,7 @@ export function sessionView(overrides: Partial<SessionView> = {}): SessionView {
   return {
     id: "sess-1",
     cwd: "/work/project",
+    explicitFolder: true,
     provider: ProviderId.claude,
     profile: PermissionProfile.plan,
     phase: { phase: "running", accountId: "acc-1" },

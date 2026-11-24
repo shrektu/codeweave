@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { DefinitionSource } from "../domain/types";
 import { makeAgent } from "../../tests/fakes/fakeIpcClient";
 
 import { agentDraftOf, emptyAgentDraft } from "./agentDraft";
@@ -47,5 +48,24 @@ describe("agentEditorPinsFolder", () => {
     expect(agentEditorPinsFolder(newSession("tester"), false)).toBe(true);
     expect(agentEditorPinsFolder(existingSession(), true)).toBe(true);
     expect(agentEditorPinsFolder(null, true)).toBe(true);
+  });
+
+  it("new_library_agent_without_folder_starts_clean_and_does_not_pin_folder", () => {
+    const librarySession: AgentSession = {
+      cwd: null,
+      target: { kind: "new" },
+      saved: null,
+      draft: emptyAgentDraft(DefinitionSource.library),
+      conflict: false,
+      saveToken: null,
+    };
+
+    expect(agentEditorPinsFolder(librarySession, false)).toBe(false);
+    expect(
+      agentEditorPinsFolder(
+        { ...librarySession, draft: { ...librarySession.draft, id: "helper" } },
+        false,
+      ),
+    ).toBe(true);
   });
 });

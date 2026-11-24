@@ -39,6 +39,21 @@ import {
   TerminalViewSchema,
 } from "./views";
 
+export const PROJECT_FOLDER_REQUIRED_MESSAGE =
+  "A project folder is required for project definitions";
+
+const PROJECT_FOLDER_CHECK_OPTIONS = {
+  message: PROJECT_FOLDER_REQUIRED_MESSAGE,
+  path: ["cwd"],
+};
+
+function hasRequiredProjectFolder(value: {
+  readonly source?: DefinitionSource | undefined;
+  readonly cwd?: string | undefined;
+}): boolean {
+  return value.source !== DefinitionSource.project || value.cwd !== undefined;
+}
+
 export const IpcErrorCode = {
   VALIDATION: "VALIDATION",
   UNSUPPORTED_VERSION: "UNSUPPORTED_VERSION",
@@ -169,36 +184,44 @@ export const ParamsSchemas = {
   "settings/get": EmptyParamsSchema,
   "settings/set": SettingsPatchSchema,
   "switchLog/list": EmptyParamsSchema,
-  "flows/list": z.strictObject({ cwd: NonEmptyString }),
-  "flows/save": z.strictObject({
-    cwd: NonEmptyString,
-    source: z.enum(DefinitionSource),
-    file: NonEmptyString,
-    revision: NonEmptyString,
-    flow: FlowSchema,
-  }),
-  "agents/create": z.strictObject({
-    cwd: NonEmptyString,
-    source: z.enum(DefinitionSource).optional(),
-    agent: AgentSchema,
-    body: z.string(),
-  }),
-  "agents/save": z.strictObject({
-    cwd: NonEmptyString,
-    source: z.enum(DefinitionSource),
-    file: NonEmptyString,
-    revision: NonEmptyString,
-    id: NonEmptyString,
-    agent: AgentSchema,
-    body: z.string(),
-  }),
-  "agents/delete": z.strictObject({
-    cwd: NonEmptyString,
-    source: z.enum(DefinitionSource),
-    file: NonEmptyString,
-    revision: NonEmptyString,
-    id: NonEmptyString,
-  }),
+  "flows/list": z.strictObject({ cwd: NonEmptyString.optional() }),
+  "flows/save": z
+    .strictObject({
+      cwd: NonEmptyString.optional(),
+      source: z.enum(DefinitionSource),
+      file: NonEmptyString,
+      revision: NonEmptyString,
+      flow: FlowSchema,
+    })
+    .refine(hasRequiredProjectFolder, PROJECT_FOLDER_CHECK_OPTIONS),
+  "agents/create": z
+    .strictObject({
+      cwd: NonEmptyString.optional(),
+      source: z.enum(DefinitionSource).optional(),
+      agent: AgentSchema,
+      body: z.string(),
+    })
+    .refine(hasRequiredProjectFolder, PROJECT_FOLDER_CHECK_OPTIONS),
+  "agents/save": z
+    .strictObject({
+      cwd: NonEmptyString.optional(),
+      source: z.enum(DefinitionSource),
+      file: NonEmptyString,
+      revision: NonEmptyString,
+      id: NonEmptyString,
+      agent: AgentSchema,
+      body: z.string(),
+    })
+    .refine(hasRequiredProjectFolder, PROJECT_FOLDER_CHECK_OPTIONS),
+  "agents/delete": z
+    .strictObject({
+      cwd: NonEmptyString.optional(),
+      source: z.enum(DefinitionSource),
+      file: NonEmptyString,
+      revision: NonEmptyString,
+      id: NonEmptyString,
+    })
+    .refine(hasRequiredProjectFolder, PROJECT_FOLDER_CHECK_OPTIONS),
   "flow/start": z.strictObject({
     cwd: NonEmptyString,
     flowId: NonEmptyString,

@@ -183,13 +183,17 @@ export function baseOf(view: FlowView): FlowBase {
   };
 }
 
+export function cwdParams(cwd: string | null): { cwd?: string } {
+  return cwd === null ? {} : { cwd };
+}
+
 export function saveParamsOf(
-  cwd: string,
+  cwd: string | null,
   base: FlowBase,
   draft: FlowDraft,
 ): ParamsMap["flows/save"] {
   return {
-    cwd,
+    ...cwdParams(cwd),
     source: base.source,
     file: base.file,
     revision: base.revision,

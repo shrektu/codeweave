@@ -196,6 +196,7 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
   return {
     id: "sess-1",
     cwd: "/home/user/project",
+    explicitFolder: true,
     provider: ProviderId.claude,
     profile: PermissionProfile.ask,
     phase: { phase: "running", accountId: "acc-1" },

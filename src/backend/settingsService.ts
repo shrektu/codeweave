@@ -21,7 +21,7 @@ export interface SettingsServiceDeps {
 const HOME_MARKER = "~";
 const HOME_PREFIXES = ["~/", "~\\"] as const;
 const RELATIVE_LIBRARY_MESSAGE =
-  "The flow library folder must be an absolute path";
+  "The agents and flows library must be an absolute path";
 const RELATIVE_WORKSPACE_MESSAGE =
   "The default workspace must be an absolute path";
 const WINDOWS_PLATFORM = "win32";

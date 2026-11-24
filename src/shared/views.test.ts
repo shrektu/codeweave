@@ -9,6 +9,7 @@ import {
   AgentViewSchema,
   ApiAccountSchema,
   FlowRunViewSchema,
+  FlowsListSchema,
   FlowViewSchema,
   SessionViewSchema,
   SettingsViewSchema,
@@ -141,6 +142,7 @@ it("session_view_with_diffs_passes_session_view_schema", () => {
   const view = toSessionView({
     id: "s1",
     cwd: "/work",
+    explicitFolder: true,
     provider: "claude",
     accounts: [],
     profile: "ask",
@@ -165,6 +167,7 @@ it("session_view_requires_current_model_nullable", () => {
   const input = {
     id: "s1",
     cwd: "/work",
+    explicitFolder: true,
     provider: "claude",
     accounts: [],
     profile: "ask",
@@ -402,4 +405,44 @@ it("flow_run_view_schema_accepts_a_paused_run_and_rejects_unknowns", () => {
   expect(
     FlowRunViewSchema.safeParse({ ...FLOW_RUN_VIEW, round: 1.5 }).success,
   ).toBe(false);
+});
+
+it("flows_list_schema_accepts_nullable_project_location", () => {
+  const list = {
+    flows: [],
+    agents: [],
+    errors: [],
+    locations: { project: null, library: "/lib" },
+  };
+  expect(FlowsListSchema.safeParse(list).success).toBe(true);
+  expect(
+    FlowsListSchema.safeParse({
+      ...list,
+      locations: { project: "/proj", library: "/lib" },
+    }).success,
+  ).toBe(true);
+});
+
+it("session_view_schema_requires_explicit_folder", () => {
+  const view = toSessionView({
+    id: "s1",
+    cwd: "/work",
+    explicitFolder: false,
+    provider: "claude",
+    accounts: [],
+    profile: "ask",
+    phase: { phase: "halted" },
+    state: INITIAL_SESSION_STATE,
+    limits: [],
+    turnInFlight: false,
+    flowRef: null,
+    orchestrate: false,
+    hiddenRequestIds: new Set(),
+  });
+  const withoutExplicit = Object.fromEntries(
+    Object.entries(view).filter(([key]) => key !== "explicitFolder"),
+  );
+
+  expect(SessionViewSchema.parse(view).explicitFolder).toBe(false);
+  expect(SessionViewSchema.safeParse(withoutExplicit).success).toBe(false);
 });

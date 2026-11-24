@@ -48,6 +48,7 @@ export interface OwnedRun {
 
 export interface Orchestration {
   cwd: string | null;
+  explicitFolder: boolean;
   readonly runs: Map<string, OwnedRun>;
   sessionId: string | null;
   ended: boolean;
@@ -56,7 +57,7 @@ export interface Orchestration {
 export interface OrchestratorFlowDeps {
   readonly flowRuns: FlowRunService;
   readonly flowWorktrees: FlowWorktrees;
-  readonly listFlows: (cwd: string) => Promise<FlowsList>;
+  readonly listFlows: (cwd?: string) => Promise<FlowsList>;
   readonly newRunId: () => string;
   readonly inspectWorktree: (cwd: string) => Promise<WorktreeState>;
   readonly protectedPaths: () => Promise<readonly string[]>;
@@ -103,7 +104,10 @@ class OrchestratorFlowControl implements FlowControl {
 
   async listFlows(repository?: string): Promise<FlowsList> {
     if (repository === undefined) {
-      return this.deps.listFlows(this.activeCwd());
+      const cwd = this.activeCwd();
+      return this.deps.listFlows(
+        this.orchestration.explicitFolder ? cwd : undefined,
+      );
     }
     const resolved = await this.scope.resolveRepository(repository);
     this.assertActive();
@@ -329,7 +333,7 @@ class OrchestratorFlowControl implements FlowControl {
         request,
         runId,
         target.repository,
-        target.repository,
+        this.definitionsCwdOf(request, target),
         null,
       );
     } catch (error) {
@@ -370,7 +374,7 @@ class OrchestratorFlowControl implements FlowControl {
         request,
         runId,
         worktree.path,
-        target.repository,
+        this.definitionsCwdOf(request, target),
         worktree.branch,
       );
     } catch (error) {
@@ -414,11 +418,21 @@ class OrchestratorFlowControl implements FlowControl {
     this.assertActive();
   }
 
+  private definitionsCwdOf(
+    request: ToolStartRequest,
+    target: RunTarget,
+  ): string | null {
+    return request.repository === undefined &&
+      !this.orchestration.explicitFolder
+      ? null
+      : target.repository;
+  }
+
   private startRun(
     request: ToolStartRequest,
     runId: string,
     cwd: string,
-    definitionsCwd: string,
+    definitionsCwd: string | null,
     branch: string | null,
   ): Promise<FlowRunView> {
     return this.deps.flowRuns.start({
