@@ -235,21 +235,56 @@ async function assertWorktreePlacement(
   }
 }
 
+const PORCELAIN_WORKTREE_PREFIX = "worktree ";
+const PORCELAIN_BRANCH_PREFIX = "branch refs/heads/";
+
+async function registeredPath(
+  git: Git,
+  worktree: FlowWorktree,
+): Promise<string> {
+  const listing = await git(worktree.projectRoot, [
+    "worktree",
+    "list",
+    "--porcelain",
+  ]);
+  let current = worktree.path;
+  for (const line of listing.split(LINE_BREAK)) {
+    if (line.startsWith(PORCELAIN_WORKTREE_PREFIX)) {
+      current = line.slice(PORCELAIN_WORKTREE_PREFIX.length);
+    } else if (line === `${PORCELAIN_BRANCH_PREFIX}${worktree.branch}`) {
+      return current;
+    }
+  }
+  return worktree.path;
+}
+
+async function attempt(
+  subject: string,
+  step: () => Promise<unknown>,
+): Promise<void> {
+  try {
+    await step();
+  } catch (error) {
+    console.warn(`flow worktree cleanup failed: ${subject}`, error);
+  }
+}
+
 async function discardWorktree(
   git: Git,
   worktree: FlowWorktree,
 ): Promise<void> {
-  try {
-    await git(worktree.projectRoot, [
-      "worktree",
-      "remove",
-      "--force",
-      worktree.path,
-    ]);
-    await git(worktree.projectRoot, ["branch", "-D", worktree.branch]);
-  } catch (error) {
-    console.error(`failed to discard worktree ${worktree.path}`, error);
-  }
+  const root = worktree.projectRoot;
+  let registered = worktree.path;
+  await attempt(worktree.branch, async () => {
+    registered = await registeredPath(git, worktree);
+  });
+  await attempt(registered, () =>
+    git(root, ["worktree", "remove", "--force", registered]),
+  );
+  await attempt(root, () => git(root, ["worktree", "prune"]));
+  await attempt(worktree.branch, () =>
+    git(root, ["branch", "-D", worktree.branch]),
+  );
 }
 
 async function create(
