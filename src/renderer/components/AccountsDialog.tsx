@@ -28,7 +28,10 @@ import {
 import { Dialog, type DialogProps } from "./Dialog";
 import { Icon } from "./Icon";
 import { ModelCatalogDialog } from "./ModelCatalogDialog";
+import { PathField } from "./PathField";
 import { SignIn } from "./SignIn";
+
+const NO_RECENT_FOLDERS: readonly string[] = [];
 
 interface AccountRowProps {
   account: AccountView;
@@ -194,13 +197,13 @@ function AddAccountForm({ client }: AddFormProps): JSX.Element {
           }}
         />
         <label htmlFor="account-config-dir">Config directory</label>
-        <input
+        <PathField
           id="account-config-dir"
-          type="text"
-          value={configDir}
-          onChange={(event) => {
-            setConfigDir(event.target.value);
-          }}
+          kind="folder"
+          label="Config directory"
+          value={configDir === "" ? null : configDir}
+          recent={NO_RECENT_FOLDERS}
+          onChange={setConfigDir}
         />
         {isApi && (
           <ApiAccountFields

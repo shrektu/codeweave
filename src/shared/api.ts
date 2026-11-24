@@ -10,6 +10,8 @@ export interface CodeweaveApi {
     listener: (accelerated: boolean) => void,
   ) => () => void;
   pickFolder: () => Promise<string | null>;
+  pickFile: () => Promise<string | null>;
+  homeDir: string | null;
   getAvailableUpdate: () => Promise<AvailableUpdate | null>;
   onUpdateAvailable: (
     listener: (update: AvailableUpdate | null) => void,

@@ -14,6 +14,7 @@ export const SYSTEMD_CALL_TIMEOUT_MS = 5000;
 export const EXEC_KILL_SIGNAL = "SIGKILL";
 export const INSTANCE_FILE = "instance.json";
 export const INSTANCE_HISTORY_LIMIT = 8;
+export const RECENT_FOLDERS_LIMIT = 8;
 export const INSTANCE_ID_PATTERN = /^[A-Za-z0-9_]+$/;
 export const SELF_CGROUP_FILE = "/proc/self/cgroup";
 export const UNIT_NAME_SEPARATOR = "-";

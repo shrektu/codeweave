@@ -41,6 +41,7 @@ import {
   readEffectLines,
   type CleanupStack,
 } from "./rotationFixture";
+import { typeConfigDirectory } from "./pathFieldE2e";
 
 const STEP_TIMEOUT_MS = 120_000;
 const SWITCH_ENTRY_PATTERN = /A → B · rate limit/;
@@ -69,7 +70,7 @@ async function addOpencodeAccount(
   const dialog = page.getByRole("dialog", { name: "Accounts" });
   await dialog.getByLabel("Agent").selectOption({ label: OPENCODE_OPTION });
   await dialog.getByLabel("Label", { exact: true }).fill(OPENCODE_LABEL);
-  await dialog.getByLabel("Config directory").fill(configDir);
+  await typeConfigDirectory(dialog, configDir);
   await dialog.getByLabel("API provider").selectOption("custom");
   await dialog.getByLabel("Model", { exact: true }).fill(MOCK_MODEL);
   await dialog.getByLabel("Base URL").fill(baseUrl);

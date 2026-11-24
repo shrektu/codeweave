@@ -328,6 +328,7 @@ export const SettingsViewSchema = z.strictObject({
   definitionLibrary: z.string().nullable(),
   defaultWorkspace: z.string().nullable(),
   defaultWorkspaceResolved: z.string(),
+  recentFolders: z.array(z.string()),
 });
 export type SettingsView = z.infer<typeof SettingsViewSchema>;
 

@@ -73,6 +73,7 @@ export const SettingsFileSchema = z.object({
   defaultTaskClass: TaskClassSchema.default(TaskClass.standard),
   definitionLibrary: z.string().nullable().default(null),
   defaultWorkspace: z.string().nullable().default(null),
+  recentFolders: z.array(z.string()).default([]).catch([]),
 });
 
 const SwitchLogEntrySchema = z.object({
@@ -136,6 +137,7 @@ const DEFAULT_SETTINGS: SettingsFile = {
   defaultTaskClass: TaskClass.standard,
   definitionLibrary: null,
   defaultWorkspace: null,
+  recentFolders: [],
 };
 
 export class StorageCorruptError extends Error {

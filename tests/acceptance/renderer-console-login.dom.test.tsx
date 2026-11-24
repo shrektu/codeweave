@@ -22,6 +22,7 @@ import {
   type FakeIpcClient,
 } from "../fakes/fakeIpcClient";
 import { makeCodeweaveApi } from "../fakes/fakeCodeweaveApi";
+import { pathFieldValue } from "./pathFieldHelpers";
 
 const SUGGESTED_DIR = "/home/user/.codeweave-opencode";
 const FAKE_KEY = "sk-test-fake-key-A";
@@ -78,7 +79,7 @@ function field(label: string): HTMLInputElement {
 async function openOpencodeForm(client: FakeIpcClient): Promise<void> {
   renderWithServices(<AccountsDialog onClose={vi.fn<() => void>()} />, client);
   await waitFor(() => {
-    expect(field("Config directory").value).toBe(SUGGESTED_DIR);
+    expect(pathFieldValue("Config directory")).toBe(SUGGESTED_DIR);
   });
   change("Agent", "opencode");
 }

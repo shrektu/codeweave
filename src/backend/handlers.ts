@@ -96,6 +96,13 @@ export function createHandlers({
     postUpdaterConfig,
     homeDir,
   });
+  const recorded = async <T>(folder: string, use: Promise<T>): Promise<T> => {
+    const result = await use;
+    await settings.recordFolder(folder).catch((error: unknown) => {
+      console.error("recording recent folder failed", error);
+    });
+    return result;
+  };
   const definitionRoots = createDefinitionRoots({ store, userData });
   return {
     ping: () => ({ pong: true, backendPid: process.pid }),
@@ -113,9 +120,13 @@ export function createHandlers({
       if (flowRuns.hasOpenUserRuns()) {
         throw new IpcError(IpcErrorCode.CONFLICT, FLOW_RUNNING_MESSAGE);
       }
-      const view = await (params.orchestrate === true
-        ? orchestrator.start(params)
-        : main.start(params));
+      const started =
+        params.orchestrate === true
+          ? orchestrator.start(params)
+          : main.start(params);
+      const view = await (params.cwd === undefined
+        ? started
+        : recorded(params.cwd, started));
       await terminals.retarget(view.cwd).catch((error: unknown) => {
         console.error("terminal retarget failed", error);
       });
@@ -155,7 +166,8 @@ export function createHandlers({
     "switchLog/list": async () => ({
       entries: await store.readSwitchLog(SWITCH_LOG_SNAPSHOT_LIMIT),
     }),
-    "flows/list": async ({ cwd }) => listFlows(await definitionRoots(cwd)),
+    "flows/list": async ({ cwd }) =>
+      recorded(cwd, listFlows(await definitionRoots(cwd))),
     "flows/save": async ({ cwd, ...params }) =>
       saveFlow(await definitionRoots(cwd), params),
     "agents/create": async ({ cwd, ...params }) =>
@@ -171,7 +183,7 @@ export function createHandlers({
       return { stopped };
     },
     "flow/decide": (params) => flowRuns.decide(params),
-    "terminal/open": (params) => terminals.open(params),
+    "terminal/open": (params) => recorded(params.cwd, terminals.open(params)),
     "terminal/input": ({ id, data }) => {
       terminals.input(id, data);
       return { ok: true };

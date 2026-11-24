@@ -299,6 +299,7 @@ it("legacy_storage_files_load_unchanged", async () => {
     definitionLibrary: null,
     defaultWorkspace: null,
     defaultWorkspaceResolved: rig.homeDir,
+    recentFolders: [],
   });
 });
 

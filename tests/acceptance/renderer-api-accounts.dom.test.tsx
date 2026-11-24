@@ -27,6 +27,7 @@ import {
   type FakeIpcClient,
 } from "../fakes/fakeIpcClient";
 import { makeCodeweaveApi } from "../fakes/fakeCodeweaveApi";
+import { pathFieldValue, typePath } from "./pathFieldHelpers";
 
 const SUGGESTED_DIR = "/home/user/.codeweave-opencode";
 const PICKED_FOLDER = "/home/user/picked";
@@ -110,7 +111,7 @@ function addRequests(client: FakeIpcClient): unknown[] {
 async function openOpencodeForm(client: FakeIpcClient): Promise<void> {
   renderWithServices(<AccountsDialog onClose={vi.fn<() => void>()} />, client);
   await waitFor(() => {
-    expect(field("Config directory").value).toBe(SUGGESTED_DIR);
+    expect(pathFieldValue("Config directory")).toBe(SUGGESTED_DIR);
   });
   change("Agent", "opencode");
 }
@@ -192,11 +193,30 @@ it("api_account_save_disabled_with_generic_message_when_reason_missing", async (
   ).toBe(true);
 });
 
+it("account_config_dir_field_has_no_recent_menu", async () => {
+  const client = createFakeIpcClient();
+  client.respond(
+    "sessions/snapshot",
+    makeSnapshot({
+      settings: makeSettings({ recentFolders: ["/home/user/projects"] }),
+    }),
+  );
+  client.respond("accounts/suggest", { configDir: SUGGESTED_DIR });
+  renderWithServices(<AccountsDialog onClose={vi.fn<() => void>()} />, client);
+  await waitFor(() => {
+    expect(pathFieldValue("Config directory")).toBe(SUGGESTED_DIR);
+  });
+
+  const group = screen.getByRole("group", { name: "Config directory path" });
+
+  expect(within(group).queryByRole("button", { name: "Recent" })).toBeNull();
+});
+
 it("vault_status_is_not_requested_for_claude_accounts", async () => {
   const client = opencodeClient();
   renderWithServices(<AccountsDialog onClose={vi.fn<() => void>()} />, client);
   await waitFor(() => {
-    expect(field("Config directory").value).toBe(SUGGESTED_DIR);
+    expect(pathFieldValue("Config directory")).toBe(SUGGESTED_DIR);
   });
 
   expect(client.requests.some((r) => r.method === "vault/status")).toBe(false);
@@ -601,15 +621,16 @@ it("settings_saves_opencode_executable", async () => {
   client.respond("settings/set", makeSettings());
   renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
 
-  const input = await screen.findByLabelText("OpenCode executable");
-  fireEvent.change(input, { target: { value: "/opt/opencode/bin/opencode" } });
-  const save = within(input.parentElement ?? document.body).getByRole(
-    "button",
-    {
+  await screen.findByRole("group", { name: "OpenCode executable path" });
+  typePath("OpenCode executable", "/opt/opencode/bin/opencode");
+  const field = screen.getByRole("group", {
+    name: "OpenCode executable path",
+  });
+  fireEvent.click(
+    within(field.parentElement ?? document.body).getByRole("button", {
       name: "Save",
-    },
+    }),
   );
-  fireEvent.click(save);
 
   await waitFor(() => {
     expect(client.requests).toContainEqual({
@@ -666,7 +687,7 @@ it("escape_in_model_catalog_keeps_accounts_dialog_open", async () => {
   const client = opencodeClient();
   renderWithServices(<AccountsDialog onClose={onClose} />, client);
   await waitFor(() => {
-    expect(field("Config directory").value).toBe(SUGGESTED_DIR);
+    expect(pathFieldValue("Config directory")).toBe(SUGGESTED_DIR);
   });
   change("Agent", "opencode");
   change("API key", FAKE_KEY_A);
