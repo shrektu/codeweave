@@ -227,6 +227,7 @@ async function inkGap(
 }
 
 async function expectTailTouchesHead(page: Page, root: Locator): Promise<void> {
+  await root.scrollIntoViewIfNeeded();
   const head = root.locator(".path-head");
   const tail = root.locator(".path-tail");
   const headBox = await boxOf(head);
