@@ -144,7 +144,10 @@ type StartInput = ParamsMap["session/start"] &
     readonly leaseMode: LeaseMode;
   };
 
-type StartRequest = StartInput & { readonly cwd: string };
+type StartRequest = StartInput & {
+  readonly cwd: string;
+  readonly explicitFolder: boolean;
+};
 
 const isCancelled = (token: StartToken): boolean => token.cancelled;
 
@@ -197,6 +200,7 @@ async function createRun(
     deps,
     spec: {
       cwd: params.cwd,
+      explicitFolder: params.explicitFolder,
       profile: params.profile ?? settings.permissionProfile,
       flowRef: params.flowRef ?? null,
       model: params.model ?? null,
@@ -340,6 +344,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       const params: StartRequest = {
         ...input,
         cwd: await deps.resolveFolder(input.cwd),
+        explicitFolder: input.cwd !== undefined,
       };
       await releasePrevious();
       if (isCancelled(token)) {

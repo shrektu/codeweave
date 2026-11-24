@@ -161,7 +161,7 @@ interface Rig {
   readonly worktrees: FakeWorktrees;
   readonly server: FakeToolServer;
   readonly serverStarts: () => number;
-  readonly listedCwds: string[];
+  readonly listedCwds: (string | undefined)[];
 }
 
 function openRig(
@@ -176,7 +176,7 @@ function openRig(
   const server = new FakeToolServer();
   let starts = 0;
   let counter = 0;
-  const listedCwds: string[] = [];
+  const listedCwds: (string | undefined)[] = [];
   const service = createOrchestratorService({
     main,
     flowRuns: runs,

@@ -454,7 +454,6 @@ const INVALID_REQUESTS: [string, unknown][] = [
     "settings/set with numeric executable",
     request("settings/set", { claudeExecutable: 4 }),
   ],
-  ["flows/list without cwd", request("flows/list", {})],
   ["flows/list with empty cwd", request("flows/list", { cwd: "" })],
   [
     "flows/list with extra param",
@@ -840,4 +839,135 @@ describe("shutdown messages", () => {
       ShutdownDoneMessageSchema.safeParse({ type: "shutdown-done" }).success,
     ).toBe(true);
   });
+});
+
+const SAMPLE_AGENT = {
+  id: "coder",
+  role: "Writes code",
+  provider: "claude",
+  permissionProfile: "plan",
+};
+
+const SAMPLE_FLOW = {
+  id: "ship",
+  title: "Ship",
+  nodes: [{ id: "build", agent: "coder" }],
+  edges: [],
+};
+
+it.each<[string, Record<string, unknown>]>([
+  ["flows/list", { cwd: "" }],
+  [
+    "flows/save",
+    {
+      cwd: "",
+      source: "library",
+      file: "flows/ship.md",
+      revision: "rev-1",
+      flow: SAMPLE_FLOW,
+    },
+  ],
+  ["agents/create", { cwd: "", agent: SAMPLE_AGENT, body: "Prompt" }],
+  [
+    "agents/save",
+    {
+      cwd: "",
+      source: "library",
+      file: "agents/coder.md",
+      revision: "rev-1",
+      id: "coder",
+      agent: SAMPLE_AGENT,
+      body: "Prompt",
+    },
+  ],
+  [
+    "agents/delete",
+    {
+      cwd: "",
+      source: "library",
+      file: "agents/coder.md",
+      revision: "rev-1",
+      id: "coder",
+    },
+  ],
+])("rejects_empty_cwd_on_definition_methods: %s", (method, params) => {
+  expect(
+    RequestSchema.safeParse({ v: 7, id: "req-1", method, params }).success,
+  ).toBe(false);
+});
+
+it.each<[string, Record<string, unknown>]>([
+  ["flows/list", {}],
+  [
+    "flows/save",
+    {
+      source: "library",
+      file: "flows/ship.md",
+      revision: "rev-1",
+      flow: SAMPLE_FLOW,
+    },
+  ],
+  ["agents/create", { agent: SAMPLE_AGENT, body: "Prompt" }],
+  ["agents/create", { source: "library", agent: SAMPLE_AGENT, body: "Prompt" }],
+  [
+    "agents/save",
+    {
+      source: "library",
+      file: "agents/coder.md",
+      revision: "rev-1",
+      id: "coder",
+      agent: SAMPLE_AGENT,
+      body: "Prompt",
+    },
+  ],
+  [
+    "agents/delete",
+    {
+      source: "library",
+      file: "agents/coder.md",
+      revision: "rev-1",
+      id: "coder",
+    },
+  ],
+])("accepts_definition_methods_without_cwd: %s", (method, params) => {
+  expect(
+    RequestSchema.safeParse({ v: 7, id: "req-1", method, params }).success,
+  ).toBe(true);
+});
+
+it.each<[string, Record<string, unknown>]>([
+  [
+    "flows/save",
+    {
+      source: "project",
+      file: "flows/ship.md",
+      revision: "rev-1",
+      flow: SAMPLE_FLOW,
+    },
+  ],
+  ["agents/create", { source: "project", agent: SAMPLE_AGENT, body: "Prompt" }],
+  [
+    "agents/save",
+    {
+      source: "project",
+      file: "agents/coder.md",
+      revision: "rev-1",
+      id: "coder",
+      agent: SAMPLE_AGENT,
+      body: "Prompt",
+    },
+  ],
+  [
+    "agents/delete",
+    {
+      source: "project",
+      file: "agents/coder.md",
+      revision: "rev-1",
+      id: "coder",
+    },
+  ],
+])("rejects_project_source_without_cwd: %s", (method, params) => {
+  expect(
+    RequestSchema.safeParse({ v: 7, id: "req-1", method, params }).success,
+  ).toBe(false);
 });

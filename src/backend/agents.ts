@@ -25,6 +25,7 @@ import {
   listFlows,
   loadAgentIdentities,
   MARKDOWN_EXTENSION,
+  requireDefinitionRoot,
   resolveDefinitionFile,
   withWorkspaceLock,
   type AgentIdentity,
@@ -157,7 +158,11 @@ async function loadCurrent(
     revision,
   }: Pick<SaveParams, "source" | "file" | "id" | "revision">,
 ): Promise<CurrentFile> {
-  const target = await resolveDefinitionFile(roots[source], AGENTS_DIR, file);
+  const target = await resolveDefinitionFile(
+    requireDefinitionRoot(roots, source),
+    AGENTS_DIR,
+    file,
+  );
   const text = await readFile(target, "utf8");
   if (contentRevision(text) !== revision) {
     throw new IpcError(IpcErrorCode.CONFLICT, STALE_MESSAGE);
@@ -293,20 +298,25 @@ async function applyDelete(
 
 export async function createAgent(
   roots: DefinitionRoots,
-  { source = DefinitionSource.project, agent, body }: CreateParams,
+  { source, agent, body }: CreateParams,
 ): Promise<FlowsList> {
-  const root = roots[source];
+  const resolvedSource =
+    source ??
+    (roots.project === null
+      ? DefinitionSource.library
+      : DefinitionSource.project);
+  const root = requireDefinitionRoot(roots, resolvedSource);
   await withWorkspaceLock(root, async () => {
     const ids = await loadAgentIdentities(roots);
     assertValid(
       validateAgent(
         agent,
         body,
-        ids[source].map(({ id }) => id),
+        ids[resolvedSource].map(({ id }) => id),
       ),
     );
-    assertNotOverridden(source, agent.id, ids.project);
-    const agentsDir = await ensureAgentsDir(root, source);
+    assertNotOverridden(resolvedSource, agent.id, ids.project);
+    const agentsDir = await ensureAgentsDir(root, resolvedSource);
     await createExclusively(agentsDir, agent.id, newAgentFile(agent, body));
   });
   return listFlows(roots);
@@ -316,7 +326,8 @@ export async function saveAgent(
   roots: DefinitionRoots,
   params: SaveParams,
 ): Promise<FlowsList> {
-  await withWorkspaceLock(roots[params.source], () => applySave(roots, params));
+  const root = requireDefinitionRoot(roots, params.source);
+  await withWorkspaceLock(root, () => applySave(roots, params));
   return listFlows(roots);
 }
 
@@ -324,8 +335,7 @@ export async function deleteAgent(
   roots: DefinitionRoots,
   params: DeleteParams,
 ): Promise<FlowsList> {
-  await withWorkspaceLock(roots[params.source], () =>
-    applyDelete(roots, params),
-  );
+  const root = requireDefinitionRoot(roots, params.source);
+  await withWorkspaceLock(root, () => applyDelete(roots, params));
   return listFlows(roots);
 }

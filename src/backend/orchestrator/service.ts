@@ -175,6 +175,7 @@ class OrchestratorServiceImpl implements OrchestratorService {
     const tools = await this.toolServer();
     const orchestration: Orchestration = {
       cwd: null,
+      explicitFolder: false,
       runs: new Map(),
       sessionId: null,
       ended: false,
@@ -184,6 +185,7 @@ class OrchestratorServiceImpl implements OrchestratorService {
     );
     const view = await this.launch(tools, grant, params);
     orchestration.cwd = view.cwd;
+    orchestration.explicitFolder = view.explicitFolder;
     orchestration.sessionId = view.id;
     const previous = this.current;
     const next: ActiveOrchestration = new ActiveOrchestration(

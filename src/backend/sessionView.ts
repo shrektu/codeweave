@@ -12,6 +12,7 @@ import type {
 export interface SessionViewInput {
   readonly id: string;
   readonly cwd: string;
+  readonly explicitFolder: boolean;
   readonly provider: ProviderId;
   readonly accounts: readonly Account[];
   readonly profile: PermissionProfile;
@@ -74,6 +75,7 @@ export function toSessionView(input: SessionViewInput): SessionView {
   return {
     id: input.id,
     cwd: input.cwd,
+    explicitFolder: input.explicitFolder,
     provider: input.provider,
     profile: input.profile,
     phase: input.phase,

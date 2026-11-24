@@ -113,6 +113,7 @@ function sessionOf(overrides: Partial<SessionView>): SessionView {
   return {
     id: "s1",
     cwd: "/work",
+    explicitFolder: true,
     provider: ProviderId.claude,
     profile: "ask",
     phase: { phase: "running", accountId: "acc-1" },

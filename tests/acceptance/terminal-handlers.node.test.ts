@@ -32,6 +32,7 @@ function sessionIn(cwd: string): SessionView {
   return {
     id: "sess-1",
     cwd,
+    explicitFolder: true,
     provider: "claude",
     profile: "ask",
     phase: { phase: "running", accountId: "acc-1" },

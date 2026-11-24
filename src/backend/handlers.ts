@@ -166,8 +166,10 @@ export function createHandlers({
     "switchLog/list": async () => ({
       entries: await store.readSwitchLog(SWITCH_LOG_SNAPSHOT_LIMIT),
     }),
-    "flows/list": async ({ cwd }) =>
-      recorded(cwd, listFlows(await definitionRoots(cwd))),
+    "flows/list": async ({ cwd }) => {
+      const result = listFlows(await definitionRoots(cwd));
+      return cwd === undefined ? result : recorded(cwd, result);
+    },
     "flows/save": async ({ cwd, ...params }) =>
       saveFlow(await definitionRoots(cwd), params),
     "agents/create": async ({ cwd, ...params }) =>

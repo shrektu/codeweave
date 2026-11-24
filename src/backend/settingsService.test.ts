@@ -210,7 +210,7 @@ describe("settings service", () => {
       service.set({ definitionLibrary: "shared/flows" }),
     ).rejects.toMatchObject({
       code: "VALIDATION",
-      message: "The flow library folder must be an absolute path",
+      message: "The agents and flows library must be an absolute path",
     });
 
     expect((await store.readSettings()).definitionLibrary).toBeNull();

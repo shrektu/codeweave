@@ -4,11 +4,11 @@ import { DEFINITION_LIBRARY_DIR_NAME } from "./constants";
 import type { JsonStore } from "./storage";
 
 export interface DefinitionRoots {
-  readonly project: string;
+  readonly project: string | null;
   readonly library: string;
 }
 
-export type ResolveDefinitionRoots = (cwd: string) => Promise<DefinitionRoots>;
+export type ResolveDefinitionRoots = (cwd?: string) => Promise<DefinitionRoots>;
 
 export interface DefinitionRootsDeps {
   readonly store: JsonStore;
@@ -22,7 +22,7 @@ export function createDefinitionRoots({
   return async (cwd) => {
     const { definitionLibrary } = await store.readSettings();
     return {
-      project: cwd,
+      project: cwd ?? null,
       library: definitionLibrary ?? join(userData, DEFINITION_LIBRARY_DIR_NAME),
     };
   };

@@ -56,6 +56,7 @@ const FLOWS: FlowsList = {
 const RUNNING_VIEW: SessionView = {
   id: "session-1",
   cwd: WORK_DIR,
+  explicitFolder: true,
   provider: ProviderId.claude,
   profile: PermissionProfile.unattended,
   phase: { phase: "running", accountId: "acc-a" },
@@ -228,7 +229,7 @@ function harness(options: HarnessOptions = {}): Harness {
       return Promise.resolve();
     },
     mainSessionLive: () => options.mainLive ?? false,
-    listFlows: (cwd) => listingOf(cwd).promise,
+    listFlows: (cwd = "") => listingOf(cwd).promise,
     inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),
     broadcast,
     newRunId: () => {

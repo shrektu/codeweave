@@ -975,3 +975,14 @@ it("folder-resolution-failure-frees-the-session-slot", async () => {
   expect(rig.service.isLive()).toBe(false);
   expect(rig.log).toEqual([]);
 });
+
+it("session_view_tracks_explicit_folder_from_start_input", async () => {
+  const rig = await setup({ events: { "acc-a": [] } });
+
+  const implicit = await rig.service.start({});
+  expect(implicit.explicitFolder).toBe(false);
+  await rig.service.stop();
+
+  const explicit = await rig.service.start({ cwd: rig.cwd });
+  expect(explicit.explicitFolder).toBe(true);
+});

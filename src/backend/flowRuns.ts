@@ -50,7 +50,7 @@ export interface FlowRunDeps {
   readonly sessions: (runId: string) => SessionService;
   readonly releaseSessions: (runId: string) => Promise<void>;
   readonly mainSessionLive: () => boolean;
-  readonly listFlows: (cwd: string) => Promise<FlowsList>;
+  readonly listFlows: (cwd?: string) => Promise<FlowsList>;
   readonly inspectWorktree: (cwd: string) => Promise<WorktreeState>;
   readonly broadcast: ConnectionRegistry["broadcast"];
   readonly newRunId: () => string;
@@ -61,7 +61,7 @@ export type FlowStartRequest = ParamsMap["flow/start"] & {
   readonly placement?: FlowPlacement;
   readonly branch?: string | null;
   readonly runId?: string;
-  readonly definitionsCwd?: string;
+  readonly definitionsCwd?: string | null;
   readonly ownerSessionId?: string | null;
 };
 
@@ -236,7 +236,9 @@ class FlowRun {
     };
     this.opening = opening;
     try {
-      const list = await this.deps.listFlows(definitionsCwd ?? this.cwd);
+      const list = await this.deps.listFlows(
+        definitionsCwd === null ? undefined : (definitionsCwd ?? this.cwd),
+      );
       if (opening.cancelled) {
         throw new IpcError(IpcErrorCode.CONFLICT, START_CANCELLED_MESSAGE);
       }

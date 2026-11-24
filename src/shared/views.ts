@@ -192,6 +192,7 @@ export type TurnRouteView = z.infer<typeof TurnRouteViewSchema>;
 export const SessionViewSchema = z.strictObject({
   id: z.string(),
   cwd: z.string(),
+  explicitFolder: z.boolean(),
   provider: z.enum(ProviderId),
   profile: z.enum(PermissionProfile),
   phase: RotationPhaseViewSchema,
@@ -268,7 +269,10 @@ export const FlowsListSchema = z.strictObject({
   flows: z.array(FlowViewSchema),
   agents: z.array(AgentViewSchema),
   errors: z.array(FlowFileErrorSchema),
-  locations: z.strictObject({ project: z.string(), library: z.string() }),
+  locations: z.strictObject({
+    project: z.string().nullable(),
+    library: z.string(),
+  }),
 });
 export type FlowsList = z.infer<typeof FlowsListSchema>;
 

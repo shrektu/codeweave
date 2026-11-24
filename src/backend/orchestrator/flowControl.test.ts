@@ -43,6 +43,7 @@ function openRig(): Rig {
   const worktrees = new FakeWorktrees();
   const orchestration: Orchestration = {
     cwd: PROJECT,
+    explicitFolder: true,
     runs: new Map(),
     sessionId: SESSION_ID,
     ended: false,
