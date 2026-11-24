@@ -440,3 +440,59 @@ it.skipIf(process.platform === "win32")(
     }
   },
 );
+
+it.skipIf(process.platform === "win32")(
+  "worktree-destination-uses-git-toplevel",
+  async () => {
+    const { tools, space } = await openNoFolder(["alpha"], {
+      prepare: async ({ root, repos }) => {
+        const alpha = repos.alpha ?? "";
+        await mkdir(join(alpha, SUBFOLDER));
+        await writeFile(join(alpha, SUBFOLDER, "index.txt"), "x\n");
+        await git(alpha, ["add", "-A"]);
+        await git(alpha, ["commit", "--quiet", "-m", "Add packages"]);
+        await mkdir(join(root, ".ssh"));
+        await symlink(
+          join(root, ".ssh"),
+          join(root, "workspace", ".worktrees"),
+          "dir",
+        );
+      },
+      workspace: ({ repos }) => join(repos.alpha ?? "", SUBFOLDER),
+    });
+    const alpha = space.repos.alpha ?? "";
+
+    const start = await tools.call(
+      "start_flow",
+      startArgs(undefined, "worktree"),
+    );
+
+    expect(start.isError).toBe(true);
+    expect(start.text).toContain(
+      "The worktree destination is a symlink or a protected location",
+    );
+    expect(await readdir(join(space.root, ".ssh"))).toEqual([]);
+    expect(await git(alpha, ["branch", "--list", "codeweave/*"])).toBe("");
+  },
+);
+
+it.skipIf(process.platform === "win32")(
+  "worktree-destination-allows-symlinked-ancestor",
+  async () => {
+    const { rig, tools, space } = await openNoFolder(["alpha"], {
+      prepare: async ({ root, workspace }) => {
+        await symlink(workspace, join(root, "link"), "dir");
+      },
+      workspace: ({ root }) => join(root, "link"),
+    });
+    rig.container.scriptNext(writeBase("through link\n"));
+
+    const started = await startRun(tools, "alpha", "worktree");
+
+    expect(started.branch).toBe(`codeweave/${started.runId}`);
+    expect(existsSync(started.cwd)).toBe(true);
+    expect(
+      await git(space.repos.alpha ?? "", ["worktree", "list", "--porcelain"]),
+    ).toContain(`codeweave/${started.runId}`);
+  },
+);

@@ -441,48 +441,55 @@ describe("worktree destination", () => {
     "worktree-destination-symlink-rejected",
     async () => {
       const fx = await makeFixture();
-      const repository = join(fx.workspace, "proj");
-      await mkdir(repository);
       await mkdir(join(fx.root, ".ssh"));
       await mkdir(join(fx.root, "outside"));
       const scope = fx.scope();
       const destination = join(fx.workspace, ".worktrees");
 
       await expect(
-        scope.assertWorktreeDestination(repository),
+        scope.guardWorktreeDestination(destination),
       ).resolves.toBeUndefined();
       await mkdir(destination);
       await expect(
-        scope.assertWorktreeDestination(repository),
+        scope.guardWorktreeDestination(destination),
       ).resolves.toBeUndefined();
       await rm(destination, { recursive: true });
 
-      for (const target of [join(fx.root, ".ssh"), join(fx.root, "outside")]) {
+      for (const target of [
+        join(fx.root, ".ssh"),
+        join(fx.root, "outside"),
+        join(fx.root, "missing"),
+      ]) {
         await symlink(target, destination, "dir");
         const error = await failureOf(
-          scope.assertWorktreeDestination(repository),
+          scope.guardWorktreeDestination(destination),
         );
         expect(error.code, target).toBe(IpcErrorCode.VALIDATION);
         expect(error.message, target).toBe(DESTINATION);
         await rm(destination);
       }
+    },
+  );
 
-      await symlink(join(fx.root, "missing"), destination, "dir");
-      const dangling = await failureOf(
-        scope.assertWorktreeDestination(repository),
-      );
-      expect(dangling.message).toBe(DESTINATION);
+  it.skipIf(process.platform === "win32")(
+    "worktree-destination-allows-symlinked-ancestor",
+    async () => {
+      const fx = await makeFixture();
+      const link = join(fx.root, "link");
+      await symlink(fx.workspace, link, "dir");
+
+      await expect(
+        fx.scope().guardWorktreeDestination(join(link, ".worktrees")),
+      ).resolves.toBeUndefined();
     },
   );
 
   it("worktree-destination-protected-rejected", async () => {
     const fx = await makeFixture();
-    const repository = join(fx.workspace, "proj");
-    await mkdir(repository);
     fx.protectedPaths.push(join(fx.workspace, ".worktrees"));
 
     const error = await failureOf(
-      fx.scope().assertWorktreeDestination(repository),
+      fx.scope().guardWorktreeDestination(join(fx.workspace, ".worktrees")),
     );
 
     expect(error.code).toBe(IpcErrorCode.VALIDATION);

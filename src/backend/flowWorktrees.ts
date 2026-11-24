@@ -1,4 +1,4 @@
-import { lstat, readFile } from "node:fs/promises";
+import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 
 import { MergeStatus, type MergeOutcome } from "../domain/types";
@@ -31,9 +31,18 @@ export interface FlowWorktree {
   readonly base: string;
 }
 
+export type WorktreeGuard = (
+  worktreesDir: string,
+  worktreePath: string,
+) => Promise<void>;
+
 export interface FlowWorktrees {
   resolveProjectRoot(cwd: string): Promise<string>;
-  create(projectCwd: string, runId: string): Promise<FlowWorktree>;
+  create(
+    projectCwd: string,
+    runId: string,
+    guard?: WorktreeGuard,
+  ): Promise<FlowWorktree>;
   commitAll(worktree: FlowWorktree, message: string): Promise<string | null>;
   diff(worktree: FlowWorktree): Promise<string>;
   workingDiff(cwd: string): Promise<string>;
@@ -47,6 +56,8 @@ export interface FlowWorktrees {
 type Git = (dir: string, args: readonly string[]) => Promise<string>;
 
 const GIT_EXIT_FALSE = 1;
+const WORKTREE_PLACEMENT_MESSAGE =
+  "The worktree was not created inside the worktrees directory";
 const LINE_BREAK = /\r?\n/;
 const UNTRACKED_FILES_HEADING = "Untracked files:";
 
@@ -200,10 +211,52 @@ function worktreePath(projectRoot: string, runId: string): string {
   );
 }
 
+export async function isLinkEntry(entry: string): Promise<boolean> {
+  try {
+    return (await lstat(entry)).isSymbolicLink();
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function assertWorktreePlacement(
+  worktreesDir: string,
+  worktreePath: string,
+): Promise<void> {
+  const inside =
+    !(await isLinkEntry(worktreesDir)) &&
+    (await realpath(worktreePath)) ===
+      path.join(await realpath(worktreesDir), path.basename(worktreePath));
+  if (!inside) {
+    throw new IpcError(IpcErrorCode.VALIDATION, WORKTREE_PLACEMENT_MESSAGE);
+  }
+}
+
+async function discardWorktree(
+  git: Git,
+  worktree: FlowWorktree,
+): Promise<void> {
+  try {
+    await git(worktree.projectRoot, [
+      "worktree",
+      "remove",
+      "--force",
+      worktree.path,
+    ]);
+    await git(worktree.projectRoot, ["branch", "-D", worktree.branch]);
+  } catch (error) {
+    console.error(`failed to discard worktree ${worktree.path}`, error);
+  }
+}
+
 async function create(
   git: Git,
   projectCwd: string,
   runId: string,
+  guard?: WorktreeGuard,
 ): Promise<FlowWorktree> {
   const projectRoot = await resolveProjectRoot(git, projectCwd);
   if (await isDirty(git, projectRoot)) {
@@ -215,8 +268,21 @@ async function create(
   const base = await head(git, projectRoot);
   const branch = `${FLOW_BRANCH_PREFIX}${runId}`;
   const dir = worktreePath(projectRoot, runId);
+  const worktreesDir = path.dirname(dir);
+  await guard?.(worktreesDir, dir);
   await git(projectRoot, ["worktree", "add", "-b", branch, dir, base]);
-  return { runId, projectRoot, path: dir, branch, base };
+  const worktree = { runId, projectRoot, path: dir, branch, base };
+  if (guard === undefined) {
+    return worktree;
+  }
+  try {
+    await guard(worktreesDir, dir);
+    await assertWorktreePlacement(worktreesDir, dir);
+  } catch (error) {
+    await discardWorktree(git, worktree);
+    throw error;
+  }
+  return worktree;
 }
 
 async function commitAll(
@@ -331,7 +397,7 @@ export function createFlowWorktrees(deps: {
   const git: Git = (dir, args) => deps.exec(GIT_BINARY, ["-C", dir, ...args]);
   return {
     resolveProjectRoot: (cwd) => resolveProjectRoot(git, cwd),
-    create: (projectCwd, runId) => create(git, projectCwd, runId),
+    create: (projectCwd, runId, guard) => create(git, projectCwd, runId, guard),
     commitAll: (worktree, message) => commitAll(git, worktree, message),
     diff: (worktree) => diff(git, worktree),
     workingDiff: (cwd) => workingDiff(git, cwd),

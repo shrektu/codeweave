@@ -3,8 +3,10 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   realpath,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -131,6 +133,48 @@ describe("create", () => {
     expect(failure).toBeInstanceOf(IpcError);
     expect(failure).toMatchObject({ code: IpcErrorCode.VALIDATION });
   });
+});
+
+describe("create guard", () => {
+  it("worktree-destination-uses-git-toplevel", async () => {
+    await mkdir(join(repo, "packages"));
+    const seen: string[] = [];
+
+    await flows.create(join(repo, "packages"), RUN_ID, (worktreesDir) => {
+      seen.push(worktreesDir);
+      return Promise.resolve();
+    });
+
+    const expected = join(root, ".worktrees");
+    expect(seen).toEqual([expected, expected]);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "worktree-destination-swapped-after-check-is-removed",
+    async () => {
+      const outside = join(root, "outside");
+      await mkdir(outside);
+      const destination = join(root, ".worktrees");
+      let calls = 0;
+
+      const failure = await flows
+        .create(repo, RUN_ID, async () => {
+          calls += 1;
+          if (calls === 1) {
+            await symlink(outside, destination, "dir");
+          }
+        })
+        .catch((e: unknown) => e);
+
+      expect(failure).toBeInstanceOf(IpcError);
+      expect(failure).toMatchObject({ code: IpcErrorCode.VALIDATION });
+      expect(await readdir(outside)).toEqual([]);
+      expect(
+        await git(repo, ["worktree", "list", "--porcelain"]),
+      ).not.toContain("codeweave/");
+      expect(await git(repo, ["branch", "--list", "codeweave/*"])).toBe("");
+    },
+  );
 });
 
 describe("commitAll", () => {
