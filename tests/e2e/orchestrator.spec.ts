@@ -1,5 +1,5 @@
-import { access, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { access, readFile, realpath } from "node:fs/promises";
+import path, { join } from "node:path";
 
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
@@ -21,6 +21,7 @@ import {
   type MockRequestRecord,
 } from "../fakes/anthropicMock";
 import { TurnKind, type MockTurn } from "../fakes/mockTurn";
+import { isWorktreeUnder } from "../fakes/worktreeLocation";
 import { FlowPlacement } from "../../src/domain/types";
 
 import {
@@ -464,12 +465,15 @@ test("orchestrator_without_folder_runs_worktree_flow_from_prompted_repository", 
       "--porcelain",
     ]);
     const branch = WORKTREE_BRANCH_PATTERN.exec(listing)?.[1] ?? "";
-    const path = WORKTREE_PATH_PATTERN.exec(listing)?.[1] ?? "";
+    const worktreePath = WORKTREE_PATH_PATTERN.exec(listing)?.[1] ?? "";
 
     expect(branch).not.toBe("");
     expect(
-      path.startsWith(
-        join(workspace.workspace, ".worktrees", `${TARGET_REPOSITORY}-cw-`),
+      isWorktreeUnder(
+        await realpath(worktreePath),
+        join(await realpath(workspace.workspace), ".worktrees"),
+        `${TARGET_REPOSITORY}-cw-`,
+        path,
       ),
     ).toBe(true);
     expect(
