@@ -30,9 +30,11 @@ const DRAFT_KEYS: readonly (keyof AgentDraft)[] = [
   "body",
 ];
 
-export function emptyAgentDraft(): AgentDraft {
+export function emptyAgentDraft(
+  source: DefinitionSource = DefinitionSource.project,
+): AgentDraft {
   return {
-    source: DefinitionSource.project,
+    source,
     id: "",
     role: "",
     provider: ProviderId.claude,
@@ -84,7 +86,9 @@ export function agentDraftErrors(
 export function isAgentDraftChanged(
   draft: AgentDraft,
   view: AgentView | null,
+  defaultSource: DefinitionSource = DefinitionSource.project,
 ): boolean {
-  const base = view === null ? emptyAgentDraft() : agentDraftOf(view);
+  const base =
+    view === null ? emptyAgentDraft(defaultSource) : agentDraftOf(view);
   return DRAFT_KEYS.some((key) => draft[key] !== base[key]);
 }

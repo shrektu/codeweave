@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { FlowsList } from "../shared/views";
 
 import { errorMessage } from "./errorMessage";
+import { cwdParams } from "./flowDraft";
 import { useApp } from "./services";
 
 export type FlowsLoad =
@@ -18,7 +19,7 @@ export interface FlowsSource {
 }
 
 interface LoadedFlows {
-  cwd: string;
+  cwd: string | null;
   load: FlowsLoad;
   reloadCount: number;
 }
@@ -30,16 +31,13 @@ export function useFlowsLoad(cwd: string | null): FlowsSource {
   const [reloadCount, setReloadCount] = useState(0);
 
   useEffect(() => {
-    if (cwd === null) {
-      return undefined;
-    }
     let active = true;
     const run = async (): Promise<void> => {
       let load: FlowsLoad;
       try {
         load = {
           status: "ready",
-          list: await client.request("flows/list", { cwd }),
+          list: await client.request("flows/list", cwdParams(cwd)),
         };
       } catch (error: unknown) {
         load = { status: "failed", message: errorMessage(error) };
@@ -58,9 +56,7 @@ export function useFlowsLoad(cwd: string | null): FlowsSource {
     load: loaded?.cwd === cwd ? loaded.load : { status: "loading" },
     reloading: loaded?.reloadCount !== reloadCount,
     replace: (list) => {
-      if (cwd !== null) {
-        setLoaded({ cwd, load: { status: "ready", list }, reloadCount });
-      }
+      setLoaded({ cwd, load: { status: "ready", list }, reloadCount });
     },
     reload: () => {
       setReloadCount((count) => count + 1);

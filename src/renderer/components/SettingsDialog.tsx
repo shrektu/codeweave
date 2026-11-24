@@ -288,10 +288,10 @@ function SettingsForm({ settings }: { settings: SettingsView }): JSX.Element {
         <ExecutableField
           id="definition-library"
           kind="folder"
-          label="Flow library folder"
+          label="Agents and flows library"
           current={settings.definitionLibrary}
           placeholder="Default: Codeweave data folder/library"
-          help="Shared agents and flows. A project definition overrides a library one with the same id."
+          help="Where this Codeweave instance stores your agents and flows. A project folder's definitions override library ones with the same id."
           onSave={(definitionLibrary) => {
             onPatch({ definitionLibrary });
           }}

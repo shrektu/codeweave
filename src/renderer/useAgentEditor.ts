@@ -1,6 +1,6 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
 
-import type { DefinitionSource } from "../domain/types";
+import { DefinitionSource } from "../domain/types";
 import type { AgentView, FlowsList } from "../shared/views";
 
 import {
@@ -11,6 +11,7 @@ import {
   type AgentDraft,
 } from "./agentDraft";
 import { requestUnlessConflict } from "./conflictRequest";
+import { cwdParams } from "./flowDraft";
 import type { IpcClient } from "./ipc";
 import { useApp } from "./services";
 import { useAsyncAction, type AsyncAction } from "./useAsyncAction";
@@ -26,12 +27,16 @@ export type AgentTarget =
     };
 
 export interface AgentSession {
-  cwd: string;
+  cwd: string | null;
   target: AgentTarget;
   saved: AgentView | null;
   draft: AgentDraft;
   conflict: boolean;
   saveToken: symbol | null;
+}
+
+export function defaultAgentSource(cwd: string | null): DefinitionSource {
+  return cwd === null ? DefinitionSource.library : DefinitionSource.project;
 }
 
 export function agentEditorPinsFolder(
@@ -40,7 +45,12 @@ export function agentEditorPinsFolder(
 ): boolean {
   return (
     saving ||
-    (session !== null && isAgentDraftChanged(session.draft, session.saved))
+    (session !== null &&
+      isAgentDraftChanged(
+        session.draft,
+        session.saved,
+        defaultAgentSource(session.cwd),
+      ))
   );
 }
 
@@ -61,7 +71,7 @@ export interface AgentEditor {
 type Send = (session: AgentSession) => Promise<FlowsList>;
 type Settle = (list: FlowsList, started: AgentSession) => AgentSession | null;
 
-function sessionOf(cwd: string, view: AgentView): AgentSession {
+function sessionOf(cwd: string | null, view: AgentView): AgentSession {
   return {
     cwd,
     target: {
@@ -78,7 +88,11 @@ function sessionOf(cwd: string, view: AgentView): AgentSession {
   };
 }
 
-function reopen(list: FlowsList, cwd: string, id: string): AgentSession | null {
+function reopen(
+  list: FlowsList,
+  cwd: string | null,
+  id: string,
+): AgentSession | null {
   const view = list.agents.find((agent) => agent.id === id);
   return view === undefined ? null : sessionOf(cwd, view);
 }
@@ -89,15 +103,16 @@ function sendSave(
 ): Promise<FlowsList> {
   const { cwd, target, draft } = session;
   const agent = toAgentDefinition(draft);
+  const cwdParam = cwdParams(cwd);
   return target.kind === "new"
     ? client.request("agents/create", {
-        cwd,
+        ...cwdParam,
         source: draft.source,
         agent,
         body: draft.body,
       })
     : client.request("agents/save", {
-        cwd,
+        ...cwdParam,
         source: target.source,
         file: target.file,
         revision: target.revision,
@@ -116,7 +131,7 @@ function sendDelete(
     return Promise.reject(new Error("A new agent has nothing to delete"));
   }
   return client.request("agents/delete", {
-    cwd,
+    ...cwdParams(cwd),
     source: target.source,
     file: target.file,
     revision: target.revision,
@@ -144,12 +159,12 @@ function closeEditor(): null {
   return null;
 }
 
-function newSession(cwd: string): AgentSession {
+function newSession(cwd: string | null): AgentSession {
   return {
     cwd,
     target: { kind: "new" },
     saved: null,
-    draft: emptyAgentDraft(),
+    draft: emptyAgentDraft(defaultAgentSource(cwd)),
     conflict: false,
     saveToken: null,
   };
@@ -200,13 +215,11 @@ export function useAgentEditor(autoCwd: string | null): AgentEditor {
   const [session, setStored] = useState<AgentSession | null>(null);
   const busy = useAsyncAction();
   const perform = performerFor(session, setStored, busy);
-  const cwd = session?.cwd ?? autoCwd;
+  const cwd = session !== null ? session.cwd : autoCwd;
 
-  const begin = (build: (cwd: string) => AgentSession): void => {
-    if (cwd !== null) {
-      setStored(build(cwd));
-      busy.setError(null);
-    }
+  const begin = (build: (folder: string | null) => AgentSession): void => {
+    setStored(build(cwd));
+    busy.setError(null);
   };
 
   return {
@@ -234,7 +247,7 @@ export function useAgentEditor(autoCwd: string | null): AgentEditor {
     },
     reload: (onList) => {
       perform(
-        (started) => client.request("flows/list", { cwd: started.cwd }),
+        (started) => client.request("flows/list", cwdParams(started.cwd)),
         reopenOriginal,
         onList,
       );

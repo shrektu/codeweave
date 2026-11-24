@@ -37,7 +37,7 @@ import { FlowErrors } from "./components/FlowErrors";
 import { FlowGraph } from "./components/FlowGraph";
 import { FlowInspector } from "./components/FlowInspector";
 import { FlowRunPanel } from "./components/FlowRunPanel";
-import { FolderPrompt, PickFolderButton } from "./components/FolderControls";
+import { PickFolderButton } from "./components/FolderControls";
 import { Icon } from "./components/Icon";
 import { LimitsPanel } from "./components/LimitsPanel";
 import { OrchestratorTimeline } from "./components/OrchestratorTimeline";
@@ -107,7 +107,7 @@ const FLOW_MISSING_MESSAGE = "This flow is no longer on disk.";
 const RUN_LOCK_MESSAGE = "Stop the flow to edit it.";
 
 interface EditSession {
-  cwd: string;
+  cwd: string | null;
   base: FlowBase;
   draft: FlowDraft;
   selection: FlowSelection;
@@ -163,7 +163,7 @@ function useFlowEditor(autoCwd: string | null): FlowEditor {
   const { client } = useApp();
   const [session, setStored] = useState<EditSession | null>(null);
   const saving = useAsyncAction();
-  const cwd = session?.cwd ?? autoCwd;
+  const cwd = session !== null ? session.cwd : autoCwd;
 
   const patch = (change: Partial<EditSession>): void => {
     setStored((current) =>
@@ -186,17 +186,15 @@ function useFlowEditor(autoCwd: string | null): FlowEditor {
       patch({ roundsText });
     },
     start: (flow) => {
-      if (cwd !== null) {
-        setStored({
-          cwd,
-          base: baseOf(flow),
-          draft: draftOf(flow),
-          selection: null,
-          roundsText: null,
-          conflict: false,
-          saveToken: null,
-        });
-      }
+      setStored({
+        cwd,
+        base: baseOf(flow),
+        draft: draftOf(flow),
+        selection: null,
+        roundsText: null,
+        conflict: false,
+        saveToken: null,
+      });
     },
     discard: () => {
       setStored(null);
@@ -286,7 +284,7 @@ function FlowPicker({
   onSaved,
   onReload,
 }: {
-  cwd: string;
+  cwd: string | null;
   list: FlowsList;
   session: SessionView | null;
   sessionLive: boolean;
@@ -396,7 +394,11 @@ function FlowPicker({
             <Icon icon={Workflow} />
           </span>
           <p className="empty-title">No flows yet</p>
-          <p className="empty">No flows found in this folder.</p>
+          <p className="empty">
+            {cwd === null
+              ? "No flows found in the library."
+              : "No flows found in this folder."}
+          </p>
         </div>
       ) : editor.session === null || locked ? (
         <FlowGraph
@@ -458,7 +460,6 @@ function FlowTabBody({
   source,
   editor,
   onOpenSession,
-  onPickFolder,
 }: {
   cwd: string | null;
   session: SessionView | null;
@@ -469,12 +470,8 @@ function FlowTabBody({
   source: FlowsSource;
   editor: FlowEditor;
   onOpenSession: () => void;
-  onPickFolder: (cwd: string) => void;
 }): JSX.Element {
   const { load } = source;
-  if (cwd === null) {
-    return <FolderPrompt subject="flows" onPick={onPickFolder} />;
-  }
   switch (load.status) {
     case "loading":
       return <p className="empty">Loading flows…</p>;
@@ -507,9 +504,13 @@ function openRunCwdOf(snapshot: Snapshot | null): string | null {
   return latestOpenRunOf(userRuns)?.cwd ?? null;
 }
 
+function explicitSessionCwdOf(session: SessionView | null): string | null {
+  return session?.explicitFolder ? session.cwd : null;
+}
+
 function liveSessionCwdOf(snapshot: Snapshot | null): string | null {
   const { session } = shownSessionOf(snapshot);
-  return isSessionLive(session) ? (session?.cwd ?? null) : null;
+  return isSessionLive(session) ? explicitSessionCwdOf(session) : null;
 }
 
 function flowCwdOf(
@@ -520,8 +521,7 @@ function flowCwdOf(
     openRunCwdOf(snapshot) ??
     liveSessionCwdOf(snapshot) ??
     picked ??
-    shownSessionOf(snapshot).session?.cwd ??
-    null
+    explicitSessionCwdOf(shownSessionOf(snapshot).session)
   );
 }
 
@@ -565,9 +565,9 @@ function FlowTab({
   return (
     <section className="glass panel flow-tab" aria-label="Flow">
       <h2 className="sec">Flow</h2>
-      {cwd !== null && !folderPinned && (
+      {!folderPinned && (
         <PickFolderButton
-          label="Change folder…"
+          label={cwd === null ? "Choose folder…" : "Change folder…"}
           primary={false}
           onPick={onPickFolder}
         />
@@ -582,7 +582,6 @@ function FlowTab({
         source={source}
         editor={editor}
         onOpenSession={onOpenSession}
-        onPickFolder={onPickFolder}
       />
     </section>
   );

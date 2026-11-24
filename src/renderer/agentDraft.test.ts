@@ -166,4 +166,19 @@ describe("isAgentDraftChanged", () => {
       true,
     );
   });
+
+  it("compares a new library agent against the library default source", () => {
+    const libraryDraft = emptyAgentDraft(DefinitionSource.library);
+
+    expect(
+      isAgentDraftChanged(libraryDraft, null, DefinitionSource.library),
+    ).toBe(false);
+    expect(
+      isAgentDraftChanged(
+        { ...libraryDraft, id: "x" },
+        null,
+        DefinitionSource.library,
+      ),
+    ).toBe(true);
+  });
 });

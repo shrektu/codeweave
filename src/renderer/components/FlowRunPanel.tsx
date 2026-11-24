@@ -14,6 +14,7 @@ import { useAsyncAction, type AsyncAction } from "../useAsyncAction";
 import { Icon } from "./Icon";
 import { StatusPill, StatusTone } from "./StatusPill";
 
+const NO_FOLDER_MESSAGE = "Choose a project folder to run this flow.";
 const SESSION_LIVE_MESSAGE = "End the current session to run a flow.";
 const EDITING_MESSAGE = "Save or discard your edits to run the flow.";
 
@@ -96,7 +97,14 @@ export function outcomeText(run: FlowRunView): string | null {
   }
 }
 
-function blockerOf(sessionLive: boolean, editing: boolean): string | null {
+function blockerOf(
+  cwd: string | null,
+  sessionLive: boolean,
+  editing: boolean,
+): string | null {
+  if (cwd === null) {
+    return NO_FOLDER_MESSAGE;
+  }
   if (sessionLive) {
     return SESSION_LIVE_MESSAGE;
   }
@@ -211,7 +219,7 @@ function RunForm({
   disabledReason,
   action,
 }: {
-  cwd: string;
+  cwd: string | null;
   flow: FlowView;
   disabledReason: string | null;
   action: AsyncAction;
@@ -242,13 +250,15 @@ function RunForm({
           className="btn pri"
           disabled={trimmed === "" || disabledReason !== null || action.pending}
           onClick={() => {
-            void action.run(() =>
-              client.request("flow/start", {
-                cwd,
-                flowId: flow.id,
-                task: trimmed,
-              }),
-            );
+            if (cwd !== null) {
+              void action.run(() =>
+                client.request("flow/start", {
+                  cwd,
+                  flowId: flow.id,
+                  task: trimmed,
+                }),
+              );
+            }
           }}
         >
           <Icon icon={Play} />
@@ -269,7 +279,7 @@ export function FlowRunPanel({
   sessionLive,
   editing,
 }: {
-  cwd: string;
+  cwd: string | null;
   flow: FlowView | undefined;
   run: FlowRunView | null;
   sessionLive: boolean;
@@ -289,7 +299,7 @@ export function FlowRunPanel({
             <RunForm
               cwd={cwd}
               flow={flow}
-              disabledReason={blockerOf(sessionLive, editing)}
+              disabledReason={blockerOf(cwd, sessionLive, editing)}
               action={action}
             />
           )}

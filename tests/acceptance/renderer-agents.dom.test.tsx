@@ -8,7 +8,11 @@ import {
 import { afterEach, beforeEach, expect, it } from "vitest";
 
 import { ApiProviderId } from "../../src/domain/apiProviders";
-import { PermissionProfile, ProviderId } from "../../src/domain/types";
+import {
+  DefinitionSource,
+  PermissionProfile,
+  ProviderId,
+} from "../../src/domain/types";
 import { App } from "../../src/renderer/App";
 import { IpcRemoteError } from "../../src/renderer/ipc";
 import { IpcErrorCode } from "../../src/shared/protocol";
@@ -731,4 +735,195 @@ it("agent model field warns on an unknown opencode provider", async () => {
 
   type("Model", "");
   expect(screen.queryByText(UNKNOWN_PROVIDER_TEXT)).toBeNull();
+});
+
+const LIBRARY_LOCATION = { project: null, library: "/data/library" };
+
+function libraryClient(agents: AgentView[]): FakeIpcClient {
+  const client = createFakeIpcClient();
+  client.respond("ping", { pong: true, backendPid: 1 });
+  client.respond("sessions/snapshot", makeSnapshot({ session: null }));
+  client.respond(
+    "flows/list",
+    makeFlowsList({ flows: [], agents, locations: LIBRARY_LOCATION }),
+  );
+  return client;
+}
+
+it("agents_tab_lists_library_agents_without_a_folder", async () => {
+  const libAgent = makeAgent({
+    id: "lib-agent",
+    source: DefinitionSource.library,
+    file: "agents/lib-agent.md",
+  });
+  const client = libraryClient([libAgent]);
+  await showAgentsTab(client);
+
+  expect(requestsOf(client, "flows/list")).toEqual([{}]);
+  expect(screen.queryByText("No folder selected")).toBeNull();
+  expect(screen.getByRole("button", { name: "Choose folder…" })).toBeTruthy();
+  expect(listText()).toContain("lib-agent");
+});
+
+it("creating_an_agent_without_a_folder_sends_library_create_without_cwd", async () => {
+  const client = libraryClient([]);
+  const created = makeAgent({
+    id: "helper",
+    source: DefinitionSource.library,
+    file: "agents/helper.md",
+    role: "Helps out",
+    permissionProfile: PermissionProfile.ask,
+    body: "Help.",
+  });
+  client.respond(
+    "agents/create",
+    makeFlowsList({
+      flows: [],
+      agents: [created],
+      locations: LIBRARY_LOCATION,
+    }),
+  );
+  await showAgentsTab(client);
+
+  fireEvent.click(button("New agent"));
+  await screen.findByLabelText("Id");
+  expect(screen.queryByLabelText("Location")).toBeNull();
+
+  type("Id", "helper");
+  type("Role", "Helps out");
+  type("Instructions", "Help.");
+  fireEvent.click(button("Save"));
+
+  await waitFor(() => {
+    expect(requestsOf(client, "agents/create")).toEqual([
+      {
+        source: "library",
+        agent: {
+          id: "helper",
+          role: "Helps out",
+          provider: "claude",
+          permissionProfile: "ask",
+        },
+        body: "Help.",
+      },
+    ]);
+  }, WAIT_OPTIONS);
+});
+
+it("picking_a_folder_overlays_project_agents_over_library", async () => {
+  window.codeweave = makeCodeweaveApi({
+    pickFolder: () => Promise.resolve(PICKED_CWD),
+  });
+  const libImpl = makeAgent({
+    id: "implementer",
+    source: DefinitionSource.library,
+    role: "Library implementer",
+  });
+  const projImpl = makeAgent({
+    id: "implementer",
+    source: DefinitionSource.project,
+    role: "Project implementer",
+  });
+  const libRev = makeAgent({
+    id: "reviewer",
+    source: DefinitionSource.library,
+    role: "Library reviewer",
+  });
+  const client = createFakeIpcClient();
+  client.respond("ping", { pong: true, backendPid: 1 });
+  client.respond("sessions/snapshot", makeSnapshot({ session: null }));
+  client.on("flows/list", (params) =>
+    params.cwd === PICKED_CWD
+      ? makeFlowsList({ flows: [], agents: [projImpl, libRev] })
+      : makeFlowsList({
+          flows: [],
+          agents: [libImpl],
+          locations: LIBRARY_LOCATION,
+        }),
+  );
+  await showAgentsTab(client);
+  expect(listText()).toContain("Library implementer");
+
+  fireEvent.click(screen.getByRole("button", { name: "Choose folder…" }));
+
+  await waitFor(() => {
+    expect(listText()).toContain("Project implementer");
+  }, WAIT_OPTIONS);
+  expect(listText()).toContain("Library reviewer");
+  expect(requestsOf(client, "flows/list")).toContainEqual({ cwd: PICKED_CWD });
+});
+
+it("folderless_session_does_not_overlay_default_workspace_in_agents_tab", async () => {
+  const libAgent = makeAgent({
+    id: "lib-agent",
+    source: DefinitionSource.library,
+  });
+  const client = createFakeIpcClient();
+  client.respond("ping", { pong: true, backendPid: 1 });
+  client.respond(
+    "sessions/snapshot",
+    makeSnapshot({
+      session: makeSession({
+        cwd: "/home/user/default-ws",
+        explicitFolder: false,
+      }),
+    }),
+  );
+  client.respond(
+    "flows/list",
+    makeFlowsList({
+      flows: [],
+      agents: [libAgent],
+      locations: LIBRARY_LOCATION,
+    }),
+  );
+  await showAgentsTab(client);
+
+  expect(requestsOf(client, "flows/list")).toEqual([{}]);
+  expect(screen.getByRole("button", { name: "Choose folder…" })).toBeTruthy();
+});
+
+it("dirty_library_agent_edit_pins_folder_and_saves_without_cwd", async () => {
+  const libAgent = makeAgent({
+    id: "lib-agent",
+    source: DefinitionSource.library,
+    file: "agents/lib-agent.md",
+    revision: "lib-rev-1",
+  });
+  const saved = makeAgent({
+    id: "lib-agent",
+    source: DefinitionSource.library,
+    file: "agents/lib-agent.md",
+    revision: "lib-rev-2",
+    role: "Updated library role",
+  });
+  const client = libraryClient([libAgent]);
+  client.respond(
+    "agents/save",
+    makeFlowsList({ flows: [], agents: [saved], locations: LIBRARY_LOCATION }),
+  );
+  await openAgentsTab(client, "lib-agent");
+  expect(screen.getByRole("button", { name: "Choose folder…" })).toBeTruthy();
+
+  type("Role", "Updated library role");
+  expect(screen.queryByRole("button", { name: "Choose folder…" })).toBeNull();
+
+  fireEvent.click(button("Save"));
+  await waitFor(() => {
+    expect(requestsOf(client, "agents/save")).toEqual([
+      {
+        source: "library",
+        file: "agents/lib-agent.md",
+        revision: "lib-rev-1",
+        id: "lib-agent",
+        agent: {
+          id: "lib-agent",
+          role: "Updated library role",
+          provider: "claude",
+          permissionProfile: "plan",
+        },
+        body: "Implements the change.",
+      },
+    ]);
+  }, WAIT_OPTIONS);
 });

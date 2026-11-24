@@ -16,7 +16,7 @@ import {
   PROVIDER_LABELS,
 } from "../format";
 import { PROFILE_OPTIONS } from "../profileOptions";
-import type { AgentSession } from "../useAgentEditor";
+import { defaultAgentSource, type AgentSession } from "../useAgentEditor";
 
 import { AgentModelField } from "./AgentModelField";
 import { Dialog } from "./Dialog";
@@ -488,7 +488,7 @@ export function AgentForm({
         disabled={saving}
         reasonId={reasonId}
         idLocked={usedByReason(view) !== null}
-        sourceLocked={view !== null}
+        sourceLocked={view !== null || session.cwd === null}
         onChange={onChange}
       />
       <UsedBy view={view} reasonId={reasonId} />
@@ -497,7 +497,11 @@ export function AgentForm({
         view={view}
         saving={saving}
         canSave={errors.length === 0}
-        changed={isAgentDraftChanged(draft, view)}
+        changed={isAgentDraftChanged(
+          draft,
+          view,
+          defaultAgentSource(session.cwd),
+        )}
         reasonId={reasonId}
         onSave={onSave}
         onDiscard={onDiscard}
