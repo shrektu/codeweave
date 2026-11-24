@@ -297,6 +297,8 @@ it("legacy_storage_files_load_unchanged", async () => {
     updateChannel: "stable",
     defaultTaskClass: "standard",
     definitionLibrary: null,
+    defaultWorkspace: null,
+    defaultWorkspaceResolved: rig.homeDir,
   });
 });
 

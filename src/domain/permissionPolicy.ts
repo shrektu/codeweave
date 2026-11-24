@@ -1,11 +1,30 @@
-import { isAbsolute, relative, resolve, sep } from "node:path";
 import { dirname } from "node:path/posix";
 
 import { parse, type ParseEntry } from "shell-quote";
 
 import { findExecCommands, shellScript } from "./commandParse";
 import {
-  BRACE_EXPANSION_PATTERN,
+  advanceCwd,
+  directoryCommand,
+  overridesCdEnv,
+  type CwdCursor,
+} from "./cwdTracking";
+import {
+  isInsideWorktree,
+  isProtectedOrAncestor,
+  isProtectedTarget,
+  isWithinRoot,
+  mentionsProtectedPath,
+  type PermissionContext,
+} from "./pathScope";
+import {
+  hasGitInlineConfig,
+  isDangerousGitPush,
+  isReadOnlyGit,
+  isUncertainGitPush,
+} from "./gitRules";
+import {
+  CD_COMMAND,
   COMMAND_ALIAS_PATTERN,
   COMMAND_ALIAS_PREFIX,
   CWD_COMMANDS,
@@ -18,28 +37,8 @@ import {
   FIND_COMMAND,
   FIND_ASK_FLAGS,
   FIND_FILES0_FLAG,
-  GIT_BRANCH_COMMIT_FILTER_FLAGS,
-  GIT_BRANCH_INLINE_VALUE_PREFIXES,
-  GIT_BRANCH_LIST_FLAGS,
-  GIT_BRANCH_LISTING_CLUSTER,
-  GIT_BRANCH_LISTING_FLAGS,
-  GIT_BRANCH_SUBCOMMAND,
-  GIT_CONFIG_ATTACHED_PREFIX,
-  GIT_CONFIG_OPTIONS,
-  GIT_EXEC_FLAGS,
-  GIT_OPTIONS_WITH_PATH_ARGUMENT,
-  GIT_OUTPUT_FLAG,
-  GIT_PUSH_CURRENT_BRANCH_SOURCES,
-  GIT_PUSH_DANGEROUS_LETTERS,
-  GIT_PUSH_FORBIDDEN_LONG_FLAGS,
-  GIT_PUSH_PROGRAM_OPTIONS,
-  GIT_PUSH_VALUE_LETTERS,
-  GIT_PUSH_VALUE_OPTIONS,
-  GIT_READ_SUBCOMMANDS,
-  GIT_SAFE_GLOBAL_OPTIONS,
   GLOB_CHAR_PATTERN,
   HARMLESS_WRITE_TARGETS,
-  HEADS_PREFIX_PATTERN,
   INPUT_REDIRECT_OPERATORS,
   INTERPRETER_COMMANDS,
   MIGRATION_COMMANDS,
@@ -48,16 +47,15 @@ import {
   OPAQUE_COMMANDS,
   PIPE_OPERATOR,
   PRIVILEGE_COMMANDS,
-  PROTECTED_BRANCHES,
   READ_ONLY_COMMANDS,
   READ_ONLY_FORBIDDEN_FLAGS,
-  REFS_PREFIX_PATTERN,
   REASON_GIT_PUSH,
   REASON_MIGRATION,
   REASON_PIPE_TO_SHELL,
   REASON_PLAN_NO_WRITES,
   REASON_PRIVILEGE,
   REASON_RM_OUTSIDE,
+  REASON_RM_PROTECTED,
   RM_LONG_PREFIX_MIN_LENGTH,
   RM_RECURSIVE_FLAGS,
   RM_SHORT_FLAG_LETTERS,
@@ -70,8 +68,6 @@ import {
   setsGitSensitiveEnv,
   TRUSTED_BIN_DIRS,
   UNPARSEABLE_SUBSTRINGS,
-  UNREPORTED_GLOB_START_PATTERN,
-  UNRESOLVED_PATH_PREFIX,
   UNSUPPORTED_WHITESPACE_PATTERN,
   VARIABLE_MARKER,
   VERSION_SUFFIX_PATTERN,
@@ -83,12 +79,22 @@ import {
   fdRedirectionFlags,
   type Redirection,
 } from "./shellRedirects";
+import {
+  baseName,
+  isShortFlagCluster,
+  isUnseenExpansion,
+  LONG_FLAG_PREFIX,
+  LONG_VALUE_SEPARATOR,
+  PATH_SEPARATOR_PATTERN,
+  SHORT_FLAG_PREFIX,
+} from "./shellWords";
 import { PermissionProfile } from "./types";
 
 export interface PermissionQuery {
   readonly kind: "read" | "edit" | "execute" | "other";
   readonly command?: string;
   readonly paths?: readonly string[];
+  readonly cwd?: string;
 }
 
 export type PermissionDecision =
@@ -96,20 +102,21 @@ export type PermissionDecision =
   | { readonly action: "ask" }
   | { readonly action: "deny"; readonly reason: string };
 
-export interface PermissionContext {
-  readonly worktreeRoot: string;
-}
+export type { PermissionContext };
 
 interface Segment {
   readonly words: readonly string[];
   readonly pipedFromPrevious: boolean;
   readonly leadingGlob: boolean;
   readonly redirections: readonly Redirection[];
+  readonly followedBy: string | null;
 }
 
 interface ScopedContext extends PermissionContext {
-  readonly cwdUnresolved: boolean;
+  readonly cwd: string | null;
   readonly envOverridden: boolean;
+  readonly cdEnvTainted: boolean;
+  readonly touchesProtected: boolean;
 }
 
 interface OptionStep {
@@ -132,6 +139,7 @@ interface Unwrapped {
   readonly assigns: boolean;
   readonly writes: boolean;
   readonly chdir: boolean;
+  readonly wrapped: boolean;
 }
 
 const ALLOW: PermissionDecision = { action: "allow" };
@@ -145,15 +153,7 @@ const SEVERITY: Readonly<Record<PermissionDecision["action"], number>> = {
   ask: 1,
   deny: 2,
 };
-const PATH_SEPARATOR_PATTERN = /[\\/]/;
-const SHORT_FLAG_PREFIX = "-";
-const LONG_FLAG_PREFIX = "--";
-const LONG_VALUE_SEPARATOR = "=";
 const WHITESPACE_PATTERN = /\s+/;
-const PUSH_SUBCOMMAND = "push";
-const FORCE_PUSH_REFSPEC_PREFIX = "+";
-const REFSPEC_SEPARATOR = ":";
-const WILDCARD_CHAR = "*";
 
 function mostRestrictive(
   decisions: readonly PermissionDecision[],
@@ -169,14 +169,6 @@ function deny(reason: string): PermissionDecision {
   return { action: "deny", reason };
 }
 
-function baseName(command: string): string {
-  return command.split(PATH_SEPARATOR_PATTERN).pop() ?? command;
-}
-
-function isShortFlagCluster(arg: string): boolean {
-  return arg.startsWith(SHORT_FLAG_PREFIX) && !arg.startsWith(LONG_FLAG_PREFIX);
-}
-
 function decideWrite(profile: PermissionProfile): PermissionDecision {
   switch (profile) {
     case PermissionProfile.unattended:
@@ -186,6 +178,19 @@ function decideWrite(profile: PermissionProfile): PermissionDecision {
     default:
       return ASK;
   }
+}
+
+function decideWriteAt(
+  profile: PermissionProfile,
+  ctx: ScopedContext,
+): PermissionDecision {
+  const scoped =
+    ctx.cwd !== null &&
+    !ctx.touchesProtected &&
+    isWithinRoot(ctx.cwd, ctx, ctx.cwd);
+  return scoped
+    ? decideWrite(profile)
+    : mostRestrictive([ASK, decideWrite(profile)]);
 }
 
 function splitSegments(
@@ -202,9 +207,15 @@ function splitSegments(
   let pipedFromPrevious = false;
   let nextPiped = false;
   let leadingGlob = false;
-  const close = (): void => {
+  const close = (followedBy: string | null): void => {
     if (words.length > 0 || redirections.length > 0) {
-      segments.push({ words, pipedFromPrevious, leadingGlob, redirections });
+      segments.push({
+        words,
+        pipedFromPrevious,
+        leadingGlob,
+        redirections,
+        followedBy,
+      });
     }
     words = [];
     redirections = [];
@@ -221,13 +232,13 @@ function splitSegments(
       leadingGlob ||= GLOB_CHAR_PATTERN.test(token.pattern.charAt(0));
     } else if ("op" in token && SEGMENT_OPERATORS.includes(token.op)) {
       nextPiped = token.op === PIPE_OPERATOR;
-      close();
+      close(token.op);
     } else {
       return null;
     }
   }
   nextPiped = false;
-  close();
+  close(null);
   return segments;
 }
 
@@ -349,10 +360,11 @@ function unwrap(words: readonly string[]): Unwrapped {
   let assigns = false;
   let writes = false;
   let chdir = false;
+  let wrapped = false;
   for (;;) {
     const first = rest[0];
     if (first === undefined) {
-      return { words: rest, uncertain, assigns, writes, chdir };
+      return { words: rest, uncertain, assigns, writes, chdir, wrapped };
     }
     if (ENV_ASSIGNMENT_PATTERN.test(first)) {
       rest = rest.slice(1);
@@ -365,8 +377,9 @@ function unwrap(words: readonly string[]): Unwrapped {
       ? undefined
       : WRAPPER_SPECS.get(baseName(first));
     if (spec === undefined) {
-      return { words: rest, uncertain, assigns, writes, chdir };
+      return { words: rest, uncertain, assigns, writes, chdir, wrapped };
     }
+    wrapped = true;
     const scan = scanWrapperOptions(spec, rest.slice(1));
     rest = scan.rest;
     atStart &&= baseName(first) === ENV_COMMAND;
@@ -375,27 +388,6 @@ function unwrap(words: readonly string[]): Unwrapped {
     writes ||= scan.writes;
     chdir ||= scan.chdir;
   }
-}
-
-export function isInsideWorktree(
-  target: string,
-  worktreeRoot: string,
-  cwdUnresolved: boolean,
-): boolean {
-  if (
-    target.startsWith(UNRESOLVED_PATH_PREFIX) ||
-    target.includes(VARIABLE_MARKER) ||
-    (cwdUnresolved && !isAbsolute(target))
-  ) {
-    return false;
-  }
-  const relation = relative(worktreeRoot, resolve(worktreeRoot, target));
-  return (
-    relation !== "" &&
-    relation !== ".." &&
-    !relation.startsWith(`..${sep}`) &&
-    !isAbsolute(relation)
-  );
 }
 
 function isRiskyRmFlag(flag: string): boolean {
@@ -407,139 +399,39 @@ function isRiskyRmFlag(flag: string): boolean {
   );
 }
 
-function isDangerousRm(args: readonly string[], ctx: ScopedContext): boolean {
+function riskyRmTargets(args: readonly string[]): readonly string[] | null {
   const separator = args.indexOf(LONG_FLAG_PREFIX);
   const optionArgs = separator < 0 ? args : args.slice(0, separator);
   const flags = optionArgs.filter((arg) => arg.startsWith(SHORT_FLAG_PREFIX));
-  const targets = [
+  if (!flags.some(isRiskyRmFlag)) {
+    return null;
+  }
+  return [
     ...optionArgs.filter((arg) => !arg.startsWith(SHORT_FLAG_PREFIX)),
     ...(separator < 0 ? [] : args.slice(separator + 1)),
   ];
-  if (!flags.some(isRiskyRmFlag)) {
-    return false;
+}
+
+function rmDangerReason(
+  args: readonly string[],
+  ctx: ScopedContext,
+): string | null {
+  const targets = riskyRmTargets(args);
+  if (targets === null) {
+    return null;
   }
-  return (
+  if (targets.some((target) => isProtectedTarget(target, ctx, ctx.cwd))) {
+    return REASON_RM_PROTECTED;
+  }
+  if (
     targets.length === 0 ||
-    targets.some(
-      (target) =>
-        !isInsideWorktree(target, ctx.worktreeRoot, ctx.cwdUnresolved),
-    )
-  );
-}
-
-function isDangerousPushCluster(arg: string): boolean {
-  return (
-    isShortFlagCluster(arg) &&
-    GIT_PUSH_DANGEROUS_LETTERS.some((letter) => arg.slice(1).includes(letter))
-  );
-}
-
-function targetsProtectedBranch(destination: string): boolean {
-  const branch = destination
-    .replace(REFS_PREFIX_PATTERN, "")
-    .replace(HEADS_PREFIX_PATTERN, "");
-  return PROTECTED_BRANCHES.includes(branch);
-}
-
-function isDangerousRefspec(ref: string): boolean {
-  const destination = ref.split(REFSPEC_SEPARATOR).pop() ?? ref;
-  return (
-    ref.startsWith(FORCE_PUSH_REFSPEC_PREFIX) ||
-    ref.startsWith(REFSPEC_SEPARATOR) ||
-    ref.endsWith(REFSPEC_SEPARATOR) ||
-    ref.includes(WILDCARD_CHAR) ||
-    targetsProtectedBranch(destination)
-  );
-}
-
-function pushArguments(args: readonly string[]): readonly string[] | null {
-  const index = args.indexOf(PUSH_SUBCOMMAND);
-  return index < 0 ? null : args.slice(index + 1);
-}
-
-function endsWithDetachedValueLetter(arg: string): boolean {
-  if (!isShortFlagCluster(arg)) {
-    return false;
+    targets.some((target) => !isInsideWorktree(target, ctx, ctx.cwd))
+  ) {
+    return REASON_RM_OUTSIDE;
   }
-  const letters = arg.slice(SHORT_FLAG_PREFIX.length);
-  const positions = GIT_PUSH_VALUE_LETTERS.map((letter) =>
-    letters.indexOf(letter),
-  ).filter((position) => position >= 0);
-  return positions.length > 0 && Math.min(...positions) === letters.length - 1;
-}
-
-function takesPushValue(arg: string): boolean {
-  return (
-    GIT_PUSH_VALUE_OPTIONS.includes(arg) ||
-    endsWithDetachedValueLetter(arg) ||
-    (!arg.includes(LONG_VALUE_SEPARATOR) &&
-      hasAbbreviatedFlag([arg], GIT_PUSH_VALUE_OPTIONS))
-  );
-}
-
-function pushPositionals(rest: readonly string[]): string[] {
-  const positionals: string[] = [];
-  for (let index = 0; index < rest.length; index += 1) {
-    const arg = rest[index] ?? "";
-    if (takesPushValue(arg)) {
-      index += 1;
-    } else if (!arg.startsWith(SHORT_FLAG_PREFIX)) {
-      positionals.push(arg);
-    }
-  }
-  return positionals;
-}
-
-function isDangerousGitPush(args: readonly string[]): boolean {
-  const rest = pushArguments(args);
-  if (rest === null) {
-    return false;
-  }
-  return (
-    rest.some(isDangerousPushCluster) ||
-    hasAbbreviatedFlag(rest, GIT_PUSH_FORBIDDEN_LONG_FLAGS) ||
-    pushPositionals(rest).some(isDangerousRefspec)
-  );
-}
-
-function isUncertainGitPush(name: string, args: readonly string[]): boolean {
-  const rest = pushArguments(args);
-  if (name !== "git" || rest === null) {
-    return false;
-  }
-  const refspecs = pushPositionals(rest).slice(1);
-  return (
-    refspecs.length === 0 ||
-    hasAbbreviatedFlag(rest, GIT_PUSH_PROGRAM_OPTIONS) ||
-    refspecs.some((ref) => GIT_PUSH_CURRENT_BRANCH_SOURCES.includes(ref))
-  );
-}
-
-function isConfigOption(arg: string): boolean {
-  return (
-    GIT_CONFIG_OPTIONS.some(
-      (option) => arg === option || arg.startsWith(`${option}=`),
-    ) ||
-    (isShortFlagCluster(arg) && arg.startsWith(GIT_CONFIG_ATTACHED_PREFIX))
-  );
-}
-
-function hasGitInlineConfig(name: string, args: readonly string[]): boolean {
-  if (name !== "git") {
-    return false;
-  }
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index] ?? "";
-    if (isConfigOption(arg)) {
-      return true;
-    }
-    if (GIT_OPTIONS_WITH_PATH_ARGUMENT.includes(arg)) {
-      index += 1;
-    } else if (!arg.startsWith(SHORT_FLAG_PREFIX)) {
-      return false;
-    }
-  }
-  return false;
+  return targets.some((target) => isProtectedOrAncestor(target, ctx, ctx.cwd))
+    ? REASON_RM_PROTECTED
+    : null;
 }
 
 function isPrivilegeLookalike(first: string, args: readonly string[]): boolean {
@@ -553,9 +445,16 @@ function isPrivilegeLookalike(first: string, args: readonly string[]): boolean {
   );
 }
 
-function isDirectoryChange(words: readonly string[]): boolean {
-  const first = words.find((word) => !NON_COMMAND_WORDS.includes(word));
-  return first !== undefined && CWD_COMMANDS.includes(baseName(first));
+function decideDirectoryChange(
+  args: readonly string[],
+  ctx: ScopedContext,
+): PermissionDecision {
+  const change = directoryCommand([CD_COMMAND, ...args]);
+  return change?.operands.some((target) =>
+    isProtectedTarget(target, ctx, ctx.cwd),
+  ) === true
+    ? ASK
+    : ALLOW;
 }
 
 function matchesMigration(words: readonly string[]): boolean {
@@ -609,8 +508,11 @@ function commandDangerReason(
   if (PRIVILEGE_COMMANDS.includes(name)) {
     return REASON_PRIVILEGE;
   }
-  if (name === "rm" && isDangerousRm(args, ctx)) {
-    return REASON_RM_OUTSIDE;
+  if (name === "rm") {
+    const reason = rmDangerReason(args, ctx);
+    if (reason !== null) {
+      return reason;
+    }
   }
   return name === "git" && isDangerousGitPush(args) ? REASON_GIT_PUSH : null;
 }
@@ -632,83 +534,8 @@ function dangerReason(
   return matchesMigration(words) ? REASON_MIGRATION : null;
 }
 
-function gitSubcommand(
-  args: readonly string[],
-): { sub: string; rest: readonly string[] } | null {
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index] ?? "";
-    if (GIT_OPTIONS_WITH_PATH_ARGUMENT.includes(arg)) {
-      index += 1;
-    } else if (arg.startsWith(SHORT_FLAG_PREFIX)) {
-      if (!GIT_SAFE_GLOBAL_OPTIONS.includes(arg)) {
-        return null;
-      }
-    } else {
-      return { sub: arg, rest: args.slice(index + 1) };
-    }
-  }
-  return null;
-}
-
 function isOptionWord(word: string): boolean {
   return word.startsWith(SHORT_FLAG_PREFIX);
-}
-
-function isBranchListingOption(arg: string): boolean {
-  return (
-    GIT_BRANCH_LISTING_FLAGS.includes(arg) ||
-    GIT_BRANCH_LISTING_CLUSTER.test(arg) ||
-    GIT_BRANCH_INLINE_VALUE_PREFIXES.some((prefix) => arg.startsWith(prefix)) ||
-    GIT_BRANCH_COMMIT_FILTER_FLAGS.some((flag) =>
-      arg.startsWith(`${flag}${LONG_VALUE_SEPARATOR}`),
-    )
-  );
-}
-
-function isReadOnlyBranch(rest: readonly string[]): boolean {
-  let positionals = 0;
-  let listing = false;
-  for (let index = 0; index < rest.length; index += 1) {
-    const arg = rest[index] ?? "";
-    if (GIT_BRANCH_COMMIT_FILTER_FLAGS.includes(arg)) {
-      index += 1;
-    } else if (isBranchListingOption(arg)) {
-      listing = GIT_BRANCH_LIST_FLAGS.includes(arg) || listing;
-    } else if (arg.startsWith(SHORT_FLAG_PREFIX)) {
-      return false;
-    } else {
-      positionals += 1;
-    }
-  }
-  return positionals === 0 || listing;
-}
-
-function isReadOnlyGit(args: readonly string[]): boolean {
-  const parsed = gitSubcommand(args);
-  if (parsed === null) {
-    return false;
-  }
-  if (parsed.sub === GIT_BRANCH_SUBCOMMAND) {
-    return isReadOnlyBranch(parsed.rest);
-  }
-  return (
-    GIT_READ_SUBCOMMANDS.includes(parsed.sub) &&
-    !hasAbbreviatedFlag(parsed.rest, [GIT_OUTPUT_FLAG, ...GIT_EXEC_FLAGS])
-  );
-}
-
-function hasAbbreviatedFlag(
-  args: readonly string[],
-  flags: readonly string[],
-): boolean {
-  return args.some((arg) => {
-    const name = arg.split(LONG_VALUE_SEPARATOR, 1)[0] ?? arg;
-    return (
-      name.startsWith(LONG_FLAG_PREFIX) &&
-      name.length > LONG_FLAG_PREFIX.length &&
-      flags.some((flag) => flag.startsWith(name))
-    );
-  });
 }
 
 function hasAnyFlag(
@@ -730,18 +557,6 @@ function isReadOnlyCommand(name: string, args: readonly string[]): boolean {
   );
 }
 
-function isUnseenExpansion(word: string): boolean {
-  if (
-    BRACE_EXPANSION_PATTERN.test(word) ||
-    word.includes(VARIABLE_MARKER) ||
-    UNREPORTED_GLOB_START_PATTERN.test(word)
-  ) {
-    return true;
-  }
-  const optionName = word.split(LONG_VALUE_SEPARATOR, 1)[0] ?? word;
-  return word.startsWith(DASH_PREFIX) && GLOB_CHAR_PATTERN.test(optionName);
-}
-
 function decideFind(
   args: readonly string[],
   profile: PermissionProfile,
@@ -754,6 +569,7 @@ function decideFind(
         pipedFromPrevious: false,
         leadingGlob: false,
         redirections: [],
+        followedBy: null,
       },
       [],
       PermissionProfile.ask,
@@ -761,10 +577,10 @@ function decideFind(
     );
     return inner.action === ALLOW.action
       ? inner
-      : mostRestrictive([inner, decideWrite(profile)]);
+      : mostRestrictive([inner, decideWriteAt(profile, ctx)]);
   });
   const untrusted = args.some((arg) => FIND_ASK_FLAGS.includes(arg))
-    ? mostRestrictive([ASK, decideWrite(profile)])
+    ? mostRestrictive([ASK, decideWriteAt(profile, ctx)])
     : ALLOW;
   const feedsPlaceholder =
     nested.length > 0 && args.includes(FIND_FILES0_FLAG) ? ASK : ALLOW;
@@ -779,7 +595,14 @@ function decideSegmentWords(
 ): PermissionDecision {
   const unwrapped = unwrap(segment.words);
   const [first, ...args] = unwrapped.words;
-  const ctx = unwrapped.chdir ? { ...outer, cwdUnresolved: true } : outer;
+  const cwd = unwrapped.chdir ? null : outer.cwd;
+  const ctx: ScopedContext = {
+    ...outer,
+    cwd,
+    touchesProtected: segment.words.some((word) =>
+      mentionsProtectedPath(word, outer, cwd),
+    ),
+  };
   if (first === undefined) {
     return ASK;
   }
@@ -802,9 +625,11 @@ function decideSegmentWords(
   return mostRestrictive([
     decideCommand(first, args, profile, ctx),
     needsConfirmation ? ASK : ALLOW,
-    unwrapped.writes ? mostRestrictive([ASK, decideWrite(profile)]) : ALLOW,
+    unwrapped.writes
+      ? mostRestrictive([ASK, decideWriteAt(profile, ctx)])
+      : ALLOW,
     unwrapped.assigns || ctx.envOverridden
-      ? decideAssigns(first, profile)
+      ? decideAssigns(first, profile, ctx)
       : ALLOW,
   ]);
 }
@@ -812,13 +637,14 @@ function decideSegmentWords(
 function decideAssigns(
   command: string,
   profile: PermissionProfile,
+  ctx: ScopedContext,
 ): PermissionDecision {
   const name = baseName(command);
   return name === "git" ||
     name === FIND_COMMAND ||
     SHELL_COMMANDS.includes(name)
     ? ASK
-    : decideWrite(profile);
+    : decideWriteAt(profile, ctx);
 }
 
 function decideRedirection(
@@ -840,7 +666,7 @@ function decideRedirection(
   ) {
     return ALLOW;
   }
-  return isInsideWorktree(target, ctx.worktreeRoot, ctx.cwdUnresolved)
+  return isInsideWorktree(target, ctx, ctx.cwd)
     ? decideWrite(profile)
     : mostRestrictive([ASK, decideWrite(profile)]);
 }
@@ -872,8 +698,11 @@ function decideCommand(
   if (RUNTIME_WORD_PATTERN.test(first) || OPAQUE_COMMANDS.includes(name)) {
     return ASK;
   }
+  if (CWD_COMMANDS.includes(first)) {
+    return decideDirectoryChange(args, ctx);
+  }
   if (!isTrustedExecutable(first)) {
-    return decideWrite(profile);
+    return decideWriteAt(profile, ctx);
   }
   if (name === FIND_COMMAND) {
     return decideFind(args, profile, ctx);
@@ -881,13 +710,13 @@ function decideCommand(
   if (SHELL_COMMANDS.includes(name)) {
     const script = shellScript(args);
     return script === undefined
-      ? mostRestrictive([ASK, decideWrite(profile)])
+      ? mostRestrictive([ASK, decideWriteAt(profile, ctx)])
       : decideExecute(script, profile, ctx);
   }
   if (isInterpreter(name) && args.every(isOptionWord)) {
-    return mostRestrictive([ASK, decideWrite(profile)]);
+    return mostRestrictive([ASK, decideWriteAt(profile, ctx)]);
   }
-  return isReadOnlyCommand(name, args) ? ALLOW : decideWrite(profile);
+  return isReadOnlyCommand(name, args) ? ALLOW : decideWriteAt(profile, ctx);
 }
 
 function decideExecute(
@@ -915,18 +744,31 @@ function decideExecute(
     return ASK;
   }
   const decisions: PermissionDecision[] = [];
-  let cwdUnresolved = ctx.cwdUnresolved;
+  let cursor: CwdCursor = { cwd: ctx.cwd, moved: false };
   let envOverridden = ctx.envOverridden;
+  const cdEnvTainted =
+    ctx.cdEnvTainted ||
+    segments.some((segment) => overridesCdEnv(segment.words));
   for (const [index, segment] of segments.entries()) {
+    const scoped = { ...ctx, cwd: cursor.cwd, envOverridden, cdEnvTainted };
     decisions.push(
-      decideSegment(segment, pipeUpstream(segments, index), profile, {
-        ...ctx,
-        cwdUnresolved,
-        envOverridden,
-      }),
+      decideSegment(segment, pipeUpstream(segments, index), profile, scoped),
     );
-    const { words } = unwrap(segment.words);
-    cwdUnresolved = cwdUnresolved || isDirectoryChange(words);
+    const unwrapped = unwrap(segment.words);
+    const { words } = unwrapped;
+    cursor = advanceCwd(
+      {
+        words,
+        chdir: unwrapped.chdir,
+        wrapped: unwrapped.wrapped,
+        followedBy: segment.followedBy,
+        precededBy: segments[index - 1]?.followedBy ?? null,
+        pipedFromPrevious: segment.pipedFromPrevious,
+        cdEnvTainted,
+      },
+      cursor,
+      scoped,
+    );
     envOverridden =
       envOverridden ||
       hasGitSensitivePrefix(segment.words) ||
@@ -953,7 +795,7 @@ function decideEdit(
   const confined =
     paths !== undefined &&
     paths.length > 0 &&
-    paths.every((path) => isInsideWorktree(path, ctx.worktreeRoot, false));
+    paths.every((path) => isInsideWorktree(path, ctx, ctx.worktreeRoots[0]));
   if (!confined) {
     return mostRestrictive([ASK, decideWrite(profile)]);
   }
@@ -979,8 +821,10 @@ export function decidePermission(
       return planReadOnly(
         decideExecute(query.command, profile, {
           ...ctx,
-          cwdUnresolved: false,
+          cwd: query.cwd ?? ctx.worktreeRoots[0],
           envOverridden: false,
+          cdEnvTainted: false,
+          touchesProtected: false,
         }),
         profile,
       );

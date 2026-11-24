@@ -6,6 +6,17 @@ import { ProviderId, type Account, type ApiAccount } from "../domain/types";
 import { IpcErrorCode } from "../shared/protocol";
 import { createFakeVault, fakeSecrets } from "../../tests/fakes/fakeVault";
 import {
+  ACCOUNT_A,
+  agentOf,
+  closeRigs,
+  openRig,
+} from "../../tests/fakes/backendRig";
+import {
+  DEFAULT_PERMISSION_OPTIONS,
+  type ScriptStep,
+} from "../../tests/fakes/fakeAcpAgent";
+import { settled } from "../../tests/fakes/settle";
+import {
   hostBinDirWith as binDirWith,
   hostExecutable,
   hostResolverEnv,
@@ -16,8 +27,9 @@ import { API_KEYS_FILE } from "./constants";
 import { createKeyStore, type KeyStore } from "./secrets/keyStore";
 import { createCredentialsFor, createExecutableResolver } from "./startup";
 
-afterEach(() => {
+afterEach(async () => {
   vi.restoreAllMocks();
+  await closeRigs();
 });
 
 describe("createExecutableResolver", () => {
@@ -265,4 +277,41 @@ it("undecryptable_key_is_logged_and_yields_null", async () => {
   expect(credentials).toBeNull();
   expect(error).toHaveBeenCalledTimes(1);
   expect(JSON.stringify(error.mock.calls)).not.toContain(STORED_KEY);
+});
+
+it("session_permissions_protect_the_user_data_folder_inside_the_root", async () => {
+  const root = await makeTempDir();
+  const userData = join(root, ".codeweave");
+  const rig = await openRig({
+    userData,
+    accounts: [ACCOUNT_A],
+    homeDir: root,
+  });
+  await rig.call("session/start", { cwd: root, profile: "unattended" });
+  const guarded = join(userData, "accounts.json");
+  const notes = join(root, "notes.txt");
+  const edit = (id: string, path: string): ScriptStep => ({
+    type: "permission",
+    toolCallId: id,
+    title: `Edit ${id}`,
+    kind: "edit",
+    rawInput: { file_path: path },
+    paths: [path],
+    options: DEFAULT_PERMISSION_OPTIONS,
+  });
+  agentOf(rig).enqueue([
+    edit("notes", notes),
+    edit("guarded", guarded),
+    { type: "end", stopReason: "end_turn" },
+  ]);
+
+  await rig.call("session/prompt", { text: "edit" });
+
+  await settled(async () => {
+    const { permissions } = await rig.session();
+    expect(permissions.map((item) => item.toolCallId)).toEqual(["guarded"]);
+    expect(agentOf(rig).permissionOutcomes).toEqual([
+      { outcome: "selected", optionId: "allow-once" },
+    ]);
+  });
 });

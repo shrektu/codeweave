@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -347,6 +348,7 @@ it("flows_list_handler_delegates_to_listFlows", async () => {
     store: createJsonStore(cwd),
     ...fakeSecrets(cwd),
     userData: cwd,
+    homeDir: tmpdir(),
     broadcast: vi.fn(),
     sessions: fakeSessionPool(),
     flowRuns: fakeFlowRuns(),

@@ -1,4 +1,5 @@
 import { realpath } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { MessageChannel, type MessagePort } from "node:worker_threads";
 import { join } from "node:path";
 
@@ -164,7 +165,10 @@ it("ask_permission_snapshot_and_exact_option_answer", async () => {
 });
 
 it("unattended_auto_answers_read_edit_and_denies_sudo", async () => {
-  const rig = await open();
+  const rig = await open({
+    accounts: [ACCOUNT_A, ACCOUNT_B],
+    homeDir: await realpath(tmpdir()),
+  });
   await rig.call("session/start", startParams(rig, "unattended"));
   const file = join(rig.cwd, "notes.txt");
   agentOf(rig).enqueue([

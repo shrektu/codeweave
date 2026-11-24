@@ -63,6 +63,7 @@ import { PROCESS_EXITED_MESSAGE, SESSION_CLOSED_MESSAGE } from "./constants";
 import { ProbeStillRunningError } from "./limitProbe";
 import type { LeaseMode } from "./locks";
 import { pickOption, toPermissionQuery } from "./permissionQuery";
+import { realPermissionContext, withRealPaths } from "./permissionScope";
 import type { StopResult } from "./process/container";
 import type { SessionServiceDeps } from "./session";
 import { toSessionView } from "./sessionView";
@@ -678,11 +679,16 @@ export class SessionRun {
 
   private async decideOption(event: PermissionRequest): Promise<string | null> {
     try {
-      const decision = decidePermission(
+      const context = await realPermissionContext({
+        worktreeRoot: await this.rootOfWorktree(),
+        homeDir: this.deps.homeDir,
+        protectedPaths: await this.deps.protectedPaths(),
+      });
+      const query = await withRealPaths(
         toPermissionQuery(event, this.spec.cwd),
-        this.spec.profile,
-        { worktreeRoot: await this.rootOfWorktree() },
+        context,
       );
+      const decision = decidePermission(query, this.spec.profile, context);
       return pickOption(decision, event.options);
     } catch (error) {
       console.error(

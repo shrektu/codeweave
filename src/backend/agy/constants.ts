@@ -126,6 +126,8 @@ export const AgyFlag = {
 export const GEMINI_DIR_FLAG_PREFIX = "--gemini_dir=";
 export const AGY_PROFILE_ENV = "CODEWEAVE_AGY_PROFILE";
 export const AGY_WORKTREE_ENV = "CODEWEAVE_AGY_WORKTREE";
+export const AGY_HOME_ENV = "CODEWEAVE_AGY_HOME";
+export const AGY_PROTECTED_ENV = "CODEWEAVE_AGY_PROTECTED";
 export const AGY_SNAPSHOT_DIR_ENV = "CODEWEAVE_AGY_SNAPSHOT_DIR";
 export const AGY_SNAPSHOT_DIR_PREFIX = "codeweave-agy-snap-";
 export const SNAPSHOT_RECORD_SEPARATOR = "~";
@@ -169,6 +171,8 @@ export const HOOK_INVALID_INPUT_REASON =
   "Codeweave could not read the tool call; denied";
 export const HOOK_INVALID_PROFILE_REASON =
   "Codeweave permission profile is missing or unknown; denied";
+export const HOOK_INVALID_SCOPE_REASON =
+  "Codeweave home or protected paths are missing or invalid; denied";
 export const HOOK_INTERNAL_ERROR_REASON =
   "Codeweave policy hook failed; denied";
 export const OUTPUT_FORMAT_STREAM_JSON = "stream-json";

@@ -69,7 +69,16 @@ export function toPermissionQuery(
       return { kind, paths: pathsOf(event, cwd) };
     case "execute": {
       const command = fieldOf(event.rawInput, "command");
-      return typeof command === "string" ? { kind, command } : { kind };
+      const workdir = fieldOf(event.rawInput, "cwd");
+      const resolved =
+        typeof workdir === "string" && workdir !== ""
+          ? absolutePath(workdir, cwd)
+          : "";
+      return {
+        kind,
+        ...(typeof command === "string" ? { command } : {}),
+        ...(isAbsolute(resolved) ? { cwd: resolved } : {}),
+      };
     }
     default:
       return { kind };

@@ -31,6 +31,12 @@ const GIT_IDENTITY_ARGS = [
   "commit.gpgsign=false",
 ] as const;
 
+const GIT_IDENTITY_CONFIG: readonly (readonly [string, string])[] = [
+  ["user.name", "Rotation Test"],
+  ["user.email", "rotation@example.com"],
+  ["commit.gpgsign", "false"],
+];
+
 export const KEY_A = "test-key-a";
 export const KEY_B = "test-key-b";
 export const ROTATION_COMMAND = "echo deploy-side-effect | tee -a effects.log";
@@ -92,9 +98,29 @@ async function git(cwd: string, args: readonly string[]): Promise<void> {
   await execFileAsync("git", [...GIT_IDENTITY_ARGS, ...args], { cwd });
 }
 
+export async function gitOutput(
+  cwd: string,
+  args: readonly string[],
+): Promise<string> {
+  const { stdout } = await execFileAsync(
+    "git",
+    [...GIT_IDENTITY_ARGS, ...args],
+    { cwd },
+  );
+  return stdout;
+}
+
+export async function commitAll(dir: string, message: string): Promise<void> {
+  await git(dir, ["add", "-A"]);
+  await git(dir, ["commit", "--quiet", "-m", message]);
+}
+
 export async function createRepo(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true });
   await git(dir, ["init", "--quiet"]);
+  for (const [key, value] of GIT_IDENTITY_CONFIG) {
+    await git(dir, ["config", key, value]);
+  }
   await writeFile(join(dir, REPO_SEED_FILE), "rotation test\n");
   await git(dir, ["add", REPO_SEED_FILE]);
   await git(dir, ["commit", "--quiet", "-m", "Initial commit"]);
@@ -115,6 +141,7 @@ export function rotationSettings(profile: PermissionProfile): SettingsFile {
     updateChannel: "stable",
     defaultTaskClass: "standard",
     definitionLibrary: null,
+    defaultWorkspace: null,
   };
 }
 

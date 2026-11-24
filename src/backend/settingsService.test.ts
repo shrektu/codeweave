@@ -31,7 +31,7 @@ async function setup(): Promise<{
 
 describe("settings service", () => {
   it("get_returns_defaults_without_the_storage_version", async () => {
-    const { service } = await setup();
+    const { service, homeDir } = await setup();
 
     expect(await service.get()).toEqual({
       permissionProfile: "bypass",
@@ -46,11 +46,13 @@ describe("settings service", () => {
       updateChannel: "stable",
       defaultTaskClass: "standard",
       definitionLibrary: null,
+      defaultWorkspace: null,
+      defaultWorkspaceResolved: homeDir,
     });
   });
 
   it("set_merges_persists_and_broadcasts", async () => {
-    const { service, store, broadcast } = await setup();
+    const { service, store, broadcast, homeDir } = await setup();
 
     const view = await service.set({ permissionProfile: "plan" });
 
@@ -67,12 +69,14 @@ describe("settings service", () => {
       updateChannel: "stable",
       defaultTaskClass: "standard",
       definitionLibrary: null,
+      defaultWorkspace: null,
     };
-    expect(view).toEqual(expected);
+    const expectedView = { ...expected, defaultWorkspaceResolved: homeDir };
+    expect(view).toEqual(expectedView);
     expect(await store.readSettings()).toEqual({ version: 1, ...expected });
     expect(broadcast).toHaveBeenCalledExactlyOnceWith(
       "settings/changed",
-      expected,
+      expectedView,
     );
   });
 
@@ -99,7 +103,7 @@ describe("settings service", () => {
   });
 
   it("set_keeps_untouched_fields", async () => {
-    const { service } = await setup();
+    const { service, homeDir } = await setup();
     await service.set({ claudeExecutable: "/opt/claude", effectLevel: "low" });
 
     const view = await service.set({ permissionProfile: "ask" });
@@ -117,6 +121,8 @@ describe("settings service", () => {
       updateChannel: "stable",
       defaultTaskClass: "standard",
       definitionLibrary: null,
+      defaultWorkspace: null,
+      defaultWorkspaceResolved: homeDir,
     });
   });
 
@@ -256,7 +262,7 @@ describe("settings service", () => {
   });
 
   it("concurrent_sets_do_not_lose_updates", async () => {
-    const { service } = await setup();
+    const { service, homeDir } = await setup();
 
     await Promise.all([
       service.set({ effectLevel: "full" }),
@@ -276,6 +282,8 @@ describe("settings service", () => {
       updateChannel: "stable",
       defaultTaskClass: "standard",
       definitionLibrary: null,
+      defaultWorkspace: null,
+      defaultWorkspaceResolved: homeDir,
     });
   });
 });

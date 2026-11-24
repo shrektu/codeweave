@@ -94,6 +94,98 @@ describe("nextOrchestratorStep on tool results", () => {
   });
 });
 
+describe("nextOrchestratorStep with script options", () => {
+  const OPTIONS = {
+    repository: "beta",
+    placement: "worktree",
+    discoverCommand: "cd beta && git status",
+  } as const;
+
+  it("discovers_the_repository_with_a_read_only_command_first", () => {
+    const first = transcript({ kind: LastKind.userText, text: "task" }, []);
+
+    expect(nextOrchestratorStep(first, OPTIONS)).toEqual({
+      kind: TurnKind.tool,
+      name: "Bash",
+      input: {
+        command: "cd beta && git status",
+        description: "locate the repository",
+      },
+    });
+  });
+
+  it("lists_the_flows_of_the_repository_after_the_discovery", () => {
+    const step = nextOrchestratorStep(
+      transcript(
+        { kind: LastKind.toolResult, tool: "Bash", text: "On branch main" },
+        [{ tool: "Bash", result: "On branch main" }],
+      ),
+      OPTIONS,
+    );
+
+    expect(step).toEqual({
+      kind: TurnKind.tool,
+      name: "mcp__codeweave__list_flows",
+      input: { repository: "beta" },
+    });
+  });
+
+  it("starts_the_flow_in_the_repository_with_the_placement", () => {
+    const step = nextOrchestratorStep(
+      transcript(
+        {
+          kind: LastKind.toolResult,
+          tool: "mcp__codeweave__list_flows",
+          text: "{}",
+        },
+        [{ tool: "mcp__codeweave__list_flows", result: "{}" }],
+      ),
+      OPTIONS,
+    );
+
+    expect(step).toEqual({
+      kind: TurnKind.tool,
+      name: "mcp__codeweave__start_flow",
+      input: {
+        flowId: "two-node",
+        task: "Add a greeting helper",
+        placement: "worktree",
+        repository: "beta",
+      },
+    });
+  });
+});
+
+describe("nextOrchestratorStep without discovery", () => {
+  const OPTIONS = {
+    repository: "beta",
+    placement: "worktree",
+    discoverCommand: "cd beta && git status",
+  } as const;
+
+  it("lists_flows_first_with_the_repository_when_no_discovery_is_scripted", () => {
+    const first = transcript({ kind: LastKind.userText, text: "task" }, []);
+
+    expect(nextOrchestratorStep(first, { repository: "beta" })).toEqual({
+      kind: TurnKind.tool,
+      name: "mcp__codeweave__list_flows",
+      input: { repository: "beta" },
+    });
+  });
+
+  it("fails_when_the_discovery_tool_is_not_offered", () => {
+    const first: OrchestratorTranscript = {
+      toolNames: namesWith("mcp__codeweave__"),
+      calls: [],
+      last: { kind: LastKind.userText, text: "task" },
+    };
+
+    expect(() => nextOrchestratorStep(first, OPTIONS)).toThrow(
+      "unexpected orchestrator transcript",
+    );
+  });
+});
+
 describe("nextOrchestratorStep on wake-ups", () => {
   it("decides_with_a_note_on_the_decision_wake_up", () => {
     const step = nextOrchestratorStep(

@@ -192,3 +192,53 @@ describe("flow tool results and errors", () => {
     expect(logged).toHaveBeenCalledWith(failure);
   });
 });
+
+describe("flow tool repository argument", () => {
+  it("accepts_a_repository_and_forwards_it", async () => {
+    const control = new FakeFlowControl();
+    const client = await connect(control);
+    await call(client, "list_flows", { repository: "beta" });
+    await call(client, "start_flow", {
+      flowId: "review",
+      task: "Fix",
+      repository: "beta",
+    });
+    expect(control.calls).toEqual([
+      { op: FlowControlOp.listFlows, args: ["beta"] },
+      {
+        op: FlowControlOp.startFlow,
+        args: [
+          {
+            flowId: "review",
+            task: "Fix",
+            placement: "in_place",
+            repository: "beta",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it.each(["list_flows", "start_flow"])(
+    "rejects_an_empty_or_oversized_repository_in_%s_without_calling_control",
+    async (name) => {
+      const control = new FakeFlowControl();
+      const client = await connect(control);
+      const base =
+        name === "start_flow" ? { flowId: "review", task: "Fix" } : {};
+      const empty = await call(client, name, { ...base, repository: "" });
+      const oversized = await call(client, name, {
+        ...base,
+        repository: "x".repeat(4097),
+      });
+      const longest = await call(client, name, {
+        ...base,
+        repository: "x".repeat(4096),
+      });
+      expect(empty.isError).toBe(true);
+      expect(oversized.isError).toBe(true);
+      expect(longest.isError).toBe(false);
+      expect(control.calls).toHaveLength(1);
+    },
+  );
+});

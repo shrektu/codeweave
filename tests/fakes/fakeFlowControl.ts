@@ -106,8 +106,12 @@ export class FakeFlowControl implements FlowControl {
   };
   failure: Error | null = null;
 
-  listFlows(): Promise<FlowsList> {
-    return this.answer(FlowControlOp.listFlows, [], this.flows);
+  listFlows(repository?: string): Promise<FlowsList> {
+    return this.answer(
+      FlowControlOp.listFlows,
+      repository === undefined ? [] : [repository],
+      this.flows,
+    );
   }
 
   startFlow(request: FlowStartRequest): Promise<FlowRunView> {

@@ -695,6 +695,8 @@ export const AGY_RIG_ACCOUNT: Account = {
   order: 0,
 };
 export const AGY_RIG_EXECUTABLE = "/home/jane/.local/bin/agy";
+export const AGY_RIG_HOME_DIR = "/home/jane";
+export const AGY_RIG_PROTECTED: readonly string[] = ["/home/jane/.ssh"];
 export const AGY_RIG_GRACE_MS = 25;
 export const AGY_RIG_START_PROBE_TIMEOUT_MS = 150;
 export const AGY_RIG_PROBE_TIMEOUT_MS = 300;
@@ -779,6 +781,8 @@ export async function createAgyRig(
       });
     },
     fingerprintWorkspace: options.fingerprintWorkspace ?? fingerprintAgentsDir,
+    homeDir: AGY_RIG_HOME_DIR,
+    protectedPaths: () => Promise.resolve(AGY_RIG_PROTECTED),
     processes: rigProcesses(container),
     container,
     envFor: (spec) =>

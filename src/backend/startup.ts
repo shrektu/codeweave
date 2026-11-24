@@ -57,6 +57,7 @@ import { createFlowRunService } from "./flowRuns";
 import type { FlowToolServer } from "./flowTools/server";
 import { createFlowWorktrees } from "./flowWorktrees";
 import { createHandlers } from "./handlers";
+import { resolveSessionFolder } from "./workspace";
 import { recordInstance } from "./instance";
 import type { IpcHandlers } from "./ipcServer";
 import {
@@ -93,6 +94,7 @@ import {
   ContainerUnavailableError,
   type ProcessContainer,
 } from "./process/container";
+import { protectedPaths } from "./protectedPaths";
 import { createProviderAdapter } from "./providerAdapter";
 import { createKeyStore, type KeyStore } from "./secrets/keyStore";
 import { createSecretSource } from "./secrets/source";
@@ -444,6 +446,7 @@ function createAdapter(
   container: ProcessContainer | null,
   processes: AgentProcesses | null,
   keyStore: KeyStore,
+  protectedPathsNow: () => Promise<readonly string[]>,
 ): AgentAdapter {
   if (processes === null || container === null) {
     return UNAVAILABLE_ADAPTER;
@@ -476,6 +479,8 @@ function createAdapter(
           platform: deps.platform,
         }),
       fingerprintWorkspace: fingerprintAgentsDir,
+      homeDir: deps.homeDir,
+      protectedPaths: protectedPathsNow,
     }),
     [ProviderId.opencode]: createOpencodeAdapter({
       processes,
@@ -644,8 +649,26 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     container === null
       ? null
       : createProcesses(container, lockKeyResolver, leaseModes);
+  const protectedPathsNow = async (): Promise<readonly string[]> =>
+    protectedPaths({
+      homeDir: deps.homeDir,
+      userData,
+      accountDirs: (await store.readAccounts()).map(
+        (account) => account.configDir,
+      ),
+    });
+  const resolveFolder = async (
+    requested: string | undefined,
+  ): Promise<string> =>
+    resolveSessionFolder(requested, await store.readSettings(), deps.homeDir);
   const sessions: SessionPool = createSessionPool({
-    adapter: createAdapter(deps, container, processes, keyStore),
+    adapter: createAdapter(
+      deps,
+      container,
+      processes,
+      keyStore,
+      protectedPathsNow,
+    ),
     leaseModes,
     store,
     broadcast: deps.broadcast,
@@ -661,6 +684,9 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     isBlocked: (accountId) => probes.isBlocked(accountId),
     hasKey: (accountId) => keyStore.hint(accountId) !== null,
     secrets: createSecretSource(keyStore),
+    homeDir: deps.homeDir,
+    resolveFolder,
+    protectedPaths: protectedPathsNow,
   });
   const terminals = createTerminals(deps, container, store, lockKeyResolver);
   const definitionRoots = createDefinitionRoots({ store, userData });
@@ -681,6 +707,10 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     flowWorktrees: createFlowWorktrees({ exec: execText }),
     listFlows: listProjectFlows,
     newRunId: deps.newRunId,
+    inspectWorktree: deps.inspectWorktree,
+    protectedPaths: protectedPathsNow,
+    homeDir: deps.homeDir,
+    platform: deps.platform,
     ...(deps.startToolServer === undefined
       ? {}
       : { startToolServer: deps.startToolServer }),
@@ -690,6 +720,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     keyStore,
     vault: deps.vault,
     userData,
+    homeDir: deps.homeDir,
     broadcast: deps.broadcast,
     sessions,
     flowRuns,

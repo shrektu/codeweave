@@ -249,6 +249,9 @@ async function opencodeSession(
     isBlocked: () => false,
     hasKey: () => true,
     secrets: () => [{ value: KEY, label: LABEL }],
+    homeDir: "/home/u",
+    resolveFolder: (requested) => Promise.resolve(requested ?? "/home/u"),
+    protectedPaths: () => Promise.resolve([]),
   });
   services.push(service);
   return { service, cwd };

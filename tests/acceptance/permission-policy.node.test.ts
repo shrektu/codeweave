@@ -1,12 +1,43 @@
-import { describe, expect, it } from "vitest";
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import { afterEach, describe, expect, it } from "vitest";
+
+import type { AgentEvent } from "../../src/domain/events";
 import {
   decidePermission,
+  type PermissionContext,
   type PermissionQuery,
 } from "../../src/domain/permissionPolicy";
-import { PermissionProfile } from "../../src/domain/types";
+import {
+  PermissionProfile,
+  ProviderId,
+  type Account,
+} from "../../src/domain/types";
 
-const ctx = { worktreeRoot: "/work/repo" };
+import { createAccountReservations } from "../../src/backend/accountReservations";
+import type { AgentAdapter, AgentHandle } from "../../src/backend/agentAdapter";
+import { createLeaseModes } from "../../src/backend/leaseModes";
+import {
+  createSessionService,
+  type SessionService,
+} from "../../src/backend/session";
+import { createJsonStore, type JsonStore } from "../../src/backend/storage";
+import { settled } from "../fakes/settle";
+
+const ctx: PermissionContext = {
+  worktreeRoots: ["/work/repo"],
+  homeDir: "/home/u",
+  protectedPaths: [],
+};
 const NON_BYPASS_PROFILES: readonly PermissionProfile[] = [
   PermissionProfile.unattended,
   PermissionProfile.acceptEdits,
@@ -40,7 +71,11 @@ describe("permission policy", () => {
   });
 
   it("unparseable_command_asks", () => {
-    for (const command of ["echo $(whoami)", "ls > /etc/out.txt", "echo `id`"]) {
+    for (const command of [
+      "echo $(whoami)",
+      "ls > /etc/out.txt",
+      "echo `id`",
+    ]) {
       expect(
         decidePermission(
           { kind: "execute", command },
@@ -973,5 +1008,461 @@ describe("env set by builtins in earlier segments", () => {
         "allow",
       );
     }
+  });
+});
+
+const ALLOW_ONCE = "allow-once";
+const REJECT_ONCE = "reject-once";
+const SENTINEL_ID = "sentinel";
+const OPTIONS = [
+  { optionId: ALLOW_ONCE, name: "Allow once", kind: "allow_once" },
+  { optionId: REJECT_ONCE, name: "Reject", kind: "reject_once" },
+] as const;
+const ACCOUNT: Account = {
+  id: "acc-a",
+  provider: ProviderId.claude,
+  label: "A",
+  configDir: "/cfg/a",
+  order: 0,
+};
+
+type Outcome = "allow" | "ask" | "deny";
+
+interface SessionRig {
+  readonly home: string;
+  readonly outside: string;
+  readonly outcomeOf: (event: PermissionEventInput) => Promise<Outcome>;
+}
+
+interface PermissionEventInput {
+  readonly kind: "edit" | "execute";
+  readonly locations?: readonly string[];
+  readonly rawInput?: Readonly<Record<string, unknown>>;
+}
+
+const tempDirs: string[] = [];
+const services: SessionService[] = [];
+
+afterEach(async () => {
+  await Promise.all(services.splice(0).map((service) => service.shutdown()));
+  await Promise.all(
+    tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
+  );
+});
+
+function scriptedHandle(
+  listeners: Set<(event: AgentEvent) => void>,
+  answers: Map<string, string>,
+  prompted: PromiseWithResolvers<undefined>,
+): AgentHandle {
+  return {
+    accountId: ACCOUNT.id,
+    runId: "run-1",
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    prompt: () => {
+      prompted.resolve(undefined);
+      return new Promise<undefined>(() => undefined);
+    },
+    answerPermission: (requestId, optionId) => {
+      answers.set(requestId, optionId);
+    },
+    setProfile: () => Promise.resolve(),
+    cancel: () => Promise.resolve(),
+    stop: () => Promise.resolve({ ok: true }),
+  };
+}
+
+function emitRequest(
+  listeners: ReadonlySet<(event: AgentEvent) => void>,
+  id: string,
+  input: PermissionEventInput,
+): void {
+  const event: AgentEvent = {
+    type: "permission_request",
+    requestId: id,
+    toolCallId: `tool-${id}`,
+    title: "request",
+    kind: input.kind,
+    locations: input.locations ?? [],
+    options: OPTIONS,
+    ...(input.rawInput === undefined ? {} : { rawInput: input.rawInput }),
+  };
+  listeners.forEach((listener) => {
+    listener(event);
+  });
+}
+
+function shellPath(path: string): string {
+  return path.replaceAll("\\", "/");
+}
+
+function sentinelFor(
+  root: string,
+  input: PermissionEventInput,
+): PermissionEventInput {
+  return input.kind === "edit"
+    ? { kind: "edit", locations: [join(root, "ok.txt")] }
+    : { kind: "execute", rawInput: { command: "touch ok.txt" } };
+}
+
+function outcomeOfAnswer(answer: string | undefined): Outcome {
+  if (answer === undefined) {
+    return "ask";
+  }
+  return answer === ALLOW_ONCE ? "allow" : "deny";
+}
+
+function createRigService(
+  adapter: AgentAdapter,
+  store: JsonStore,
+  home: string,
+): SessionService {
+  return createSessionService({
+    adapter,
+    store,
+    broadcast: () => undefined,
+    publishView: () => undefined,
+    reserved: createAccountReservations(),
+    leaseModes: createLeaseModes(),
+    now: () => 1_700_000_000_000,
+    schedule: () => () => undefined,
+    inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),
+    newRunId: () => "run-1",
+    resolveExecutable: () => "/usr/bin/claude",
+    stopGraceMs: 10,
+    containerStatus: { available: true, message: null },
+    externalRuntime: () => null,
+    beforeLaunch: () => Promise.resolve(),
+    isBlocked: () => false,
+    hasKey: () => true,
+    secrets: () => [],
+    homeDir: home,
+    resolveFolder: (requested) => Promise.resolve(requested ?? home),
+    protectedPaths: () =>
+      Promise.resolve([
+        join(home, ".ssh"),
+        join(home, ".config", "*", "auth*"),
+        join(home, ".config", "codeweave"),
+      ]),
+  });
+}
+
+async function openSessionRig(
+  prepare: (home: string) => Promise<string> = (home) => Promise.resolve(home),
+): Promise<SessionRig> {
+  const userData = await realpath(
+    await mkdtemp(join(tmpdir(), "codeweave-policy-user-")),
+  );
+  const home = await realpath(
+    await mkdtemp(join(tmpdir(), "codeweave-policy-home-")),
+  );
+  const outside = await realpath(
+    await mkdtemp(join(tmpdir(), "codeweave-policy-out-")),
+  );
+  tempDirs.push(userData, home, outside);
+  await mkdir(join(home, ".ssh"));
+  await mkdir(join(home, "repo"));
+  await symlink(join(home, ".ssh"), join(home, "link"), "dir");
+  const sessionCwd = await prepare(home);
+  const store = createJsonStore(userData);
+  await store.writeAccounts([ACCOUNT]);
+  const listeners = new Set<(event: AgentEvent) => void>();
+  const answers = new Map<string, string>();
+  const prompted = Promise.withResolvers<undefined>();
+  const handle = scriptedHandle(listeners, answers, prompted);
+  const adapter: AgentAdapter = {
+    start: () => Promise.resolve({ ok: true, handle }),
+  };
+  const service = createRigService(adapter, store, home);
+  services.push(service);
+  await service.start({
+    cwd: sessionCwd,
+    profile: PermissionProfile.unattended,
+  });
+  void service.prompt("go");
+  await prompted.promise;
+  let counter = 0;
+  const outcomeOf = async (input: PermissionEventInput): Promise<Outcome> => {
+    counter += 1;
+    const id = `req-${String(counter)}`;
+    const sentinelId = `${SENTINEL_ID}-${id}`;
+    emitRequest(listeners, id, input);
+    emitRequest(listeners, sentinelId, sentinelFor(sessionCwd, input));
+    await settled(() => {
+      expect(answers.has(sentinelId)).toBe(true);
+    });
+    return outcomeOfAnswer(answers.get(id));
+  };
+  return { home, outside, outcomeOf };
+}
+
+describe("session permission scope", () => {
+  it("cd_into_repo_under_root_then_mutating_command_is_allowed", async () => {
+    const rig = await openSessionRig();
+
+    const outcome = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: { command: `cd ${join(rig.home, "repo")} && sed -i s/a/b/ f` },
+    });
+
+    expect(outcome).toBe("allow");
+  });
+
+  it("cd_outside_root_then_mutating_command_asks", async () => {
+    const rig = await openSessionRig();
+
+    const outcome = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: { command: `cd ${shellPath(rig.outside)} && touch x` },
+    });
+
+    expect(outcome, "cd outside root not scoped").toBe("ask");
+  });
+
+  it("edit_of_a_protected_home_path_asks", async () => {
+    const rig = await openSessionRig();
+
+    const outcome = await rig.outcomeOf({
+      kind: "edit",
+      locations: [join(rig.home, ".ssh", "authorized_keys")],
+    });
+
+    expect(outcome).toBe("ask");
+  });
+
+  it("symlink-into-protected-edit", async () => {
+    const rig = await openSessionRig();
+
+    const outcome = await rig.outcomeOf({
+      kind: "edit",
+      locations: [join(rig.home, "link", "authorized_keys")],
+    });
+
+    expect(outcome).toBe("ask");
+  });
+
+  it("codex-approval-cwd-outside-root", async () => {
+    const rig = await openSessionRig();
+
+    const outside = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: { command: "touch x", cwd: rig.outside },
+    });
+    const inside = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: { command: "touch x", cwd: join(rig.home, "repo") },
+    });
+
+    expect(outside).toBe("ask");
+    expect(inside).toBe("allow");
+  });
+
+  it("or-preceded-cd-unknown-cwd", async () => {
+    const rig = await openSessionRig();
+
+    const outcome = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: {
+        command: `ls || cd ${join(rig.home, "repo")} && rm -rf id_ed25519`,
+        cwd: join(rig.home, ".ssh"),
+      },
+    });
+
+    expect(outcome).toBe("deny");
+  });
+
+  it("home-override-unknown-cwd", async () => {
+    const rig = await openSessionRig();
+
+    const outcome = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: { command: "HOME=/tmp cd && rm -rf x" },
+    });
+
+    expect(outcome).toBe("deny");
+  });
+
+  it("cdpath-override-unknown-cwd", async () => {
+    const rig = await openSessionRig();
+
+    const prefixed = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: { command: "CDPATH=/ cd repo && rm -rf x" },
+    });
+    const exported = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: { command: "export CDPATH=/; cd repo && touch x" },
+    });
+
+    expect(prefixed).toBe("deny");
+    expect(exported).toBe("ask");
+  });
+
+  it("pushd-stack-operand-unknown-cwd", async () => {
+    const rig = await openSessionRig();
+
+    const repo = join(rig.home, "repo");
+
+    const outcome = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: {
+        command: `pushd /tmp && pushd ${repo} && pushd +1 && rm -rf x`,
+      },
+    });
+
+    expect(outcome).toBe("deny");
+  });
+
+  it("pathed-cd-executable-not-builtin", async () => {
+    const rig = await openSessionRig();
+
+    const outcome = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: {
+        command: `cd /tmp && ${join(rig.home, "cd")} ${rig.home} && touch x`,
+      },
+    });
+
+    expect(outcome).toBe("ask");
+  });
+
+  it("ancestor-of-protected-destination-asks", async () => {
+    const rig = await openSessionRig();
+
+    const copy = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: { command: `cp -r /tmp/x/.ssh ${shellPath(rig.home)}/` },
+    });
+    const extract = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: { command: `tar -xf /tmp/e.tar -C ${shellPath(rig.home)}` },
+    });
+
+    expect(copy).toBe("ask");
+    expect(extract).toBe("ask");
+  });
+
+  it("symlinked-root-original-spelling-inside", async () => {
+    const rig = await openSessionRig(async (home) => {
+      await mkdir(join(home, "data", "p"), { recursive: true });
+      await symlink(join(home, "data", "p"), join(home, "folder"), "dir");
+      return join(home, "folder");
+    });
+
+    const remove = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: { command: `rm -rf ${join(rig.home, "folder", "build")}` },
+    });
+    const redirect = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: { command: `echo x > ${join(rig.home, "folder", "f")}` },
+    });
+    const edit = await rig.outcomeOf({
+      kind: "edit",
+      locations: [join(rig.home, "folder", "f.txt")],
+    });
+
+    expect(remove, "rm below the symlinked folder").toBe("allow");
+    expect(redirect, "redirect below the symlinked folder").toBe("allow");
+    expect(edit, "edit below the symlinked folder").toBe("allow");
+  });
+
+  it("glob-protected-symlinked-edit-asks", async () => {
+    const rig = await openSessionRig(async (home) => {
+      await mkdir(join(home, ".config", "app"), { recursive: true });
+      await writeFile(join(home, "repo", "plain.txt"), "x");
+      await symlink(
+        join(home, "repo", "plain.txt"),
+        join(home, ".config", "app", "auth.json"),
+      );
+      return join(home, "repo");
+    });
+
+    const outcome = await rig.outcomeOf({
+      kind: "edit",
+      locations: [join(rig.home, ".config", "app", "auth.json")],
+    });
+
+    expect(outcome).toBe("ask");
+  });
+
+  it("attached-short-option-destination-asks", async () => {
+    const rig = await openSessionRig();
+
+    const outcome = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: { command: `tar -xf /tmp/e.tar -C${shellPath(rig.home)}` },
+    });
+
+    expect(outcome).toBe("ask");
+  });
+
+  it("attached-relative-destination-asks", async () => {
+    const rig = await openSessionRig();
+
+    const outcome = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: { command: "cd ~/.config && tar -xf e.tar -Ccodeweave" },
+    });
+
+    expect(outcome).toBe("ask");
+  });
+
+  it("globbed-ancestor-destination-asks", async () => {
+    const rig = await openSessionRig();
+
+    const outcome = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: { command: `cp /tmp/x/k ${shellPath(rig.home)}/.conf*/` },
+    });
+
+    expect(outcome).toBe("ask");
+  });
+
+  it("wrapped-cd-unknown-cwd", async () => {
+    const rig = await openSessionRig();
+
+    const outcome = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: {
+        command: `env cd ${join(rig.home, "repo")} && rm -rf id_ed25519`,
+        cwd: join(rig.home, ".ssh"),
+      },
+    });
+
+    expect(outcome).toBe("deny");
+  });
+
+  it("zsh-lowercase-cdpath-taints-cd", async () => {
+    const rig = await openSessionRig();
+
+    const outcome = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: {
+        command: `set -A cdpath ${rig.home}/Documents && cd notes && rm -rf x`,
+      },
+    });
+
+    expect(outcome).toBe("deny");
+  });
+
+  it("pathed-cd-does-not-move-cwd", async () => {
+    const rig = await openSessionRig();
+    const repo = join(rig.home, "repo");
+
+    const outcome = await rig.outcomeOf({
+      kind: "execute",
+      rawInput: {
+        command: `/usr/bin/cd ${repo}/a/b && rm -rf ../../x`,
+        cwd: repo,
+      },
+    });
+
+    expect(outcome).toBe("deny");
   });
 });

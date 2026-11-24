@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import * as constants from "./constants";
+import { ORCHESTRATOR_INSTRUCTIONS } from "./orchestratorInstructions";
 import * as types from "./types";
 
 describe("orchestration wire contract", () => {
@@ -31,5 +32,23 @@ describe("orchestration wire contract", () => {
       DEFAULT_HANDOFF_CHARS: 16_000,
       FLOW_TOOL_SERVER_NAME: "codeweave",
     });
+  });
+});
+
+describe("orchestrator instructions", () => {
+  it("tells_the_orchestrator_to_locate_the_repository_and_pass_it_to_the_flow_tools", () => {
+    expect(
+      ORCHESTRATOR_INSTRUCTIONS.startsWith(
+        "You are the Codeweave orchestrator.",
+      ),
+    ).toBe(true);
+    for (const phrase of [
+      "ls, find, cd, git status",
+      "pass its path as repository to list_flows and to start_flow",
+      "conflict fix flows included",
+      "only one can run at a time in each repository",
+    ]) {
+      expect(ORCHESTRATOR_INSTRUCTIONS).toContain(phrase);
+    }
   });
 });

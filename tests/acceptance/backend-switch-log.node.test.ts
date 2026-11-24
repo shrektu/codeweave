@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -43,6 +44,7 @@ it("switch_log_list_skips_malformed_lines", async () => {
     store: createJsonStore(userData),
     ...fakeSecrets(userData),
     userData,
+    homeDir: tmpdir(),
     broadcast: vi.fn(),
     sessions: fakeSessionPool(),
     flowRuns: fakeFlowRuns(),

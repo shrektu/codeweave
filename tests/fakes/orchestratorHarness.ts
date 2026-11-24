@@ -123,12 +123,11 @@ export const IGNORE_FLOW_FILES = "flows/\nagents/\n";
 const REMOVE_RETRIES = 10;
 const REMOVE_RETRY_DELAY_MS = 200;
 
-export async function createFlowRepo(
+export async function initFlowRepo(
+  repo: string,
   options: { readonly ignoreFlowFiles?: boolean } = {},
-): Promise<FlowRepo> {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "cw-orch-")));
-  const repo = join(root, "project");
-  await mkdir(repo);
+): Promise<void> {
+  await mkdir(repo, { recursive: true });
   await git(repo, ["init", "--quiet", "--initial-branch=main"]);
   await git(repo, ["config", "user.name", "Test"]);
   await git(repo, ["config", "user.email", "test@example.com"]);
@@ -140,10 +139,52 @@ export async function createFlowRepo(
   await writeFlowFiles(repo);
   await git(repo, ["add", "-A"]);
   await git(repo, ["commit", "--quiet", "-m", "Initial commit"]);
+}
+
+export async function createFlowRepo(
+  options: { readonly ignoreFlowFiles?: boolean } = {},
+): Promise<FlowRepo> {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "cw-orch-")));
+  const repo = join(root, "project");
+  await initFlowRepo(repo, options);
   return { root, repo };
 }
 
-export function removeFlowRepo(flowRepo: FlowRepo): Promise<void> {
+export interface WorkspaceRepos {
+  readonly root: string;
+  readonly workspace: string;
+  readonly library: string;
+  readonly repos: Readonly<Record<string, string>>;
+}
+
+export const LIBRARY_FLOW_ID = "shared-review";
+const LIBRARY_FILES: Readonly<Record<string, string>> = {
+  "agents/library.md": `---\nid: librarian\nrole: Reviews the change\nprovider: claude\npermissionProfile: unattended\n---\n\nReview the diff and report bugs only.\n`,
+  [`flows/${LIBRARY_FLOW_ID}.md`]: `---\nid: ${LIBRARY_FLOW_ID}\ntitle: Shared review\nnodes:\n  - id: look\n    agent: librarian\nedges: []\n---\n`,
+};
+
+export async function createWorkspaceRepos(
+  names: readonly string[],
+): Promise<WorkspaceRepos> {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "cw-ws-")));
+  const workspace = join(root, "workspace");
+  const library = join(root, "library");
+  await mkdir(workspace);
+  for (const [file, text] of Object.entries(LIBRARY_FILES)) {
+    await mkdir(dirname(join(library, file)), { recursive: true });
+    await writeFile(join(library, file), text);
+  }
+  const repos: Record<string, string> = {};
+  for (const name of names) {
+    repos[name] = join(workspace, name);
+    await initFlowRepo(repos[name]);
+  }
+  return { root, workspace, library, repos };
+}
+
+export function removeFlowRepo(
+  flowRepo: Pick<FlowRepo, "root">,
+): Promise<void> {
   return rm(flowRepo.root, {
     recursive: true,
     force: true,
@@ -241,8 +282,8 @@ class GatedStartControl implements FlowControl {
     this.gate = gate;
   }
 
-  listFlows(): Promise<FlowsList> {
-    return this.inner.listFlows();
+  listFlows(repository?: string): Promise<FlowsList> {
+    return this.inner.listFlows(repository);
   }
 
   async startFlow(request: FlowStartRequest): Promise<FlowRunView> {

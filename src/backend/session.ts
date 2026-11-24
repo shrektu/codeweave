@@ -63,6 +63,9 @@ export interface SessionServiceDeps {
   readonly isBlocked: (accountId: string) => boolean;
   readonly hasKey: (accountId: string) => boolean;
   readonly secrets: (accounts: readonly Account[]) => readonly SecretEntry[];
+  readonly protectedPaths: () => Promise<readonly string[]>;
+  readonly homeDir: string;
+  readonly resolveFolder: (requested: string | undefined) => Promise<string>;
 }
 
 export interface StartOptions {
@@ -136,10 +139,12 @@ interface StartToken {
   cancelled: boolean;
 }
 
-type StartRequest = ParamsMap["session/start"] &
+type StartInput = ParamsMap["session/start"] &
   Omit<StartOptions, "leaseMode"> & {
     readonly leaseMode: LeaseMode;
   };
+
+type StartRequest = StartInput & { readonly cwd: string };
 
 const isCancelled = (token: StartToken): boolean => token.cancelled;
 
@@ -328,10 +333,14 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     return { created, result };
   };
   const runStart = async (
-    params: StartRequest,
+    input: StartInput,
     token: StartToken,
   ): Promise<SessionRun> => {
     try {
+      const params: StartRequest = {
+        ...input,
+        cwd: await deps.resolveFolder(input.cwd),
+      };
       await releasePrevious();
       if (isCancelled(token)) {
         throw startStopped();
@@ -384,7 +393,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       }
       const token: StartToken = { cancelled: false };
       pending = token;
-      const request: StartRequest = {
+      const request: StartInput = {
         ...params,
         ...options,
         leaseMode: options?.leaseMode ?? LeaseMode.exclusive,

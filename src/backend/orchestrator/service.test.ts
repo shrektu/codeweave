@@ -4,10 +4,12 @@ import { FlowRunStatus } from "../../domain/flowRun";
 import { FlowPlacement } from "../../domain/types";
 import { IpcError, IpcErrorCode, type ParamsMap } from "../../shared/protocol";
 import type { SessionView } from "../../shared/views";
+import { settled } from "../../../tests/fakes/settle";
 import { SAMPLE_FLOWS } from "../../../tests/fakes/fakeFlowControl";
 import {
   FakeRuns,
   FakeWorktrees,
+  repositoryDeps,
   sessionView,
 } from "../../../tests/fakes/fakeOrchestration";
 import type { FlowControl } from "../flowTools/control";
@@ -43,15 +45,24 @@ class FakeMain implements SessionService {
   settled = true;
   sessionId = "sess-1";
   shown: SessionView | null = sessionView({ id: this.sessionId });
+  readonly resolveFolder: (requested: string | undefined) => Promise<string>;
 
-  start(
+  constructor(
+    resolveFolder: (requested: string | undefined) => Promise<string>,
+  ) {
+    this.resolveFolder = resolveFolder;
+  }
+
+  async start(
     params: ParamsMap["session/start"],
     options?: StartOptions,
   ): Promise<SessionView> {
     this.starts.push(options === undefined ? { params } : { params, options });
-    return this.startError === null
-      ? Promise.resolve(sessionView({ id: this.sessionId }))
-      : Promise.reject(this.startError);
+    const cwd = await this.resolveFolder(params.cwd);
+    if (this.startError !== null) {
+      throw this.startError;
+    }
+    return sessionView({ id: this.sessionId, cwd });
   }
 
   prompt(text: string): Promise<void> {
@@ -150,20 +161,31 @@ interface Rig {
   readonly worktrees: FakeWorktrees;
   readonly server: FakeToolServer;
   readonly serverStarts: () => number;
+  readonly listedCwds: string[];
 }
 
-function openRig(startToolServer?: () => Promise<FlowToolServer>): Rig {
-  const main = new FakeMain();
+function openRig(
+  startToolServer?: () => Promise<FlowToolServer>,
+  resolveFolder: (requested: string | undefined) => Promise<string> = (
+    requested,
+  ) => Promise.resolve(requested ?? CWD),
+): Rig {
+  const main = new FakeMain(resolveFolder);
   const runs = new FakeRuns();
   const worktrees = new FakeWorktrees();
   const server = new FakeToolServer();
   let starts = 0;
   let counter = 0;
+  const listedCwds: string[] = [];
   const service = createOrchestratorService({
     main,
     flowRuns: runs,
     flowWorktrees: worktrees,
-    listFlows: () => Promise.resolve(SAMPLE_FLOWS),
+    ...repositoryDeps(),
+    listFlows: (cwd) => {
+      listedCwds.push(cwd);
+      return Promise.resolve(SAMPLE_FLOWS);
+    },
     newRunId: () => {
       counter += 1;
       return `run-${String(counter)}`;
@@ -175,7 +197,15 @@ function openRig(startToolServer?: () => Promise<FlowToolServer>): Rig {
         return Promise.resolve(server);
       }),
   });
-  return { service, main, runs, worktrees, server, serverStarts: () => starts };
+  return {
+    service,
+    main,
+    runs,
+    worktrees,
+    server,
+    serverStarts: () => starts,
+    listedCwds,
+  };
 }
 
 beforeEach(() => {
@@ -206,6 +236,43 @@ it("starts_the_main_session_with_the_plan_profile_an_observer_lease_and_the_tool
   expect(call?.options?.preamble).toContain(
     "You are the Codeweave orchestrator.",
   );
+});
+
+const RESOLVED_CWD = "/home/user/workspace";
+
+it("orchestrate_start_without_a_folder_uses_the_resolved_folder", async () => {
+  const rig = openRig(undefined, () => Promise.resolve(RESOLVED_CWD));
+
+  await rig.service.start({ orchestrate: true });
+  await rig.server.control("tok-1").listFlows();
+
+  expect(rig.main.starts.map((call) => call.params.cwd)).toEqual([undefined]);
+  expect(rig.listedCwds).toEqual([RESOLVED_CWD]);
+});
+
+it("orchestrate_start_with_an_unresolvable_folder_fails_and_revokes_the_tools", async () => {
+  const rig = openRig(undefined, () =>
+    Promise.reject(new IpcError(IpcErrorCode.VALIDATION, "no folder")),
+  );
+
+  await expect(rig.service.start({ orchestrate: true })).rejects.toMatchObject({
+    code: IpcErrorCode.VALIDATION,
+  });
+
+  expect(rig.server.revoked).toEqual(["tok-1"]);
+});
+
+it("orchestrate-start-reserves-slot-before-folder-resolution", async () => {
+  const gate = Promise.withResolvers<string>();
+  const rig = openRig(undefined, () => gate.promise);
+
+  const starting = rig.service.start({ orchestrate: true });
+  await settled(() => {
+    expect(rig.main.starts).toHaveLength(1);
+  });
+
+  gate.resolve(RESOLVED_CWD);
+  await starting;
 });
 
 it("ends_the_orchestration_when_the_session_view_id_changes", async () => {

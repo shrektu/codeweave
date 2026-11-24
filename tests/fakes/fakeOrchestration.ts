@@ -14,6 +14,7 @@ import type {
   FlowWorktree,
   FlowWorktrees,
 } from "../../src/backend/flowWorktrees";
+import type { OrchestratorFlowDeps } from "../../src/backend/orchestrator/flowControl";
 import type { FlowRunView, SessionView } from "../../src/shared/views";
 
 import { SAMPLE_RUN } from "./fakeFlowControl";
@@ -154,6 +155,18 @@ export class FakeRuns implements FlowRunService {
   }
 }
 
+export function repositoryDeps(): Pick<
+  OrchestratorFlowDeps,
+  "inspectWorktree" | "protectedPaths" | "homeDir" | "platform"
+> {
+  return {
+    inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),
+    protectedPaths: () => Promise.resolve([]),
+    homeDir: "/home/jane",
+    platform: "linux",
+  };
+}
+
 export class FakeWorktrees implements FlowWorktrees {
   readonly log: string[] = [];
   mergeOutcome: MergeOutcome = MERGED;
@@ -162,15 +175,20 @@ export class FakeWorktrees implements FlowWorktrees {
   commitError: Error | null = null;
   commitGate: Promise<undefined> | null = null;
   createGate: Promise<undefined> | null = null;
+  projectRoots: Readonly<Record<string, string>> = {};
   mergeGate: Promise<undefined> | null = null;
   finishGate: Promise<undefined> | null = null;
 
-  async create(_projectCwd: string, runId: string): Promise<FlowWorktree> {
+  resolveProjectRoot(cwd: string): Promise<string> {
+    return Promise.resolve(this.projectRoots[cwd] ?? cwd);
+  }
+
+  async create(projectCwd: string, runId: string): Promise<FlowWorktree> {
     this.log.push(`create:${runId}`);
     await this.createGate;
     return {
       runId,
-      projectRoot: PROJECT,
+      projectRoot: projectCwd,
       path: `/work/.worktrees/${runId}`,
       branch: `codeweave/${runId}`,
       base: "base",

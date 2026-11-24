@@ -21,6 +21,8 @@ const HOME_MARKER = "~";
 const HOME_PREFIXES = ["~/", "~\\"] as const;
 const RELATIVE_LIBRARY_MESSAGE =
   "The flow library folder must be an absolute path";
+const RELATIVE_WORKSPACE_MESSAGE =
+  "The default workspace must be an absolute path";
 
 export type PostUpdaterConfig = (message: UpdaterConfigMessage) => void;
 
@@ -63,10 +65,11 @@ function expandHome(path: string, homeDir: string): string {
     : path;
 }
 
-function libraryFolder(
+function folderSetting(
   value: string | null | undefined,
   current: string | null,
   homeDir: string,
+  relativeMessage: string,
 ): string | null {
   if (value === undefined) {
     return current;
@@ -77,12 +80,12 @@ function libraryFolder(
   }
   const expanded = expandHome(trimmed, homeDir);
   if (!isAbsolute(expanded)) {
-    throw new IpcError(IpcErrorCode.VALIDATION, RELATIVE_LIBRARY_MESSAGE);
+    throw new IpcError(IpcErrorCode.VALIDATION, relativeMessage);
   }
   return expanded;
 }
 
-function toView(settings: SettingsFile): SettingsView {
+function toView(settings: SettingsFile, homeDir: string): SettingsView {
   return {
     permissionProfile: settings.permissionProfile,
     effectLevel: settings.effectLevel,
@@ -96,6 +99,8 @@ function toView(settings: SettingsFile): SettingsView {
     updateChannel: settings.updateChannel,
     defaultTaskClass: settings.defaultTaskClass,
     definitionLibrary: settings.definitionLibrary,
+    defaultWorkspace: settings.defaultWorkspace,
+    defaultWorkspaceResolved: settings.defaultWorkspace ?? homeDir,
   };
 }
 
@@ -118,7 +123,7 @@ export function createSettingsService({
   const serialized = createSerializer();
   return {
     async get(): Promise<SettingsView> {
-      return toView(await store.readSettings());
+      return toView(await store.readSettings(), homeDir);
     },
     set: (patch) =>
       serialized(async () => {
@@ -152,14 +157,21 @@ export function createSettingsService({
           updateCheck: patch.updateCheck ?? current.updateCheck,
           updateChannel: patch.updateChannel ?? current.updateChannel,
           defaultTaskClass: patch.defaultTaskClass ?? current.defaultTaskClass,
-          definitionLibrary: libraryFolder(
+          definitionLibrary: folderSetting(
             patch.definitionLibrary,
             current.definitionLibrary,
             homeDir,
+            RELATIVE_LIBRARY_MESSAGE,
+          ),
+          defaultWorkspace: folderSetting(
+            patch.defaultWorkspace,
+            current.defaultWorkspace,
+            homeDir,
+            RELATIVE_WORKSPACE_MESSAGE,
           ),
         };
         await store.writeSettings(next);
-        const view = toView(next);
+        const view = toView(next, homeDir);
         broadcast("settings/changed", view);
         postUpdaterConfig(toUpdaterConfigMessage(next));
         return view;

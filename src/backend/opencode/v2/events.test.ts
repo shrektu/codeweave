@@ -283,6 +283,45 @@ describe("v2 permission events", () => {
   });
 });
 
+describe("v2 shell workdir", () => {
+  function shellRequests(input: object): unknown[] {
+    const mapper = createV2EventMapper(OWN, CWD);
+    mapper.map(
+      event("session.tool.called", { sessionID: OWN, id: "call_1", input }),
+    );
+    return mapper
+      .map(
+        asked(OWN, {
+          action: "shell",
+          resources: ["touch x"],
+          source: { id: "call_1" },
+        }),
+      )
+      .map((mapped) => Reflect.get(mapped, "rawInput") as unknown);
+  }
+
+  it("a_relative_workdir_resolves_against_the_session_cwd", () => {
+    expect(shellRequests({ command: "touch x", workdir: "sub" })).toEqual([
+      { command: "touch x", cwd: resolve(CWD, "sub") },
+    ]);
+  });
+
+  it("an_absolute_workdir_is_kept", () => {
+    expect(shellRequests({ command: "touch x", workdir: "/tmp/out" })).toEqual([
+      { command: "touch x", cwd: resolve("/tmp/out") },
+    ]);
+  });
+
+  it("a_missing_or_empty_workdir_leaves_only_the_command", () => {
+    expect(shellRequests({ command: "touch x" })).toEqual([
+      { command: "touch x" },
+    ]);
+    expect(shellRequests({ command: "touch x", workdir: "" })).toEqual([
+      { command: "touch x" },
+    ]);
+  });
+});
+
 describe("v2 permission fallbacks", () => {
   it("shell_permission_without_a_known_tool_call_lists_every_resource", () => {
     const mapper = createV2EventMapper(OWN, CWD);

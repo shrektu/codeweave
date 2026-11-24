@@ -174,7 +174,7 @@ class OrchestratorServiceImpl implements OrchestratorService {
   async start(params: ParamsMap["session/start"]): Promise<SessionView> {
     const tools = await this.toolServer();
     const orchestration: Orchestration = {
-      cwd: params.cwd,
+      cwd: null,
       runs: new Map(),
       sessionId: null,
       ended: false,
@@ -183,6 +183,7 @@ class OrchestratorServiceImpl implements OrchestratorService {
       createOrchestratorFlowControl(this.deps, orchestration),
     );
     const view = await this.launch(tools, grant, params);
+    orchestration.cwd = view.cwd;
     orchestration.sessionId = view.id;
     const previous = this.current;
     const next: ActiveOrchestration = new ActiveOrchestration(

@@ -162,14 +162,38 @@ function editLocations(
   return [...new Set(candidates.map((path) => resolve(cwd, path)))];
 }
 
+function workdirOf(
+  properties: PermissionAskedProperties,
+  cwd: string,
+  toolInputs: ReadonlyMap<string, unknown>,
+): string | undefined {
+  const callId = properties.tool?.callID;
+  const input = callId === undefined ? undefined : toolInputs.get(callId);
+  const workdir =
+    typeof input === "object" && input !== null
+      ? stringOf(Reflect.get(input, "workdir"))
+      : undefined;
+  return workdir === undefined || workdir === ""
+    ? undefined
+    : resolve(cwd, workdir);
+}
+
 function permissionInput(
   properties: PermissionAskedProperties,
   locations: readonly string[],
+  workdir: string | undefined,
 ): { rawInput?: unknown } {
   if (properties.permission === "bash") {
     const command =
       stringOf(properties.metadata.command) ?? properties.patterns[0];
-    return command === undefined ? {} : { rawInput: { command } };
+    return command === undefined
+      ? {}
+      : {
+          rawInput: {
+            command,
+            ...(workdir === undefined ? {} : { cwd: workdir }),
+          },
+        };
   }
   const [filePath] = locations;
   return properties.permission === "edit" && filePath !== undefined
@@ -180,6 +204,7 @@ function permissionInput(
 function permissionRequest(
   properties: PermissionAskedProperties,
   cwd: string,
+  toolInputs: ReadonlyMap<string, unknown>,
 ): AgentEvent {
   const locations =
     properties.permission === "edit" ? editLocations(properties, cwd) : [];
@@ -189,7 +214,11 @@ function permissionRequest(
     toolCallId: properties.tool?.callID ?? properties.id,
     title: PERMISSION_TITLES[properties.permission] ?? properties.permission,
     kind: PERMISSION_KINDS[properties.permission] ?? DEFAULT_TOOL_KIND,
-    ...permissionInput(properties, locations),
+    ...permissionInput(
+      properties,
+      locations,
+      workdirOf(properties, cwd, toolInputs),
+    ),
     locations,
     options: PERMISSION_OPTIONS,
   };
@@ -201,6 +230,7 @@ export function createEventMapper(
 ): OpencodeEventMapper {
   const texts = new Map<string, string>();
   const tools = new Set<string>();
+  const toolInputs = new Map<string, unknown>();
   const roles = new Map<string, string>();
   const descendants = new Set<string>();
   let reportedModel: string | null = null;
@@ -262,6 +292,7 @@ export function createEventMapper(
   function mapTool(part: ToolPart): AgentEvent[] {
     const seen = tools.has(part.callID);
     tools.add(part.callID);
+    toolInputs.set(part.callID, part.state.input);
     return [seen ? toolUpdate(part) : toolCall(part)];
   }
 
@@ -293,7 +324,7 @@ export function createEventMapper(
         case OpencodeEventType.permissionAsked:
           return scope === SessionScope.foreign
             ? []
-            : [permissionRequest(event.properties, cwd)];
+            : [permissionRequest(event.properties, cwd, toolInputs)];
         default:
           return [];
       }

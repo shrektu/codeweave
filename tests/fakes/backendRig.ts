@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -72,7 +72,6 @@ import { resolvePathLockKey } from "./rigProcesses";
 import type { ScheduledTask } from "./rotationHarness";
 import { settled } from "./settle";
 
-
 export const RIG_NOW_MS = 1_700_000_000_000;
 export const RIG_NOW_SECONDS = 1_700_000_000;
 export const RIG_CLAUDE_PATH = "/usr/bin/claude";
@@ -124,6 +123,7 @@ export interface RecordedBroadcast {
 
 export interface BackendRigOptions {
   readonly userData?: string;
+  readonly homeDir?: string;
   readonly accounts?: readonly Account[];
   readonly containerError?: Error;
   readonly stopResults?: ConstructorParameters<typeof ScriptedAcpContainer>[0];
@@ -131,6 +131,7 @@ export interface BackendRigOptions {
   readonly worktreeGate?: Promise<void>;
   readonly spawnGate?: Promise<void>;
   readonly worktree?: WorktreeState;
+  readonly inspectWorktree?: BackendDeps["inspectWorktree"];
   readonly resolveExecutable?: BackendDeps["resolveExecutable"];
   readonly agyUsage?: readonly UsageScript[];
   readonly agyExecutables?: readonly string[];
@@ -187,6 +188,7 @@ export interface BackendRig {
   readonly vault: FakeVault;
   readonly authCli: FakeAuthCli;
   readonly userData: string;
+  readonly homeDir: string;
   readonly cwd: string;
   readonly order: string[];
   readonly sweeps: (readonly string[])[];
@@ -371,6 +373,7 @@ function rigDeps(
   options: BackendRigOptions,
   authCli: FakeAuthCli,
   userData: string,
+  homeDir: string,
   vault: FakeVault,
   containers: AgentContainers,
   log: RigLog,
@@ -403,7 +406,7 @@ function rigDeps(
     execPath: RIG_EXEC_PATH,
     adapterEntry: RIG_ADAPTER_ENTRY,
     parentEnv: options.parentEnv ?? { PATH: "/usr/bin" },
-    homeDir: "/home/jane",
+    homeDir,
     platform: options.platform ?? "linux",
     now: options.now ?? (() => RIG_NOW_MS),
     opencodeConsoleLogin: createConsoleLoginProbe({
@@ -456,10 +459,12 @@ function rigDeps(
             return RIG_CLAUDE_PATH;
         }
       }),
-    inspectWorktree: async (dir) => {
-      await options.worktreeGate;
-      return options.worktree ?? { isRepo: false, cwd: dir };
-    },
+    inspectWorktree:
+      options.inspectWorktree ??
+      (async (dir) => {
+        await options.worktreeGate;
+        return options.worktree ?? { isRepo: false, cwd: dir };
+      }),
   };
 }
 
@@ -468,6 +473,8 @@ export async function createBackendRig(
 ): Promise<BackendRig> {
   const userData = options.userData ?? (await tempDir("codeweave-user-"));
   const cwd = await tempDir("codeweave-cwd-");
+  const homeDir =
+    options.homeDir ?? (await realpath(await tempDir("codeweave-home-")));
   await mkdir(userData, { recursive: true });
   const store = createJsonStore(userData);
   if (options.accounts !== undefined) {
@@ -528,6 +535,7 @@ export async function createBackendRig(
       options,
       authCli,
       userData,
+      homeDir,
       vault,
       {
         claude: container,
@@ -567,6 +575,7 @@ export async function createBackendRig(
     vault,
     authCli,
     userData,
+    homeDir,
     cwd,
     ...parts,
     instanceIds,

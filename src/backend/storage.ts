@@ -72,6 +72,7 @@ export const SettingsFileSchema = z.object({
   updateChannel: z.enum(UpdateChannel).default(UpdateChannel.stable),
   defaultTaskClass: TaskClassSchema.default(TaskClass.standard),
   definitionLibrary: z.string().nullable().default(null),
+  defaultWorkspace: z.string().nullable().default(null),
 });
 
 const SwitchLogEntrySchema = z.object({
@@ -134,6 +135,7 @@ const DEFAULT_SETTINGS: SettingsFile = {
   updateChannel: UpdateChannel.stable,
   defaultTaskClass: TaskClass.standard,
   definitionLibrary: null,
+  defaultWorkspace: null,
 };
 
 export class StorageCorruptError extends Error {

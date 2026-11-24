@@ -99,7 +99,9 @@ it("session_start_uses_picked_folder", async () => {
   renderWithServices(<SessionStream />, client);
 
   expect(await screen.findByText("No session")).toBeTruthy();
-  expect(screen.getByText("Choose a project folder to start.")).toBeTruthy();
+  expect(
+    screen.getByText("Type a task to start, or choose a folder."),
+  ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Choose folder…" }));
 
   await waitFor(() => {

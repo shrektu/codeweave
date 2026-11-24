@@ -111,10 +111,51 @@ describe("toPermissionQuery", () => {
     warn.mockRestore();
   });
 
+  it("reads_an_absolute_cwd_of_an_execute_from_the_raw_input", () => {
+    const outside = resolve("/elsewhere");
+
+    const query = toPermissionQuery(
+      request("execute", { rawInput: { command: "touch x", cwd: outside } }),
+      CWD,
+    );
+
+    expect(query).toEqual({
+      kind: "execute",
+      command: "touch x",
+      cwd: outside,
+    });
+  });
+
+  it("resolves_a_relative_cwd_against_the_session_cwd", () => {
+    const query = toPermissionQuery(
+      request("execute", { rawInput: { command: "ls", cwd: "sub" } }),
+      CWD,
+    );
+
+    expect(query).toEqual({
+      kind: "execute",
+      command: "ls",
+      cwd: resolve(CWD, "sub"),
+    });
+  });
+
+  it("ignores_a_cwd_that_is_empty_not_a_string_or_a_tilde_path", () => {
+    for (const cwd of ["", 5, null, "~/x", "~file://remote/x"]) {
+      const query = toPermissionQuery(
+        request("execute", { rawInput: { command: "ls", cwd } }),
+        CWD,
+      );
+
+      expect(query, String(cwd)).toEqual({ kind: "execute", command: "ls" });
+    }
+  });
+
   it("leaves an execute without a command for the user to decide", () => {
     const query = toPermissionQuery(request("execute"), CWD);
     const decision = decidePermission(query, PermissionProfile.unattended, {
-      worktreeRoot: CWD,
+      worktreeRoots: [CWD],
+      homeDir: "/home/u",
+      protectedPaths: [],
     });
 
     expect(pickOption(decision, OPTIONS)).toBeNull();

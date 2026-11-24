@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import {
   FLOW_DECISION_NOTE_CHARS,
+  FLOW_REPOSITORY_PATH_MAX_CHARS,
   FLOW_TOOL_PAGE_CHARS,
   FLOW_TOOL_SERVER_NAME,
   FLOW_TOOL_SERVER_VERSION,
@@ -38,6 +39,16 @@ const JSON_INDENT = 2;
 
 const RunIdShape = {
   runId: z.string().min(1).describe("Run id returned by start_flow"),
+};
+const RepositoryShape = {
+  repository: z
+    .string()
+    .min(1)
+    .max(FLOW_REPOSITORY_PATH_MAX_CHARS)
+    .optional()
+    .describe(
+      "Path of the git repository to use, relative to your working directory, absolute or starting with ~; omit it to use your working directory",
+    ),
 };
 const OffsetShape = {
   offset: z
@@ -104,9 +115,11 @@ function registerQueryTools(server: McpServer, control: FlowControl): void {
     FlowToolName.listFlows,
     {
       description:
-        "List the flows you can run from the project and the user's flow library, each with its source, nodes, agents and any flow file errors; call this first to pick a flowId.",
+        "List the flows you can run from the project and the user's flow library, each with its source, nodes, agents and any flow file errors; call this first to pick a flowId. Pass repository to list the flows of one repository inside your working directory.",
+      inputSchema: RepositoryShape,
     },
-    () => guarded(async () => flowsResult(await control.listFlows())),
+    ({ repository }) =>
+      guarded(async () => flowsResult(await control.listFlows(repository))),
   );
   server.registerTool(
     FlowToolName.flowStatus,
@@ -148,7 +161,7 @@ function registerRunTools(server: McpServer, control: FlowControl): void {
     FlowToolName.startFlow,
     {
       description:
-        "Start a flow run on a task and return its initial state; use worktree placement to isolate its changes on a separate branch, in_place to edit the project directly.",
+        "Start a flow run on a task and return its initial state; use worktree placement to isolate its changes on a separate branch, in_place to edit the project directly. Pass repository to run in one repository inside your working directory; the flow definitions, the changes and the worktree all belong to that repository.",
       inputSchema: {
         flowId: z.string().min(1).describe("Flow id from list_flows"),
         task: z.string().min(1).describe("The task the flow should carry out"),
@@ -156,10 +169,17 @@ function registerRunTools(server: McpServer, control: FlowControl): void {
           .enum(FlowPlacement)
           .default(FlowPlacement.inPlace)
           .describe("Where the run edits files"),
+        ...RepositoryShape,
       },
     },
-    (request) =>
-      guarded(async () => jsonResult(await control.startFlow(request))),
+    ({ repository, ...request }) =>
+      guarded(async () =>
+        jsonResult(
+          await control.startFlow(
+            repository === undefined ? request : { ...request, repository },
+          ),
+        ),
+      ),
   );
   server.registerTool(
     FlowToolName.decide,
