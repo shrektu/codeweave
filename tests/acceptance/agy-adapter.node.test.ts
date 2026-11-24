@@ -198,6 +198,8 @@ describe("agy adapter environment", () => {
       CODEWEAVE_RUN_ID: agySpawnAt(rig, 0).spec.runId,
       CODEWEAVE_AGY_PROFILE: "ask",
       CODEWEAVE_AGY_WORKTREE: rig.cwd,
+      CODEWEAVE_AGY_HOME: "/home/jane",
+      CODEWEAVE_AGY_PROTECTED: '["/home/jane/.ssh"]',
     });
     expect(rig.container.agySpawns()).toHaveLength(1);
     expect(rig.container.probeSpawns()).toHaveLength(1);

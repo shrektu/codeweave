@@ -63,6 +63,8 @@ export interface SessionServiceDeps {
   readonly isBlocked: (accountId: string) => boolean;
   readonly hasKey: (accountId: string) => boolean;
   readonly secrets: (accounts: readonly Account[]) => readonly SecretEntry[];
+  readonly protectedPaths: () => Promise<readonly string[]>;
+  readonly homeDir: string;
 }
 
 export interface StartOptions {

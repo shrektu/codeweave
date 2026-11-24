@@ -79,16 +79,20 @@ function editDetails(
 const COMMAND_SEPARATOR = "\n";
 const CALL_KEY_SEPARATOR = ":";
 
-const CommandInputSchema = z.looseObject({ command: z.string() });
+const CommandInputSchema = z.looseObject({
+  command: z.string(),
+  workdir: z.string().optional(),
+});
+type CommandInput = z.infer<typeof CommandInputSchema>;
 
 function callKey(sessionID: string, callId: string): string {
   return `${sessionID}${CALL_KEY_SEPARATOR}${callId}`;
 }
 
-function shellCommand(
+function knownCommandInput(
   data: EventOfType<"permission.asked">["data"],
   toolInputs: ReadonlyMap<string, unknown>,
-): string | undefined {
+): CommandInput | undefined {
   const callId = data.source?.id;
   const known =
     callId === undefined
@@ -96,8 +100,15 @@ function shellCommand(
       : CommandInputSchema.safeParse(
           toolInputs.get(callKey(data.sessionID, callId)),
         );
-  if (known?.success === true) {
-    return known.data.command;
+  return known?.success === true ? known.data : undefined;
+}
+
+function shellCommand(
+  data: EventOfType<"permission.asked">["data"],
+  known: CommandInput | undefined,
+): string | undefined {
+  if (known !== undefined) {
+    return known.command;
   }
   return data.resources.length === 0
     ? undefined
@@ -111,11 +122,22 @@ function permissionDetails(
 ): PermissionDetails {
   switch (data.action) {
     case OpencodeV2Action.shell: {
-      const command = shellCommand(data, toolInputs);
+      const known = knownCommandInput(data, toolInputs);
+      const command = shellCommand(data, known);
+      const workdir = known?.workdir;
       return {
         title: TITLE_RUN_COMMAND,
         kind: TOOL_KIND_EXECUTE,
-        ...(command === undefined ? {} : { rawInput: { command } }),
+        ...(command === undefined
+          ? {}
+          : {
+              rawInput: {
+                command,
+                ...(workdir === undefined || workdir === ""
+                  ? {}
+                  : { cwd: resolve(cwd, workdir) }),
+              },
+            }),
         locations: [],
       };
     }

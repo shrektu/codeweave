@@ -3,7 +3,9 @@ import { resolve } from "node:path";
 import type { PermissionProfile } from "../../domain/types";
 
 import {
+  AGY_HOME_ENV,
   AGY_PROFILE_ENV,
+  AGY_PROTECTED_ENV,
   AGY_SNAPSHOT_DIR_ENV,
   AGY_WORKTREE_ENV,
   AgyFlag,
@@ -26,6 +28,8 @@ export interface AgyLaunchInput {
   readonly profile: PermissionProfile;
   readonly model: string | null;
   readonly worktreeRoot: string;
+  readonly homeDir: string;
+  readonly protectedPaths: readonly string[];
   readonly snapshotDir: string;
 }
 
@@ -68,6 +72,8 @@ export function buildAgyLaunch(input: AgyLaunchInput): AgyLaunch {
       ...input.env,
       [AGY_PROFILE_ENV]: input.profile,
       [AGY_WORKTREE_ENV]: input.worktreeRoot,
+      [AGY_HOME_ENV]: input.homeDir,
+      [AGY_PROTECTED_ENV]: JSON.stringify(input.protectedPaths),
       [AGY_SNAPSHOT_DIR_ENV]: input.snapshotDir,
     },
   };

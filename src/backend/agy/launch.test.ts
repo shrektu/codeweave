@@ -11,6 +11,11 @@ const EXECUTABLE = "/home/jane/.local/bin/agy";
 const ENV = { PATH: "/usr/bin" };
 const CONFIG_DIR = "/home/jane/accounts/gemini-1";
 const WORKTREE = "/work/repo";
+const HOME_DIR = "/home/u";
+const PROTECTED: readonly string[] = [
+  "/home/u/.ssh",
+  "/home/u/.config/*/auth*",
+];
 const SNAPSHOT_DIR = "/tmp/codeweave-agy-snap-abc";
 
 function launchFor(
@@ -27,6 +32,8 @@ function launchFor(
     profile,
     model,
     worktreeRoot: WORKTREE,
+    homeDir: HOME_DIR,
+    protectedPaths: PROTECTED,
     snapshotDir: SNAPSHOT_DIR,
   });
 }
@@ -97,6 +104,8 @@ describe("agy launch arguments", () => {
       profile: PermissionProfile.ask,
       model: null,
       worktreeRoot: WORKTREE,
+      homeDir: HOME_DIR,
+      protectedPaths: PROTECTED,
       snapshotDir: SNAPSHOT_DIR,
     });
 
@@ -114,6 +123,8 @@ describe("agy launch environment and turn lines", () => {
       PATH: "/usr/bin",
       CODEWEAVE_AGY_PROFILE: "ask",
       CODEWEAVE_AGY_WORKTREE: WORKTREE,
+      CODEWEAVE_AGY_HOME: HOME_DIR,
+      CODEWEAVE_AGY_PROTECTED: '["/home/u/.ssh","/home/u/.config/*/auth*"]',
       CODEWEAVE_AGY_SNAPSHOT_DIR: SNAPSHOT_DIR,
     });
     expect(launch.env).not.toBe(ENV);

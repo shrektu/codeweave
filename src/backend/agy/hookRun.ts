@@ -4,8 +4,12 @@ import { z } from "zod";
 
 import { PermissionProfile } from "../../domain/types";
 
+import { realEditPaths, realPermissionContext } from "../permissionScope";
+
 import {
+  AGY_HOME_ENV,
   AGY_PROFILE_ENV,
+  AGY_PROTECTED_ENV,
   AGY_SNAPSHOT_DIR_ENV,
   AGY_WORKTREE_ENV,
   AgyHookDecisionKind,
@@ -13,6 +17,7 @@ import {
   HOOK_INTERNAL_ERROR_REASON,
   HOOK_INVALID_INPUT_REASON,
   HOOK_INVALID_PROFILE_REASON,
+  HOOK_INVALID_SCOPE_REASON,
   TOOL_KIND_BY_NAME,
 } from "./constants";
 import {
@@ -37,6 +42,10 @@ interface HookOutcome {
 }
 
 const ProfileSchema = z.enum(PermissionProfile);
+const ScopeSchema = z.object({
+  homeDir: z.string().min(1),
+  protectedPaths: z.array(z.string()),
+});
 
 function rejected(reason: string): HookOutcome {
   return { decision: denyWith(reason), payload: null, worktreeRoot: "" };
@@ -49,14 +58,27 @@ async function decide(deps: HookRunDeps): Promise<HookOutcome> {
   if (!profile.success || worktreeRoot === undefined || worktreeRoot === "") {
     return rejected(HOOK_INVALID_PROFILE_REASON);
   }
+  const scope = ScopeSchema.safeParse({
+    homeDir: deps.env[AGY_HOME_ENV],
+    protectedPaths: parseJson(deps.env[AGY_PROTECTED_ENV] ?? ""),
+  });
+  if (!scope.success) {
+    return rejected(HOOK_INVALID_SCOPE_REASON);
+  }
   const payload = HookPayloadSchema.safeParse(parseJson(input));
-  return payload.success
-    ? {
-        decision: decideAgyTool(payload.data, profile.data, worktreeRoot),
-        payload: payload.data,
-        worktreeRoot,
-      }
-    : rejected(HOOK_INVALID_INPUT_REASON);
+  if (!payload.success) {
+    return rejected(HOOK_INVALID_INPUT_REASON);
+  }
+  const context = await realPermissionContext({ worktreeRoot, ...scope.data });
+  const realPaths = await realEditPaths(
+    pathsOf(payload.data.toolCall.args, worktreeRoot),
+    context,
+  );
+  return {
+    decision: decideAgyTool(payload.data, profile.data, context, realPaths),
+    payload: payload.data,
+    worktreeRoot,
+  };
 }
 
 async function decideOrDeny(deps: HookRunDeps): Promise<HookOutcome> {

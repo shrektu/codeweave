@@ -538,6 +538,31 @@ describe("codex profile and permission mapping", () => {
     expect(event).not.toHaveProperty("rawInput");
   });
 
+  it("command_permission_carries_the_cwd_next_to_the_command", () => {
+    const event = commandPermission("r1", {
+      itemId: "c1",
+      command: "touch x",
+      cwd: "/elsewhere",
+    });
+
+    expect(event).toMatchObject({
+      rawInput: { command: "touch x", cwd: "/elsewhere" },
+    });
+  });
+
+  it("command_permission_without_a_cwd_keeps_only_the_command", () => {
+    for (const cwd of [undefined, null]) {
+      const event = commandPermission("r1", {
+        itemId: "c1",
+        command: "touch x",
+        cwd,
+      });
+
+      expect(event).toMatchObject({ rawInput: { command: "touch x" } });
+      expect(Reflect.get(event, "rawInput")).not.toHaveProperty("cwd");
+    }
+  });
+
   it("permissions_request_offers_grant_and_deny", () => {
     const event = permissionsPermission("r2", {
       itemId: "p1",

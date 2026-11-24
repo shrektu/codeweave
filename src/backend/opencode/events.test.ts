@@ -325,6 +325,59 @@ describe("permission.asked", () => {
       rawInput: { command: "make build" },
     });
   });
+
+  it("bash_workdir_of_the_tool_input_becomes_the_cwd", () => {
+    const requests = mapAll([
+      toolPart(
+        "bash",
+        { status: "pending", input: { command: "touch x", workdir: "sub" } },
+        "call_7",
+      ),
+      toolPart(
+        "bash",
+        {
+          status: "pending",
+          input: { command: "touch y", workdir: "/tmp/out" },
+        },
+        "call_8",
+      ),
+      permission({
+        permission: "bash",
+        metadata: { command: "touch x" },
+        tool: { callID: "call_7" },
+      }),
+      permission({
+        id: "per_2",
+        permission: "bash",
+        metadata: { command: "touch y" },
+        tool: { callID: "call_8" },
+      }),
+    ]).filter((event) => event.type === "permission_request");
+
+    expect(requests.map((request) => request.rawInput)).toEqual([
+      { command: "touch x", cwd: resolve("/work/repo", "sub") },
+      { command: "touch y", cwd: resolve("/tmp/out") },
+    ]);
+  });
+
+  it("bash_without_a_workdir_has_no_cwd", () => {
+    const requests = mapAll([
+      toolPart(
+        "bash",
+        { status: "pending", input: { command: "touch x", workdir: "" } },
+        "call_7",
+      ),
+      permission({
+        permission: "bash",
+        metadata: { command: "touch x" },
+        tool: { callID: "call_7" },
+      }),
+    ]).filter((event) => event.type === "permission_request");
+
+    expect(requests.map((request) => request.rawInput)).toEqual([
+      { command: "touch x" },
+    ]);
+  });
 });
 
 describe("permission.asked for edits", () => {

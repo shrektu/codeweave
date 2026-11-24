@@ -4,6 +4,7 @@ import { parse } from "shell-quote";
 
 import {
   decidePermission,
+  type PermissionContext,
   type PermissionQuery,
 } from "../../domain/permissionPolicy";
 import { PermissionProfile } from "../../domain/types";
@@ -80,6 +81,7 @@ function commandOf(
 function queryOf(
   payload: AgyHookPayload,
   worktreeRoot: string,
+  realPaths: readonly string[] | undefined,
 ): PermissionQuery {
   const { name, args } = payload.toolCall;
   switch (TOOL_KIND_BY_NAME.get(name)) {
@@ -93,7 +95,10 @@ function queryOf(
         : { kind: "execute", command };
     }
     case AgyToolKind.edit:
-      return { kind: "edit", paths: pathsOf(args, worktreeRoot) };
+      return {
+        kind: "edit",
+        paths: realPaths ?? pathsOf(args, worktreeRoot),
+      };
     case AgyToolKind.read:
       return { kind: "read" };
     default:
@@ -124,11 +129,11 @@ function mentionsAgentsDir(text: string, nesting: number): boolean {
 
 function touchesAgentsDir(
   query: PermissionQuery,
-  worktreeRoot: string,
+  worktreeRoots: readonly string[],
 ): boolean {
   if (query.kind === "edit") {
     return (query.paths ?? []).some((path) =>
-      isInsideAgentsDir(path, worktreeRoot),
+      worktreeRoots.some((root) => isInsideAgentsDir(path, root)),
     );
   }
   return (
@@ -141,22 +146,24 @@ function touchesAgentsDir(
 export function decideAgyTool(
   payload: AgyHookPayload,
   profile: PermissionProfile,
-  worktreeRoot: string,
+  ctx: PermissionContext,
+  realPaths?: readonly string[],
 ): AgyHookDecision {
+  const [worktreeRoot] = ctx.worktreeRoots;
   if (
     profile !== PermissionProfile.bypass &&
     SUBAGENT_TOOL_NAMES.has(payload.toolCall.name)
   ) {
     return denyWith(HOOK_SUBAGENT_DENIED_REASON);
   }
-  const query = queryOf(payload, worktreeRoot);
+  const query = queryOf(payload, worktreeRoot, realPaths);
   if (
     profile !== PermissionProfile.bypass &&
-    touchesAgentsDir(query, worktreeRoot)
+    touchesAgentsDir(query, ctx.worktreeRoots)
   ) {
     return denyWith(HOOK_AGENTS_DIR_REASON);
   }
-  const decision = decidePermission(query, profile, { worktreeRoot });
+  const decision = decidePermission(query, profile, ctx);
   switch (decision.action) {
     case "allow":
       return ALLOW;

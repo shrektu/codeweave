@@ -32,9 +32,14 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 });
 
 const WORKTREE = "/work/repo";
+const SCOPE_ENV = {
+  CODEWEAVE_AGY_HOME: "/home/u",
+  CODEWEAVE_AGY_PROTECTED: '["/home/u/.ssh"]',
+};
 const VALID_ENV = {
   CODEWEAVE_AGY_PROFILE: "unattended",
   CODEWEAVE_AGY_WORKTREE: WORKTREE,
+  ...SCOPE_ENV,
 };
 const READ_PAYLOAD = JSON.stringify({
   toolCall: { name: "read_file", args: { Path: "/work/repo/a.txt" } },
@@ -156,6 +161,7 @@ function envFor(profile: string, withSnapshot = true): HookRunDeps["env"] {
   return {
     CODEWEAVE_AGY_PROFILE: profile,
     CODEWEAVE_AGY_WORKTREE: root,
+    ...SCOPE_ENV,
     ...(withSnapshot ? { CODEWEAVE_AGY_SNAPSHOT_DIR: snapDir } : {}),
   };
 }

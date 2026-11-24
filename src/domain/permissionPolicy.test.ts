@@ -2,12 +2,17 @@ import { describe, expect, it } from "vitest";
 
 import {
   decidePermission,
+  type PermissionContext,
   type PermissionDecision,
   type PermissionQuery,
 } from "./permissionPolicy";
 import { PermissionProfile } from "./types";
 
-const ctx = { worktreeRoot: "/work/repo" };
+const ctx: PermissionContext = {
+  worktreeRoots: ["/work/repo"],
+  homeDir: "/home/u",
+  protectedPaths: [],
+};
 const ALLOW: PermissionDecision = { action: "allow" };
 const ASK: PermissionDecision = { action: "ask" };
 const PLAN_DENY: PermissionDecision = {
@@ -1264,7 +1269,7 @@ describe("redirection failure modes", () => {
   });
 
   it("redirect_after_cd_relative_asks", () => {
-    expect(run("cd src && echo hi > x")).toEqual(ASK);
+    expect(run("cd src; echo hi > x")).toEqual(ASK);
     expect(run("cd src && echo hi > /dev/null")).toEqual(ALLOW);
   });
 

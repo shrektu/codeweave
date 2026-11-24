@@ -93,6 +93,7 @@ import {
   ContainerUnavailableError,
   type ProcessContainer,
 } from "./process/container";
+import { protectedPaths } from "./protectedPaths";
 import { createProviderAdapter } from "./providerAdapter";
 import { createKeyStore, type KeyStore } from "./secrets/keyStore";
 import { createSecretSource } from "./secrets/source";
@@ -444,6 +445,7 @@ function createAdapter(
   container: ProcessContainer | null,
   processes: AgentProcesses | null,
   keyStore: KeyStore,
+  protectedPathsNow: () => Promise<readonly string[]>,
 ): AgentAdapter {
   if (processes === null || container === null) {
     return UNAVAILABLE_ADAPTER;
@@ -476,6 +478,8 @@ function createAdapter(
           platform: deps.platform,
         }),
       fingerprintWorkspace: fingerprintAgentsDir,
+      homeDir: deps.homeDir,
+      protectedPaths: protectedPathsNow,
     }),
     [ProviderId.opencode]: createOpencodeAdapter({
       processes,
@@ -644,8 +648,22 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     container === null
       ? null
       : createProcesses(container, lockKeyResolver, leaseModes);
+  const protectedPathsNow = async (): Promise<readonly string[]> =>
+    protectedPaths({
+      homeDir: deps.homeDir,
+      userData,
+      accountDirs: (await store.readAccounts()).map(
+        (account) => account.configDir,
+      ),
+    });
   const sessions: SessionPool = createSessionPool({
-    adapter: createAdapter(deps, container, processes, keyStore),
+    adapter: createAdapter(
+      deps,
+      container,
+      processes,
+      keyStore,
+      protectedPathsNow,
+    ),
     leaseModes,
     store,
     broadcast: deps.broadcast,
@@ -661,6 +679,8 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     isBlocked: (accountId) => probes.isBlocked(accountId),
     hasKey: (accountId) => keyStore.hint(accountId) !== null,
     secrets: createSecretSource(keyStore),
+    homeDir: deps.homeDir,
+    protectedPaths: protectedPathsNow,
   });
   const terminals = createTerminals(deps, container, store, lockKeyResolver);
   const definitionRoots = createDefinitionRoots({ store, userData });

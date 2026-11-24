@@ -10,7 +10,7 @@ import { basename, dirname, join } from "node:path";
 
 import { z } from "zod";
 
-import { isInsideWorktree } from "../../domain/permissionPolicy";
+import { isBelowRoot } from "../../domain/pathScope";
 import {
   readFileSnapshot,
   SnapshotKind,
@@ -85,11 +85,11 @@ async function isConfined(
   worktreeRoot: string,
   realRoot: string,
 ): Promise<boolean> {
-  if (!isInsideWorktree(path, worktreeRoot, false)) {
+  if (!isBelowRoot(path, worktreeRoot)) {
     return false;
   }
   try {
-    return isInsideWorktree(await realLocation(path), realRoot, false);
+    return isBelowRoot(await realLocation(path), realRoot);
   } catch (error) {
     console.error("agy diff snapshot skipped a path", error);
     return false;

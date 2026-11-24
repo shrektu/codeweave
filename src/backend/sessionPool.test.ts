@@ -103,6 +103,8 @@ async function compose(
     isBlocked: () => false,
     hasKey: () => true,
     secrets: () => [],
+    homeDir: "/home/u",
+    protectedPaths: () => Promise.resolve([]),
     leaseModes: createLeaseModes(),
   });
   pools.push(pool);

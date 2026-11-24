@@ -163,6 +163,7 @@ export type AgentMessageDeltaParams = z.infer<
 export const CommandApprovalParamsSchema = z.looseObject({
   itemId: z.string(),
   command: z.string().nullish(),
+  cwd: z.string().nullish(),
 });
 export type CommandApprovalParams = z.infer<typeof CommandApprovalParamsSchema>;
 

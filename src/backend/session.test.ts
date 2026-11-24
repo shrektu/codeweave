@@ -205,6 +205,8 @@ async function setup(options: SetupOptions): Promise<Setup> {
     isBlocked: options.isBlocked ?? (() => false),
     hasKey: options.hasKey ?? (() => true),
     secrets: () => [],
+    homeDir: "/home/u",
+    protectedPaths: () => Promise.resolve([]),
   });
   services.push(service);
   return { service, store, log, cwd, specs, broadcasts };

@@ -75,6 +75,8 @@ export const ENV_DENY_EXACT: readonly string[] = [
   ...PROVIDER_KEY_ENV_NAMES,
 ];
 
+export const AGENT_ENV_STRIPPED: readonly string[] = ["CDPATH"];
+
 export const CLAUDE_RATE_LIMIT_META_KEY = "_claude/rateLimit";
 export const CLAUDE_MODEL_META_KEY = "_claude/model";
 export const DEFAULT_MODEL_ALIAS = "default";
@@ -189,6 +191,41 @@ export const MACOS_USER_BIN_DIRS: readonly string[] = [
 export const MACOS_SYSTEM_BIN_DIRS: readonly string[] = [
   "/opt/homebrew/bin",
   "/usr/local/bin",
+];
+export const MISSING_PATH_ERRNO_CODES: readonly string[] = [
+  "ENOENT",
+  "ENOTDIR",
+];
+export const NOT_A_LINK_ERRNO_CODE = "EINVAL";
+export const PROTECTED_HOME_PATHS: readonly (readonly string[])[] = [
+  [".ssh"],
+  [".gnupg"],
+  [".aws"],
+  [".azure"],
+  [".kube"],
+  [".docker"],
+  [".netrc"],
+  [".git-credentials"],
+  [".npmrc"],
+  [".pypirc"],
+  [".config", "gh"],
+  [".config", "gcloud"],
+  [".password-store"],
+  [".local", "share", "keyrings"],
+  [".config", "*", "auth*"],
+];
+export const CLI_HOME_DIRS: readonly (readonly string[])[] = [
+  [".claude"],
+  [".codex"],
+  [".gemini"],
+  [".config", "opencode"],
+  [".local", "share", "opencode"],
+];
+export const CLI_CREDENTIAL_FILES: readonly string[] = [
+  ".credentials.json",
+  "auth.json",
+  "oauth_creds.json",
+  "google_accounts.json",
 ];
 export const ENABLE_TOOL_SEARCH_ENV = "ENABLE_TOOL_SEARCH";
 export const FLAG_DISABLED = "false";

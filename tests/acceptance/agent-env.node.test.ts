@@ -108,6 +108,24 @@ describe("agent env", () => {
     });
   });
 
+  it("cdpath-stripped-from-launch-env", () => {
+    for (const provider of Object.values(ProviderId)) {
+      const env = buildAgentEnv({
+        parent: { PATH: "/usr/bin", CDPATH: "/", HOME: "/home/jane" },
+        platform: "linux",
+        homeDir: "/home/jane",
+        account: { ...codexAccount, provider },
+        executable: "/usr/local/bin/agent",
+        runMarker: "run-9",
+        testMode: false,
+      });
+
+      expect(env, provider).not.toHaveProperty("CDPATH");
+      expect(env.PATH, provider).toBe("/usr/bin");
+      expect(env.HOME, provider).toBe("/home/jane");
+    }
+  });
+
   it("agent_env_overrides_rejected_outside_test_mode", () => {
     expect(() => build({ ANTHROPIC_BASE_URL: "http://fake" })).toThrow(
       AgentEnvOverridesRejectedError,

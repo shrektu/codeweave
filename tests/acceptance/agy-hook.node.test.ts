@@ -100,14 +100,21 @@ function run(
   });
 }
 
+const SCOPE_ENV: Record<string, string> = {
+  CODEWEAVE_AGY_HOME: "/home/u",
+  CODEWEAVE_AGY_PROTECTED: JSON.stringify(["/home/u/.ssh"]),
+};
+
 function runHook(
   stdin: string | null,
   profile: string | null,
   worktree: string | null = WORKTREE,
+  scope: Record<string, string> = SCOPE_ENV,
 ): Promise<HookRun> {
   return run(process.execPath, [bundle], stdin, {
     ...(profile === null ? {} : { CODEWEAVE_AGY_PROFILE: profile }),
     ...(worktree === null ? {} : { CODEWEAVE_AGY_WORKTREE: worktree }),
+    ...scope,
   });
 }
 
@@ -213,6 +220,46 @@ describe("agy hook entry fail-closed inputs", () => {
       );
 
       expect(decisionOf(result)).toMatchObject({ decision: "deny" });
+    },
+    RUN_TIMEOUT_MS,
+  );
+
+  it(
+    "agy-hook-missing-protected-env-denies",
+    async () => {
+      const harmless = payload("read_file", { Path: `${WORKTREE}/a.txt` });
+      const scopes: Record<string, string>[] = [
+        { CODEWEAVE_AGY_HOME: "/home/u" },
+        { CODEWEAVE_AGY_PROTECTED: JSON.stringify(["/home/u/.ssh"]) },
+        { ...SCOPE_ENV, CODEWEAVE_AGY_PROTECTED: "not json" },
+        { ...SCOPE_ENV, CODEWEAVE_AGY_PROTECTED: JSON.stringify([1]) },
+        { ...SCOPE_ENV, CODEWEAVE_AGY_HOME: "" },
+      ];
+
+      for (const scope of scopes) {
+        const result = await runHook(harmless, "unattended", WORKTREE, scope);
+
+        expect(decisionOf(result), JSON.stringify(scope)).toMatchObject({
+          decision: "deny",
+        });
+      }
+    },
+    RUN_TIMEOUT_MS,
+  );
+
+  it(
+    "agy-hook-protected-edit-asks-so-denies",
+    async () => {
+      const result = await runHook(
+        payload("write_file", { Path: "/home/u/.ssh/authorized_keys" }),
+        "unattended",
+        "/home/u",
+      );
+
+      expect(decisionOf(result)).toEqual({
+        decision: "deny",
+        reason: NEEDS_APPROVAL,
+      });
     },
     RUN_TIMEOUT_MS,
   );
@@ -405,6 +452,7 @@ function runCommandViaSh(command: string): Promise<HookRun> {
     {
       CODEWEAVE_AGY_PROFILE: "unattended",
       CODEWEAVE_AGY_WORKTREE: WORKTREE,
+      ...SCOPE_ENV,
     },
   );
 }
@@ -446,6 +494,90 @@ describe.skipIf(process.platform === "win32")(
         expect(respawned).toBe(command);
         expect(await readdir(configPath)).toEqual(["hooks.json"]);
         expect(decisionOf(result)).toMatchObject({ decision: "deny" });
+      },
+      RUN_TIMEOUT_MS,
+    );
+  },
+);
+
+describe.skipIf(process.platform === "win32")(
+  "agy hook with symlinks around the worktree",
+  () => {
+    it(
+      "symlinked-root-original-spelling-inside",
+      async () => {
+        const real = join(scratch, "linked-real");
+        const link = join(scratch, "linked");
+        await mkdir(real, { recursive: true });
+        await symlink(real, link, "dir");
+
+        const remove = await runHook(
+          payload("run_command", { CommandLine: `rm -rf ${link}/build` }),
+          "unattended",
+          link,
+        );
+        const edit = await runHook(
+          payload("write_file", { Path: `${link}/a.txt` }),
+          "unattended",
+          link,
+        );
+
+        expect(decisionOf(remove)).toEqual({ decision: "allow" });
+        expect(decisionOf(edit)).toEqual({ decision: "allow" });
+      },
+      RUN_TIMEOUT_MS,
+    );
+
+    it(
+      "agents-dir-guard-real-root-spelling",
+      async () => {
+        const real = join(scratch, "agents-real", "proj");
+        const link = join(scratch, "agents-link", "proj");
+        await mkdir(real, { recursive: true });
+        await mkdir(join(scratch, "agents-link"), { recursive: true });
+        await symlink(real, link, "dir");
+
+        const result = await runHook(
+          payload("write_file", { Path: `${real}/.agents/hooks.json` }),
+          "unattended",
+          link,
+        );
+
+        expect(decisionOf(result)).toEqual({
+          decision: "deny",
+          reason: "agy workspace config (.agents) is protected",
+        });
+      },
+      RUN_TIMEOUT_MS,
+    );
+
+    it(
+      "glob-protected-symlinked-edit-asks",
+      async () => {
+        const home = join(scratch, "glob-home");
+        const proj = join(home, "proj");
+        await mkdir(join(home, ".config", "app"), { recursive: true });
+        await mkdir(proj, { recursive: true });
+        await writeFile(join(proj, "plain.txt"), "x");
+        const protectedFile = join(home, ".config", "app", "auth.json");
+        await symlink(join(proj, "plain.txt"), protectedFile);
+
+        const result = await runHook(
+          payload("write_file", { Path: protectedFile }),
+          "unattended",
+          proj,
+          {
+            CODEWEAVE_AGY_HOME: home,
+            CODEWEAVE_AGY_PROTECTED: JSON.stringify([
+              join(home, ".config", "*", "auth*"),
+            ]),
+          },
+        );
+
+        expect(decisionOf(result)).toEqual({
+          decision: "deny",
+          reason: NEEDS_APPROVAL,
+        });
       },
       RUN_TIMEOUT_MS,
     );

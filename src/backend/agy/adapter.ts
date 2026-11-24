@@ -81,6 +81,8 @@ export interface AgyAdapterDeps {
   readonly executableFor: (spec: AgentStartSpec) => string;
   readonly writeHookConfig: (configDir: string) => Promise<void>;
   readonly fingerprintWorkspace: (worktreeRoot: string) => Promise<string>;
+  readonly homeDir: string;
+  readonly protectedPaths: () => Promise<readonly string[]>;
   readonly stopGraceMs?: number;
   readonly startProbeTimeoutMs?: number;
   readonly probeTimeoutMs?: number;
@@ -379,6 +381,8 @@ class AgySession implements AgentHandle {
       profile,
       model,
       worktreeRoot: this.spec.cwd,
+      homeDir: this.deps.homeDir,
+      protectedPaths: await this.deps.protectedPaths(),
       snapshotDir,
     });
     await this.guardWorkspaceConfig();

@@ -246,6 +246,27 @@ describe("codex app-server adapter: approval", () => {
   });
 });
 
+describe("codex app-server adapter: approval cwd", () => {
+  it("codex-approval-cwd-outside-root", async () => {
+    const rig = await createCodexRig();
+    const { handle, events } = await startCodexHandle(rig);
+    serverOf(rig).enqueue([
+      commandApproval("c4", "touch x", "/elsewhere/dir"),
+      { type: "complete", status: "completed" },
+    ]);
+
+    const turn = handle.prompt("touch it", { model: null });
+    const request = await codexPermissionRequestOf(events);
+
+    expect(request.rawInput).toEqual({
+      command: "touch x",
+      cwd: "/elsewhere/dir",
+    });
+    handle.answerPermission(request.requestId, "accept");
+    await turn;
+  });
+});
+
 describe("codex app-server adapter: limits", () => {
   it("codex_usage_limit_after_tool_is_exhausted_with_reset", async () => {
     const rig = await createCodexRig();

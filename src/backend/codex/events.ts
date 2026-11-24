@@ -307,13 +307,16 @@ export function commandPermission(
   params: CommandApprovalParams,
 ): PermissionRequestEvent {
   const command = params.command ?? null;
+  const cwd = params.cwd ?? null;
   return {
     type: "permission_request",
     requestId,
     toolCallId: params.itemId,
     title: command ?? TITLE_RUN_COMMAND,
     kind: TOOL_KIND_EXECUTE,
-    ...(command === null ? {} : { rawInput: { command } }),
+    ...(command === null
+      ? {}
+      : { rawInput: { command, ...(cwd === null ? {} : { cwd }) } }),
     locations: [],
     options: COMMAND_OPTIONS,
   };

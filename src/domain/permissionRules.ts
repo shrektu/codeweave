@@ -119,6 +119,23 @@ export const TRUSTED_BIN_DIRS: readonly string[] = [
   "/sbin",
 ];
 export const CWD_COMMANDS: readonly string[] = ["cd", "pushd", "popd"];
+export const CD_COMMAND = "cd";
+export const POPD_COMMAND = "popd";
+export const OPTIONS_END = "--";
+export const CD_OPTION_FLAGS: readonly string[] = ["-L", "-P", "-e", "-@"];
+export const CHAIN_OPERATOR = "&&";
+export const OR_OPERATOR = "||";
+export const CD_ENV_NAMES: readonly string[] = ["home", "cdpath"];
+export const APPEND_ASSIGNMENT_SUFFIX = /\+$/;
+export const STACK_OFFSET_PATTERN = /^\+\d+$/;
+export const PATH_WILDCARD = "*";
+export const HOME_RELATIVE_PREFIX = "~/";
+export const HOME_RELATIVE_PREFIX_WIN32 = "~\\";
+export const CASE_FOLDED_PLATFORMS: readonly string[] = ["win32", "darwin"];
+export const WIN32_PLATFORM = "win32";
+export const POSIX_SEPARATOR = "/";
+export const WIN32_SEPARATOR = "\\";
+export const ASSIGNMENT_SEPARATOR = "=";
 
 export interface WrapperSpec {
   readonly valueShort: string;
@@ -459,6 +476,8 @@ export const REASON_PRIVILEGE = "privilege escalation is blocked";
 export const REASON_PLAN_NO_WRITES = "plan mode: no writes";
 export const REASON_RM_OUTSIDE =
   "recursive or forced delete outside the worktree is blocked";
+export const REASON_RM_PROTECTED =
+  "recursive or forced delete of a protected path is blocked";
 export const REASON_GIT_PUSH = "forced or protected-branch push is blocked";
 export const REASON_PIPE_TO_SHELL = "piping a download into a shell is blocked";
 export const REASON_MIGRATION = "database migrations are blocked";

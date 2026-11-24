@@ -226,11 +226,21 @@ export function agentDelta(itemId: string, delta: string): TurnStep {
   };
 }
 
-export function commandApproval(itemId: string, command: string): TurnStep {
+export function commandApproval(
+  itemId: string,
+  command: string,
+  cwd?: string,
+): TurnStep {
   return {
     type: "approval",
     method: "item/commandExecution/requestApproval",
-    params: { itemId, command, startedAtMs: 1, kind: "command" },
+    params: {
+      itemId,
+      command,
+      ...(cwd === undefined ? {} : { cwd }),
+      startedAtMs: 1,
+      kind: "command",
+    },
   };
 }
 

@@ -1,3 +1,7 @@
+import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PermissionProfile } from "../../domain/types";
@@ -55,7 +59,11 @@ function decide(
   payload: AgyHookPayload,
   profile: PermissionProfile,
 ): AgyHookDecision {
-  return decideAgyTool(payload, profile, WORKTREE);
+  return decideAgyTool(payload, profile, {
+    worktreeRoots: [WORKTREE],
+    homeDir: "/home/u",
+    protectedPaths: [],
+  });
 }
 
 function isDeny(decision: AgyHookDecision): boolean {
@@ -414,6 +422,53 @@ describe("decideAgyTool agy workspace config protection", () => {
     ).toEqual(ALLOW);
   });
 });
+
+describe.skipIf(process.platform === "win32")(
+  "decideAgyTool agy workspace config with a symlinked root",
+  () => {
+    it("agents-dir-guard-real-root-spelling", async () => {
+      const base = await mkdtemp(join(tmpdir(), "codeweave-agents-guard-"));
+      try {
+        const real = join(base, "real", "proj");
+        const link = join(base, "link", "proj");
+        await mkdir(real, { recursive: true });
+        await mkdir(join(base, "link"), { recursive: true });
+        await symlink(real, link, "dir");
+        const ctx = {
+          worktreeRoots: [link, real] as [string, ...string[]],
+          homeDir: "/home/u",
+          protectedPaths: [],
+        };
+        const payload = (path: string): AgyHookPayload => ({
+          toolCall: { name: "write_file", args: { Path: path } },
+          workspacePaths: [link],
+        });
+
+        for (const path of [
+          join(real, ".agents", "hooks.json"),
+          join(link, ".agents", "hooks.json"),
+        ]) {
+          expect(
+            decideAgyTool(payload(path), PermissionProfile.unattended, ctx),
+            path,
+          ).toEqual({
+            decision: "deny",
+            reason: "agy workspace config (.agents) is protected",
+          });
+        }
+        expect(
+          decideAgyTool(
+            payload(join(real, "src", ".agents", "a.txt")),
+            PermissionProfile.unattended,
+            ctx,
+          ),
+        ).toEqual(ALLOW);
+      } finally {
+        await rm(base, { recursive: true, force: true });
+      }
+    });
+  },
+);
 
 describe("decideAgyTool agy workspace config commands", () => {
   const AGENTS_REASON = "agy workspace config (.agents) is protected";

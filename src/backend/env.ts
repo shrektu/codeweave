@@ -3,6 +3,7 @@ import { posix, win32 } from "node:path";
 import { ProviderId, type Account } from "../domain/types";
 
 import {
+  AGENT_ENV_STRIPPED,
   CLAUDE_BASH_MAINTAIN_DIR_ENV,
   CLAUDE_CONFIG_DIR_ENV,
   CLAUDE_DISABLE_CRON_ENV,
@@ -75,11 +76,19 @@ export function inheritedEnv(
   return env;
 }
 
+function agentInheritedEnv(parent: NodeJS.ProcessEnv): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(inheritedEnv(parent)).filter(
+      ([key]) => !AGENT_ENV_STRIPPED.includes(key.toUpperCase()),
+    ),
+  );
+}
+
 export function buildAgentEnv(input: AgentEnvInput): Record<string, string> {
   if (input.overrides !== undefined && !input.testMode) {
     throw new AgentEnvOverridesRejectedError();
   }
-  const env = inheritedEnv(input.parent);
+  const env = agentInheritedEnv(input.parent);
   if (input.account.provider === ProviderId.claude) {
     Object.assign(env, claudeVariables(input));
   }
