@@ -1,5 +1,12 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -79,6 +86,7 @@ async function openNoFolder(
   const rig = await openRig({
     accounts: [ACCOUNT_A],
     homeDir: space.root,
+    platform: process.platform,
     inspectWorktree,
     ...options.rig,
   });
@@ -395,3 +403,40 @@ it("session_started_in_repo_subfolder_allows_repository_at_git_toplevel_permissi
   expect(list.locations.project).toBe(alpha);
   expect(sibling.isError).toBe(true);
 });
+
+it.skipIf(process.platform === "win32")(
+  "worktree-destination-symlink-rejected",
+  async () => {
+    const { tools, space } = await openNoFolder(["alpha"], {
+      prepare: async ({ root }) => {
+        await mkdir(join(root, ".ssh"));
+        await mkdir(join(root, "outside"));
+      },
+    });
+    const alpha = space.repos.alpha ?? "";
+    const destination = join(space.workspace, ".worktrees");
+    const message =
+      "The worktree destination is a symlink or a protected location";
+
+    for (const name of [".ssh", "outside"]) {
+      const target = join(space.root, name);
+      await symlink(target, destination, "dir");
+      const start = await tools.call(
+        "start_flow",
+        startArgs("alpha", "worktree"),
+      );
+      await rm(destination);
+
+      expect(start.isError, name).toBe(true);
+      expect(start.text, name).toContain(message);
+      expect(await readdir(target), name).toEqual([]);
+      expect(
+        await git(alpha, ["worktree", "list", "--porcelain"]),
+        name,
+      ).not.toContain("codeweave/");
+      expect(await git(alpha, ["branch", "--list", "codeweave/*"]), name).toBe(
+        "",
+      );
+    }
+  },
+);

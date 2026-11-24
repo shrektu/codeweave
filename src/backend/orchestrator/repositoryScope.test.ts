@@ -21,6 +21,8 @@ const OUTSIDE = "The repository is outside the session folder";
 const PROTECTED = "The repository is a protected location";
 const INVALID = "The repository must be a path to a git repository";
 const UNREADABLE = "The repository path cannot be resolved";
+const DESTINATION =
+  "The worktree destination is a symlink or a protected location";
 const NUM_RUNS = 300;
 
 interface Fixture {
@@ -221,7 +223,7 @@ describe("invalid input", () => {
       "a\0b",
       "$HOME/repo",
       "~other/repo",
-      "~\\repo",
+      ...(process.platform === "win32" ? [] : ["~\\repo"]),
     ]) {
       const error = await failureOf(scope.resolveRepository(raw));
       expect(error.code, JSON.stringify(raw)).toBe(IpcErrorCode.VALIDATION);
@@ -431,5 +433,59 @@ describe("repository path properties", () => {
       ),
       { numRuns: NUM_RUNS },
     );
+  });
+});
+
+describe("worktree destination", () => {
+  it.skipIf(process.platform === "win32")(
+    "worktree-destination-symlink-rejected",
+    async () => {
+      const fx = await makeFixture();
+      const repository = join(fx.workspace, "proj");
+      await mkdir(repository);
+      await mkdir(join(fx.root, ".ssh"));
+      await mkdir(join(fx.root, "outside"));
+      const scope = fx.scope();
+      const destination = join(fx.workspace, ".worktrees");
+
+      await expect(
+        scope.assertWorktreeDestination(repository),
+      ).resolves.toBeUndefined();
+      await mkdir(destination);
+      await expect(
+        scope.assertWorktreeDestination(repository),
+      ).resolves.toBeUndefined();
+      await rm(destination, { recursive: true });
+
+      for (const target of [join(fx.root, ".ssh"), join(fx.root, "outside")]) {
+        await symlink(target, destination, "dir");
+        const error = await failureOf(
+          scope.assertWorktreeDestination(repository),
+        );
+        expect(error.code, target).toBe(IpcErrorCode.VALIDATION);
+        expect(error.message, target).toBe(DESTINATION);
+        await rm(destination);
+      }
+
+      await symlink(join(fx.root, "missing"), destination, "dir");
+      const dangling = await failureOf(
+        scope.assertWorktreeDestination(repository),
+      );
+      expect(dangling.message).toBe(DESTINATION);
+    },
+  );
+
+  it("worktree-destination-protected-rejected", async () => {
+    const fx = await makeFixture();
+    const repository = join(fx.workspace, "proj");
+    await mkdir(repository);
+    fx.protectedPaths.push(join(fx.workspace, ".worktrees"));
+
+    const error = await failureOf(
+      fx.scope().assertWorktreeDestination(repository),
+    );
+
+    expect(error.code).toBe(IpcErrorCode.VALIDATION);
+    expect(error.message).toBe(DESTINATION);
   });
 });

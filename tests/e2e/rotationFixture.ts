@@ -31,6 +31,12 @@ const GIT_IDENTITY_ARGS = [
   "commit.gpgsign=false",
 ] as const;
 
+const GIT_IDENTITY_CONFIG: readonly (readonly [string, string])[] = [
+  ["user.name", "Rotation Test"],
+  ["user.email", "rotation@example.com"],
+  ["commit.gpgsign", "false"],
+];
+
 export const KEY_A = "test-key-a";
 export const KEY_B = "test-key-b";
 export const ROTATION_COMMAND = "echo deploy-side-effect | tee -a effects.log";
@@ -112,6 +118,9 @@ export async function commitAll(dir: string, message: string): Promise<void> {
 export async function createRepo(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true });
   await git(dir, ["init", "--quiet"]);
+  for (const [key, value] of GIT_IDENTITY_CONFIG) {
+    await git(dir, ["config", key, value]);
+  }
   await writeFile(join(dir, REPO_SEED_FILE), "rotation test\n");
   await git(dir, ["add", REPO_SEED_FILE]);
   await git(dir, ["commit", "--quiet", "-m", "Initial commit"]);

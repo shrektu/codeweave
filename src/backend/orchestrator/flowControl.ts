@@ -349,6 +349,7 @@ class OrchestratorFlowControl implements FlowControl {
     if (this.hasMerge(target.key)) {
       throw conflict(MERGE_IN_PROGRESS_MESSAGE);
     }
+    await this.scope.assertWorktreeDestination(target.repository);
     const runId = this.deps.newRunId();
     const worktree = await this.deps.flowWorktrees.create(
       target.repository,

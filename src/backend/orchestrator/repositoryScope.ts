@@ -12,6 +12,7 @@ import {
 } from "../../domain/permissionRules";
 import type { WorktreeState } from "../../domain/types";
 import { IpcError, IpcErrorCode } from "../../shared/protocol";
+import { FLOW_WORKTREES_DIR } from "../constants";
 import { realLocation, realPermissionContext } from "../permissionScope";
 
 import {
@@ -20,6 +21,7 @@ import {
   REPOSITORY_OUTSIDE_MESSAGE,
   REPOSITORY_PROTECTED_MESSAGE,
   REPOSITORY_UNREADABLE_MESSAGE,
+  WORKTREE_DESTINATION_MESSAGE,
 } from "./constants";
 
 export interface RepositoryScopeDeps {
@@ -33,6 +35,7 @@ export interface RepositoryScopeDeps {
 
 export interface RepositoryScope {
   resolveRepository(repository: string): Promise<string>;
+  assertWorktreeDestination(repository: string): Promise<void>;
   sessionExclusivityKey(): Promise<string>;
 }
 
@@ -109,6 +112,23 @@ class SessionRepositoryScope implements RepositoryScope {
     );
     assertAllowedRepositoryPath(toplevel, ctx, platform);
     return toplevel;
+  }
+
+  async assertWorktreeDestination(repository: string): Promise<void> {
+    const { platform } = this.deps;
+    const ctx = await this.context();
+    const destination = pathFlavor(platform).join(
+      pathFlavor(platform).dirname(repository),
+      FLOW_WORKTREES_DIR,
+    );
+    const real = await this.realPath(destination);
+    if (
+      repositoryKey(real, platform) !== repositoryKey(destination, platform) ||
+      isProtectedPath(real, ctx.protectedPaths, platform) ||
+      isProtectedPath(destination, ctx.protectedPaths, platform)
+    ) {
+      throw validation(WORKTREE_DESTINATION_MESSAGE);
+    }
   }
 
   async sessionExclusivityKey(): Promise<string> {

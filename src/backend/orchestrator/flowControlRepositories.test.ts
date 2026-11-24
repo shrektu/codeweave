@@ -89,7 +89,7 @@ async function openRig(
   const control = createOrchestratorFlowControl(
     {
       ...base,
-      platform: options.platform ?? base.platform,
+      platform: options.platform ?? process.platform,
       inspectWorktree: (dir) => {
         inspect(dir);
         return options.repoRoot === undefined
@@ -230,7 +230,9 @@ it("an_omitted_repository_in_a_repo_subfolder_session_collides_with_the_toplevel
 });
 
 it("repository_keys_fold_case_on_darwin_so_spellings_collide", async () => {
-  const rig = await openRig({ platform: "darwin" });
+  const rig = await openRig({
+    platform: process.platform === "win32" ? "win32" : "darwin",
+  });
 
   await rig.control.startFlow(inPlaceIn("alpha"));
 

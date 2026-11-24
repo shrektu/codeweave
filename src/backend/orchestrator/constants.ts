@@ -19,4 +19,6 @@ export const REPOSITORY_PROTECTED_MESSAGE =
   "The repository is a protected location";
 export const REPOSITORY_UNREADABLE_MESSAGE =
   "The repository path cannot be resolved";
+export const WORKTREE_DESTINATION_MESSAGE =
+  "The worktree destination is a symlink or a protected location";
 export const NUL_CHARACTER = "\0";
