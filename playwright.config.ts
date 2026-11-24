@@ -16,6 +16,7 @@ export default defineConfig({
     "agentEditor.spec.ts",
     "orchestrator.spec.ts",
     "transcript.spec.ts",
+    "noFolderStart.spec.ts",
   ],
   timeout: TEST_TIMEOUT_MS,
   workers: 1,

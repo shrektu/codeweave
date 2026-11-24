@@ -342,10 +342,17 @@ function protectedForms(
       return [];
     }
     const absolute = `${pattern.root}${fixed.join(pathFlavor(platform).sep)}`;
+    const driveLess = absolute.slice(
+      pattern.root.length - WIN32_SEPARATOR.length,
+    );
     return [
       absolute,
       ...(platform === WIN32_PLATFORM
-        ? [absolute.replaceAll(WIN32_SEPARATOR, POSIX_SEPARATOR)]
+        ? [
+            absolute.replaceAll(WIN32_SEPARATOR, POSIX_SEPARATOR),
+            driveLess,
+            driveLess.replaceAll(WIN32_SEPARATOR, POSIX_SEPARATOR),
+          ]
         : []),
       ...tildeForms(fixed, pattern, home, platform),
     ];

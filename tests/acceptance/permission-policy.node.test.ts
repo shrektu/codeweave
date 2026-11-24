@@ -1097,6 +1097,10 @@ function emitRequest(
   });
 }
 
+function shellPath(path: string): string {
+  return path.replaceAll("\\", "/");
+}
+
 function sentinelFor(
   root: string,
   input: PermissionEventInput,
@@ -1214,7 +1218,7 @@ describe("session permission scope", () => {
 
     const outcome = await rig.outcomeOf({
       kind: "execute",
-      rawInput: { command: `cd ${rig.outside} && touch x` },
+      rawInput: { command: `cd ${shellPath(rig.outside)} && touch x` },
     });
 
     expect(outcome, "cd outside root not scoped").toBe("ask");
@@ -1332,11 +1336,11 @@ describe("session permission scope", () => {
 
     const copy = await rig.outcomeOf({
       kind: "execute",
-      rawInput: { command: `cp -r /tmp/x/.ssh ${rig.home}/` },
+      rawInput: { command: `cp -r /tmp/x/.ssh ${shellPath(rig.home)}/` },
     });
     const extract = await rig.outcomeOf({
       kind: "execute",
-      rawInput: { command: `tar -xf /tmp/e.tar -C ${rig.home}` },
+      rawInput: { command: `tar -xf /tmp/e.tar -C ${shellPath(rig.home)}` },
     });
 
     expect(copy).toBe("ask");
@@ -1392,7 +1396,7 @@ describe("session permission scope", () => {
 
     const outcome = await rig.outcomeOf({
       kind: "execute",
-      rawInput: { command: `tar -xf /tmp/e.tar -C${rig.home}` },
+      rawInput: { command: `tar -xf /tmp/e.tar -C${shellPath(rig.home)}` },
     });
 
     expect(outcome).toBe("ask");
@@ -1414,7 +1418,7 @@ describe("session permission scope", () => {
 
     const outcome = await rig.outcomeOf({
       kind: "execute",
-      rawInput: { command: `cp /tmp/x/k ${rig.home}/.conf*/` },
+      rawInput: { command: `cp /tmp/x/k ${shellPath(rig.home)}/.conf*/` },
     });
 
     expect(outcome).toBe("ask");

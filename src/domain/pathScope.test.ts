@@ -236,4 +236,23 @@ describe("mentionsProtectedPath", () => {
       );
     }
   });
+
+  it("win32_drive_less_rooted_spelling_inside_a_word_counts", () => {
+    for (const word of [
+      "open('/Users/u/.ssh/x','w')",
+      "open('\\Users\\u\\.SSH\\x','w')",
+    ]) {
+      expect(mentionsProtectedPath(word, WIN_CTX, null, "win32"), word).toBe(
+        true,
+      );
+    }
+    expect(
+      mentionsProtectedPath(
+        "open('/Users/u/proj','w')",
+        WIN_CTX,
+        null,
+        "win32",
+      ),
+    ).toBe(false);
+  });
 });

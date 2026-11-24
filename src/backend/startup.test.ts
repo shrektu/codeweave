@@ -282,7 +282,11 @@ it("undecryptable_key_is_logged_and_yields_null", async () => {
 it("session_permissions_protect_the_user_data_folder_inside_the_root", async () => {
   const root = await makeTempDir();
   const userData = join(root, ".codeweave");
-  const rig = await openRig({ userData, accounts: [ACCOUNT_A] });
+  const rig = await openRig({
+    userData,
+    accounts: [ACCOUNT_A],
+    homeDir: root,
+  });
   await rig.call("session/start", { cwd: root, profile: "unattended" });
   const guarded = join(userData, "accounts.json");
   const notes = join(root, "notes.txt");

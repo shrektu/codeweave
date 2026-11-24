@@ -15,6 +15,7 @@ export default defineConfig({
     "agyRotation.spec.ts",
     "agyEditDiff.spec.ts",
     "transcript.spec.ts",
+    "noFolderStart.spec.ts",
   ],
   timeout: TEST_TIMEOUT_MS,
   workers: 1,

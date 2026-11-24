@@ -86,11 +86,14 @@ describe("protectedPaths", () => {
   });
 
   it("deduplicates_entries", () => {
-    const list = protectedPaths({
-      homeDir: HOME,
-      userData: "/home/u/.ssh",
-      accountDirs: ["/home/u/.claude"],
-    });
+    const list = protectedPaths(
+      {
+        homeDir: HOME,
+        userData: "/home/u/.ssh",
+        accountDirs: ["/home/u/.claude"],
+      },
+      posix,
+    );
 
     expect(list.filter((path) => path === "/home/u/.ssh")).toHaveLength(1);
     expect(
