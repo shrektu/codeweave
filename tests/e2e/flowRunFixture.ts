@@ -13,6 +13,7 @@ import { userTexts, type MessagesBody } from "../fakes/anthropicMock";
 import {
   KEY_A,
   account,
+  commitAll,
   createConfigDir,
   createRepo,
   rotationAgentEnv,
@@ -219,6 +220,51 @@ export async function createFlowWorkspace(
   return {
     userData,
     repo,
+    dispose: () => rm(root, { recursive: true, force: true }),
+  };
+}
+
+export interface MultiRepoWorkspace {
+  readonly root: string;
+  readonly userData: string;
+  readonly workspace: string;
+  readonly repos: Readonly<Record<string, string>>;
+  dispose(): Promise<void>;
+}
+
+export async function createMultiRepoWorkspace(
+  names: readonly string[],
+  options: { readonly claudeExecutable?: string } = {},
+): Promise<MultiRepoWorkspace> {
+  const root = await realpath(
+    await mkdtemp(join(tmpdir(), FLOW_WORKSPACE_PREFIX)),
+  );
+  const userData = join(root, "user-data");
+  const workspace = join(root, "workspace");
+  const claude = account("acc-a", "A", join(root, "config-a"), 0);
+  await createConfigDir(claude.configDir, KEY_A);
+  const repos: Record<string, string> = {};
+  for (const name of names) {
+    const repo = join(workspace, name);
+    await createRepo(repo);
+    await writeFlowFiles(repo, {
+      builderProfile: PermissionProfile.unattended,
+    });
+    await commitAll(repo, "Add flows");
+    repos[name] = repo;
+  }
+  const store = createJsonStore(userData);
+  await store.writeAccounts([claude]);
+  await store.writeSettings({
+    ...rotationSettings(PermissionProfile.acceptEdits),
+    claudeExecutable: options.claudeExecutable ?? null,
+    defaultWorkspace: workspace,
+  });
+  return {
+    root,
+    userData,
+    workspace,
+    repos,
     dispose: () => rm(root, { recursive: true, force: true }),
   };
 }

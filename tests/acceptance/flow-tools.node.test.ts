@@ -147,9 +147,15 @@ describe("flow tool server discovery", () => {
     expect(Object.keys(start?.inputSchema.properties ?? {}).sort()).toEqual([
       "flowId",
       "placement",
+      "repository",
       "task",
     ]);
     expect(start?.inputSchema.required).toEqual(["flowId", "task"]);
+    const list = tools.find((tool) => tool.name === "list_flows");
+    expect(Object.keys(list?.inputSchema.properties ?? {})).toEqual([
+      "repository",
+    ]);
+    expect(list?.inputSchema.required ?? []).toEqual([]);
   });
 
   it("returns the flows list as JSON from list_flows", async () => {
@@ -204,6 +210,39 @@ describe("flow tool server discovery", () => {
           { flowId: "review", task: "Fix the bug", placement: "in_place" },
         ],
       },
+    ]);
+  });
+});
+
+describe("flow tool server repository argument", () => {
+  it("forwards the repository of list_flows and omits it when absent", async () => {
+    const { client, control } = await connectedControl();
+    await callText(client, "list_flows", { repository: "~/work/beta" });
+    await callText(client, "list_flows", {});
+    expect(control.calls).toEqual([
+      { op: FlowControlOp.listFlows, args: ["~/work/beta"] },
+      { op: FlowControlOp.listFlows, args: [] },
+    ]);
+  });
+
+  it("forwards the repository of start_flow and omits the key when absent", async () => {
+    const { client, control } = await connectedControl();
+    await callText(client, "start_flow", {
+      flowId: "review",
+      task: "Fix the bug",
+      repository: "beta",
+    });
+    await callText(client, "start_flow", { flowId: "review", task: "Fix" });
+    expect(control.calls.map((call) => call.args)).toEqual([
+      [
+        {
+          flowId: "review",
+          task: "Fix the bug",
+          placement: "in_place",
+          repository: "beta",
+        },
+      ],
+      [{ flowId: "review", task: "Fix", placement: "in_place" }],
     ]);
   });
 });

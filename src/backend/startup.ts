@@ -707,6 +707,10 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     flowWorktrees: createFlowWorktrees({ exec: execText }),
     listFlows: listProjectFlows,
     newRunId: deps.newRunId,
+    inspectWorktree: deps.inspectWorktree,
+    protectedPaths: protectedPathsNow,
+    homeDir: deps.homeDir,
+    platform: deps.platform,
     ...(deps.startToolServer === undefined
       ? {}
       : { startToolServer: deps.startToolServer }),

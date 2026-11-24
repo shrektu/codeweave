@@ -9,6 +9,7 @@ import { SAMPLE_FLOWS } from "../../../tests/fakes/fakeFlowControl";
 import {
   FakeRuns,
   FakeWorktrees,
+  repositoryDeps,
   sessionView,
 } from "../../../tests/fakes/fakeOrchestration";
 import type { FlowControl } from "../flowTools/control";
@@ -180,6 +181,7 @@ function openRig(
     main,
     flowRuns: runs,
     flowWorktrees: worktrees,
+    ...repositoryDeps(),
     listFlows: (cwd) => {
       listedCwds.push(cwd);
       return Promise.resolve(SAMPLE_FLOWS);

@@ -16,6 +16,8 @@ export const GREETING_FILE = "greeting.txt";
 export const GREETING_CONTENT = "hello-from-the-flow";
 
 export const DECISION_MARKER = "Decision needed";
+const BASH_TOOL_NAME = "Bash";
+const DISCOVER_DESCRIPTION = "locate the repository";
 const RUN_ID_PATTERN = /runId\\?"\s*:\s*\\?"([^"\\]+)/;
 const NAME_SEPARATOR = "_";
 const NAMESPACE_SEPARATOR = "__";
@@ -44,6 +46,12 @@ export interface OrchestratorTranscript {
   readonly toolNames: readonly string[];
   readonly calls: readonly TranscriptCall[];
   readonly last: TranscriptLast;
+}
+
+export interface OrchestratorScriptOptions {
+  readonly repository?: string;
+  readonly placement?: FlowPlacement;
+  readonly discoverCommand?: string;
 }
 
 export function toolIs(name: string, bare: string): boolean {
@@ -83,6 +91,34 @@ function toolTurn(
   return { kind: TurnKind.tool, name: fullName(transcript, bare), input };
 }
 
+function bashTurn(
+  transcript: OrchestratorTranscript,
+  command: string,
+): MockTurn {
+  const name = transcript.toolNames.find((candidate) =>
+    toolIs(candidate, BASH_TOOL_NAME),
+  );
+  if (name === undefined) {
+    throw unexpected(transcript);
+  }
+  return {
+    kind: TurnKind.tool,
+    name,
+    input: { command, description: DISCOVER_DESCRIPTION },
+  };
+}
+
+function listFlowsTurn(
+  transcript: OrchestratorTranscript,
+  { repository }: OrchestratorScriptOptions,
+): MockTurn {
+  return toolTurn(
+    transcript,
+    FlowToolName.listFlows,
+    repository === undefined ? {} : { repository },
+  );
+}
+
 function textTurn(text: string): MockTurn {
   return { kind: TurnKind.text, text };
 }
@@ -102,12 +138,19 @@ function runIdOf(transcript: OrchestratorTranscript): string {
 function afterToolResult(
   transcript: OrchestratorTranscript,
   tool: string,
+  options: OrchestratorScriptOptions,
 ): MockTurn {
+  if (toolIs(tool, BASH_TOOL_NAME)) {
+    return listFlowsTurn(transcript, options);
+  }
   if (toolIs(tool, FlowToolName.listFlows)) {
     return toolTurn(transcript, FlowToolName.startFlow, {
       flowId: "two-node",
       task: FLOW_TASK,
-      placement: FlowPlacement.inPlace,
+      placement: options.placement ?? FlowPlacement.inPlace,
+      ...(options.repository === undefined
+        ? {}
+        : { repository: options.repository }),
     });
   }
   if (
@@ -141,13 +184,16 @@ function afterUserText(
 
 export function nextOrchestratorStep(
   transcript: OrchestratorTranscript,
+  options: OrchestratorScriptOptions = {},
 ): MockTurn {
   if (transcript.calls.length === 0) {
-    return toolTurn(transcript, FlowToolName.listFlows, {});
+    return options.discoverCommand === undefined
+      ? listFlowsTurn(transcript, options)
+      : bashTurn(transcript, options.discoverCommand);
   }
   const { last } = transcript;
   return last.kind === LastKind.toolResult
-    ? afterToolResult(transcript, last.tool)
+    ? afterToolResult(transcript, last.tool, options)
     : afterUserText(transcript, last.text);
 }
 

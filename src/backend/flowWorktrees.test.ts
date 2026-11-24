@@ -2,9 +2,10 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MergeStatus } from "../domain/types";
+import { IpcErrorCode } from "../shared/protocol";
 
 import type { ExecText } from "./exec";
 import { createFlowWorktrees, type FlowWorktree } from "./flowWorktrees";
@@ -408,5 +409,31 @@ describe("create naming", () => {
 
     expect(worktree.projectRoot).toBe(PROJECT);
     expect(worktree.path).toBe(join("/work", ".worktrees", "proj-cw-01234567"));
+  });
+});
+
+describe("resolveProjectRoot", () => {
+  it("returns_the_trimmed_toplevel_of_a_subfolder", async () => {
+    const worktrees = createFlowWorktrees({
+      exec: fakeGit({ "rev-parse --show-toplevel": "/work/proj\n" }).exec,
+    });
+
+    expect(await worktrees.resolveProjectRoot("/work/proj/sub")).toBe(
+      join("/work", "proj"),
+    );
+  });
+
+  it("resolveProjectRoot_throws_validation_on_git_failure", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const worktrees = createFlowWorktrees({
+      exec: fakeGit({ "rev-parse --show-toplevel": EXIT_ONE }).exec,
+    });
+
+    await expect(
+      worktrees.resolveProjectRoot("/work/plain"),
+    ).rejects.toMatchObject({
+      code: IpcErrorCode.VALIDATION,
+      message: "Not a git repository: /work/plain",
+    });
   });
 });

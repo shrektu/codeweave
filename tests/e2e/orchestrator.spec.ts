@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { expect, test, type Locator, type Page } from "@playwright/test";
@@ -21,6 +21,7 @@ import {
   type MockRequestRecord,
 } from "../fakes/anthropicMock";
 import { TurnKind, type MockTurn } from "../fakes/mockTurn";
+import { FlowPlacement } from "../../src/domain/types";
 
 import {
   BUILD_REPLY,
@@ -29,12 +30,14 @@ import {
   bundledClaudeExecutable,
   createFlowWorkspace,
   createGate,
+  createMultiRepoWorkspace,
   isBuildNodePrompt,
   isReviewPrompt,
   launchFlowApp,
   promptOf,
   type FlowWorkspace,
   type Gate,
+  type MultiRepoWorkspace,
 } from "./flowRunFixture";
 import {
   DECISION_MARKER,
@@ -48,11 +51,13 @@ import {
   isOrchestratorRequest,
   nextOrchestratorStep,
   toolIs,
+  type OrchestratorScriptOptions,
 } from "./orchestratorScript";
 import {
   KEY_A,
   ROTATION_COMMAND,
   createCleanupStack,
+  gitOutput,
   type CleanupStack,
 } from "./rotationFixture";
 
@@ -320,6 +325,165 @@ test("orchestrator_completes_the_flow_loop_through_the_ui", async () => {
       GREETING_CONTENT,
     );
     expectModelRequests(mock);
+  } finally {
+    await cleanup.run();
+  }
+});
+
+const TARGET_REPOSITORY = "beta";
+const OTHER_REPOSITORY = "alpha";
+const NO_FOLDER_TASK = `${FLOW_TASK} in the ${TARGET_REPOSITORY} repository`;
+const DISCOVER_COMMAND = `cd ${TARGET_REPOSITORY} && git status`;
+const BASH_TOOL_NAME = "Bash";
+const WORKTREE_BRANCH_PATTERN = /branch refs\/heads\/(codeweave\/\S+)/;
+const WORKTREE_PATH_PATTERN =
+  /worktree (\S+)\n[^\n]*\nbranch refs\/heads\/codeweave\//;
+
+function greetingBashTurn(body: MessagesBody): MockTurn | undefined {
+  if (!isBuildNodePrompt(promptOf(body))) {
+    return isReviewPrompt(body)
+      ? { kind: TurnKind.text, text: REVIEW_REPLY_WITHOUT_VERDICT }
+      : undefined;
+  }
+  return anthropicTranscript(body).calls.length === 0
+    ? {
+        kind: TurnKind.tool,
+        name: BASH_TOOL_NAME,
+        input: {
+          command: `printf '${GREETING_CONTENT}' > ${GREETING_FILE}`,
+          description: "write the greeting",
+        },
+      }
+    : { kind: TurnKind.text, text: BUILD_REPLY };
+}
+
+async function startNoFolderMock(
+  options: OrchestratorScriptOptions,
+): Promise<AnthropicMock> {
+  return startAnthropicMock({
+    scenarios: { [KEY_A]: MockScenario.ok },
+    toolCommand: ROTATION_COMMAND,
+    respond: (body) => {
+      if (isSuggestionRequest(body)) {
+        return undefined;
+      }
+      const transcript = anthropicTranscript(body);
+      return isOrchestratorRequest(transcript.toolNames)
+        ? nextOrchestratorStep(transcript, options)
+        : greetingBashTurn(body);
+    },
+  });
+}
+
+async function runNoFolderLoop(
+  placement: FlowPlacement,
+  cleanup: CleanupStack,
+): Promise<{ workspace: MultiRepoWorkspace; mock: AnthropicMock; page: Page }> {
+  const workspace = await createMultiRepoWorkspace(
+    [OTHER_REPOSITORY, TARGET_REPOSITORY],
+    { claudeExecutable: bundledClaudeExecutable() },
+  );
+  cleanup.add(() => workspace.dispose());
+  const mock = await startNoFolderMock({
+    repository: TARGET_REPOSITORY,
+    placement,
+    discoverCommand: DISCOVER_COMMAND,
+  });
+  cleanup.add(() => mock.close());
+  const page = await launchFlowApp(
+    { ...workspace, repo: workspace.workspace },
+    mock.url,
+    cleanup,
+  );
+  await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
+    "Connected",
+  );
+  await page.getByRole("checkbox", { name: "Orchestrate" }).check();
+  await page.getByRole("textbox", { name: "Task" }).fill(NO_FOLDER_TASK);
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "Session" }).getByText(FINAL_ANSWER),
+  ).toBeVisible({ timeout: STEP_TIMEOUT_MS });
+  return { workspace, mock, page };
+}
+
+function expectRepositoryListed(
+  mock: AnthropicMock,
+  workspace: MultiRepoWorkspace,
+): void {
+  const listed = orchestratorRequests(mock.requests).flatMap((request) =>
+    anthropicTranscript(request.body)
+      .calls.filter((call) => toolIs(call.tool, FlowToolName.listFlows))
+      .map((call) => call.result),
+  );
+  expect(listed.length).toBeGreaterThan(0);
+  expect(
+    listed.every((result) =>
+      result.includes(
+        JSON.stringify(workspace.repos[TARGET_REPOSITORY]).slice(1, -1),
+      ),
+    ),
+  ).toBe(true);
+}
+
+test("orchestrator_without_folder_runs_in_place_flow_in_prompted_repository", async () => {
+  const cleanup = createCleanupStack();
+  try {
+    const { workspace, mock, page } = await runNoFolderLoop(
+      FlowPlacement.inPlace,
+      cleanup,
+    );
+    const target = workspace.repos[TARGET_REPOSITORY] ?? "";
+    const other = workspace.repos[OTHER_REPOSITORY] ?? "";
+
+    expect(await readFile(join(target, GREETING_FILE), "utf8")).toBe(
+      GREETING_CONTENT,
+    );
+    await expect(access(join(other, GREETING_FILE))).rejects.toThrow();
+    expect(await gitOutput(other, ["status", "--porcelain"])).toBe("");
+    await expect(page.locator(".card.ask")).toHaveCount(0);
+    expectFlowDiffReachedModel(mock.requests);
+    expectRepositoryListed(mock, workspace);
+  } finally {
+    await cleanup.run();
+  }
+});
+
+test("orchestrator_without_folder_runs_worktree_flow_from_prompted_repository", async () => {
+  const cleanup = createCleanupStack();
+  try {
+    const { workspace, mock, page } = await runNoFolderLoop(
+      FlowPlacement.worktree,
+      cleanup,
+    );
+    const target = workspace.repos[TARGET_REPOSITORY] ?? "";
+    const other = workspace.repos[OTHER_REPOSITORY] ?? "";
+    const listing = await gitOutput(target, [
+      "worktree",
+      "list",
+      "--porcelain",
+    ]);
+    const branch = WORKTREE_BRANCH_PATTERN.exec(listing)?.[1] ?? "";
+    const path = WORKTREE_PATH_PATTERN.exec(listing)?.[1] ?? "";
+
+    expect(branch).not.toBe("");
+    expect(
+      path.startsWith(
+        join(workspace.workspace, ".worktrees", `${TARGET_REPOSITORY}-cw-`),
+      ),
+    ).toBe(true);
+    expect(
+      await gitOutput(target, ["show", `${branch}:${GREETING_FILE}`]),
+    ).toBe(GREETING_CONTENT);
+    expect(await gitOutput(target, ["status", "--porcelain"])).toBe("");
+    expect(
+      await gitOutput(other, ["worktree", "list", "--porcelain"]),
+    ).not.toContain("codeweave/");
+    expect(await gitOutput(other, ["status", "--porcelain"])).toBe("");
+    await expect(access(join(other, GREETING_FILE))).rejects.toThrow();
+    await expect(page.locator(".card.ask")).toHaveCount(0);
+    expectFlowDiffReachedModel(mock.requests);
+    expectRepositoryListed(mock, workspace);
   } finally {
     await cleanup.run();
   }

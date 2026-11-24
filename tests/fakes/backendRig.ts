@@ -72,7 +72,6 @@ import { resolvePathLockKey } from "./rigProcesses";
 import type { ScheduledTask } from "./rotationHarness";
 import { settled } from "./settle";
 
-
 export const RIG_NOW_MS = 1_700_000_000_000;
 export const RIG_NOW_SECONDS = 1_700_000_000;
 export const RIG_CLAUDE_PATH = "/usr/bin/claude";
@@ -132,6 +131,7 @@ export interface BackendRigOptions {
   readonly worktreeGate?: Promise<void>;
   readonly spawnGate?: Promise<void>;
   readonly worktree?: WorktreeState;
+  readonly inspectWorktree?: BackendDeps["inspectWorktree"];
   readonly resolveExecutable?: BackendDeps["resolveExecutable"];
   readonly agyUsage?: readonly UsageScript[];
   readonly agyExecutables?: readonly string[];
@@ -457,10 +457,12 @@ function rigDeps(
             return RIG_CLAUDE_PATH;
         }
       }),
-    inspectWorktree: async (dir) => {
-      await options.worktreeGate;
-      return options.worktree ?? { isRepo: false, cwd: dir };
-    },
+    inspectWorktree:
+      options.inspectWorktree ??
+      (async (dir) => {
+        await options.worktreeGate;
+        return options.worktree ?? { isRepo: false, cwd: dir };
+      }),
   };
 }
 

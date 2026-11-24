@@ -92,6 +92,23 @@ async function git(cwd: string, args: readonly string[]): Promise<void> {
   await execFileAsync("git", [...GIT_IDENTITY_ARGS, ...args], { cwd });
 }
 
+export async function gitOutput(
+  cwd: string,
+  args: readonly string[],
+): Promise<string> {
+  const { stdout } = await execFileAsync(
+    "git",
+    [...GIT_IDENTITY_ARGS, ...args],
+    { cwd },
+  );
+  return stdout;
+}
+
+export async function commitAll(dir: string, message: string): Promise<void> {
+  await git(dir, ["add", "-A"]);
+  await git(dir, ["commit", "--quiet", "-m", message]);
+}
+
 export async function createRepo(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true });
   await git(dir, ["init", "--quiet"]);

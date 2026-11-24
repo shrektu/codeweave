@@ -10,6 +10,7 @@ import {
   FakeWorktrees,
   MERGED,
   PROJECT,
+  repositoryDeps,
 } from "../../../tests/fakes/fakeOrchestration";
 import type { FlowControl } from "../flowTools/control";
 
@@ -50,6 +51,7 @@ function openRig(): Rig {
     {
       flowRuns: runs,
       flowWorktrees: worktrees,
+      ...repositoryDeps(),
       listFlows: () => Promise.resolve(SAMPLE_FLOWS),
       newRunId: () => {
         counter += 1;
@@ -408,6 +410,9 @@ it("starts_no_run_after_the_orchestration_ended_during_worktree_create", async (
   rig.worktrees.createGate = gate.promise;
 
   const starting = rig.control.startFlow(WORKTREE_REQUEST);
+  await vi.waitFor(() => {
+    expect(rig.worktrees.log).toEqual(["create:run-1"]);
+  });
   rig.orchestration.ended = true;
   gate.resolve(undefined);
 
@@ -423,6 +428,9 @@ it("stops_a_run_whose_start_resolved_after_the_orchestration_ended", async () =>
   rig.runs.startGate = gate.promise;
 
   const starting = rig.control.startFlow(IN_PLACE_REQUEST);
+  await vi.waitFor(() => {
+    expect(rig.runs.started).toHaveLength(1);
+  });
   rig.orchestration.ended = true;
   gate.resolve(undefined);
 
@@ -454,6 +462,9 @@ it("logs_a_failing_stop_of_a_run_started_after_the_orchestration_ended", async (
   rig.runs.stopError = new Error("stop refused");
 
   const starting = rig.control.startFlow(IN_PLACE_REQUEST);
+  await vi.waitFor(() => {
+    expect(rig.runs.started).toHaveLength(1);
+  });
   rig.orchestration.ended = true;
   gate.resolve(undefined);
 

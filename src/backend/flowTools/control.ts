@@ -6,10 +6,11 @@ export interface FlowStartRequest {
   readonly flowId: string;
   readonly task: string;
   readonly placement: FlowPlacement;
+  readonly repository?: string;
 }
 
 export interface FlowControl {
-  listFlows(): Promise<FlowsList>;
+  listFlows(repository?: string): Promise<FlowsList>;
   startFlow(request: FlowStartRequest): Promise<FlowRunView>;
   status(runId: string): FlowRunView;
   nodeResult(runId: string, nodeId: string): string;

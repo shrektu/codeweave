@@ -32,6 +32,7 @@ export interface FlowWorktree {
 }
 
 export interface FlowWorktrees {
+  resolveProjectRoot(cwd: string): Promise<string>;
   create(projectCwd: string, runId: string): Promise<FlowWorktree>;
   commitAll(worktree: FlowWorktree, message: string): Promise<string | null>;
   diff(worktree: FlowWorktree): Promise<string>;
@@ -329,6 +330,7 @@ export function createFlowWorktrees(deps: {
 }): FlowWorktrees {
   const git: Git = (dir, args) => deps.exec(GIT_BINARY, ["-C", dir, ...args]);
   return {
+    resolveProjectRoot: (cwd) => resolveProjectRoot(git, cwd),
     create: (projectCwd, runId) => create(git, projectCwd, runId),
     commitAll: (worktree, message) => commitAll(git, worktree, message),
     diff: (worktree) => diff(git, worktree),
