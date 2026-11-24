@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -188,6 +188,7 @@ export interface BackendRig {
   readonly vault: FakeVault;
   readonly authCli: FakeAuthCli;
   readonly userData: string;
+  readonly homeDir: string;
   readonly cwd: string;
   readonly order: string[];
   readonly sweeps: (readonly string[])[];
@@ -372,6 +373,7 @@ function rigDeps(
   options: BackendRigOptions,
   authCli: FakeAuthCli,
   userData: string,
+  homeDir: string,
   vault: FakeVault,
   containers: AgentContainers,
   log: RigLog,
@@ -404,7 +406,7 @@ function rigDeps(
     execPath: RIG_EXEC_PATH,
     adapterEntry: RIG_ADAPTER_ENTRY,
     parentEnv: options.parentEnv ?? { PATH: "/usr/bin" },
-    homeDir: options.homeDir ?? "/home/jane",
+    homeDir,
     platform: options.platform ?? "linux",
     now: options.now ?? (() => RIG_NOW_MS),
     opencodeConsoleLogin: createConsoleLoginProbe({
@@ -471,6 +473,8 @@ export async function createBackendRig(
 ): Promise<BackendRig> {
   const userData = options.userData ?? (await tempDir("codeweave-user-"));
   const cwd = await tempDir("codeweave-cwd-");
+  const homeDir =
+    options.homeDir ?? (await realpath(await tempDir("codeweave-home-")));
   await mkdir(userData, { recursive: true });
   const store = createJsonStore(userData);
   if (options.accounts !== undefined) {
@@ -531,6 +535,7 @@ export async function createBackendRig(
       options,
       authCli,
       userData,
+      homeDir,
       vault,
       {
         claude: container,
@@ -570,6 +575,7 @@ export async function createBackendRig(
     vault,
     authCli,
     userData,
+    homeDir,
     cwd,
     ...parts,
     instanceIds,

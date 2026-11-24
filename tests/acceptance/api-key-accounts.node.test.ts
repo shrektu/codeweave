@@ -298,7 +298,7 @@ it("legacy_storage_files_load_unchanged", async () => {
     defaultTaskClass: "standard",
     definitionLibrary: null,
     defaultWorkspace: null,
-    defaultWorkspaceResolved: "/home/jane",
+    defaultWorkspaceResolved: rig.homeDir,
   });
 });
 
