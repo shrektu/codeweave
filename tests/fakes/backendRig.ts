@@ -124,6 +124,7 @@ export interface RecordedBroadcast {
 
 export interface BackendRigOptions {
   readonly userData?: string;
+  readonly homeDir?: string;
   readonly accounts?: readonly Account[];
   readonly containerError?: Error;
   readonly stopResults?: ConstructorParameters<typeof ScriptedAcpContainer>[0];
@@ -403,7 +404,7 @@ function rigDeps(
     execPath: RIG_EXEC_PATH,
     adapterEntry: RIG_ADAPTER_ENTRY,
     parentEnv: options.parentEnv ?? { PATH: "/usr/bin" },
-    homeDir: "/home/jane",
+    homeDir: options.homeDir ?? "/home/jane",
     platform: options.platform ?? "linux",
     now: options.now ?? (() => RIG_NOW_MS),
     opencodeConsoleLogin: createConsoleLoginProbe({

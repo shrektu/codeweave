@@ -115,6 +115,7 @@ export function rotationSettings(profile: PermissionProfile): SettingsFile {
     updateChannel: "stable",
     defaultTaskClass: "standard",
     definitionLibrary: null,
+    defaultWorkspace: null,
   };
 }
 

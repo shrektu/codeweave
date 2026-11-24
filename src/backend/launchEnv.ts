@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { statSync } from "node:fs";
 import { userInfo } from "node:os";
 import { posix } from "node:path";
 
@@ -15,6 +14,7 @@ import {
   MACOS_USER_BIN_DIRS,
   USER_BIN_DIRS,
 } from "./constants";
+import { isDirectoryOrThrow } from "./directory";
 import { inheritedEnv } from "./env";
 
 export interface LaunchEnvDeps {
@@ -188,7 +188,7 @@ export function passwdShell(): string | null {
 
 export function isDirectory(path: string): boolean {
   try {
-    return statSync(path, { throwIfNoEntry: false })?.isDirectory() === true;
+    return isDirectoryOrThrow(path);
   } catch (error) {
     console.warn(`directory could not be inspected: ${path}`, error);
     return false;

@@ -179,6 +179,7 @@ interface ExecutableFieldProps {
   current: string | null;
   placeholder?: string;
   help?: string;
+  pickFolder?: () => Promise<string | null>;
   onSave: (value: string | null) => void;
 }
 
@@ -188,9 +189,11 @@ function ExecutableField({
   current,
   placeholder = "Found on PATH",
   help,
+  pickFolder,
   onSave,
 }: ExecutableFieldProps): JSX.Element {
   const [executable, setExecutable] = useState(current ?? "");
+  const pick = useAsyncAction();
   return (
     <div className="field group-row">
       <label htmlFor={id}>{label}</label>
@@ -214,7 +217,26 @@ function ExecutableField({
         >
           Save
         </button>
+        {pickFolder !== undefined && (
+          <button
+            type="button"
+            className="btn"
+            disabled={pick.pending}
+            onClick={() => {
+              void pick.run(async () => {
+                const picked = await pickFolder();
+                if (picked !== null) {
+                  setExecutable(picked);
+                  onSave(picked);
+                }
+              });
+            }}
+          >
+            Choose…
+          </button>
+        )}
       </div>
+      {pick.error !== null && <p className="error">{pick.error}</p>}
     </div>
   );
 }
@@ -288,6 +310,17 @@ function SettingsForm({ settings }: { settings: SettingsView }): JSX.Element {
           onPatch({ definitionLibrary });
         }}
       />
+        <ExecutableField
+          id="default-workspace"
+          label="Default workspace"
+          current={settings.defaultWorkspace}
+          placeholder={`Home folder (${settings.defaultWorkspaceResolved})`}
+          help="Where a session starts when you do not choose a folder."
+          pickFolder={() => window.codeweave.pickFolder()}
+          onSave={(defaultWorkspace) => {
+            onPatch({ defaultWorkspace });
+          }}
+        />
       </SettingsGroup>
       {save.error !== null && <p className="error">{save.error}</p>}
     </>

@@ -1138,6 +1138,7 @@ function createRigService(
     hasKey: () => true,
     secrets: () => [],
     homeDir: home,
+    resolveFolder: (requested) => Promise.resolve(requested ?? home),
     protectedPaths: () =>
       Promise.resolve([
         join(home, ".ssh"),

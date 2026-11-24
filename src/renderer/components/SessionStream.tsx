@@ -26,7 +26,7 @@ import {
 } from "../format";
 import { sessionModelText, turnBadge } from "../routingText";
 import { useApp, useServices } from "../services";
-import { useAsyncAction } from "../useAsyncAction";
+import { useAsyncAction, type AsyncAction } from "../useAsyncAction";
 
 import { Markdown } from "../markdown/Markdown";
 
@@ -37,7 +37,28 @@ import { ToolCard } from "./ToolCard";
 const IDENTITY_SEPARATOR = " · ";
 const NO_ACCOUNT_LABEL = "—";
 
+interface UnsentDraft {
+  readonly sessionId: string | null;
+  readonly text: string;
+}
+
+function unsentTextFor(unsent: UnsentDraft | null, sessionId: string): string {
+  const belongs =
+    unsent !== null &&
+    (unsent.sessionId === null || unsent.sessionId === sessionId);
+  return belongs ? unsent.text : "";
+}
+
+interface StartDraft {
+  readonly task: string;
+  readonly setTask: (task: string) => void;
+  readonly unsent: UnsentDraft | null;
+  readonly setUnsent: (unsent: UnsentDraft | null) => void;
+  readonly start: AsyncAction;
+}
+
 interface SessionBodyProps {
+  draft: StartDraft;
   session: SessionView;
   runId: string | null;
   accounts: readonly AccountView[];
@@ -177,9 +198,70 @@ function distinctProviders(
   );
 }
 
-function StartPrompt(): JSX.Element {
+interface TaskStartProps {
+  readonly draft: StartDraft;
+  readonly provider: SelectableProvider | undefined;
+  readonly orchestrating: boolean;
+}
+
+function TaskStart({
+  draft,
+  provider,
+  orchestrating,
+}: TaskStartProps): JSX.Element {
   const { client, state } = useApp();
-  const start = useAsyncAction();
+  const { task, setTask, setUnsent, start } = draft;
+  const workspace = state.snapshot?.settings.defaultWorkspaceResolved;
+
+  const startWithTask = (): void => {
+    const text = task.trim();
+    setUnsent(null);
+    void start.run(async () => {
+      let sessionId: string | null = null;
+      try {
+        const started = await client.request("session/start", {
+          ...(provider === undefined ? {} : { provider }),
+          ...(orchestrating ? { orchestrate: true } : {}),
+        });
+        sessionId = started.id;
+        await client.request("session/prompt", { text });
+      } catch (error: unknown) {
+        setUnsent({ sessionId, text });
+        throw error;
+      }
+      setTask("");
+    });
+  };
+
+  return (
+    <>
+      <textarea
+        aria-label="Task"
+        placeholder="What should the agent do?"
+        value={task}
+        onChange={(event) => {
+          setTask(event.target.value);
+        }}
+      />
+      <button
+        type="button"
+        className="btn pri"
+        disabled={start.pending || task.trim() === ""}
+        onClick={startWithTask}
+      >
+        Start
+      </button>
+      {workspace !== undefined && (
+        <p className="empty">{`Starts in ${workspace}. The agent finds the repository itself.`}</p>
+      )}
+    </>
+  );
+}
+
+// eslint-disable-next-line max-lines-per-function
+function StartPrompt({ draft }: { draft: StartDraft }): JSX.Element {
+  const { client, state } = useApp();
+  const { start, setUnsent } = draft;
   const [pending, setPending] = useState<PendingStart | null>(null);
   const [chosen, setChosen] = useState(NO_CHOICE);
   const [picked, setPicked] = useState<SelectableProvider | null>(null);
@@ -190,11 +272,11 @@ function StartPrompt(): JSX.Element {
   const orchestrating = orchestrate && !orchestrateBlocked;
 
   const startSession = async (
-    cwd: string,
+    cwd: string | undefined,
     flowRef: FlowRef | undefined,
   ): Promise<void> => {
     await client.request("session/start", {
-      cwd,
+      ...(cwd === undefined ? {} : { cwd }),
       ...(provider === undefined ? {} : { provider }),
       ...(flowRef === undefined ? {} : { flowRef }),
       ...(orchestrating ? { orchestrate: true } : {}),
@@ -213,6 +295,7 @@ function StartPrompt(): JSX.Element {
   };
 
   const chooseFolder = (): void => {
+    setUnsent(null);
     void start.run(async () => {
       const cwd = await window.codeweave.pickFolder();
       if (cwd === null) {
@@ -234,13 +317,14 @@ function StartPrompt(): JSX.Element {
     }
     const choice =
       chosen === NO_CHOICE ? undefined : pending.choices[Number(chosen)];
+    setUnsent(null);
     void start.run(() => startSession(pending.cwd, choice?.flowRef));
   };
 
   return (
     <div className="empty-state">
       <p className="empty-title">No session</p>
-      <p className="empty">Choose a project folder to start.</p>
+      <p className="empty">Type a task to start, or choose a folder.</p>
       {providers.length > 1 && (
         <select
           aria-label="Agent"
@@ -272,9 +356,14 @@ function StartPrompt(): JSX.Element {
       <p id="orchestrate-hint" className="empty">
         {orchestrateBlocked ? ORCHESTRATE_BLOCKED_HINT : ORCHESTRATE_HINT}
       </p>
+      <TaskStart
+        draft={draft}
+        provider={provider}
+        orchestrating={orchestrating}
+      />
       <button
         type="button"
-        className="btn pri"
+        className="btn"
         disabled={start.pending}
         onClick={chooseFolder}
       >
@@ -347,12 +436,15 @@ function SessionIdentity({
 }
 
 function SessionBody({
+  draft,
   session,
   runId,
   accounts,
 }: SessionBodyProps): JSX.Element {
   const { client } = useApp();
   const stop = useAsyncAction();
+  const live = isSessionLive(session);
+  const unsentText = unsentTextFor(draft.unsent, session.id);
   const requestStop = (): Promise<unknown> =>
     runId === null
       ? client.request("session/stop", {})
@@ -385,8 +477,11 @@ function SessionBody({
           <StreamEntry key={item.key} item={item} runId={runId} />
         ))}
       </ul>
-      {!isSessionLive(session) && <StartPrompt />}
-      <Composer />
+      {!live && <StartPrompt draft={draft} />}
+      {live && draft.start.error !== null && (
+        <p className="error">{draft.start.error}</p>
+      )}
+      <Composer key={`${session.id}:${unsentText}`} initialText={unsentText} />
     </>
   );
 }
@@ -411,6 +506,10 @@ function FocusBanner({ run }: { run: FlowRunView }): JSX.Element {
 
 export function SessionStream(): JSX.Element {
   const { state } = useApp();
+  const [task, setTask] = useState("");
+  const start = useAsyncAction();
+  const [unsent, setUnsent] = useState<UnsentDraft | null>(null);
+  const draft: StartDraft = { task, setTask, unsent, setUnsent, start };
   const { session, runId } = shownSessionOf(state.snapshot, state.focusedRunId);
   const focusedRun = focusedRunOf(state.snapshot, state.focusedRunId);
   const bannerRun = focusedRun?.runId === runId ? focusedRun : null;
@@ -420,9 +519,10 @@ export function SessionStream(): JSX.Element {
       <h2 className="sec">Session</h2>
       {bannerRun !== null && <FocusBanner run={bannerRun} />}
       {session === null ? (
-        <StartPrompt />
+        <StartPrompt draft={draft} />
       ) : (
         <SessionBody
+          draft={draft}
           session={session}
           runId={runId}
           accounts={state.snapshot?.accounts ?? []}

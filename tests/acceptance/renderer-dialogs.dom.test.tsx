@@ -12,6 +12,7 @@ import { AccountsDialog } from "../../src/renderer/components/AccountsDialog";
 import { SettingsDialog } from "../../src/renderer/components/SettingsDialog";
 import { IpcRemoteError } from "../../src/renderer/ipc";
 import { IpcErrorCode } from "../../src/shared/protocol";
+import { makeCodeweaveApi } from "../fakes/fakeCodeweaveApi";
 import {
   createFakeIpcClient,
   makeAccount,
@@ -70,6 +71,12 @@ function settingsClient(): FakeIpcClient {
         patch.definitionLibrary === undefined
           ? current.definitionLibrary
           : patch.definitionLibrary,
+      defaultWorkspace:
+        patch.defaultWorkspace === undefined
+          ? current.defaultWorkspace
+          : patch.defaultWorkspace,
+      defaultWorkspaceResolved:
+        patch.defaultWorkspace ?? current.defaultWorkspaceResolved,
     };
     client.emit({ v: 7, event: "settings/changed", payload: current });
     return current;
@@ -100,6 +107,9 @@ const CLAUDE_SAVE_INDEX = 0;
 const CODEX_SAVE_INDEX = 1;
 const AGY_SAVE_INDEX = 3;
 const LIBRARY_SAVE_INDEX = 5;
+const WORKSPACE_SAVE_INDEX = 6;
+const HOME_FOLDER = "/home/user";
+const PICKED_WORKSPACE = "/home/user/projects";
 
 function saveButton(index: number): HTMLElement {
   const button = screen.getAllByRole("button", { name: "Save" })[index];
@@ -242,6 +252,71 @@ it("settings_dialog_saves_the_flow_library_folder_and_null_when_empty", async ()
       params: { definitionLibrary: null },
     });
   });
+});
+
+it("settings_dialog_saves_the_default_workspace_text_and_null_when_empty", async () => {
+  const client = settingsClient();
+  renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
+  const input = await screen.findByLabelText("Default workspace");
+  expect(input.getAttribute("placeholder")).toBe(
+    `Home folder (${HOME_FOLDER})`,
+  );
+
+  fireEvent.change(input, { target: { value: "~/work" } });
+  fireEvent.click(saveButton(WORKSPACE_SAVE_INDEX));
+  await waitFor(() => {
+    expect(client.requests).toContainEqual({
+      method: "settings/set",
+      params: { defaultWorkspace: "~/work" },
+    });
+  });
+
+  fireEvent.change(input, { target: { value: "" } });
+  fireEvent.click(saveButton(WORKSPACE_SAVE_INDEX));
+  await waitFor(() => {
+    expect(client.requests).toContainEqual({
+      method: "settings/set",
+      params: { defaultWorkspace: null },
+    });
+  });
+});
+
+it("settings_dialog_default_workspace_choose_saves_the_picked_folder", async () => {
+  window.codeweave = makeCodeweaveApi({
+    pickFolder: () => Promise.resolve(PICKED_WORKSPACE),
+  });
+  const client = settingsClient();
+  renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
+  await screen.findByLabelText("Default workspace");
+
+  fireEvent.click(screen.getByRole("button", { name: "Choose…" }));
+
+  await waitFor(() => {
+    expect(client.requests).toContainEqual({
+      method: "settings/set",
+      params: { defaultWorkspace: PICKED_WORKSPACE },
+    });
+  });
+  expect(
+    screen.getByLabelText<HTMLInputElement>("Default workspace").value,
+  ).toBe(PICKED_WORKSPACE);
+});
+
+it("settings_dialog_default_workspace_choose_cancelled_saves_nothing", async () => {
+  const pickFolder = vi.fn(() => Promise.resolve(null));
+  window.codeweave = makeCodeweaveApi({ pickFolder });
+  const client = settingsClient();
+  renderWithServices(<SettingsDialog onClose={vi.fn<() => void>()} />, client);
+  await screen.findByLabelText("Default workspace");
+
+  fireEvent.click(screen.getByRole("button", { name: "Choose…" }));
+  await waitFor(() => {
+    expect(pickFolder).toHaveBeenCalledTimes(1);
+  });
+
+  expect(client.requests.filter((r) => r.method === "settings/set")).toEqual(
+    [],
+  );
 });
 
 it("bypass_texts_do_not_name_claude", async () => {

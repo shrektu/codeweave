@@ -231,6 +231,8 @@ export function makeSettings(
     updateChannel: UpdateChannel.stable,
     defaultTaskClass: TaskClass.standard,
     definitionLibrary: null,
+    defaultWorkspace: null,
+    defaultWorkspaceResolved: "/home/user",
     ...overrides,
   };
 }

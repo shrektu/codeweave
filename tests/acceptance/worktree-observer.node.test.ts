@@ -80,6 +80,7 @@ async function compose(): Promise<Composition> {
     hasKey: () => true,
     secrets: () => [],
     homeDir: "/home/u",
+    resolveFolder: (requested) => Promise.resolve(requested ?? "/home/u"),
     protectedPaths: () => Promise.resolve([]),
     leaseModes,
   });

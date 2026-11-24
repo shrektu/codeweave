@@ -83,6 +83,7 @@ interface SetupOptions {
   readonly stopGates?: readonly Promise<void>[];
   readonly accountsGate?: Promise<void>;
   readonly hasKey?: SessionServiceDeps["hasKey"];
+  readonly resolveFolder?: SessionServiceDeps["resolveFolder"];
 }
 
 const tempDirs: string[] = [];
@@ -206,6 +207,9 @@ async function setup(options: SetupOptions): Promise<Setup> {
     hasKey: options.hasKey ?? (() => true),
     secrets: () => [],
     homeDir: "/home/u",
+    resolveFolder:
+      options.resolveFolder ??
+      ((requested) => Promise.resolve(requested ?? "/home/u")),
     protectedPaths: () => Promise.resolve([]),
   });
   services.push(service);
@@ -934,4 +938,40 @@ it("api_key_opencode_account_without_a_key_is_still_refused", async () => {
   ).rejects.toBeInstanceOf(IpcError);
 
   expect(rig.specs).toEqual([]);
+});
+
+it("flow-start-refused-while-folder-resolves", async () => {
+  const gate = Promise.withResolvers<string>();
+  const rig = await setup({
+    events: { "acc-a": [] },
+    resolveFolder: () => gate.promise,
+  });
+
+  const starting = rig.service.start({});
+
+  expect(rig.service.isLive()).toBe(true);
+  await expect(rig.service.start({})).rejects.toMatchObject({
+    code: IpcErrorCode.CONFLICT,
+  });
+  gate.resolve(rig.cwd);
+  await starting;
+});
+
+it("folder-resolution-failure-frees-the-session-slot", async () => {
+  const gate = Promise.withResolvers<string>();
+  const rig = await setup({
+    events: { "acc-a": [] },
+    resolveFolder: () => gate.promise,
+  });
+
+  const starting = rig.service.start({});
+  const rejected = expect(starting).rejects.toMatchObject({
+    code: IpcErrorCode.VALIDATION,
+  });
+  expect(rig.service.isLive()).toBe(true);
+  gate.reject(new IpcError(IpcErrorCode.VALIDATION, "no folder"));
+  await rejected;
+
+  expect(rig.service.isLive()).toBe(false);
+  expect(rig.log).toEqual([]);
 });

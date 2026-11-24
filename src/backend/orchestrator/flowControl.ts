@@ -38,7 +38,7 @@ export interface OwnedRun {
 }
 
 export interface Orchestration {
-  readonly cwd: string;
+  cwd: string | null;
   readonly runs: Map<string, OwnedRun>;
   sessionId: string | null;
   ended: boolean;
@@ -65,20 +65,17 @@ function conflict(message: string): IpcError {
 
 class OrchestratorFlowControl implements FlowControl {
   private readonly deps: OrchestratorFlowDeps;
-  private readonly cwd: string;
   private readonly runs: Map<string, OwnedRun>;
   private readonly orchestration: Orchestration;
 
   constructor(deps: OrchestratorFlowDeps, orchestration: Orchestration) {
     this.deps = deps;
-    this.cwd = orchestration.cwd;
     this.runs = orchestration.runs;
     this.orchestration = orchestration;
   }
 
   async listFlows(): Promise<FlowsList> {
-    this.assertActive();
-    return this.deps.listFlows(this.cwd);
+    return this.deps.listFlows(this.activeCwd());
   }
 
   startFlow(request: ToolStartRequest): Promise<FlowRunView> {
@@ -102,10 +99,10 @@ class OrchestratorFlowControl implements FlowControl {
   }
 
   async diff(runId: string): Promise<string> {
-    this.assertActive();
+    const cwd = this.activeCwd();
     const { worktree } = this.ownedRun(runId);
     return worktree === null
-      ? this.deps.flowWorktrees.workingDiff(this.cwd)
+      ? this.deps.flowWorktrees.workingDiff(cwd)
       : this.deps.flowWorktrees.diff(worktree);
   }
 
@@ -186,6 +183,15 @@ class OrchestratorFlowControl implements FlowControl {
     }
   }
 
+  private activeCwd(): string {
+    this.assertActive();
+    const { cwd } = this.orchestration;
+    if (cwd === null) {
+      throw conflict(ENDED_MESSAGE);
+    }
+    return cwd;
+  }
+
   private ownedRun(runId: string): OwnedRun {
     const run = this.runs.get(runId);
     if (run === undefined) {
@@ -253,7 +259,7 @@ class OrchestratorFlowControl implements FlowControl {
   }
 
   private async startInPlace(request: ToolStartRequest): Promise<FlowRunView> {
-    this.assertActive();
+    const cwd = this.activeCwd();
     if (this.hasOpenInPlace()) {
       throw conflict(IN_PLACE_RUNNING_MESSAGE);
     }
@@ -270,7 +276,7 @@ class OrchestratorFlowControl implements FlowControl {
     });
     let view: FlowRunView;
     try {
-      view = await this.startRun(request, runId, this.cwd, null);
+      view = await this.startRun(request, runId, cwd, cwd, null);
     } catch (error) {
       this.runs.delete(runId);
       throw error;
@@ -282,12 +288,12 @@ class OrchestratorFlowControl implements FlowControl {
   private async startInWorktree(
     request: ToolStartRequest,
   ): Promise<FlowRunView> {
-    this.assertActive();
+    const cwd = this.activeCwd();
     if (this.hasMerge()) {
       throw conflict(MERGE_IN_PROGRESS_MESSAGE);
     }
     const runId = this.deps.newRunId();
-    const worktree = await this.deps.flowWorktrees.create(this.cwd, runId);
+    const worktree = await this.deps.flowWorktrees.create(cwd, runId);
     if (this.orchestration.ended) {
       await this.removeWorktree(worktree);
       this.assertActive();
@@ -305,6 +311,7 @@ class OrchestratorFlowControl implements FlowControl {
         request,
         runId,
         worktree.path,
+        cwd,
         worktree.branch,
       );
     } catch (error) {
@@ -332,6 +339,7 @@ class OrchestratorFlowControl implements FlowControl {
     request: ToolStartRequest,
     runId: string,
     cwd: string,
+    definitionsCwd: string,
     branch: string | null,
   ): Promise<FlowRunView> {
     return this.deps.flowRuns.start({
@@ -342,7 +350,7 @@ class OrchestratorFlowControl implements FlowControl {
       origin: FlowRunOrigin.orchestrator,
       placement: request.placement,
       branch,
-      definitionsCwd: this.cwd,
+      definitionsCwd,
       ownerSessionId: this.orchestration.sessionId,
     });
   }

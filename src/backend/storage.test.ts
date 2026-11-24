@@ -40,6 +40,7 @@ describe("json store", () => {
       updateChannel: "stable",
       defaultTaskClass: "standard",
       definitionLibrary: null,
+      defaultWorkspace: null,
     });
   });
 
@@ -60,6 +61,7 @@ describe("json store", () => {
       updateChannel: "beta",
       defaultTaskClass: "heavy",
       definitionLibrary: "/srv/library",
+      defaultWorkspace: "/srv/work",
     } as const;
 
     await store.writeAccounts([account]);
@@ -305,6 +307,7 @@ describe("json store writes", () => {
         updateChannel: "stable",
         defaultTaskClass: "standard",
         definitionLibrary: null,
+        defaultWorkspace: null,
       }),
     ).rejects.toBeInstanceOf(StorageCorruptError);
 

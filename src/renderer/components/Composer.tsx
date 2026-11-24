@@ -108,10 +108,15 @@ function RoutingControls({
   );
 }
 
-export function Composer(): JSX.Element {
+interface ComposerProps {
+  readonly initialText?: string;
+}
+
+export function Composer({ initialText = "" }: ComposerProps): JSX.Element {
   const { state } = useApp();
   return (
     <SessionComposer
+      initialText={initialText}
       key={
         shownSessionOf(state.snapshot, state.focusedRunId).session?.id ?? null
       }
@@ -119,9 +124,34 @@ export function Composer(): JSX.Element {
   );
 }
 
-function SessionComposer(): JSX.Element {
+function SendButton({
+  disabled,
+  onSend,
+}: {
+  disabled: boolean;
+  onSend: () => void;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      className="send"
+      aria-label="Send"
+      title="Send"
+      disabled={disabled}
+      onClick={onSend}
+    >
+      <ArrowUp size={16} aria-hidden="true" />
+    </button>
+  );
+}
+
+function SessionComposer({
+  initialText,
+}: {
+  initialText: string;
+}): JSX.Element {
   const { client, state } = useApp();
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
   const [classValue, setClassValue] = useState(AUTO_CLASS_VALUE);
   const [model, setModel] = useState("");
   const send = useAsyncAction();
@@ -168,18 +198,12 @@ function SessionComposer(): JSX.Element {
         onModelChange={setModel}
       />
       {send.error !== null && <p className="error">{send.error}</p>}
-      <button
-        type="button"
-        className="send"
-        aria-label="Send"
-        title="Send"
+      <SendButton
         disabled={!enabled || text.trim() === ""}
-        onClick={() => {
+        onSend={() => {
           void submit();
         }}
-      >
-        <ArrowUp size={16} aria-hidden="true" />
-      </button>
+      />
     </div>
   );
 }

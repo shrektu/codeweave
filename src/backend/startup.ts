@@ -57,6 +57,7 @@ import { createFlowRunService } from "./flowRuns";
 import type { FlowToolServer } from "./flowTools/server";
 import { createFlowWorktrees } from "./flowWorktrees";
 import { createHandlers } from "./handlers";
+import { resolveSessionFolder } from "./workspace";
 import { recordInstance } from "./instance";
 import type { IpcHandlers } from "./ipcServer";
 import {
@@ -656,6 +657,10 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
         (account) => account.configDir,
       ),
     });
+  const resolveFolder = async (
+    requested: string | undefined,
+  ): Promise<string> =>
+    resolveSessionFolder(requested, await store.readSettings(), deps.homeDir);
   const sessions: SessionPool = createSessionPool({
     adapter: createAdapter(
       deps,
@@ -680,6 +685,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     hasKey: (accountId) => keyStore.hint(accountId) !== null,
     secrets: createSecretSource(keyStore),
     homeDir: deps.homeDir,
+    resolveFolder,
     protectedPaths: protectedPathsNow,
   });
   const terminals = createTerminals(deps, container, store, lockKeyResolver);
@@ -710,6 +716,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     keyStore,
     vault: deps.vault,
     userData,
+    homeDir: deps.homeDir,
     broadcast: deps.broadcast,
     sessions,
     flowRuns,

@@ -45,6 +45,8 @@ export const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 export const RELEASES_URL = "https://github.com/shrektu/codeweave/releases";
 
+export const SESSION_START_TIMEOUT_MS = 60_000;
+
 export const CATALOG_PROBE_TIMEOUT_MS = 45_000;
 
 export const CATALOG_STOP_MARGIN_MS = 20_000;

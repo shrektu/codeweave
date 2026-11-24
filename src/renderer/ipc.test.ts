@@ -58,6 +58,8 @@ const SETTINGS_EVENT = {
     updateChannel: "stable",
     defaultTaskClass: "standard",
     definitionLibrary: null,
+    defaultWorkspace: null,
+    defaultWorkspaceResolved: "/home/user",
   },
 };
 
@@ -205,6 +207,21 @@ describe("ipc client request timeouts", () => {
     const rejections = rejectionCounter(client.request("models/catalog", {}));
 
     await vi.advanceTimersByTimeAsync(64_999);
+    expect(rejections()).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(rejections()).toBe(1);
+  });
+
+  it("session_start_uses_long_timeout", async () => {
+    vi.useFakeTimers();
+    const { port } = fakePort();
+    const client = createIpcClient(port);
+    const rejections = rejectionCounter(client.request("session/start", {}));
+
+    await vi.advanceTimersByTimeAsync(5001);
+    expect(rejections()).toBe(0);
+    await vi.advanceTimersByTimeAsync(54_998);
     expect(rejections()).toBe(0);
     await vi.advanceTimersByTimeAsync(1);
 

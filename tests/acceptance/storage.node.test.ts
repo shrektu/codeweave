@@ -48,6 +48,7 @@ it("settings_without_codex_executable_loads", async () => {
     updateChannel: "stable",
     defaultTaskClass: "standard",
     definitionLibrary: null,
+    defaultWorkspace: null,
   });
 });
 
@@ -137,6 +138,7 @@ it("storage_refuses_to_overwrite_corrupt_file", async () => {
       updateChannel: "stable",
       defaultTaskClass: "standard",
       definitionLibrary: null,
+      defaultWorkspace: null,
     }),
   ).rejects.toBeInstanceOf(StorageCorruptError);
 

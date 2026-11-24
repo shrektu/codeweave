@@ -133,6 +133,7 @@ async function openRig(): Promise<Rig> {
     hasKey: () => true,
     secrets: () => [],
     homeDir: "/home/u",
+    resolveFolder: (requested) => Promise.resolve(requested ?? "/home/u"),
     protectedPaths: () => Promise.resolve([]),
   });
   services.push(service);
@@ -322,6 +323,7 @@ async function openToolRig(options: ToolRigOptions = {}): Promise<ToolRig> {
     hasKey: () => true,
     secrets: () => [],
     homeDir: "/home/u",
+    resolveFolder: (requested) => Promise.resolve(requested ?? "/home/u"),
     protectedPaths: () => Promise.resolve([]),
   });
   services.push(service);

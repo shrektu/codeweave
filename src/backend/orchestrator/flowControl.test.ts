@@ -388,6 +388,20 @@ const OTHER_MERGE = {
   message: "Another merge is in progress",
 };
 
+it("refuses_every_tool_before_the_folder_is_known", async () => {
+  const rig = openRig();
+  rig.orchestration.cwd = null;
+
+  await expect(rig.control.listFlows()).rejects.toMatchObject(ENDED);
+  await expect(rig.control.startFlow(IN_PLACE_REQUEST)).rejects.toMatchObject(
+    ENDED,
+  );
+  await expect(rig.control.startFlow(WORKTREE_REQUEST)).rejects.toMatchObject(
+    ENDED,
+  );
+  expect(rig.runs.started).toEqual([]);
+});
+
 it("starts_no_run_after_the_orchestration_ended_during_worktree_create", async () => {
   const rig = openRig();
   const gate = Promise.withResolvers<undefined>();

@@ -99,6 +99,7 @@ const SettingsPatchSchema = z
     updateChannel: z.enum(UpdateChannel).optional(),
     defaultTaskClass: TaskClassSchema.optional(),
     definitionLibrary: z.string().nullable().optional(),
+    defaultWorkspace: z.string().nullable().optional(),
   })
   .refine((patch) => Object.values(patch).some((value) => value !== undefined));
 
@@ -106,7 +107,7 @@ export const ParamsSchemas = {
   ping: EmptyParamsSchema,
   "sessions/snapshot": EmptyParamsSchema,
   "session/start": z.strictObject({
-    cwd: NonEmptyString,
+    cwd: NonEmptyString.optional(),
     profile: z.enum(PermissionProfile).optional(),
     flowRef: FlowRefSchema.optional(),
     provider: z.enum(ProviderId).optional(),

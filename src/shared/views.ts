@@ -326,6 +326,8 @@ export const SettingsViewSchema = z.strictObject({
   updateChannel: z.enum(UpdateChannel),
   defaultTaskClass: TaskClassSchema,
   definitionLibrary: z.string().nullable(),
+  defaultWorkspace: z.string().nullable(),
+  defaultWorkspaceResolved: z.string(),
 });
 export type SettingsView = z.infer<typeof SettingsViewSchema>;
 

@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 import {
   chmod,
   mkdir,
@@ -97,6 +98,7 @@ function handlersFor(cwd: string): ReturnType<typeof createHandlers> {
     store: createJsonStore(cwd),
     ...fakeSecrets(cwd),
     userData: cwd,
+    homeDir: tmpdir(),
     broadcast: vi.fn(),
     sessions: fakeSessionPool(),
     flowRuns: fakeFlowRuns(),

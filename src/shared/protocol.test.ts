@@ -30,6 +30,8 @@ const VALID_REQUESTS: [string, unknown][] = [
   ["ping", {}],
   ["sessions/snapshot", {}],
   ["session/start", { cwd: "/work" }],
+  ["session/start", {}],
+  ["session/start", { orchestrate: true }],
   [
     "session/start",
     {
@@ -163,6 +165,8 @@ const VALID_REQUESTS: [string, unknown][] = [
   ],
   ["settings/set", { definitionLibrary: "/srv/library" }],
   ["settings/set", { definitionLibrary: null }],
+  ["settings/set", { defaultWorkspace: "~/work" }],
+  ["settings/set", { defaultWorkspace: null }],
   ["settings/set", { terminalShell: "/bin/zsh" }],
   ["settings/set", { terminalShell: null }],
   ["terminal/open", { cwd: "/work", cols: 2, rows: 1 }],
@@ -286,7 +290,10 @@ const INVALID_REQUESTS: [string, unknown][] = [
   ...FLOW_INVALID_REQUESTS,
   ["ping with a param", request("ping", { extra: 1 })],
   ["ping without params", { v: 7, id: "a", method: "ping" }],
-  ["session/start without cwd", request("session/start", {})],
+  [
+    "settings/set with a non-string default workspace",
+    request("settings/set", { defaultWorkspace: 5 }),
+  ],
   ["session/start with empty cwd", request("session/start", { cwd: "" })],
   [
     "session/start with unknown profile",
@@ -673,6 +680,8 @@ describe("EventSchema", () => {
     updateChannel: "stable",
     defaultTaskClass: "standard",
     definitionLibrary: null,
+    defaultWorkspace: null,
+    defaultWorkspaceResolved: "/home/user",
   };
   const logEntry = {
     at: 1,

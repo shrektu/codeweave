@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { createHandlers } from "../../src/backend/handlers";
@@ -58,6 +59,7 @@ async function handlersFor(
     store: createJsonStore(userData),
     ...fakeSecrets(userData),
     userData,
+    homeDir: tmpdir(),
     broadcast: vi.fn(),
     flowRuns: fakeFlowRuns(),
     orchestrator: fakeOrchestrator(),

@@ -1,5 +1,3 @@
-import { homedir } from "node:os";
-
 import { SWITCH_LOG_SNAPSHOT_LIMIT } from "../shared/constants";
 import { IpcError, IpcErrorCode } from "../shared/protocol";
 
@@ -29,6 +27,7 @@ export interface HandlerDeps {
   keyStore: KeyStore;
   vault: SecretVault;
   userData: string;
+  homeDir: string;
   broadcast: ConnectionRegistry["broadcast"];
   sessions: SessionPool;
   flowRuns: FlowRunService;
@@ -53,6 +52,7 @@ export function createHandlers({
   keyStore,
   vault,
   userData,
+  homeDir,
   broadcast,
   sessions,
   flowRuns,
@@ -94,7 +94,7 @@ export function createHandlers({
     store,
     broadcast,
     postUpdaterConfig,
-    homeDir: homedir(),
+    homeDir,
   });
   const definitionRoots = createDefinitionRoots({ store, userData });
   return {

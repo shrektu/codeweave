@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { setImmediate } from "node:timers/promises";
 
 import { afterEach, expect, it } from "vitest";
 
@@ -922,6 +923,22 @@ it("flow_start_refused_while_session_starting", async () => {
     rig.call("flow/start", flowStartParams(rig, "build-review")),
   ).rejects.toMatchObject({ code: IpcErrorCode.CONFLICT });
   await manual;
+
+  expect((await rig.call("sessions/snapshot", {})).flowRuns).toEqual([]);
+});
+
+it("flow-start-refused-while-orchestrator-folder-resolves", async () => {
+  const rig = await openFlowRig();
+  const orchestrate = { ...startParams(rig), orchestrate: true };
+  await rig.call("session/start", orchestrate);
+  await rig.call("session/stop", {});
+
+  const orchestrator = rig.call("session/start", orchestrate);
+  await setImmediate();
+  await expect(
+    rig.call("flow/start", flowStartParams(rig, "build-review")),
+  ).rejects.toMatchObject({ code: IpcErrorCode.CONFLICT });
+  await orchestrator;
 
   expect((await rig.call("sessions/snapshot", {})).flowRuns).toEqual([]);
 });
