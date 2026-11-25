@@ -249,7 +249,8 @@ const chatAdapter: Adapter<ChatRequestBody> = {
 };
 
 async function sessionOf(backend: Backend): Promise<SessionView> {
-  const { session } = await backend.handlers["sessions/snapshot"]({});
+  const { sessions } = await backend.handlers["sessions/snapshot"]({});
+  const session = sessions.at(-1) ?? null;
   if (session === null) {
     throw new Error("no session in snapshot");
   }
@@ -276,13 +277,13 @@ async function runOrchestration(
   observed: Observed,
 ): Promise<void> {
   const { handlers } = backend;
-  await handlers["session/start"]({
+  const started = await handlers["session/start"]({
     cwd: repo,
     profile: PermissionProfile.unattended,
     provider,
     orchestrate: true,
   });
-  await handlers["session/prompt"]({ text: FLOW_TASK });
+  await handlers["session/prompt"]({ sessionId: started.id, text: FLOW_TASK });
   await vi.waitFor(async () => {
     const session = await sessionOf(backend);
     expect(

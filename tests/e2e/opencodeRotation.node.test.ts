@@ -189,7 +189,8 @@ async function openRig(
 }
 
 async function sessionOf(rig: Rig): Promise<SessionView> {
-  const { session } = await rig.backend.handlers["sessions/snapshot"]({});
+  const { sessions } = await rig.backend.handlers["sessions/snapshot"]({});
+  const session = sessions.at(-1) ?? null;
   if (session === null) {
     throw new Error("no session in snapshot");
   }
@@ -209,6 +210,7 @@ async function approveCommand(rig: Rig): Promise<void> {
   expect(permission?.command).toContain(ROTATION_COMMAND);
   expect(existsSync(join(rig.repo, EFFECTS_FILE))).toBe(false);
   await rig.backend.handlers["permission/answer"]({
+    sessionId: (await sessionOf(rig)).id,
     requestId: permission?.requestId ?? "",
     optionId: allow?.optionId ?? "",
   });
@@ -230,12 +232,15 @@ async function rotate(
   const rig = await openRig(scenarios, specs);
   const ids = await accountIds(rig);
   const { handlers } = rig.backend;
-  await handlers["session/start"]({
+  const started = await handlers["session/start"]({
     cwd: rig.repo,
     profile: PermissionProfile.ask,
     provider: ProviderId.opencode,
   });
-  await handlers["session/prompt"]({ text: ROTATION_PROMPT });
+  await handlers["session/prompt"]({
+    sessionId: started.id,
+    text: ROTATION_PROMPT,
+  });
   await approveCommand(rig);
   await vi.waitFor(async () => {
     const view = await sessionOf(rig);
@@ -298,7 +303,7 @@ describe("model selection with the real opencode CLI and a local chat mock", () 
       });
       const { handlers } = rig.backend;
 
-      await handlers["session/start"]({
+      const started = await handlers["session/start"]({
         cwd: rig.repo,
         profile: PermissionProfile.unattended,
         provider: ProviderId.opencode,
@@ -307,7 +312,10 @@ describe("model selection with the real opencode CLI and a local chat mock", () 
           model: `custom/${CONFIGURED_MODEL}`,
         },
       });
-      await handlers["session/prompt"]({ text: "Reply with one word" });
+      await handlers["session/prompt"]({
+        sessionId: started.id,
+        text: "Reply with one word",
+      });
       await vi.waitFor(async () => {
         expect((await sessionOf(rig)).lastTurn).not.toBeNull();
       }, WAIT_OPTIONS);
@@ -338,12 +346,13 @@ describe("class routing with the real opencode CLI and a local chat mock", () =>
       ]);
       const { handlers } = rig.backend;
 
-      await handlers["session/start"]({
+      const started = await handlers["session/start"]({
         cwd: rig.repo,
         profile: PermissionProfile.unattended,
         provider: ProviderId.opencode,
       });
       await handlers["session/prompt"]({
+        sessionId: started.id,
         text: "Reply with one word",
         taskClass: "light",
       });
@@ -372,12 +381,13 @@ describe("opencode go with the real opencode CLI and a local chat mock", () => {
       ]);
       const { handlers } = rig.backend;
 
-      await handlers["session/start"]({
+      const started = await handlers["session/start"]({
         cwd: rig.repo,
         profile: PermissionProfile.unattended,
         provider: ProviderId.opencode,
       });
       await handlers["session/prompt"]({
+        sessionId: started.id,
         text: "Reply with one word",
         taskClass: "light",
       });
@@ -451,7 +461,7 @@ describe("rejected model with the real opencode CLI and a local chat mock", () =
       });
       const { handlers } = rig.backend;
 
-      await handlers["session/start"]({
+      const started = await handlers["session/start"]({
         cwd: rig.repo,
         profile: PermissionProfile.unattended,
         provider: ProviderId.opencode,
@@ -460,7 +470,10 @@ describe("rejected model with the real opencode CLI and a local chat mock", () =
           model: `custom/${UNKNOWN_MODEL}`,
         },
       });
-      await handlers["session/prompt"]({ text: "Reply with one word" });
+      await handlers["session/prompt"]({
+        sessionId: started.id,
+        text: "Reply with one word",
+      });
       await vi.waitFor(async () => {
         expect((await sessionOf(rig)).lastTurn).not.toBeNull();
       }, WAIT_OPTIONS);

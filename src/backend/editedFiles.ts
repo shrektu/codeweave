@@ -17,6 +17,7 @@ const COMPLETED_STATUS = "completed";
 export interface EditedFilesTracker {
   observeMain(view: SessionView | null): void;
   observeRun(runId: string, view: SessionView | null): void;
+  forget(sessionId: string): void;
   views(): readonly SessionEditsView[];
 }
 
@@ -209,6 +210,9 @@ export function createEditedFilesTracker(deps: {
       if (owner !== null) {
         record(owner, runId, view.flowRef?.nodeId ?? runId, view.toolCalls);
       }
+    },
+    forget(sessionId) {
+      sessions.delete(sessionId);
     },
     views() {
       return [...sessions]

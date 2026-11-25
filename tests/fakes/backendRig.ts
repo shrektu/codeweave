@@ -587,8 +587,9 @@ export async function createBackendRig(
         .filter((entry) => entry.event === event)
         .map((entry) => entry.payload),
     session: async () => {
-      const { session } = await call("sessions/snapshot", {});
-      if (session === null) {
+      const { sessions } = await call("sessions/snapshot", {});
+      const session = sessions.at(-1);
+      if (session === undefined) {
         throw new Error("no session in snapshot");
       }
       return SessionViewSchema.parse(session);

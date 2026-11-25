@@ -111,6 +111,7 @@ function handlersFor(cwd: string): ReturnType<typeof createHandlers> {
     editedFiles: {
       observeMain: () => undefined,
       observeRun: () => undefined,
+      forget: () => undefined,
       views: () => [],
     },
   });

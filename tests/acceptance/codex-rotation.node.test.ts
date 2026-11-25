@@ -87,7 +87,10 @@ async function rotateCodexA(rig: BackendRig): Promise<string> {
     cwd: rig.cwd,
     provider: "codex",
   });
-  await rig.call("session/prompt", { text: "ship the release" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "ship the release",
+  });
   await settled(() => {
     expect(rig.codexContainer.servers).toHaveLength(2);
     expect(rig.codexContainer.servers[1]?.methods() ?? []).toContain(
@@ -168,7 +171,10 @@ describe("codex session model through the backend", () => {
     rig.codexContainer.config.threadModel = "gpt-5-codex";
     await rig.call("session/start", { cwd: rig.cwd, provider: "codex" });
 
-    await rig.call("session/prompt", { text: "hello" });
+    await rig.call("session/prompt", {
+      sessionId: (await rig.session()).id,
+      text: "hello",
+    });
 
     await settled(async () => {
       const view = await rig.session();
@@ -212,7 +218,7 @@ describe("session provider selection", () => {
     expect(codexView.provider).toBe("codex");
     expect(codexView.activeAccountId).toBe(ACCOUNT_A.id);
     expect(rig.codexContainer.servers).toHaveLength(0);
-    await rig.call("session/stop", {});
+    await rig.call("session/stop", { sessionId: (await rig.session()).id });
 
     const view = await rig.call("session/start", { cwd: rig.cwd });
     expect(view.provider).toBe("claude");

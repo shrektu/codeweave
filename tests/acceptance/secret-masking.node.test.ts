@@ -99,7 +99,10 @@ it("claude_session_masks_key_split_across_text_deltas_and_tool_data", async () =
     END_TURN,
   ]);
 
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
   await turnEnded(rig);
 
   const view = await rig.session();
@@ -129,7 +132,10 @@ it("claude_session_masks_key_in_permission_request_command", async () => {
     END_TURN,
   ]);
 
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
 
   const view = await settled(async () => {
     const current = await rig.session();
@@ -151,7 +157,10 @@ it("provider_error_echoing_key_is_masked", async () => {
     },
   ]);
 
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
   await turnEnded(rig);
 
   const view = await rig.session();
@@ -391,7 +400,10 @@ const KEY_RETRY_WAIT_MS = 10_000;
 
 async function promptEchoing(rig: BackendRig, text: string): Promise<string> {
   agentOf(rig).enqueue([{ type: "text", messageId: "m1", text }, END_TURN]);
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
   await settled(async () => {
     const view = await rig.session();
     expect(view.turnInFlight).toBe(false);

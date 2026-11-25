@@ -14,6 +14,13 @@ import type {
   FlowStartRequest as ToolStartRequest,
 } from "../flowTools/control";
 import type { FlowWorktree, FlowWorktrees } from "../flowWorktrees";
+import {
+  LeaseMode,
+  WorktreeBusyError,
+  resolveLockKey as resolveDefaultLockKey,
+  type Lease,
+  type LockKeyResolver,
+} from "../locks";
 
 import {
   COMMIT_FAILED_MESSAGE,
@@ -43,6 +50,7 @@ export interface OwnedRun {
   starting: boolean;
   merging: boolean;
   mergeStarting: boolean;
+  mergeLease: Lease | null;
   committed: Promise<string | null> | null;
 }
 
@@ -63,6 +71,9 @@ export interface OrchestratorFlowDeps {
   readonly protectedPaths: () => Promise<readonly string[]>;
   readonly homeDir: string;
   readonly platform: NodeJS.Platform;
+  readonly allRuns?: () => readonly (readonly [string, OwnedRun])[];
+  readonly acquireMergeLock?: (key: string) => Lease;
+  readonly resolveLockKey?: LockKeyResolver;
 }
 
 interface RunTarget {
@@ -176,6 +187,11 @@ class OrchestratorFlowControl implements FlowControl {
     }
     run.mergeStarting = true;
     try {
+      run.mergeLease = await this.acquireMergeLease(run);
+      if (this.orchestration.ended) {
+        this.releaseMergeLease(run);
+      }
+      this.assertActive();
       await this.awaitCommit(run);
       const outcome = await this.deps.flowWorktrees.merge(worktree);
       if (outcome.status === MergeStatus.merged) {
@@ -186,6 +202,9 @@ class OrchestratorFlowControl implements FlowControl {
       return outcome;
     } finally {
       run.mergeStarting = false;
+      if (!run.merging) {
+        this.releaseMergeLease(run);
+      }
     }
   }
 
@@ -195,6 +214,7 @@ class OrchestratorFlowControl implements FlowControl {
       const outcome = await this.deps.flowWorktrees.finishMerge(worktree);
       if (outcome.status === MergeStatus.merged) {
         run.merging = false;
+        this.releaseMergeLease(run);
         await this.removeWorktree(worktree);
       }
       return outcome;
@@ -207,9 +227,32 @@ class OrchestratorFlowControl implements FlowControl {
     const { run, worktree } = this.beginMergeStep(runId);
     try {
       await this.deps.flowWorktrees.abortMerge(worktree);
-      run.merging = false;
     } finally {
       run.mergeStarting = false;
+    }
+    run.merging = false;
+    this.releaseMergeLease(run);
+  }
+
+  private releaseMergeLease(run: OwnedRun): void {
+    run.mergeLease?.release();
+    run.mergeLease = null;
+  }
+
+  private async acquireMergeLease(run: OwnedRun): Promise<Lease | null> {
+    const { acquireMergeLock } = this.deps;
+    if (acquireMergeLock === undefined) {
+      return null;
+    }
+    const resolveKey = this.deps.resolveLockKey ?? resolveDefaultLockKey;
+    const key = await resolveKey(run.repository);
+    try {
+      return acquireMergeLock(key);
+    } catch (error) {
+      if (error instanceof WorktreeBusyError) {
+        throw conflict(error.message);
+      }
+      throw error;
     }
   }
 
@@ -260,8 +303,12 @@ class OrchestratorFlowControl implements FlowControl {
     };
   }
 
+  private trackedRuns(): readonly (readonly [string, OwnedRun])[] {
+    return this.deps.allRuns?.() ?? [...this.runs];
+  }
+
   private hasOpenInPlace(key: string): boolean {
-    return [...this.runs].some(
+    return this.trackedRuns().some(
       ([runId, run]) =>
         run.repositoryKey === key &&
         run.placement === FlowPlacement.inPlace &&
@@ -270,14 +317,24 @@ class OrchestratorFlowControl implements FlowControl {
   }
 
   private hasMerge(key: string): boolean {
-    return [...this.runs.values()].some(
-      (run) => run.repositoryKey === key && (run.merging || run.mergeStarting),
+    return this.trackedRuns().some(
+      ([, run]) =>
+        run.repositoryKey === key && (run.merging || run.mergeStarting),
     );
   }
 
   private hasMergeStarting(key: string): boolean {
-    return [...this.runs.values()].some(
-      (run) => run.repositoryKey === key && run.mergeStarting,
+    return this.trackedRuns().some(
+      ([, run]) => run.repositoryKey === key && run.mergeStarting,
+    );
+  }
+
+  private hasOtherMerge(key: string): boolean {
+    return this.trackedRuns().some(
+      ([runId, run]) =>
+        !this.runs.has(runId) &&
+        run.repositoryKey === key &&
+        (run.merging || run.mergeStarting),
     );
   }
 
@@ -321,10 +378,13 @@ class OrchestratorFlowControl implements FlowControl {
     if (this.hasOpenInPlace(target.key)) {
       throw conflict(IN_PLACE_RUNNING_MESSAGE);
     }
-    if (this.hasMergeStarting(target.key)) {
+    if (this.hasMergeStarting(target.key) || this.hasOtherMerge(target.key)) {
       throw conflict(MERGE_STEP_RUNNING_MESSAGE);
     }
     const runId = this.deps.newRunId();
+    const leaseMode = this.hasMerge(target.key)
+      ? LeaseMode.observer
+      : undefined;
     const run = this.register(runId, target, null);
     run.starting = true;
     let view: FlowRunView;
@@ -335,6 +395,7 @@ class OrchestratorFlowControl implements FlowControl {
         target.repository,
         this.definitionsCwdOf(request, target),
         null,
+        leaseMode,
       );
     } catch (error) {
       this.runs.delete(runId);
@@ -400,6 +461,7 @@ class OrchestratorFlowControl implements FlowControl {
       starting: false,
       merging: false,
       mergeStarting: false,
+      mergeLease: null,
       committed: null,
     };
     this.runs.set(runId, run);
@@ -434,6 +496,7 @@ class OrchestratorFlowControl implements FlowControl {
     cwd: string,
     definitionsCwd: string | null,
     branch: string | null,
+    leaseMode?: LeaseMode,
   ): Promise<FlowRunView> {
     return this.deps.flowRuns.start({
       cwd,
@@ -445,6 +508,7 @@ class OrchestratorFlowControl implements FlowControl {
       branch,
       definitionsCwd,
       ownerSessionId: this.orchestration.sessionId,
+      ...(leaseMode === undefined ? {} : { leaseMode }),
     });
   }
 }

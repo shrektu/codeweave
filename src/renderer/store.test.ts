@@ -97,7 +97,10 @@ it("snapshot_failure_bounds_buffer_to_latest_state_events", () => {
   const flood: IpcEvent[] = Array.from({ length: FLOOD_COUNT }, (_, index) => ({
     v: EVENT_VERSION,
     event: "session/changed",
-    payload: makeSession({ id: `sess-${index.toString()}` }),
+    payload: makeSession({
+      id: "sess-1",
+      turnInFlight: index % 2 === 0,
+    }),
   }));
 
   const buffered = flood.reduce<IpcEvent[]>(bufferEvent, []);
@@ -246,7 +249,7 @@ it("store_upserts_and_removes_flow_sessions_by_run_id", async () => {
     { runId: "run-1", view: busy },
     { runId: "run-2", view: other },
   ]);
-  expect(store.getState().snapshot?.session).toBeNull();
+  expect(store.getState().snapshot?.sessions).toEqual([]);
 
   client.emit({
     v: EVENT_VERSION,
@@ -358,7 +361,7 @@ async function readyStoreWithSession(sessionId: string): Promise<{
   client.respond(
     "sessions/snapshot",
     makeSnapshot({
-      session: makeSession({ id: sessionId, orchestrate: true }),
+      sessions: [makeSession({ id: sessionId, orchestrate: true })],
     }),
   );
   const store = createAppStore(client);
@@ -422,6 +425,7 @@ it("store_clears_the_focused_run_when_the_main_session_changes", async () => {
     event: "session/changed",
     payload: makeSession({ id: "sess-2" }),
   });
+  store.activateSession("sess-2");
 
   expect(store.getState().focusedRunId).toBeNull();
 });
@@ -430,7 +434,11 @@ it("store_clears_the_focused_run_when_the_main_session_ends", async () => {
   const { client, store } = await readyStoreWithSession("sess-1");
   store.focusRun("run-1");
 
-  client.emit({ v: EVENT_VERSION, event: "session/changed", payload: null });
+  client.emit({
+    v: EVENT_VERSION,
+    event: "session/removed",
+    payload: { sessionId: "sess-1" },
+  });
 
   expect(store.getState().focusedRunId).toBeNull();
 });
@@ -483,4 +491,113 @@ it("edited_files_event_upserts_by_session", async () => {
     payload: updated,
   });
   expect(store.getState().snapshot?.editedFiles).toEqual([updated]);
+});
+
+it("first_snapshot_activates_newest_live_session_or_null", async () => {
+  const client = createFakeIpcClient();
+  const ended = makeSession({ id: "s-ended", phase: { phase: "stopped" } });
+  const live1 = makeSession({ id: "s-1" });
+  const live2 = makeSession({ id: "s-2" });
+  client.respond(
+    "sessions/snapshot",
+    makeSnapshot({ sessions: [live1, live2, ended] }),
+  );
+  const store = createAppStore(client);
+  store.start();
+
+  await vi.waitFor(() => {
+    expect(store.getState().connection).toBe("ready");
+  });
+  expect(store.getState().activeSessionId).toBe("s-2");
+});
+
+it("session_changed_for_background_session_keeps_active_view", async () => {
+  const { client, store } = await readyStoreWithSession("s-1");
+  const bg = makeSession({ id: "s-2", cwd: "/work/bg" });
+
+  client.emit({
+    v: EVENT_VERSION,
+    event: "session/changed",
+    payload: bg,
+  });
+
+  expect(store.getState().activeSessionId).toBe("s-1");
+  expect(store.getState().snapshot?.sessions.map((s) => s.id)).toEqual([
+    "s-1",
+    "s-2",
+  ]);
+});
+
+it("removed_session_clears_its_edited_files_and_resets_active_if_selected", async () => {
+  const { client, store } = await readyStoreWithSession("s-1");
+  client.emit({
+    v: EVENT_VERSION,
+    event: "editedFiles/changed",
+    payload: { sessionId: "s-1", files: [] },
+  });
+
+  client.emit({
+    v: EVENT_VERSION,
+    event: "session/removed",
+    payload: { sessionId: "s-1" },
+  });
+
+  expect(store.getState().activeSessionId).toBeNull();
+  expect(store.getState().snapshot?.sessions).toEqual([]);
+  expect(store.getState().snapshot?.editedFiles).toEqual([]);
+});
+
+it("activate_session_resets_focused_run", async () => {
+  const { client, store } = await readyStoreWithSession("s-1");
+  client.emit({
+    v: EVENT_VERSION,
+    event: "session/changed",
+    payload: makeSession({ id: "s-2", orchestrate: true }),
+  });
+  store.focusRun("run-1");
+  expect(store.getState().focusedRunId).toBe("run-1");
+
+  store.activateSession("s-2");
+
+  expect(store.getState().activeSessionId).toBe("s-2");
+  expect(store.getState().focusedRunId).toBeNull();
+});
+
+it("first_snapshot_activates_newest_ended_session", async () => {
+  const client = createFakeIpcClient();
+  const older = makeSession({ id: "s-1", phase: { phase: "stopped" } });
+  const newer = makeSession({
+    id: "s-2",
+    phase: { phase: "failed", reason: "boom", runningAccountId: null },
+  });
+  client.respond(
+    "sessions/snapshot",
+    makeSnapshot({ sessions: [older, newer] }),
+  );
+  const store = createAppStore(client);
+  store.start();
+
+  await vi.waitFor(() => {
+    expect(store.getState().connection).toBe("ready");
+  });
+  expect(store.getState().activeSessionId).toBe("s-2");
+});
+
+it("late_started_session_becomes_active_after_start_timeout", async () => {
+  const client = createFakeIpcClient();
+  client.respond("sessions/snapshot", makeSnapshot({ sessions: [] }));
+  const store = createAppStore(client);
+  store.start();
+  await vi.waitFor(() => {
+    expect(store.getState().connection).toBe("ready");
+  });
+  expect(store.getState().activeSessionId).toBeNull();
+
+  client.emit({
+    v: EVENT_VERSION,
+    event: "session/changed",
+    payload: makeSession({ id: "s-late" }),
+  });
+
+  expect(store.getState().activeSessionId).toBe("s-late");
 });

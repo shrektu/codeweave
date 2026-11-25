@@ -71,10 +71,12 @@ it("session_stream_shows_the_node_session_of_an_open_run_without_a_main_session"
 
 it("session_stream_prefers_the_main_session_over_a_run_session", async () => {
   const client = clientFor({
-    session: makeSession({
-      id: "main-session",
-      messages: [makeMessage({ text: MAIN_TEXT })],
-    }),
+    sessions: [
+      makeSession({
+        id: "main-session",
+        messages: [makeMessage({ text: MAIN_TEXT })],
+      }),
+    ],
     flowRuns: [openRun({ origin: "orchestrator" })],
     flowSessions: [{ runId: RUN_ID, view: nodeSession() }],
   });
@@ -86,11 +88,13 @@ it("session_stream_prefers_the_main_session_over_a_run_session", async () => {
 
 it("shows_the_running_node_session_after_the_main_session_stopped", async () => {
   const client = clientFor({
-    session: makeSession({
-      id: "main-session",
-      phase: { phase: "stopped" },
-      messages: [makeMessage({ text: MAIN_TEXT })],
-    }),
+    sessions: [
+      makeSession({
+        id: "main-session",
+        phase: { phase: "stopped" },
+        messages: [makeMessage({ text: MAIN_TEXT })],
+      }),
+    ],
     flowRuns: [openRun()],
     flowSessions: [
       {
@@ -120,11 +124,13 @@ it("shows_the_running_node_session_after_the_main_session_stopped", async () => 
 
 it("session_stream_keeps_a_stopped_main_session_when_no_run_is_open", async () => {
   const client = clientFor({
-    session: makeSession({
-      id: "main-session",
-      phase: { phase: "stopped" },
-      messages: [makeMessage({ text: MAIN_TEXT })],
-    }),
+    sessions: [
+      makeSession({
+        id: "main-session",
+        phase: { phase: "stopped" },
+        messages: [makeMessage({ text: MAIN_TEXT })],
+      }),
+    ],
     flowRuns: [openRun({ status: "done" })],
     flowSessions: [{ runId: RUN_ID, view: nodeSession() }],
   });
@@ -200,7 +206,7 @@ it("node_session_permission_answer_carries_the_run_id", async () => {
 
 it("main_session_permission_answer_carries_no_run_id", async () => {
   const client = clientFor({
-    session: makeSession({ permissions: [makePermission()] }),
+    sessions: [makeSession({ permissions: [makePermission()] })],
     flowRuns: [openRun({ origin: "orchestrator" })],
     flowSessions: [{ runId: RUN_ID, view: nodeSession() }],
   });
@@ -210,7 +216,7 @@ it("main_session_permission_answer_carries_no_run_id", async () => {
 
   await waitFor(() => {
     expect(requestsOf(client, "permission/answer")).toEqual([
-      { requestId: "req-1", optionId: "opt-reject" },
+      { requestId: "req-1", optionId: "opt-reject", sessionId: "sess-1" },
     ]);
   });
 });
@@ -234,7 +240,7 @@ it("node_session_stop_stops_its_run_and_not_the_main_session", async () => {
 
 it("main_session_stop_still_sends_session_stop", async () => {
   const client = clientFor({
-    session: makeSession({ turnInFlight: true }),
+    sessions: [makeSession({ turnInFlight: true })],
   });
   client.respond("session/stop", { stopped: true });
   renderWithServices(<SessionStream />, client);
@@ -242,7 +248,9 @@ it("main_session_stop_still_sends_session_stop", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
 
   await waitFor(() => {
-    expect(requestsOf(client, "session/stop")).toEqual([{}]);
+    expect(requestsOf(client, "session/stop")).toEqual([
+      { sessionId: "sess-1" },
+    ]);
   });
   expect(requestsOf(client, "flow/stop")).toEqual([]);
 });

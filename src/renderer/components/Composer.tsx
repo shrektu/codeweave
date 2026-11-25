@@ -37,8 +37,9 @@ function canCompose(
 }
 
 function promptParams(
+  sessionId: string,
   text: string,
-  session: SessionView | null,
+  session: SessionView,
   account: AccountView | null,
   classValue: string,
   model: string,
@@ -46,9 +47,10 @@ function promptParams(
   const taskClass = parseTaskClass(classValue);
   const trimmed = model.trim();
   return {
+    sessionId,
     text,
     ...(taskClass === null ? {} : { taskClass }),
-    ...(trimmed === "" || session === null
+    ...(trimmed === ""
       ? {}
       : {
           model: {
@@ -118,7 +120,11 @@ export function Composer({ initialText = "" }: ComposerProps): JSX.Element {
     <SessionComposer
       initialText={initialText}
       key={
-        shownSessionOf(state.snapshot, state.focusedRunId).session?.id ?? null
+        shownSessionOf(
+          state.snapshot,
+          state.activeSessionId,
+          state.focusedRunId,
+        ).session?.id ?? null
       }
     />
   );
@@ -155,17 +161,28 @@ function SessionComposer({
   const [classValue, setClassValue] = useState(AUTO_CLASS_VALUE);
   const [model, setModel] = useState("");
   const send = useAsyncAction();
-  const { session, runId } = shownSessionOf(state.snapshot, state.focusedRunId);
+  const { session, runId } = shownSessionOf(
+    state.snapshot,
+    state.activeSessionId,
+    state.focusedRunId,
+  );
   const account = runningAccount(session, state.snapshot?.accounts ?? []);
   const suggestions = modelSuggestions(account);
   const enabled =
     runId === null && canCompose(state.connection, session, send.pending);
 
   const submit = async (): Promise<void> => {
-    if (!enabled || text.trim() === "") {
+    if (!enabled || session === null || text.trim() === "") {
       return;
     }
-    const params = promptParams(text, session, account, classValue, model);
+    const params = promptParams(
+      session.id,
+      text,
+      session,
+      account,
+      classValue,
+      model,
+    );
     const sent = await send.run(() => client.request("session/prompt", params));
     if (sent) {
       setText("");

@@ -60,6 +60,7 @@ afterEach(cleanup);
 
 interface ClientOptions {
   session?: SessionView | null;
+  sessions?: SessionView[];
   flowRun?: FlowRunView;
   list?: FlowsList;
 }
@@ -70,7 +71,8 @@ function appClient(options: ClientOptions = {}): FakeIpcClient {
   client.respond(
     "sessions/snapshot",
     makeSnapshot({
-      session: options.session ?? null,
+      sessions:
+        options.sessions ?? (options.session == null ? [] : [options.session]),
       flowRuns: options.flowRun === undefined ? [] : [options.flowRun],
     }),
   );
@@ -212,6 +214,29 @@ it("flow_run_starts_with_task_and_selected_flow", async () => {
   }, WAIT_OPTIONS);
 });
 
+it("typed_task_survives_folder_pick", async () => {
+  const libraryFlow = makeFlow({
+    source: DefinitionSource.library,
+    file: "/data/library/flows/ship.md",
+  });
+  const client = appClient({ list: makeFlowsList({ flows: [libraryFlow] }) });
+  await openFlowTab(client);
+  await findGraphNode("build");
+  expect(screen.getByText("Library")).toBeTruthy();
+  typeTask("Add a login form");
+  expect(runButton().disabled).toBe(true);
+
+  fireEvent.click(screen.getByRole("button", { name: "Choose folder…" }));
+  await waitFor(() => {
+    expect(requestsOf(client, "flows/list")).toContainEqual({
+      cwd: PICKED_CWD,
+    });
+  }, WAIT_OPTIONS);
+  await findGraphNode("build");
+  expect(taskField().value).toBe("Add a login form");
+  expect(runButton().disabled).toBe(false);
+});
+
 it("flow_run_shows_backend_start_errors", async () => {
   const client = appClient();
   client.fail(
@@ -228,7 +253,7 @@ it("flow_run_shows_backend_start_errors", async () => {
 });
 
 it("flow_run_disabled_while_session_live_or_editing", async () => {
-  const live = appClient({ session: makeSession({ cwd: SESSION_CWD }) });
+  const live = appClient({ sessions: [makeSession({ cwd: SESSION_CWD })] });
   await openFlowTabWithGraph(live);
   typeTask("Do it");
   expect(runButton().disabled).toBe(true);
@@ -674,7 +699,7 @@ it("flow_tab_ignores_stopped_session_folder", async () => {
 
 it("flow_tab_falls_back_to_ended_session_folder_when_none_picked", async () => {
   const client = appClient({
-    session: makeSession({ cwd: SESSION_CWD, phase: { phase: "stopped" } }),
+    sessions: [makeSession({ cwd: SESSION_CWD, phase: { phase: "stopped" } })],
   });
   await openFlowTab(client);
 
@@ -689,7 +714,7 @@ it("flow_tab_falls_back_to_ended_session_folder_when_none_picked", async () => {
 });
 
 it("flow_tab_pins_folder_while_session_live_or_run_open", async () => {
-  const live = appClient({ session: makeSession({ cwd: SESSION_CWD }) });
+  const live = appClient({ sessions: [makeSession({ cwd: SESSION_CWD })] });
   await openFlowTabWithGraph(live);
   expect(requestsOf(live, "flows/list")).toEqual([{ cwd: SESSION_CWD }]);
   expect(screen.queryByRole("button", { name: "Change folder…" })).toBeNull();
@@ -959,10 +984,12 @@ it("flow_tab_without_session_lists_library_flows_and_allows_editing", async () =
 it("folderless_session_does_not_overlay_default_workspace_in_flow_tab", async () => {
   const libFlow = makeFlow({ source: DefinitionSource.library });
   const client = appClient({
-    session: makeSession({
-      cwd: "/home/user/default-ws",
-      explicitFolder: false,
-    }),
+    sessions: [
+      makeSession({
+        cwd: "/home/user/default-ws",
+        explicitFolder: false,
+      }),
+    ],
     list: makeFlowsList({
       flows: [libFlow],
       locations: { project: null, library: "/data/library" },

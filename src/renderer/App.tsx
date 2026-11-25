@@ -66,6 +66,8 @@ import {
   type FlowSelection,
 } from "./flowDraft";
 import {
+  activeSessionOf,
+  anySessionLive,
   DEFINITION_SOURCE_LABELS,
   focusedRunOf,
   isSessionLive,
@@ -274,6 +276,8 @@ function FlowToolbar({
 
 function FlowPicker({
   cwd,
+  task,
+  onTaskChange,
   list,
   session,
   sessionLive,
@@ -287,6 +291,8 @@ function FlowPicker({
   onReload,
 }: {
   cwd: string | null;
+  task: string;
+  onTaskChange: (task: string) => void;
   list: FlowsList;
   session: SessionView | null;
   sessionLive: boolean;
@@ -382,6 +388,8 @@ function FlowPicker({
       {(flow !== undefined || shownRun !== null) && (
         <FlowRunPanel
           cwd={cwd}
+          task={task}
+          onTaskChange={onTaskChange}
           flow={flow}
           run={shownRun}
           sessionLive={sessionLive}
@@ -454,6 +462,8 @@ function FlowPicker({
 
 function FlowTabBody({
   cwd,
+  task,
+  onTaskChange,
   session,
   sessionLive,
   flowRun,
@@ -464,6 +474,8 @@ function FlowTabBody({
   onOpenSession,
 }: {
   cwd: string | null;
+  task: string;
+  onTaskChange: (task: string) => void;
   session: SessionView | null;
   sessionLive: boolean;
   flowRun: FlowRunView | null;
@@ -483,6 +495,8 @@ function FlowTabBody({
       return (
         <FlowPicker
           cwd={cwd}
+          task={task}
+          onTaskChange={onTaskChange}
           list={load.list}
           session={session}
           sessionLive={sessionLive}
@@ -510,34 +524,42 @@ function explicitSessionCwdOf(session: SessionView | null): string | null {
   return session?.explicitFolder ? session.cwd : null;
 }
 
-function liveSessionCwdOf(snapshot: Snapshot | null): string | null {
-  const { session } = shownSessionOf(snapshot);
+function liveSessionCwdOf(
+  snapshot: Snapshot | null,
+  activeSessionId: string | null,
+): string | null {
+  const { session } = shownSessionOf(snapshot, activeSessionId);
   return isSessionLive(session) ? explicitSessionCwdOf(session) : null;
 }
 
 function flowCwdOf(
   snapshot: Snapshot | null,
+  activeSessionId: string | null,
   picked: string | null,
 ): string | null {
   return (
     openRunCwdOf(snapshot) ??
-    liveSessionCwdOf(snapshot) ??
+    liveSessionCwdOf(snapshot, activeSessionId) ??
     picked ??
-    explicitSessionCwdOf(shownSessionOf(snapshot).session)
+    explicitSessionCwdOf(shownSessionOf(snapshot, activeSessionId).session)
   );
 }
 
-function pinnedCwdOf(snapshot: Snapshot | null): string | null {
-  return openRunCwdOf(snapshot) ?? liveSessionCwdOf(snapshot);
+function pinnedCwdOf(
+  snapshot: Snapshot | null,
+  activeSessionId: string | null,
+): string | null {
+  return openRunCwdOf(snapshot) ?? liveSessionCwdOf(snapshot, activeSessionId);
 }
 
 function isFolderPinned(
   snapshot: Snapshot | null,
+  activeSessionId: string | null,
   flowEditor: FlowEditor,
   agentEditor: AgentEditor,
 ): boolean {
   return (
-    pinnedCwdOf(snapshot) !== null ||
+    pinnedCwdOf(snapshot, activeSessionId) !== null ||
     flowEditor.session !== null ||
     agentEditorPinsFolder(agentEditor.session, agentEditor.saving)
   );
@@ -558,8 +580,13 @@ function FlowTab({
 }): JSX.Element {
   const { state } = useApp();
   const source = useFlowsLoad(cwd);
-  const { session } = shownSessionOf(state.snapshot);
-  const focusedRun = focusedRunOf(state.snapshot, state.focusedRunId);
+  const [task, setTask] = useState("");
+  const { session } = shownSessionOf(state.snapshot, state.activeSessionId);
+  const focusedRun = focusedRunOf(
+    state.snapshot,
+    state.activeSessionId,
+    state.focusedRunId,
+  );
   const flowRun =
     focusedRun ??
     (cwd === null ? null : latestRunOf(state.snapshot?.flowRuns ?? [], cwd));
@@ -576,8 +603,10 @@ function FlowTab({
       )}
       <FlowTabBody
         cwd={cwd}
+        task={task}
+        onTaskChange={setTask}
         session={session?.cwd === cwd ? session : null}
-        sessionLive={isSessionLive(session)}
+        sessionLive={anySessionLive(state.snapshot)}
         flowRun={flowRun}
         flowSessions={state.snapshot?.flowSessions ?? []}
         runFocused={focusedRun !== null}
@@ -607,14 +636,23 @@ export function App(): JSX.Element {
   const [centreTab, setCentreTab] = useState<CentreTab>("session");
   const [sideTab, setSideTab] = useState<SideTab>("limits");
   const [pickedFolder, setPickedFolder] = useState<string | null>(null);
-  const pinnedCwd = pinnedCwdOf(state.snapshot);
+  const pinnedCwd = pinnedCwdOf(state.snapshot, state.activeSessionId);
   if (pinnedCwd !== null && pinnedCwd !== pickedFolder) {
     setPickedFolder(pinnedCwd);
   }
-  const folderCwd = flowCwdOf(state.snapshot, pickedFolder);
+  const folderCwd = flowCwdOf(
+    state.snapshot,
+    state.activeSessionId,
+    pickedFolder,
+  );
   const flowEditor = useFlowEditor(folderCwd);
   const agentEditor = useAgentEditor(folderCwd);
-  const folderPinned = isFolderPinned(state.snapshot, flowEditor, agentEditor);
+  const folderPinned = isFolderPinned(
+    state.snapshot,
+    state.activeSessionId,
+    flowEditor,
+    agentEditor,
+  );
   const pickFolder = (cwd: string): void => {
     agentEditor.close();
     setPickedFolder(cwd);
@@ -678,8 +716,9 @@ export function App(): JSX.Element {
   const openFlowTab = (): void => {
     setCentreTab("flow");
   };
-  const orchestrating = state.snapshot?.session?.orchestrate === true;
-  const sessionId = state.snapshot?.session?.id ?? null;
+  const activeSession = activeSessionOf(state.snapshot, state.activeSessionId);
+  const orchestrating = activeSession?.orchestrate === true;
+  const sessionId = activeSession?.id ?? null;
   const sessionEdits =
     sessionId === null
       ? null
@@ -766,6 +805,7 @@ export function App(): JSX.Element {
         onManageAccounts={() => {
           setOpenDialog("accounts");
         }}
+        onOpenSession={openSessionTab}
       />
       <div className="centre-column" ref={columnRef}>
         <div
@@ -852,7 +892,7 @@ export function App(): JSX.Element {
           >
             <EditedFilesPanel
               edits={sessionEdits}
-              cwd={state.snapshot?.session?.cwd ?? null}
+              cwd={activeSession?.cwd ?? null}
             />
           </div>
         )}

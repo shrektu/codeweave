@@ -81,6 +81,8 @@ export class IpcError extends Error {
 const NonEmptyString = z.string().min(1);
 const NonBlankString = z.string().refine((text) => text.trim().length > 0);
 const EmptyParamsSchema = z.strictObject({});
+const SessionIdParamsSchema = z.strictObject({ sessionId: NonEmptyString });
+const PERMISSION_TARGET_MESSAGE = "Specify exactly one of sessionId or runId";
 const ApiKeySchema = z.string().min(MIN_SECRET_LENGTH);
 export const API_KEY_REQUIRED_MESSAGE = "API key is required";
 export const CONSOLE_LOGIN_WITH_KEY_MESSAGE =
@@ -132,16 +134,25 @@ export const ParamsSchemas = {
     orchestrate: z.boolean().optional(),
   }),
   "session/prompt": z.strictObject({
+    sessionId: NonEmptyString,
     text: NonBlankString,
     taskClass: TaskClassSchema.optional(),
     model: ModelChoiceSchema.optional(),
   }),
-  "session/stop": EmptyParamsSchema,
-  "permission/answer": z.strictObject({
-    requestId: NonEmptyString,
-    optionId: NonEmptyString,
-    runId: NonEmptyString.optional(),
-  }),
+  "session/stop": SessionIdParamsSchema,
+  "session/close": SessionIdParamsSchema,
+  "permission/answer": z
+    .strictObject({
+      requestId: NonEmptyString,
+      optionId: NonEmptyString,
+      sessionId: NonEmptyString.optional(),
+      runId: NonEmptyString.optional(),
+    })
+    .refine(
+      ({ sessionId, runId }) =>
+        (sessionId === undefined) !== (runId === undefined),
+      { message: PERMISSION_TARGET_MESSAGE },
+    ),
   "accounts/list": EmptyParamsSchema,
   "accounts/suggest": EmptyParamsSchema,
   "accounts/add": z.discriminatedUnion("provider", [
@@ -282,6 +293,7 @@ export const RequestSchema = z.discriminatedUnion("method", [
   requestSchema("session/start"),
   requestSchema("session/prompt"),
   requestSchema("session/stop"),
+  requestSchema("session/close"),
   requestSchema("permission/answer"),
   requestSchema("accounts/list"),
   requestSchema("accounts/suggest"),
@@ -327,6 +339,7 @@ const resultSchemaDefinitions = {
   "session/start": SessionViewSchema,
   "session/prompt": z.strictObject({ accepted: z.literal(true) }),
   "session/stop": z.strictObject({ stopped: z.boolean() }),
+  "session/close": z.strictObject({ closed: z.literal(true) }),
   "permission/answer": z.strictObject({ ok: z.literal(true) }),
   "accounts/list": AccountsResultSchema,
   "accounts/suggest": z.strictObject({ configDir: z.string() }),
@@ -396,6 +409,11 @@ export const EventSchema = z.discriminatedUnion("event", [
     v: z.int(),
     event: z.literal("session/changed"),
     payload: SessionViewSchema.nullable(),
+  }),
+  z.strictObject({
+    v: z.int(),
+    event: z.literal("session/removed"),
+    payload: z.strictObject({ sessionId: z.string() }),
   }),
   z.strictObject({
     v: z.int(),

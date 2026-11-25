@@ -103,7 +103,7 @@ it("an_observer_main_session_and_an_exclusive_node_session_share_a_worktree", as
   const { pool, cwd, spawn } = await compose();
 
   await expect(
-    pool.main.start({ cwd }, { leaseMode: LeaseMode.observer }),
+    pool.createMain().start({ cwd }, { leaseMode: LeaseMode.observer }),
   ).resolves.toMatchObject({ phase: { phase: "running" } });
   await expect(pool.forRun("run-a").start({ cwd })).resolves.toMatchObject({
     phase: { phase: "running" },
@@ -117,7 +117,7 @@ it("an_observer_main_session_and_an_exclusive_node_session_share_a_worktree", as
 
 it("an_exclusive_main_session_still_blocks_a_node_session_on_its_worktree", async () => {
   const { pool, cwd } = await compose();
-  await pool.main.start({ cwd });
+  await pool.createMain().start({ cwd });
 
   await expect(pool.forRun("run-a").start({ cwd })).rejects.toThrow(
     "Worktree is already in use",

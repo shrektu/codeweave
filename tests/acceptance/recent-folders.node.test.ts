@@ -89,6 +89,7 @@ async function rig(): Promise<{
     editedFiles: {
       observeMain: () => undefined,
       observeRun: () => undefined,
+      forget: () => undefined,
       views: () => [],
     },
   });

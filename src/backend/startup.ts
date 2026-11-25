@@ -67,7 +67,12 @@ import {
   type LimitProbeService,
 } from "./limitProbe";
 import { createLeaseModes, type LeaseModes } from "./leaseModes";
-import { resolveLockKey, WorktreeLocks, type LockKeyResolver } from "./locks";
+import {
+  LeaseMode,
+  resolveLockKey,
+  WorktreeLocks,
+  type LockKeyResolver,
+} from "./locks";
 import { createOrchestratorService } from "./orchestrator/service";
 import { createOpencodeAdapter } from "./opencode/adapter";
 import {
@@ -387,10 +392,11 @@ function createProcesses(
   container: ProcessContainer,
   resolveLockKey: LockKeyResolver,
   leaseModes: LeaseModes,
+  locks: WorktreeLocks = new WorktreeLocks(),
 ): AgentProcesses {
   return createAgentProcesses({
     container,
-    locks: new WorktreeLocks(),
+    locks,
     resolveLockKey,
     leaseModeOf: (runId) => leaseModes.modeOf(runId),
     onFailure: (failure) => {
@@ -646,10 +652,11 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
   );
   const lockKeyResolver = deps.resolveLockKey ?? resolveLockKey;
   const leaseModes = createLeaseModes();
+  const locks = new WorktreeLocks();
   const processes =
     container === null
       ? null
-      : createProcesses(container, lockKeyResolver, leaseModes);
+      : createProcesses(container, lockKeyResolver, leaseModes, locks);
   const protectedPathsNow = async (): Promise<readonly string[]> =>
     protectedPaths({
       homeDir: deps.homeDir,
@@ -700,6 +707,9 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     onMainView: (view) => {
       editedFiles.observeMain(view);
     },
+    onMainClosed: (sessionId) => {
+      editedFiles.forget(sessionId);
+    },
     onRunView: (runId, view) => {
       editedFiles.observeRun(runId, view);
     },
@@ -711,7 +721,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
   const flowRuns = createFlowRunService({
     sessions: (runId) => sessions.forRun(runId),
     releaseSessions: (runId) => sessions.release(runId),
-    mainSessionLive: () => sessions.main.isLive(),
+    anyMainSessionLive: () => sessions.anyMainLive(),
     listFlows: listProjectFlows,
     inspectWorktree: deps.inspectWorktree,
     broadcast: deps.broadcast,
@@ -719,7 +729,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
   });
   flowRunsRef = flowRuns;
   const orchestrator = createOrchestratorService({
-    main: sessions.main,
+    sessions,
     flowRuns,
     flowWorktrees: createFlowWorktrees({ exec: execText }),
     listFlows: listProjectFlows,
@@ -728,6 +738,8 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     protectedPaths: protectedPathsNow,
     homeDir: deps.homeDir,
     platform: deps.platform,
+    acquireMergeLock: (key) => locks.acquire(key, LeaseMode.exclusive),
+    resolveLockKey: lockKeyResolver,
     ...(deps.startToolServer === undefined
       ? {}
       : { startToolServer: deps.startToolServer }),

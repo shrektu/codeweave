@@ -36,7 +36,7 @@ function sendButton(): HTMLButtonElement {
 function sessionState(
   overrides: Parameters<typeof makeSession>[0] = {},
 ): AppState {
-  return readyState(makeSnapshot({ session: makeSession(overrides) }));
+  return readyState(makeSnapshot({ sessions: [makeSession(overrides)] }));
 }
 
 it.each<[string, RotationPhaseView]>([
@@ -106,7 +106,7 @@ it("composer_enter_sends_prompt_and_clears", async () => {
   });
   expect(client.requests).toContainEqual({
     method: "session/prompt",
-    params: { text: "Fix the build" },
+    params: { sessionId: "sess-1", text: "Fix the build" },
   });
 });
 
@@ -139,13 +139,15 @@ function opencodeState(turnInFlight = false): AppState {
   return readyState(
     makeSnapshot({
       accounts: [OPENCODE_ACCOUNT],
-      session: makeSession({
-        provider: ProviderId.opencode,
-        activeProvider: ProviderId.opencode,
-        activeAccountId: "acc-oc",
-        phase: { phase: "running", accountId: "acc-oc" },
-        turnInFlight,
-      }),
+      sessions: [
+        makeSession({
+          provider: ProviderId.opencode,
+          activeProvider: ProviderId.opencode,
+          activeAccountId: "acc-oc",
+          phase: { phase: "running", accountId: "acc-oc" },
+          turnInFlight,
+        }),
+      ],
     }),
   );
 }
@@ -188,6 +190,7 @@ it("composer sends the chosen class and model", async () => {
   });
   expect(promptRequests(client)).toEqual([
     {
+      sessionId: "sess-1",
       text: "Refactor the parser",
       taskClass: "heavy",
       model: { provider: "opencode", model: "groq/openai/gpt-oss-120b" },
@@ -212,8 +215,8 @@ it("composer choice persists across sends", async () => {
 
   expect(classSelect().value).toBe("light");
   expect(promptRequests(client)).toEqual([
-    { text: "first", taskClass: "light" },
-    { text: "second", taskClass: "light" },
+    { sessionId: "sess-1", text: "first", taskClass: "light" },
+    { sessionId: "sess-1", text: "second", taskClass: "light" },
   ]);
 });
 
@@ -229,6 +232,7 @@ it("composer class change during a turn applies to the next send", async () => {
       return () => listeners.delete(listener);
     },
     start: () => () => undefined,
+    activateSession: () => undefined,
     focusRun: () => undefined,
   };
   renderWithServices(<Composer />, client, store);
@@ -247,7 +251,7 @@ it("composer class change during a turn applies to the next send", async () => {
 
   await waitFor(() => {
     expect(promptRequests(client)).toEqual([
-      { text: "next", taskClass: "heavy" },
+      { sessionId: "sess-1", text: "next", taskClass: "heavy" },
     ]);
   });
 });
@@ -282,12 +286,14 @@ it("composer tags the model with the running account provider", async () => {
   const state = readyState(
     makeSnapshot({
       accounts: [OPENCODE_ACCOUNT],
-      session: makeSession({
-        provider: ProviderId.claude,
-        activeProvider: ProviderId.opencode,
-        activeAccountId: "acc-oc",
-        phase: { phase: "running", accountId: "acc-oc" },
-      }),
+      sessions: [
+        makeSession({
+          provider: ProviderId.claude,
+          activeProvider: ProviderId.opencode,
+          activeAccountId: "acc-oc",
+          phase: { phase: "running", accountId: "acc-oc" },
+        }),
+      ],
     }),
   );
   renderWithServices(<Composer />, client, staticStore(state));
@@ -300,6 +306,7 @@ it("composer tags the model with the running account provider", async () => {
   await waitFor(() => {
     expect(promptRequests(client)).toEqual([
       {
+        sessionId: "sess-1",
         text: "rotated",
         model: { provider: "opencode", model: "groq/openai/gpt-oss-20b" },
       },
@@ -319,6 +326,7 @@ it("composer resets its choice for a new session", async () => {
       return () => listeners.delete(listener);
     },
     start: () => () => undefined,
+    activateSession: () => undefined,
     focusRun: () => undefined,
   };
   renderWithServices(<Composer />, client, store);
@@ -337,7 +345,9 @@ it("composer resets its choice for a new session", async () => {
   sendText("fresh");
 
   await waitFor(() => {
-    expect(promptRequests(client)).toEqual([{ text: "fresh" }]);
+    expect(promptRequests(client)).toEqual([
+      { sessionId: "sess-2", text: "fresh" },
+    ]);
   });
   expect(classSelect().value).toBe("");
   expect(modelInput().value).toBe("");
@@ -352,6 +362,8 @@ it("composer sends no class or model while both are on auto", async () => {
   sendText("plain");
 
   await waitFor(() => {
-    expect(promptRequests(client)).toEqual([{ text: "plain" }]);
+    expect(promptRequests(client)).toEqual([
+      { sessionId: "sess-1", text: "plain" },
+    ]);
   });
 });

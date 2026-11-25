@@ -60,13 +60,13 @@ it("ipc_rejects_blank_prompt_text", async () => {
     v: 7,
     id: "p-3",
     method: "session/prompt",
-    params: { text: "  " },
+    params: { sessionId: "s-1", text: "  " },
   });
   const accepted = await send({
     v: 7,
     id: "p-4",
     method: "session/prompt",
-    params: { text: "hello" },
+    params: { sessionId: "s-1", text: "hello" },
   });
 
   expect(rejected).toEqual({

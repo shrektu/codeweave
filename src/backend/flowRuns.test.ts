@@ -229,7 +229,7 @@ function harness(options: HarnessOptions = {}): Harness {
       released.push(runId);
       return Promise.resolve();
     },
-    mainSessionLive: () => options.mainLive ?? false,
+    anyMainSessionLive: () => options.mainLive ?? false,
     listFlows: (cwd = "") => listingOf(cwd).promise,
     inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),
     broadcast,

@@ -171,7 +171,10 @@ async function exhaustCodexA(rig: BackendRig): Promise<void> {
     },
   ]);
   await rig.call("session/start", { cwd: rig.cwd, provider: "codex" });
-  await rig.call("session/prompt", { text: "ship the release" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "ship the release",
+  });
 }
 
 async function runningOn(rig: BackendRig, accountId: string): Promise<void> {
@@ -193,7 +196,10 @@ it("opencode_session_rotates_key_a_to_b", async () => {
     cwd: rig.cwd,
     provider: "opencode",
   });
-  await rig.call("session/prompt", { text: "ship the release" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "ship the release",
+  });
 
   const handoff = await waitForPrompt(rig, 1);
   await runningOn(rig, b.id);
@@ -229,7 +235,10 @@ it("opencode_rotation_outlasts_slow_relaunch", async () => {
   await rig.call("session/start", { cwd: rig.cwd, provider: "opencode" });
   rig.opencodeContainer.config.launchDelayMs = SLOW_RELAUNCH_MS;
 
-  await rig.call("session/prompt", { text: "ship the release" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "ship the release",
+  });
 
   expect(await waitForPrompt(rig, 1)).toContain("1. ship the release");
   await runningOn(rig, b.id);
@@ -249,7 +258,10 @@ it("paid_account_without_rotation_is_skipped", async () => {
   rig.opencodeContainer.scriptNextServer(EXHAUSTED_TURN);
 
   await rig.call("session/start", { cwd: rig.cwd, provider: "opencode" });
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
 
   await settled(async () => {
     const view = await rig.session();
@@ -408,7 +420,10 @@ it("missing_key_marks_needs_login", async () => {
   rig.opencodeContainer.scriptNextServer(EXHAUSTED_TURN);
 
   await rig.call("session/start", { cwd: rig.cwd, provider: "opencode" });
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
 
   await runningOn(rig, c.id);
   const accounts = (await rig.call("accounts/list", {})).accounts;

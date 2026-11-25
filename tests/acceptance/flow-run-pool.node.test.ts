@@ -328,7 +328,9 @@ it("session_stop_with_open_runs_stops_only_the_main_session", async () => {
   const run = await rig.call("flow/start", orchestratorRun(folder, "hold"));
   await untilHeld(rig, run.runId);
 
-  await expect(rig.call("session/stop", {})).resolves.toEqual({
+  await expect(
+    rig.call("session/stop", { sessionId: (await rig.session()).id }),
+  ).resolves.toEqual({
     stopped: true,
   });
 

@@ -187,7 +187,7 @@ it("terminal_dock_toggles_with_ctrl_backquote", async () => {
 });
 
 it("terminal_opens_in_session_cwd", async () => {
-  const rig = setup({ session: makeSession({ cwd: SESSION_CWD }) });
+  const rig = setup({ sessions: [makeSession({ cwd: SESSION_CWD })] });
   await openDock();
 
   await openedTerminal(rig);
@@ -235,7 +235,7 @@ it("terminal_picker_cancel_keeps_the_folder_button", async () => {
 it("running_terminal_is_attached_with_replay_written_first", async () => {
   const rig = setup(
     {
-      session: makeSession({ cwd: SESSION_CWD }),
+      sessions: [makeSession({ cwd: SESSION_CWD })],
       terminal: makeTerminal({ cwd: RUNNING_CWD }),
     },
     true,
@@ -250,7 +250,7 @@ it("running_terminal_is_attached_with_replay_written_first", async () => {
 });
 
 it("typed_keys_reach_the_shell", async () => {
-  const rig = setup({ session: makeSession() });
+  const rig = setup({ sessions: [makeSession()] });
   await openDock();
   const terminal = await openedTerminal(rig);
 
@@ -262,7 +262,7 @@ it("typed_keys_reach_the_shell", async () => {
 });
 
 it("paste_larger_than_input_limit_is_split", async () => {
-  const rig = setup({ session: makeSession() });
+  const rig = setup({ sessions: [makeSession()] });
   await openDock();
   const terminal = await openedTerminal(rig);
 
@@ -274,7 +274,7 @@ it("paste_larger_than_input_limit_is_split", async () => {
 });
 
 it("terminal_data_is_written_and_acked_once_per_frame", async () => {
-  const rig = setup({ session: makeSession() });
+  const rig = setup({ sessions: [makeSession()] });
   await openDock();
   const terminal = await openedTerminal(rig);
 
@@ -291,7 +291,7 @@ it("terminal_data_is_written_and_acked_once_per_frame", async () => {
 });
 
 it("data_for_stale_terminal_is_ignored", async () => {
-  const rig = setup({ session: makeSession() });
+  const rig = setup({ sessions: [makeSession()] });
   await openDock();
   const terminal = await openedTerminal(rig);
 
@@ -333,7 +333,7 @@ it("exited_shell_shows_exit_code_and_restart", async () => {
 });
 
 it("open_failure_is_shown_and_retry_opens_again", async () => {
-  const rig = setup({ session: makeSession() });
+  const rig = setup({ sessions: [makeSession()] });
   rig.client.fail("terminal/open", new Error("shell is missing"));
   const dock = await openDock();
 
@@ -354,7 +354,7 @@ it("open_failure_is_shown_and_retry_opens_again", async () => {
 });
 
 it("hiding_the_dock_detaches_and_keeps_the_shell", async () => {
-  const rig = setup({ session: makeSession() });
+  const rig = setup({ sessions: [makeSession()] });
   await openDock();
   const terminal = await openedTerminal(rig);
 
@@ -370,7 +370,7 @@ it("hiding_the_dock_detaches_and_keeps_the_shell", async () => {
 });
 
 it("close_button_kills_the_shell_and_hides_the_dock", async () => {
-  const rig = setup({ session: makeSession() });
+  const rig = setup({ sessions: [makeSession()] });
   const dock = await openDock();
   await openedTerminal(rig);
   act(() => {
@@ -394,7 +394,7 @@ it("close_button_kills_the_shell_and_hides_the_dock", async () => {
 });
 
 it("hide_button_hides_without_closing", async () => {
-  const rig = setup({ session: makeSession() });
+  const rig = setup({ sessions: [makeSession()] });
   const dock = await openDock();
   await openedTerminal(rig);
 
@@ -407,7 +407,7 @@ it("hide_button_hides_without_closing", async () => {
 });
 
 it("terminal_uses_webgl_when_gpu_accelerated", async () => {
-  const rig = setup({ session: makeSession() }, true);
+  const rig = setup({ sessions: [makeSession()] }, true);
   await openDock();
 
   await openedTerminal(rig);
@@ -416,7 +416,7 @@ it("terminal_uses_webgl_when_gpu_accelerated", async () => {
 });
 
 it("terminal_uses_dom_without_gpu", async () => {
-  const rig = setup({ session: makeSession() }, false);
+  const rig = setup({ sessions: [makeSession()] }, false);
   await openDock();
 
   await openedTerminal(rig);
@@ -425,7 +425,7 @@ it("terminal_uses_dom_without_gpu", async () => {
 });
 
 it("open_terminal_switches_to_webgl_when_gpu_acceleration_is_reported", async () => {
-  const rig = setup({ session: makeSession() }, false);
+  const rig = setup({ sessions: [makeSession()] }, false);
   await openDock();
   const terminal = await openedTerminal(rig);
   expect(rendererOf()).toBe("dom");
@@ -441,7 +441,7 @@ it("open_terminal_switches_to_webgl_when_gpu_acceleration_is_reported", async ()
 });
 
 it("open_terminal_falls_back_to_dom_when_gpu_acceleration_is_lost", async () => {
-  const rig = setup({ session: makeSession() }, true);
+  const rig = setup({ sessions: [makeSession()] }, true);
   await openDock();
   const terminal = await openedTerminal(rig);
   expect(rendererOf()).toBe("webgl");
@@ -457,7 +457,7 @@ it("open_terminal_falls_back_to_dom_when_gpu_acceleration_is_lost", async () => 
 });
 
 it("webgl_context_loss_falls_back_to_dom", async () => {
-  const rig = setup({ session: makeSession() }, true);
+  const rig = setup({ sessions: [makeSession()] }, true);
   await openDock();
   const terminal = await openedTerminal(rig);
   expect(rendererOf()).toBe("webgl");
@@ -531,7 +531,7 @@ async function pendingOpens(rig: Rig, count: number): Promise<void> {
 }
 
 it("data_before_open_result_is_not_duplicated_after_replay", async () => {
-  const rig = setup({ session: makeSession() });
+  const rig = setup({ sessions: [makeSession()] });
   const gates = gateOpens(rig, "replayed");
   await openDock();
   await pendingOpens(rig, 1);
@@ -550,7 +550,7 @@ it("data_before_open_result_is_not_duplicated_after_replay", async () => {
 });
 
 it("hide_while_open_pending_detaches_late_terminal", async () => {
-  const rig = setup({ session: makeSession() });
+  const rig = setup({ sessions: [makeSession()] });
   const gates = gateOpens(rig);
   await openDock();
   await pendingOpens(rig, 1);
@@ -567,7 +567,7 @@ it("hide_while_open_pending_detaches_late_terminal", async () => {
 });
 
 it("close_while_open_pending_closes_late_terminal", async () => {
-  const rig = setup({ session: makeSession() });
+  const rig = setup({ sessions: [makeSession()] });
   const gates = gateOpens(rig);
   const dock = await openDock();
   await pendingOpens(rig, 1);
@@ -587,7 +587,7 @@ it("close_while_open_pending_closes_late_terminal", async () => {
 });
 
 it("stale_open_result_does_not_detach_newer_attachment", async () => {
-  const rig = setup({ session: makeSession() });
+  const rig = setup({ sessions: [makeSession()] });
   const gates = gateOpens(rig);
   await openDock();
   await pendingOpens(rig, 1);
@@ -607,7 +607,7 @@ it("stale_open_result_does_not_detach_newer_attachment", async () => {
 });
 
 it("acks_flow_while_animation_frames_are_throttled", async () => {
-  const rig = setup({ session: makeSession() });
+  const rig = setup({ sessions: [makeSession()] });
   await openDock();
   const terminal = await openedTerminal(rig);
   vi.stubGlobal("requestAnimationFrame", () => 0);
@@ -642,7 +642,7 @@ it("terminal_resize_is_sent_once_per_changed_size", async () => {
       }
     },
   );
-  const rig = setup({ session: makeSession() });
+  const rig = setup({ sessions: [makeSession()] });
   await openDock();
   const terminal = await openedTerminal(rig);
   const resize = async (): Promise<void> => {
@@ -665,7 +665,7 @@ it("terminal_resize_is_sent_once_per_changed_size", async () => {
 
 it("terminal_follows_the_effect_level_setting", async () => {
   const rig = setup({
-    session: makeSession(),
+    sessions: [makeSession()],
     settings: makeSettings({ effectLevel: EffectLevel.low }),
   });
   await openDock();
@@ -686,7 +686,7 @@ it("terminal_follows_the_effect_level_setting", async () => {
 });
 
 it("terminal_theme_updates_on_theme_change", async () => {
-  const rig = setup({ session: makeSession() });
+  const rig = setup({ sessions: [makeSession()] });
   await openDock();
   const terminal = await openedTerminal(rig);
   const before = terminal.themeRefreshes;

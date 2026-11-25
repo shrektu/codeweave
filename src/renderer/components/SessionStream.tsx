@@ -140,9 +140,11 @@ function TurnBadgeEntry({ turn }: { turn: TurnRouteView }): JSX.Element {
 
 function StreamEntry({
   item,
+  sessionId,
   runId,
 }: {
   item: StreamItem;
+  sessionId: string;
   runId: string | null;
 }): JSX.Element {
   switch (item.kind) {
@@ -163,7 +165,11 @@ function StreamEntry({
     case "permission":
       return (
         <li>
-          <PermissionCard permission={item.permission} runId={runId} />
+          <PermissionCard
+            permission={item.permission}
+            sessionId={sessionId}
+            runId={runId}
+          />
         </li>
       );
   }
@@ -212,7 +218,7 @@ function TaskStart({
   provider,
   orchestrating,
 }: TaskStartProps): JSX.Element {
-  const { client, state } = useApp();
+  const { client, store, state } = useApp();
   const { task, setTask, setUnsent, start } = draft;
   const workspace = state.snapshot?.settings.defaultWorkspaceResolved;
 
@@ -227,7 +233,11 @@ function TaskStart({
           ...(orchestrating ? { orchestrate: true } : {}),
         });
         sessionId = started.id;
-        await client.request("session/prompt", { text });
+        store.activateSession(started.id);
+        await client.request("session/prompt", {
+          sessionId: started.id,
+          text,
+        });
       } catch (error: unknown) {
         setUnsent({ sessionId, text });
         throw error;
@@ -262,7 +272,7 @@ function TaskStart({
 }
 
 function StartPrompt({ draft }: { draft: StartDraft }): JSX.Element {
-  const { client, state } = useApp();
+  const { client, store, state } = useApp();
   const { start, setUnsent } = draft;
   const recent = useRecentFolders();
   const [pending, setPending] = useState<PendingStart | null>(null);
@@ -278,12 +288,13 @@ function StartPrompt({ draft }: { draft: StartDraft }): JSX.Element {
     cwd: string | undefined,
     flowRef: FlowRef | undefined,
   ): Promise<void> => {
-    await client.request("session/start", {
+    const started = await client.request("session/start", {
       ...(cwd === undefined ? {} : { cwd }),
       ...(provider === undefined ? {} : { provider }),
       ...(flowRef === undefined ? {} : { flowRef }),
       ...(orchestrating ? { orchestrate: true } : {}),
     });
+    store.activateSession(started.id);
     setPending(null);
     setChosen(NO_CHOICE);
   };
@@ -447,7 +458,7 @@ function SessionBody({
   const unsentText = unsentTextFor(draft.unsent, session.id);
   const requestStop = (): Promise<unknown> =>
     runId === null
-      ? client.request("session/stop", {})
+      ? client.request("session/stop", { sessionId: session.id })
       : client.request("flow/stop", { runId });
 
   return (
@@ -478,7 +489,12 @@ function SessionBody({
       {stop.error !== null && <p className="error">{stop.error}</p>}
       <ul className="stream">
         {streamItems(session).map((item) => (
-          <StreamEntry key={item.key} item={item} runId={runId} />
+          <StreamEntry
+            key={item.key}
+            item={item}
+            sessionId={session.id}
+            runId={runId}
+          />
         ))}
       </ul>
       {!live && <StartPrompt draft={draft} />}
@@ -514,8 +530,16 @@ export function SessionStream(): JSX.Element {
   const start = useAsyncAction();
   const [unsent, setUnsent] = useState<UnsentDraft | null>(null);
   const draft: StartDraft = { task, setTask, unsent, setUnsent, start };
-  const { session, runId } = shownSessionOf(state.snapshot, state.focusedRunId);
-  const focusedRun = focusedRunOf(state.snapshot, state.focusedRunId);
+  const { session, runId } = shownSessionOf(
+    state.snapshot,
+    state.activeSessionId,
+    state.focusedRunId,
+  );
+  const focusedRun = focusedRunOf(
+    state.snapshot,
+    state.activeSessionId,
+    state.focusedRunId,
+  );
   const bannerRun = focusedRun?.runId === runId ? focusedRun : null;
 
   return (

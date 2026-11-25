@@ -252,7 +252,7 @@ it.each<[RotationPhaseView, string]>([
         makeAccount({ id: "acc-1", label: "Work" }),
         makeAccount({ id: "acc-2", label: "Personal", order: 1 }),
       ],
-      session: makeSession({ phase }),
+      sessions: [makeSession({ phase })],
     }),
   );
   renderWithServices(
@@ -271,7 +271,7 @@ function renderHeader(session: ReturnType<typeof makeSession>): void {
       accounts: [
         makeAccount({ id: "acc-1", label: "Work", provider: "codex" }),
       ],
-      session,
+      sessions: [session],
     }),
   );
   renderWithServices(
@@ -329,10 +329,12 @@ it.each<[RotationPhaseView]>([
   client.respond("session/start", makeSession({ cwd: PICKED_FOLDER }));
   const state = readyState(
     makeSnapshot({
-      session: makeSession({
-        phase,
-        messages: [makeMessage({ id: "m1", text: "Earlier reply", seq: 0 })],
-      }),
+      sessions: [
+        makeSession({
+          phase,
+          messages: [makeMessage({ id: "m1", text: "Earlier reply", seq: 0 })],
+        }),
+      ],
     }),
   );
   renderWithServices(<SessionStream />, client, staticStore(state));
@@ -352,7 +354,7 @@ it("start_prompt_hidden_while_session_is_running", () => {
   renderWithServices(
     <SessionStream />,
     createFakeIpcClient(),
-    staticStore(readyState(makeSnapshot({ session: makeSession() }))),
+    staticStore(readyState(makeSnapshot({ sessions: [makeSession()] }))),
   );
 
   expect(screen.queryByRole("button", { name: "Choose folder…" })).toBeNull();
@@ -361,14 +363,16 @@ it("start_prompt_hidden_while_session_is_running", () => {
 it("session_stream_renders_in_arrival_order", () => {
   const state = readyState(
     makeSnapshot({
-      session: makeSession({
-        messages: [
-          makeMessage({ id: "m1", text: "First reply", seq: 0 }),
-          makeMessage({ id: "m2", text: "Second reply", seq: 3 }),
-        ],
-        toolCalls: [makeTool({ title: "Run tests", seq: 1 })],
-        permissions: [makePermission({ title: "Write file", seq: 2 })],
-      }),
+      sessions: [
+        makeSession({
+          messages: [
+            makeMessage({ id: "m1", text: "First reply", seq: 0 }),
+            makeMessage({ id: "m2", text: "Second reply", seq: 3 }),
+          ],
+          toolCalls: [makeTool({ title: "Run tests", seq: 1 })],
+          permissions: [makePermission({ title: "Write file", seq: 2 })],
+        }),
+      ],
     }),
   );
   renderWithServices(
@@ -394,7 +398,7 @@ function renderRunning(turnInFlight: boolean): void {
       readyState(
         makeSnapshot({
           accounts: [makeAccount({ id: "acc-1", label: "Work" })],
-          session: makeSession({ turnInFlight }),
+          sessions: [makeSession({ turnInFlight })],
         }),
       ),
     ),
@@ -425,7 +429,7 @@ it("session_stop_sends_request", () => {
     client,
     staticStore(
       readyState(
-        makeSnapshot({ session: makeSession({ turnInFlight: true }) }),
+        makeSnapshot({ sessions: [makeSession({ turnInFlight: true })] }),
       ),
     ),
   );
@@ -434,7 +438,7 @@ it("session_stop_sends_request", () => {
 
   expect(client.requests).toContainEqual({
     method: "session/stop",
-    params: {},
+    params: { sessionId: "sess-1" },
   });
 });
 
@@ -457,10 +461,12 @@ function renderTurns(turns: TurnRouteView[]): void {
   client.respond(
     "sessions/snapshot",
     makeSnapshot({
-      session: makeSession({
-        messages: [makeMessage({ text: "Done", seq: 1 })],
-        turns,
-      }),
+      sessions: [
+        makeSession({
+          messages: [makeMessage({ text: "Done", seq: 1 })],
+          turns,
+        }),
+      ],
     }),
   );
   renderWithServices(<SessionStream />, client);

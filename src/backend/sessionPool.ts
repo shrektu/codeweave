@@ -1,5 +1,6 @@
 import { mergeRuntime, type AccountRuntime } from "../domain/rotation";
 import type { Account, EpochMillis } from "../domain/types";
+import { IpcError, IpcErrorCode } from "../shared/protocol";
 import type { SessionView } from "../shared/views";
 
 import { createAccountReservations } from "./accountReservations";
@@ -9,11 +10,21 @@ import {
   type SessionServiceDeps,
 } from "./session";
 
+const SESSION_NOT_FOUND_MESSAGE = "Session not found";
+const LIVE_SESSION_CLOSE_MESSAGE = "Cannot close a live session";
+const SETTLEABLE_PHASES: readonly SessionView["phase"]["phase"][] = ["halted"];
+
+function hasLingeringAgent(service: SessionService): boolean {
+  const phase = service.view()?.phase.phase;
+  return phase !== undefined && SETTLEABLE_PHASES.includes(phase);
+}
+
 export type SessionPoolDeps = Omit<
   SessionServiceDeps,
   "publishView" | "reserved"
 > & {
   readonly onMainView?: (view: SessionView | null) => void;
+  readonly onMainClosed?: (sessionId: string) => void;
   readonly onRunView?: (runId: string, view: SessionView | null) => void;
 };
 
@@ -23,7 +34,13 @@ export interface RunSessionView {
 }
 
 export interface SessionPool {
-  readonly main: SessionService;
+  createMain(): SessionService;
+  discardMain(service: SessionService): Promise<void>;
+  main(sessionId: string): SessionService | null;
+  mainViews(): readonly SessionView[];
+  anyMainLive(): boolean;
+  settleEnded(): Promise<void> | null;
+  closeMain(sessionId: string): Promise<void>;
   forRun(runId: string): SessionService;
   release(runId: string): Promise<void>;
   isInUse(accountId: string): boolean;
@@ -50,18 +67,92 @@ export function combineRuntimes(
 }
 
 class SessionPoolImpl implements SessionPool {
-  readonly main: SessionService;
   private readonly deps: SessionPoolDeps;
   private readonly reserved = createAccountReservations();
+  private readonly mains = new Set<SessionService>();
   private readonly runs = new Map<string, SessionService>();
   private readonly listeners = new Set<() => void>();
+  private settling = 0;
 
   constructor(deps: SessionPoolDeps) {
     this.deps = deps;
-    this.main = this.build((view) => {
-      deps.broadcast("session/changed", view);
-      deps.onMainView?.(view);
+  }
+
+  createMain(): SessionService {
+    const service: SessionService = this.build((view) => {
+      if (this.mains.has(service)) {
+        this.deps.broadcast("session/changed", view);
+        this.deps.onMainView?.(view);
+      }
     });
+    this.mains.add(service);
+    return service;
+  }
+
+  async discardMain(service: SessionService): Promise<void> {
+    this.mains.delete(service);
+    try {
+      await service.shutdown();
+    } finally {
+      this.notify();
+    }
+  }
+
+  main(sessionId: string): SessionService | null {
+    for (const service of this.mains) {
+      if (service.view()?.id === sessionId) {
+        return service;
+      }
+    }
+    return null;
+  }
+
+  mainViews(): readonly SessionView[] {
+    return [...this.mains].flatMap((service) => {
+      const view = service.view();
+      return view === null ? [] : [view];
+    });
+  }
+
+  anyMainLive(): boolean {
+    return (
+      this.settling > 0 || [...this.mains].some((service) => service.isLive())
+    );
+  }
+
+  settleEnded(): Promise<void> | null {
+    const lingering = [...this.mains].filter(hasLingeringAgent);
+    if (lingering.length === 0) {
+      return null;
+    }
+    this.settling += 1;
+    return this.settleAll(lingering);
+  }
+
+  private async settleAll(lingering: readonly SessionService[]): Promise<void> {
+    try {
+      await Promise.all(lingering.map((service) => service.stop()));
+    } finally {
+      this.settling -= 1;
+    }
+  }
+
+  async closeMain(sessionId: string): Promise<void> {
+    const service = this.main(sessionId);
+    if (service === null) {
+      throw new IpcError(IpcErrorCode.NOT_FOUND, SESSION_NOT_FOUND_MESSAGE);
+    }
+    if (service.isLive()) {
+      throw new IpcError(IpcErrorCode.CONFLICT, LIVE_SESSION_CLOSE_MESSAGE);
+    }
+    this.mains.delete(service);
+    try {
+      await service.shutdown();
+    } finally {
+      this.deps.broadcast("session/removed", { sessionId });
+      this.deps.onMainClosed?.(sessionId);
+      this.notify();
+    }
   }
 
   forRun(runId: string): SessionService {
@@ -135,7 +226,7 @@ class SessionPoolImpl implements SessionPool {
   }
 
   private instances(): SessionService[] {
-    return [this.main, ...this.runs.values()];
+    return [...this.mains, ...this.runs.values()];
   }
 
   private notify(): void {

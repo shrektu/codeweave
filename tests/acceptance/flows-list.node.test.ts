@@ -361,6 +361,7 @@ it("flows_list_handler_delegates_to_listFlows", async () => {
     editedFiles: {
       observeMain: () => undefined,
       observeRun: () => undefined,
+      forget: () => undefined,
       views: () => [],
     },
   });

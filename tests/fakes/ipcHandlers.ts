@@ -14,6 +14,7 @@ export function fakeHandlers(
     "session/start": unavailable,
     "session/prompt": unavailable,
     "session/stop": unavailable,
+    "session/close": unavailable,
     "permission/answer": unavailable,
     "accounts/list": unavailable,
     "accounts/suggest": unavailable,

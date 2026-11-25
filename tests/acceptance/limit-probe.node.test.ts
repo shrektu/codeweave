@@ -1059,7 +1059,10 @@ it("probe_skips_account_with_live_agent_after_halt", async () => {
   const firstPass = rig.probeContainer.specs.length;
   rig.codexContainer.scriptNext([UNAUTHORIZED_FAIL]);
   await rig.call("session/start", { cwd: rig.cwd, provider: "codex" });
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
   await settled(async () => {
     expect((await rig.session()).phase).toEqual({ phase: "halted" });
   });
@@ -1137,7 +1140,10 @@ it("probe_exhausted_overrides_expired_own_exhaustion", async () => {
   ];
   rig.codexContainer.scriptNext([USAGE_LIMIT_FAIL]);
   await rig.call("session/start", { cwd: rig.cwd, provider: "codex" });
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
   await settled(() => {
     expect(rig.codexContainer.servers[1]?.methods() ?? []).toContain(
       "turn/start",
@@ -1158,7 +1164,10 @@ it("probe_exhausted_overrides_expired_own_exhaustion", async () => {
     });
   });
 
-  await rig.call("session/prompt", { text: "again" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "again",
+  });
 
   await settled(async () => {
     expect((await rig.session()).phase).toEqual({
@@ -1261,12 +1270,17 @@ it("probe_skips_account_whose_closed_launch_left_survivors", async () => {
   await rig.call("session/start", { cwd: rig.cwd, provider: "codex" });
   const gate = Promise.withResolvers<undefined>();
   rig.codexContainer.spawnGate = gate.promise;
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
   await settled(() => {
     expect(rig.codexContainer.spawnRequests).toBe(2);
   });
 
-  const stopping = rig.call("session/stop", {});
+  const stopping = rig.call("session/stop", {
+    sessionId: (await rig.session()).id,
+  });
   gate.resolve(undefined);
   await stopping;
   runNextPass(rig);
@@ -1336,7 +1350,10 @@ it("rotation_skips_target_blocked_by_unstopped_probe", async () => {
   rig.codexContainer.scriptNext([USAGE_LIMIT_FAIL]);
   await rig.call("session/start", { cwd: rig.cwd, provider: "codex" });
 
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
 
   await settled(async () => {
     expect((await rig.session()).phase).toEqual({

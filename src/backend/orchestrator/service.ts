@@ -12,6 +12,7 @@ import {
 import type { FlowWorktree } from "../flowWorktrees";
 import { LeaseMode } from "../locks";
 import type { SessionService } from "../session";
+import type { SessionPool } from "../sessionPool";
 
 import {
   COMMIT_FAILED_MESSAGE,
@@ -26,7 +27,10 @@ import {
 import { createWakeupQueue, type WakeupQueue } from "./wakeups";
 
 export interface OrchestratorServiceDeps extends OrchestratorFlowDeps {
-  readonly main: SessionService;
+  readonly sessions: Pick<
+    SessionPool,
+    "createMain" | "discardMain" | "settleEnded"
+  >;
   readonly startToolServer?: () => Promise<FlowToolServer>;
 }
 
@@ -54,6 +58,7 @@ interface Binding {
   readonly server: FlowToolServer;
   readonly grant: ToolGrant;
   readonly orchestration: Orchestration;
+  readonly session: SessionService;
   readonly sessionId: string;
 }
 
@@ -74,17 +79,21 @@ class ActiveOrchestration {
     this.binding = binding;
     this.onEnded = onEnded;
     this.queue = createWakeupQueue({
-      session: deps.main,
+      session: binding.session,
       build: buildFlowReport,
     });
     this.unsubscribers = [
-      deps.main.onViewChanged((view) => {
+      binding.session.onViewChanged((view) => {
         this.watchSession(view);
       }),
       deps.flowRuns.onChanged((view) => {
         this.watchRun(view);
       }),
     ];
+  }
+
+  runs(): ReadonlyMap<string, OwnedRun> {
+    return this.binding.orchestration.runs;
   }
 
   end(): Promise<void> {
@@ -147,6 +156,10 @@ class ActiveOrchestration {
     });
     this.queue.dispose();
     this.onEnded();
+    for (const run of orchestration.runs.values()) {
+      run.mergeLease?.release();
+      run.mergeLease = null;
+    }
     const open = [...orchestration.runs.keys()].filter((runId) =>
       this.deps.flowRuns.isOpen(runId),
     );
@@ -165,13 +178,17 @@ class ActiveOrchestration {
 class OrchestratorServiceImpl implements OrchestratorService {
   private readonly deps: OrchestratorServiceDeps;
   private server: Promise<FlowToolServer> | null = null;
-  private current: ActiveOrchestration | null = null;
+  private readonly active = new Map<string, ActiveOrchestration>();
 
   constructor(deps: OrchestratorServiceDeps) {
     this.deps = deps;
   }
 
   async start(params: ParamsMap["session/start"]): Promise<SessionView> {
+    const settling = this.deps.sessions.settleEnded();
+    if (settling !== null) {
+      await settling;
+    }
     const tools = await this.toolServer();
     const orchestration: Orchestration = {
       cwd: null,
@@ -181,30 +198,36 @@ class OrchestratorServiceImpl implements OrchestratorService {
       ended: false,
     };
     const grant = tools.register(
-      createOrchestratorFlowControl(this.deps, orchestration),
+      createOrchestratorFlowControl(
+        {
+          ...this.deps,
+          allRuns: () =>
+            [...this.active.values()].flatMap((entry) => [...entry.runs()]),
+        },
+        orchestration,
+      ),
     );
-    const view = await this.launch(tools, grant, params);
+    const session = this.deps.sessions.createMain();
+    const view = await this.launch(session, tools, grant, params);
     orchestration.cwd = view.cwd;
     orchestration.explicitFolder = view.explicitFolder;
     orchestration.sessionId = view.id;
-    const previous = this.current;
-    const next: ActiveOrchestration = new ActiveOrchestration(
+    const next = new ActiveOrchestration(
       this.deps,
-      { server: tools, grant, orchestration, sessionId: view.id },
+      { server: tools, grant, orchestration, session, sessionId: view.id },
       () => {
-        if (this.current === next) {
-          this.current = null;
+        if (this.active.get(view.id) === next) {
+          this.active.delete(view.id);
         }
       },
     );
-    this.current = next;
-    next.watchSession(this.deps.main.view());
-    await previous?.end();
+    this.active.set(view.id, next);
+    next.watchSession(session.view());
     return view;
   }
 
   async shutdown(): Promise<void> {
-    await this.current?.end();
+    await Promise.all([...this.active.values()].map((entry) => entry.end()));
     const starting = this.server;
     this.server = null;
     const started = await starting?.catch((error: unknown) => {
@@ -232,12 +255,13 @@ class OrchestratorServiceImpl implements OrchestratorService {
   }
 
   private async launch(
+    session: SessionService,
     tools: FlowToolServer,
     grant: ToolGrant,
     params: ParamsMap["session/start"],
   ): Promise<SessionView> {
     try {
-      return await this.deps.main.start(
+      return await session.start(
         { ...params, profile: PermissionProfile.plan },
         {
           leaseMode: LeaseMode.observer,
@@ -247,6 +271,7 @@ class OrchestratorServiceImpl implements OrchestratorService {
       );
     } catch (error) {
       tools.revoke(grant.token);
+      await this.deps.sessions.discardMain(session);
       throw error;
     }
   }

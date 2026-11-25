@@ -173,7 +173,8 @@ async function openRig(
 }
 
 async function sessionOf(rig: Rig): Promise<SessionView> {
-  const { session } = await rig.backend.handlers["sessions/snapshot"]({});
+  const { sessions } = await rig.backend.handlers["sessions/snapshot"]({});
+  const session = sessions.at(-1) ?? null;
   if (session === null) {
     throw new Error("no session in snapshot");
   }
@@ -193,6 +194,7 @@ async function approveCommand(rig: Rig): Promise<void> {
   expect(permission?.command).toBe(ROTATION_COMMAND);
   expect(existsSync(join(rig.workspace.repo, EFFECTS_FILE))).toBe(false);
   await rig.backend.handlers["permission/answer"]({
+    sessionId: (await sessionOf(rig)).id,
     requestId: permission?.requestId ?? "",
     optionId: allow?.optionId ?? "",
   });
@@ -204,8 +206,14 @@ async function rotate(
 ): Promise<Rig> {
   const rig = await openRig(profile);
   const { handlers } = rig.backend;
-  await handlers["session/start"]({ cwd: rig.workspace.repo, profile });
-  await handlers["session/prompt"]({ text: ROTATION_PROMPT });
+  const started = await handlers["session/start"]({
+    cwd: rig.workspace.repo,
+    profile,
+  });
+  await handlers["session/prompt"]({
+    sessionId: started.id,
+    text: ROTATION_PROMPT,
+  });
   if (answerPermission) {
     await approveCommand(rig);
   }
@@ -278,12 +286,15 @@ describe("model selection with the real claude CLI and a local API mock", () => 
       });
       const { handlers } = rig.backend;
 
-      await handlers["session/start"]({
+      const started = await handlers["session/start"]({
         cwd: rig.workspace.repo,
         profile: PermissionProfile.unattended,
         model: { provider: ProviderId.claude, model: REQUESTED_MODEL },
       });
-      await handlers["session/prompt"]({ text: "Reply with one word" });
+      await handlers["session/prompt"]({
+        sessionId: started.id,
+        text: "Reply with one word",
+      });
       await vi.waitFor(async () => {
         expect((await sessionOf(rig)).lastTurn).not.toBeNull();
       }, WAIT_OPTIONS);
