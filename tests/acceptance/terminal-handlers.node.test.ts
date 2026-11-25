@@ -75,6 +75,11 @@ async function handlersFor(
     containerStatus: { available: true, message: null },
     terminals,
     postUpdaterConfig: () => undefined,
+    editedFiles: {
+      observeMain: () => undefined,
+      observeRun: () => undefined,
+      views: () => [],
+    },
   });
 }
 

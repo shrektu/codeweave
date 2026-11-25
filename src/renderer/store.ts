@@ -53,10 +53,23 @@ function applyEvent(snapshot: Snapshot, event: IpcEvent): Snapshot {
     case "flow/changed":
       return {
         ...snapshot,
-        flowRuns: upsertByRunId(snapshot.flowRuns, event.payload),
+        flowRuns: upsertBy(
+          snapshot.flowRuns,
+          event.payload,
+          (entry) => entry.runId,
+        ),
       };
     case "flowSession/changed":
       return { ...snapshot, flowSessions: applyFlowSession(snapshot, event) };
+    case "editedFiles/changed":
+      return {
+        ...snapshot,
+        editedFiles: upsertBy(
+          snapshot.editedFiles,
+          event.payload,
+          (entry) => entry.sessionId,
+        ),
+      };
     case "terminal/data":
       return snapshot;
     case "switchLog/appended":
@@ -71,14 +84,14 @@ function applyEvent(snapshot: Snapshot, event: IpcEvent): Snapshot {
   }
 }
 
-function upsertByRunId<T extends { readonly runId: string }>(
+function upsertBy<T>(
   entries: readonly T[],
   entry: T,
+  keyOf: (item: T) => string,
 ): T[] {
-  return entries.some((existing) => existing.runId === entry.runId)
-    ? entries.map((existing) =>
-        existing.runId === entry.runId ? entry : existing,
-      )
+  const key = keyOf(entry);
+  return entries.some((existing) => keyOf(existing) === key)
+    ? entries.map((existing) => (keyOf(existing) === key ? entry : existing))
     : [...entries, entry];
 }
 
@@ -89,7 +102,7 @@ function applyFlowSession(
   const { runId, view } = event.payload;
   return view === null
     ? snapshot.flowSessions.filter((entry) => entry.runId !== runId)
-    : upsertByRunId(snapshot.flowSessions, { runId, view });
+    : upsertBy(snapshot.flowSessions, { runId, view }, (entry) => entry.runId);
 }
 
 function streamKey(event: IpcEvent): string {
@@ -97,6 +110,8 @@ function streamKey(event: IpcEvent): string {
     case "flow/changed":
     case "flowSession/changed":
       return `${event.event}:${event.payload.runId}`;
+    case "editedFiles/changed":
+      return `${event.event}:${event.payload.sessionId}`;
     default:
       return event.event;
   }

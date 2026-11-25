@@ -229,6 +229,57 @@ describe("v2 tool names", () => {
       ),
     ).toMatchObject([{ title: name, kind }]);
   });
+
+  it("marks_opencode_edit_without_reported_diff", () => {
+    const mapper = createV2EventMapper(OWN, CWD);
+    const ids = { sessionID: OWN, id: "edit_1" };
+    mapper.map(event("session.tool.input.started", { ...ids, name: "edit" }));
+    mapper.map(
+      event("session.tool.called", {
+        ...ids,
+        input: { filePath: "src/a.ts" },
+      }),
+    );
+
+    expect(
+      mapper.map(event("session.tool.success", { ...ids, content: [] })),
+    ).toEqual([
+      {
+        type: "tool_call_update",
+        toolCallId: "edit_1",
+        status: "completed",
+        diffs: [
+          {
+            path: resolve(CWD, "src/a.ts"),
+            change: "modified",
+            omitted: "not_reported",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("opencode_non_edit_tool_has_no_diffs", () => {
+    const mapper = createV2EventMapper(OWN, CWD);
+    const ids = { sessionID: OWN, id: "read_1" };
+    mapper.map(event("session.tool.input.started", { ...ids, name: "read" }));
+    mapper.map(
+      event("session.tool.called", {
+        ...ids,
+        input: { filePath: "src/a.ts" },
+      }),
+    );
+
+    expect(
+      mapper.map(event("session.tool.success", { ...ids, content: [] })),
+    ).toEqual([
+      {
+        type: "tool_call_update",
+        toolCallId: "read_1",
+        status: "completed",
+      },
+    ]);
+  });
 });
 
 describe("v2 permission events", () => {

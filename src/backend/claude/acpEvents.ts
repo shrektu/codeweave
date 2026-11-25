@@ -2,6 +2,7 @@ import type {
   SessionConfigOption,
   SessionNotification,
   ToolCallContent,
+  ToolCallLocation,
 } from "@agentclientprotocol/sdk";
 
 import {
@@ -10,17 +11,30 @@ import {
   UNKNOWN_ERROR,
 } from "../../domain/constants";
 import { contextUsageOf } from "../../domain/contextUsage";
-import type { AgentEvent, ToolCallStatus } from "../../domain/events";
+import {
+  DiffOmission,
+  FileChange,
+  type AgentEvent,
+  type FileDiff,
+  type ToolCallStatus,
+} from "../../domain/events";
 import {
   CLAUDE_MODEL_META_KEY,
   CLAUDE_RATE_LIMIT_META_KEY,
   DEFAULT_MODEL_ALIAS,
   DEFAULT_TOOL_KIND,
   DEFAULT_TOOL_STATUS,
+  DIFF_MAX_FILE_BYTES,
   MODEL_CONFIG_ID,
   TOOL_OUTPUT_SEPARATOR,
   UNKNOWN_RATE_LIMIT_STATUS,
 } from "../constants";
+import {
+  computeFileDiff,
+  computePositionedFileDiff,
+  type PositionedDiffInput,
+} from "../fileDiff";
+import { SnapshotKind, type FileSnapshot } from "../fileSnapshot";
 
 type SessionUpdate = SessionNotification["update"];
 type SessionConfigSelect = Extract<SessionConfigOption, { type: "select" }>;
@@ -50,19 +64,132 @@ function mapMessageChunk(
   ];
 }
 
+function textSnapshot(text: string): FileSnapshot {
+  if (Buffer.byteLength(text, "utf8") > DIFF_MAX_FILE_BYTES) {
+    return { kind: SnapshotKind.tooLarge };
+  }
+  if (text.includes("\0")) {
+    return { kind: SnapshotKind.binary };
+  }
+  return { kind: SnapshotKind.text, text };
+}
+
+type DiffContentItem = Extract<ToolCallContent, { type: "diff" }>;
+
+const TOOL_KIND_EDIT = "edit";
+
+function snapshotsOf(item: DiffContentItem): {
+  before: FileSnapshot;
+  after: FileSnapshot;
+} {
+  return {
+    before:
+      item.oldText == null
+        ? { kind: SnapshotKind.missing }
+        : textSnapshot(item.oldText),
+    after: textSnapshot(item.newText),
+  };
+}
+
+function diffsOf(
+  content: readonly ToolCallContent[] | null | undefined,
+): FileDiff[] {
+  const diffs: FileDiff[] = [];
+  for (const item of content ?? []) {
+    if (item.type !== "diff") {
+      continue;
+    }
+    const { before, after } = snapshotsOf(item);
+    const diff = computeFileDiff(item.path, before, after);
+    if (diff !== null) {
+      diffs.push(diff);
+    }
+  }
+  return diffs;
+}
+
+function positionedDiffsOf(
+  diffItems: readonly DiffContentItem[],
+  locations: readonly {
+    readonly path: string;
+    readonly line?: number | null;
+  }[],
+): FileDiff[] {
+  const grouped = new Map<string, PositionedDiffInput[]>();
+  const unpositioned: FileDiff[] = [];
+  for (const [index, item] of diffItems.entries()) {
+    const line = locations[index]?.line;
+    const { before, after } = snapshotsOf(item);
+    if (typeof line === "number") {
+      const list = grouped.get(item.path) ?? [];
+      list.push({ before, after, line });
+      grouped.set(item.path, list);
+    } else {
+      const diff = computeFileDiff(item.path, before, after);
+      if (diff !== null) {
+        unpositioned.push(diff);
+      }
+    }
+  }
+  const positioned: FileDiff[] = [];
+  for (const [path, inputs] of grouped) {
+    const diff = computePositionedFileDiff(path, inputs);
+    if (diff !== null) {
+      positioned.push(diff);
+    }
+  }
+  return [...positioned, ...unpositioned];
+}
+
+function updateDiffsOf(
+  update: Extract<SessionUpdate, { sessionUpdate: "tool_call_update" }>,
+  kind: string,
+  locations: readonly ToolCallLocation[],
+): readonly FileDiff[] | undefined {
+  const content = update.content ?? [];
+  const diffItems = content.filter(
+    (item): item is DiffContentItem => item.type === "diff",
+  );
+  if (diffItems.length > 0) {
+    return positionedDiffsOf(diffItems, locations);
+  }
+  if (content.length > 0 && kind === TOOL_KIND_EDIT) {
+    const tooLargePaths = locations
+      .filter((loc) => loc.line == null)
+      .map((loc) => loc.path);
+    if (tooLargePaths.length > 0) {
+      return tooLargePaths.map((path) => ({
+        path,
+        change: FileChange.modified,
+        omitted: DiffOmission.tooLarge,
+      }));
+    }
+  }
+  return undefined;
+}
+
 function mapToolCall(
   update: Extract<SessionUpdate, { sessionUpdate: "tool_call" }>,
 ): AgentEvent[] {
-  return [
-    {
-      type: "tool_call",
-      toolCallId: update.toolCallId,
-      title: update.title,
-      kind: update.kind ?? DEFAULT_TOOL_KIND,
-      status: update.status ?? DEFAULT_TOOL_STATUS,
-      ...(update.rawInput === undefined ? {} : { rawInput: update.rawInput }),
-    },
-  ];
+  const diffs = diffsOf(update.content);
+  const callEvent: AgentEvent = {
+    type: "tool_call",
+    toolCallId: update.toolCallId,
+    title: update.title,
+    kind: update.kind ?? DEFAULT_TOOL_KIND,
+    status: update.status ?? DEFAULT_TOOL_STATUS,
+    ...(update.rawInput === undefined ? {} : { rawInput: update.rawInput }),
+  };
+  return diffs.length === 0
+    ? [callEvent]
+    : [
+        callEvent,
+        {
+          type: "tool_call_update",
+          toolCallId: update.toolCallId,
+          diffs,
+        },
+      ];
 }
 
 const FENCED_BLOCK = /^(`{3,})[^\n`]*\r?\n(?:([\s\S]*?)\r?\n)?\1[ \t]*$/;
@@ -99,9 +226,12 @@ function outputOf(
 
 function mapToolCallUpdate(
   update: Extract<SessionUpdate, { sessionUpdate: "tool_call_update" }>,
+  kind: string,
+  locations: readonly ToolCallLocation[],
 ): AgentEvent[] {
   const status: ToolCallStatus | null | undefined = update.status;
   const output = outputOf(update);
+  const diffs = updateDiffsOf(update, kind, locations);
   return [
     {
       type: "tool_call_update",
@@ -111,6 +241,7 @@ function mapToolCallUpdate(
       ...(update.rawInput === undefined ? {} : { rawInput: update.rawInput }),
       ...(status == null ? {} : { status }),
       ...(output === undefined ? {} : { output }),
+      ...(diffs === undefined ? {} : { diffs }),
     },
   ];
 }
@@ -186,21 +317,50 @@ function mapUsageUpdate(
   ];
 }
 
+export function createAcpEventMapper(): {
+  map(update: SessionUpdate): AgentEvent[];
+} {
+  const toolKinds = new Map<string, string>();
+  const toolLocations = new Map<string, readonly ToolCallLocation[]>();
+  return {
+    map(update) {
+      switch (update.sessionUpdate) {
+        case "agent_message_chunk":
+          return mapMessageChunk(update);
+        case "tool_call":
+          toolKinds.set(update.toolCallId, update.kind ?? DEFAULT_TOOL_KIND);
+          if (update.locations != null) {
+            toolLocations.set(update.toolCallId, update.locations);
+          }
+          return mapToolCall(update);
+        case "tool_call_update": {
+          if (update.kind != null) {
+            toolKinds.set(update.toolCallId, update.kind);
+          }
+          if (update.locations != null) {
+            toolLocations.set(update.toolCallId, update.locations);
+          }
+          const kind =
+            update.kind ??
+            toolKinds.get(update.toolCallId) ??
+            DEFAULT_TOOL_KIND;
+          const locations =
+            update.locations ?? toolLocations.get(update.toolCallId) ?? [];
+          return mapToolCallUpdate(update, kind, locations);
+        }
+        case "usage_update":
+          return mapUsageUpdate(update);
+        case "config_option_update":
+          return mapModel(modelOf(update.configOptions));
+        default:
+          return [];
+      }
+    },
+  };
+}
+
 export function mapSessionUpdate(update: SessionUpdate): AgentEvent[] {
-  switch (update.sessionUpdate) {
-    case "agent_message_chunk":
-      return mapMessageChunk(update);
-    case "tool_call":
-      return mapToolCall(update);
-    case "tool_call_update":
-      return mapToolCallUpdate(update);
-    case "usage_update":
-      return mapUsageUpdate(update);
-    case "config_option_update":
-      return mapModel(modelOf(update.configOptions));
-    default:
-      return [];
-  }
+  return createAcpEventMapper().map(update);
 }
 
 export function mapPromptError(error: unknown): TurnError {

@@ -434,3 +434,53 @@ it("store_clears_the_focused_run_when_the_main_session_ends", async () => {
 
   expect(store.getState().focusedRunId).toBeNull();
 });
+
+it("edited_files_event_upserts_by_session", async () => {
+  const { client, store } = await readyStoreWithSession("sess-1");
+  const initial = {
+    sessionId: "sess-1",
+    files: [
+      {
+        path: "/repo/a.ts",
+        change: "modified" as const,
+        edits: [
+          {
+            toolCallId: "tc-1",
+            runId: null,
+            agent: "session",
+            diff: {
+              path: "/repo/a.ts",
+              change: "modified" as const,
+              omitted: "not_reported" as const,
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  client.emit({
+    v: EVENT_VERSION,
+    event: "editedFiles/changed",
+    payload: initial,
+  });
+  expect(store.getState().snapshot?.editedFiles).toEqual([initial]);
+
+  const updated = {
+    sessionId: "sess-1",
+    files: [
+      ...initial.files,
+      {
+        path: "/repo/b.ts",
+        change: "created" as const,
+        edits: [],
+      },
+    ],
+  };
+  client.emit({
+    v: EVENT_VERSION,
+    event: "editedFiles/changed",
+    payload: updated,
+  });
+  expect(store.getState().snapshot?.editedFiles).toEqual([updated]);
+});

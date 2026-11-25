@@ -13,23 +13,34 @@ function trimTrailingSeparators(path: string, windows: boolean): string {
   return path.slice(0, end);
 }
 
+function stripBase(
+  path: string,
+  baseDir: string | null,
+  windows: boolean,
+): string | null {
+  if (baseDir === null) {
+    return null;
+  }
+  const base = trimTrailingSeparators(baseDir, windows);
+  if (base.length <= 1) {
+    return null;
+  }
+  const fold = (text: string): string => (windows ? text.toLowerCase() : text);
+  if (fold(path.slice(0, base.length)) !== fold(base)) {
+    return null;
+  }
+  return path.slice(base.length);
+}
+
 function withHomeMarker(
   path: string,
   home: string | null,
   windows: boolean,
 ): string {
-  if (home === null) {
+  const rest = stripBase(path, home, windows);
+  if (rest === null) {
     return path;
   }
-  const base = trimTrailingSeparators(home, windows);
-  if (base.length <= 1) {
-    return path;
-  }
-  const fold = (text: string): string => (windows ? text.toLowerCase() : text);
-  if (fold(path.slice(0, base.length)) !== fold(base)) {
-    return path;
-  }
-  const rest = path.slice(base.length);
   if (rest === "") {
     return HOME_MARKER;
   }
@@ -43,6 +54,22 @@ export function displayPath(
 ): string {
   const windows = platform === WINDOWS_PLATFORM;
   return withHomeMarker(path, home, windows);
+}
+
+export function relativePath(
+  path: string,
+  cwd: string | null,
+  platform = "",
+): string {
+  const windows = platform === WINDOWS_PLATFORM;
+  const rest = stripBase(path, cwd, windows);
+  if (rest === null) {
+    return path;
+  }
+  if (rest === "") {
+    return ".";
+  }
+  return isSeparator(rest[0], windows) ? rest.slice(1) : path;
 }
 
 export interface PathParts {

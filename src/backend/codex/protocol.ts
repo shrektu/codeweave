@@ -128,7 +128,18 @@ const FileChangeItemSchema = z.looseObject({
   type: z.literal(CodexItemType.fileChange),
   id: z.string(),
   status: ItemStatusSchema,
-  changes: z.array(z.looseObject({ path: z.string() })),
+  changes: z.array(
+    z.looseObject({
+      path: z.string(),
+      kind: z
+        .looseObject({
+          type: z.string(),
+          move_path: z.string().nullish(),
+        })
+        .optional(),
+      diff: z.string().optional(),
+    }),
+  ),
 });
 
 const McpToolCallItemSchema = z.looseObject({

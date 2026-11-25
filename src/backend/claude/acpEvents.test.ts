@@ -4,7 +4,12 @@ import {
 } from "@agentclientprotocol/sdk";
 import { describe, expect, it } from "vitest";
 
-import { isAuthError, mapPromptError, mapSessionUpdate } from "./acpEvents";
+import {
+  createAcpEventMapper,
+  isAuthError,
+  mapPromptError,
+  mapSessionUpdate,
+} from "./acpEvents";
 
 type Update = SessionNotification["update"];
 
@@ -116,6 +121,13 @@ describe("mapSessionUpdate tool call updates", () => {
         toolCallId: "t3",
         status: "completed",
         output: "line one\nline two",
+        diffs: [
+          {
+            path: "/a.ts",
+            change: "created",
+            patch: "@@ -0,0 +1,1 @@\n+x\n\\ No newline at end of file",
+          },
+        ],
       },
     ]);
   });
@@ -472,4 +484,310 @@ describe("isAuthError", () => {
     expect(isAuthError(new Error("auth_required"))).toBe(false);
     expect(isAuthError(null)).toBe(false);
   });
+});
+
+const EXPECTED_EDIT_DIFF = {
+  path: "/w/a.ts",
+  change: "modified",
+  patch:
+    "@@ -1,1 +1,1 @@\n-a\n\\ No newline at end of file\n+b\n\\ No newline at end of file",
+};
+
+describe("mapSessionUpdate diff content", () => {
+  it("maps_acp_diff_content_to_file_diffs", () => {
+    const diffContent = [
+      { type: "diff" as const, path: "/w/a.ts", oldText: "a", newText: "b" },
+    ];
+    expect(
+      mapSessionUpdate({
+        sessionUpdate: "tool_call",
+        toolCallId: "t-edit",
+        title: "Edit /w/a.ts",
+        kind: "edit",
+        status: "in_progress",
+        content: diffContent,
+      }),
+    ).toEqual([
+      {
+        type: "tool_call",
+        toolCallId: "t-edit",
+        title: "Edit /w/a.ts",
+        kind: "edit",
+        status: "in_progress",
+      },
+      {
+        type: "tool_call_update",
+        toolCallId: "t-edit",
+        diffs: [EXPECTED_EDIT_DIFF],
+      },
+    ]);
+    expect(
+      mapSessionUpdate({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t-edit",
+        status: "completed",
+        content: diffContent,
+      }),
+    ).toEqual([
+      {
+        type: "tool_call_update",
+        toolCallId: "t-edit",
+        status: "completed",
+        diffs: [EXPECTED_EDIT_DIFF],
+      },
+    ]);
+  });
+});
+
+it("acp_write_without_old_text_is_created", () => {
+  const events = mapSessionUpdate({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "t-write",
+    status: "completed",
+    content: [
+      { type: "diff", path: "/w/new.ts", oldText: null, newText: "hello\n" },
+    ],
+  });
+
+  expect(events).toEqual([
+    {
+      type: "tool_call_update",
+      toolCallId: "t-write",
+      status: "completed",
+      diffs: [
+        {
+          path: "/w/new.ts",
+          change: "created",
+          patch: "@@ -0,0 +1,1 @@\n+hello",
+        },
+      ],
+    },
+  ]);
+});
+
+it("acp_hook_hunk_keeps_real_line_numbers", () => {
+  const events = mapSessionUpdate({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "t-hook-1",
+    status: "completed",
+    content: [
+      {
+        type: "diff",
+        path: "/w/a.ts",
+        oldText: "c1\nc2\nc3\nold\nc4\nc5\nc6\n",
+        newText: "c1\nc2\nc3\nnew1\nnew2\nc4\nc5\nc6\n",
+      },
+    ],
+    locations: [{ path: "/w/a.ts", line: 117 }],
+  });
+
+  expect(events).toEqual([
+    {
+      type: "tool_call_update",
+      toolCallId: "t-hook-1",
+      status: "completed",
+      diffs: [
+        {
+          path: "/w/a.ts",
+          change: "modified",
+          patch:
+            "@@ -117,7 +117,8 @@\n c1\n c2\n c3\n-old\n+new1\n+new2\n c4\n c5\n c6",
+        },
+      ],
+    },
+  ]);
+});
+
+it("acp_hook_hunks_of_one_file_join_into_one_diff", () => {
+  const events = mapSessionUpdate({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "t-hook-2",
+    status: "completed",
+    content: [
+      { type: "diff", path: "/w/a.ts", oldText: "a\n", newText: "a1\na2\n" },
+      { type: "diff", path: "/w/a.ts", oldText: "b\n", newText: "B\n" },
+    ],
+    locations: [
+      { path: "/w/a.ts", line: 10 },
+      { path: "/w/a.ts", line: 50 },
+    ],
+  });
+
+  expect(events).toEqual([
+    {
+      type: "tool_call_update",
+      toolCallId: "t-hook-2",
+      status: "completed",
+      diffs: [
+        {
+          path: "/w/a.ts",
+          change: "modified",
+          patch: "@@ -10,1 +10,2 @@\n-a\n+a1\n+a2\n@@ -49,1 +50,1 @@\n-b\n+B",
+        },
+      ],
+    },
+  ]);
+});
+
+it("acp_write_same_content_clears_creation_diff", () => {
+  const events = mapSessionUpdate({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "t-same",
+    status: "completed",
+    content: [
+      { type: "diff", path: "/w/a.ts", oldText: "same\n", newText: "same\n" },
+    ],
+    locations: [{ path: "/w/a.ts" }],
+  });
+
+  expect(events).toEqual([
+    {
+      type: "tool_call_update",
+      toolCallId: "t-same",
+      status: "completed",
+      diffs: [],
+    },
+  ]);
+});
+
+it("acp_write_large_existing_file_reports_too_large_not_created", () => {
+  const mapper = createAcpEventMapper();
+  mapper.map({
+    sessionUpdate: "tool_call",
+    toolCallId: "t-large",
+    title: "Write /w/big.ts",
+    kind: "edit",
+    status: "pending",
+    content: [{ type: "diff", path: "/w/big.ts", oldText: null, newText: "x" }],
+  });
+
+  const events = mapper.map({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "t-large",
+    status: "completed",
+    content: [
+      {
+        type: "content",
+        content: {
+          type: "text",
+          text: "Updated `/w/big.ts` (previous content too large to diff)",
+        },
+      },
+    ],
+    locations: [{ path: "/w/big.ts" }],
+  });
+
+  expect(events).toEqual([
+    {
+      type: "tool_call_update",
+      toolCallId: "t-large",
+      status: "completed",
+      output: "Updated `/w/big.ts` (previous content too large to diff)",
+      diffs: [{ path: "/w/big.ts", change: "modified", omitted: "too_large" }],
+    },
+  ]);
+});
+
+it("acp_read_update_with_text_is_not_an_edit", () => {
+  const mapper = createAcpEventMapper();
+  mapper.map({
+    sessionUpdate: "tool_call",
+    toolCallId: "t-read",
+    title: "Read /w/a.ts",
+    kind: "read",
+    status: "pending",
+  });
+
+  const events = mapper.map({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "t-read",
+    status: "completed",
+    content: [
+      { type: "content", content: { type: "text", text: "file body" } },
+    ],
+    locations: [{ path: "/w/a.ts" }],
+  });
+
+  expect(events).toEqual([
+    {
+      type: "tool_call_update",
+      toolCallId: "t-read",
+      status: "completed",
+      output: "file body",
+    },
+  ]);
+});
+
+it("acp_too_large_write_uses_held_locations", () => {
+  const mapper = createAcpEventMapper();
+  mapper.map({
+    sessionUpdate: "tool_call",
+    toolCallId: "t-held-large",
+    title: "Write /w/big.ts",
+    kind: "edit",
+    status: "pending",
+    content: [{ type: "diff", path: "/w/big.ts", oldText: null, newText: "x" }],
+    locations: [{ path: "/w/big.ts" }],
+  });
+
+  const events = mapper.map({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "t-held-large",
+    status: "completed",
+    content: [
+      {
+        type: "content",
+        content: {
+          type: "text",
+          text: "Updated `/w/big.ts` (previous content too large to diff)",
+        },
+      },
+    ],
+  });
+
+  expect(events).toEqual([
+    {
+      type: "tool_call_update",
+      toolCallId: "t-held-large",
+      status: "completed",
+      output: "Updated `/w/big.ts` (previous content too large to diff)",
+      diffs: [{ path: "/w/big.ts", change: "modified", omitted: "too_large" }],
+    },
+  ]);
+});
+
+it("acp_hook_hunks_pair_with_held_locations", () => {
+  const mapper = createAcpEventMapper();
+  mapper.map({
+    sessionUpdate: "tool_call",
+    toolCallId: "t-held-hunk",
+    title: "Edit /w/a.ts",
+    kind: "edit",
+    status: "pending",
+    locations: [{ path: "/w/a.ts", line: 120 }],
+  });
+
+  const events = mapper.map({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "t-held-hunk",
+    status: "completed",
+    content: [
+      { type: "diff", path: "/w/a.ts", oldText: "old\n", newText: "new\n" },
+    ],
+  });
+
+  expect(events).toEqual([
+    {
+      type: "tool_call_update",
+      toolCallId: "t-held-hunk",
+      status: "completed",
+      diffs: [
+        {
+          path: "/w/a.ts",
+          change: "modified",
+          patch: "@@ -120,1 +120,1 @@\n-old\n+new",
+        },
+      ],
+    },
+  ]);
 });

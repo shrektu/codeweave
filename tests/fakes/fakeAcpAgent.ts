@@ -19,6 +19,8 @@ import {
   type SessionConfigOption,
   type SessionUpdate,
   type StopReason,
+  type ToolCallContent,
+  type ToolCallLocation,
   type ToolCallStatus,
   type ToolKind,
 } from "@agentclientprotocol/sdk";
@@ -88,14 +90,19 @@ export type NotificationStep =
       readonly title: string;
       readonly kind: ToolKind;
       readonly rawInput?: unknown;
+      readonly content?: readonly ToolCallContent[];
+      readonly locations?: readonly ToolCallLocation[];
     }
   | {
       readonly type: "tool_call_update";
       readonly toolCallId: string;
       readonly status: ToolCallStatus;
+      readonly kind?: ToolKind;
       readonly text?: string;
       readonly title?: string;
       readonly rawInput?: unknown;
+      readonly content?: readonly ToolCallContent[];
+      readonly locations?: readonly ToolCallLocation[];
     }
   | {
       readonly type: "usage_update";
@@ -180,19 +187,20 @@ function toError(failure: FakeRpcFailure): RequestError {
 function toolCallUpdate(
   step: Extract<NotificationStep, { type: "tool_call_update" }>,
 ): SessionUpdate {
+  const content =
+    step.content ??
+    (step.text === undefined
+      ? undefined
+      : [{ type: "content", content: { type: "text", text: step.text } }]);
   return {
     sessionUpdate: "tool_call_update",
     toolCallId: step.toolCallId,
     status: step.status,
+    ...(step.kind === undefined ? {} : { kind: step.kind }),
     ...(step.title === undefined ? {} : { title: step.title }),
     ...(step.rawInput === undefined ? {} : { rawInput: step.rawInput }),
-    ...(step.text === undefined
-      ? {}
-      : {
-          content: [
-            { type: "content", content: { type: "text", text: step.text } },
-          ],
-        }),
+    ...(content === undefined ? {} : { content: [...content] }),
+    ...(step.locations === undefined ? {} : { locations: [...step.locations] }),
   };
 }
 
@@ -212,6 +220,10 @@ function toUpdate(step: NotificationStep): SessionUpdate {
         kind: step.kind,
         status: "pending",
         rawInput: step.rawInput,
+        ...(step.content === undefined ? {} : { content: [...step.content] }),
+        ...(step.locations === undefined
+          ? {}
+          : { locations: [...step.locations] }),
       };
     case "tool_call_update":
       return toolCallUpdate(step);

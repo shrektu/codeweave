@@ -52,8 +52,9 @@ import { buildAgentEnv } from "./env";
 import { resolveExecutable } from "./executable";
 import { execText } from "./exec";
 import { createDefinitionRoots } from "./definitionLibrary";
+import { createEditedFilesTracker } from "./editedFiles";
 import { listFlows } from "./flows";
-import { createFlowRunService } from "./flowRuns";
+import { createFlowRunService, type FlowRunService } from "./flowRuns";
 import type { FlowToolServer } from "./flowTools/server";
 import { createFlowWorktrees } from "./flowWorktrees";
 import { createHandlers } from "./handlers";
@@ -661,6 +662,15 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     requested: string | undefined,
   ): Promise<string> =>
     resolveSessionFolder(requested, await store.readSettings(), deps.homeDir);
+  let flowRunsRef: FlowRunService | null = null;
+  const editedFiles = createEditedFilesTracker({
+    ownerOf: (runId) =>
+      flowRunsRef?.views().find((run) => run.runId === runId)?.ownerSessionId ??
+      null,
+    publish: (edits) => {
+      deps.broadcast("editedFiles/changed", edits);
+    },
+  });
   const sessions: SessionPool = createSessionPool({
     adapter: createAdapter(
       deps,
@@ -687,6 +697,12 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     homeDir: deps.homeDir,
     resolveFolder,
     protectedPaths: protectedPathsNow,
+    onMainView: (view) => {
+      editedFiles.observeMain(view);
+    },
+    onRunView: (runId, view) => {
+      editedFiles.observeRun(runId, view);
+    },
   });
   const terminals = createTerminals(deps, container, store, lockKeyResolver);
   const definitionRoots = createDefinitionRoots({ store, userData });
@@ -701,6 +717,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     broadcast: deps.broadcast,
     newRunId: deps.newRunId,
   });
+  flowRunsRef = flowRuns;
   const orchestrator = createOrchestratorService({
     main: sessions.main,
     flowRuns,
@@ -730,6 +747,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     containerStatus: status,
     terminals,
     postUpdaterConfig,
+    editedFiles,
   });
   await postStoredUpdaterConfig(store, postUpdaterConfig);
   probes.start();

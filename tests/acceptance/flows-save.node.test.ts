@@ -108,6 +108,11 @@ function handlersFor(cwd: string): ReturnType<typeof createHandlers> {
     containerStatus: { available: true, message: null },
     terminals: fakeTerminals(),
     postUpdaterConfig: () => undefined,
+    editedFiles: {
+      observeMain: () => undefined,
+      observeRun: () => undefined,
+      views: () => [],
+    },
   });
 }
 

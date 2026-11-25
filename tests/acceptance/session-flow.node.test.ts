@@ -664,3 +664,35 @@ it("backend_without_lock_resolver_falls_back_to_git_lookup", async () => {
 
   expect(gitFallbackWarnings(warn)).toBe(1);
 });
+
+it("session_edited_files_drops_stale_edits_on_update", async () => {
+  const rig = await open();
+  await rig.call("session/start", startParams(rig));
+  agentOf(rig).enqueue([
+    {
+      type: "tool_call",
+      toolCallId: "t-write",
+      title: "Write /w/a.ts",
+      kind: "edit",
+      content: [
+        { type: "diff", path: "/w/a.ts", oldText: null, newText: "same\n" },
+      ],
+    },
+    {
+      type: "tool_call_update",
+      toolCallId: "t-write",
+      status: "completed",
+      content: [
+        { type: "diff", path: "/w/a.ts", oldText: "same\n", newText: "same\n" },
+      ],
+      locations: [{ path: "/w/a.ts" }],
+    },
+    END_TURN,
+  ]);
+
+  await rig.call("session/prompt", { text: "write same" });
+  await turnEnded(rig);
+
+  const snapshot = await rig.call("sessions/snapshot", {});
+  expect(snapshot.editedFiles).toEqual([]);
+});

@@ -12,7 +12,10 @@ import {
 export type SessionPoolDeps = Omit<
   SessionServiceDeps,
   "publishView" | "reserved"
->;
+> & {
+  readonly onMainView?: (view: SessionView | null) => void;
+  readonly onRunView?: (runId: string, view: SessionView | null) => void;
+};
 
 export interface RunSessionView {
   readonly runId: string;
@@ -57,6 +60,7 @@ class SessionPoolImpl implements SessionPool {
     this.deps = deps;
     this.main = this.build((view) => {
       deps.broadcast("session/changed", view);
+      deps.onMainView?.(view);
     });
   }
 
@@ -68,6 +72,7 @@ class SessionPoolImpl implements SessionPool {
     const created: SessionService = this.build((view) => {
       if (this.runs.get(runId) === created) {
         this.deps.broadcast("flowSession/changed", { runId, view });
+        this.deps.onRunView?.(runId, view);
       }
     });
     this.runs.set(runId, created);

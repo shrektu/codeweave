@@ -104,6 +104,127 @@ describe("codex item mapping: edits and searches", () => {
     expect(fileChangeOf(item(commandItem("c", "ls", "inProgress")))).toBeNull();
   });
 
+  it("maps_codex_file_change_to_diffs", () => {
+    const completed = item({
+      type: "fileChange",
+      id: "fc-1",
+      status: "completed",
+      changes: [
+        { path: "/w/new.ts", kind: { type: "add" }, diff: "hello\n" },
+        {
+          path: "/w/mod.ts",
+          kind: { type: "update" },
+          diff: "diff --git a/w/mod.ts b/w/mod.ts\n--- a/w/mod.ts\n+++ b/w/mod.ts\n@@ -1 +1 @@\n-old\n+new",
+        },
+        { path: "/w/old.ts", kind: { type: "delete" }, diff: "bye\n" },
+      ],
+    });
+
+    expect(mapItemCompleted(completed)).toEqual([
+      {
+        type: "tool_call_update",
+        toolCallId: "fc-1",
+        status: "completed",
+        diffs: [
+          {
+            path: "/w/new.ts",
+            change: "created",
+            patch: "@@ -0,0 +1,1 @@\n+hello",
+          },
+          {
+            path: "/w/mod.ts",
+            change: "modified",
+            patch: "@@ -1 +1 @@\n-old\n+new",
+          },
+          {
+            path: "/w/old.ts",
+            change: "deleted",
+            patch: "@@ -1,1 +0,0 @@\n-bye",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("codex_update_patch_drops_headers_and_uses_move_path", () => {
+    const completed = item({
+      type: "fileChange",
+      id: "fc-move",
+      status: "completed",
+      changes: [
+        {
+          path: "/w/old.ts",
+          kind: { type: "update", move_path: "/w/renamed.ts" },
+          diff: "diff --git a/w/old.ts b/w/renamed.ts\nindex 111..222 100644\n--- a/w/old.ts\n+++ b/w/renamed.ts\n@@ -1,1 +1,1 @@\n-a\n+b",
+        },
+      ],
+    });
+
+    expect(mapItemCompleted(completed)).toEqual([
+      {
+        type: "tool_call_update",
+        toolCallId: "fc-move",
+        status: "completed",
+        diffs: [
+          {
+            path: "/w/renamed.ts",
+            change: "modified",
+            patch: "@@ -1,1 +1,1 @@\n-a\n+b",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("codex_oversized_patch_is_omitted", () => {
+    const huge = `@@ -1,1 +1,1 @@\n+${"x".repeat(70_000)}`;
+    const completed = item({
+      type: "fileChange",
+      id: "fc-big",
+      status: "completed",
+      changes: [{ path: "/w/big.ts", kind: { type: "update" }, diff: huge }],
+    });
+
+    expect(mapItemCompleted(completed)).toEqual([
+      {
+        type: "tool_call_update",
+        toolCallId: "fc-big",
+        status: "completed",
+        diffs: [
+          {
+            path: "/w/big.ts",
+            change: "modified",
+            omitted: "too_large",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("codex_change_without_diff_is_not_reported", () => {
+    const completed = item({
+      type: "fileChange",
+      id: "fc-nodiff",
+      status: "completed",
+      changes: [{ path: "/w/no-diff.ts", kind: { type: "update" } }],
+    });
+
+    expect(mapItemCompleted(completed)).toEqual([
+      {
+        type: "tool_call_update",
+        toolCallId: "fc-nodiff",
+        status: "completed",
+        diffs: [
+          {
+            path: "/w/no-diff.ts",
+            change: "modified",
+            omitted: "not_reported",
+          },
+        ],
+      },
+    ]);
+  });
+
   it("mcp_tool_call_uses_server_dot_tool_title", () => {
     expect(
       mapItemStarted(

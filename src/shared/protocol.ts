@@ -32,6 +32,7 @@ import {
   FlowRunViewSchema,
   FlowsListSchema,
   ModelCatalogSchema,
+  SessionEditsViewSchema,
   SessionViewSchema,
   SettingsViewSchema,
   SnapshotSchema,
@@ -423,6 +424,11 @@ export const EventSchema = z.discriminatedUnion("event", [
       runId: NonEmptyString,
       view: SessionViewSchema.nullable(),
     }),
+  }),
+  z.strictObject({
+    v: z.int(),
+    event: z.literal("editedFiles/changed"),
+    payload: SessionEditsViewSchema,
   }),
   z.strictObject({
     v: z.int(),

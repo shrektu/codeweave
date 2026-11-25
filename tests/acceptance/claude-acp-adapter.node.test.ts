@@ -752,4 +752,235 @@ describe("acp adapter: model reporting", () => {
       message: expect.stringContaining("Unknown model: nonsense") as string,
     });
   });
+
+  const HOOK_EDIT_STEPS = [
+    {
+      type: "tool_call" as const,
+      toolCallId: "t-edit",
+      title: "Edit /w/a.ts",
+      kind: "edit" as const,
+      content: [
+        {
+          type: "diff" as const,
+          path: "/w/a.ts",
+          oldText: null,
+          newText: "full",
+        },
+      ],
+    },
+    {
+      type: "tool_call_update" as const,
+      toolCallId: "t-edit",
+      status: "completed" as const,
+      content: [
+        {
+          type: "diff" as const,
+          path: "/w/a.ts",
+          oldText: "old\n",
+          newText: "new\n",
+        },
+      ],
+      locations: [{ path: "/w/a.ts", line: 120 }],
+    },
+    {
+      type: "tool_call" as const,
+      toolCallId: "t-large",
+      title: "Write /w/big.ts",
+      kind: "edit" as const,
+      content: [
+        {
+          type: "diff" as const,
+          path: "/w/big.ts",
+          oldText: null,
+          newText: "big",
+        },
+      ],
+    },
+    {
+      type: "tool_call_update" as const,
+      toolCallId: "t-large",
+      status: "completed" as const,
+      content: [
+        {
+          type: "content" as const,
+          content: {
+            type: "text" as const,
+            text: "Updated `/w/big.ts` (previous content too large to diff)",
+          },
+        },
+      ],
+      locations: [{ path: "/w/big.ts" }],
+    },
+    { type: "end" as const, stopReason: "end_turn" as const },
+  ];
+
+  it("acp_adapter_hook_hunks_and_write_fallback", async () => {
+    const rig = await createRig();
+    const { handle, events } = await startHandle(rig);
+    agentOf(rig).enqueue(HOOK_EDIT_STEPS);
+
+    await handle.prompt("edit files", { model: null });
+
+    expect(events).toContainEqual({
+      type: "tool_call_update",
+      toolCallId: "t-edit",
+      status: "completed",
+      diffs: [
+        {
+          path: "/w/a.ts",
+          change: "modified",
+          patch: "@@ -120,1 +120,1 @@\n-old\n+new",
+        },
+      ],
+    });
+    expect(events).toContainEqual({
+      type: "tool_call_update",
+      toolCallId: "t-large",
+      status: "completed",
+      output: "Updated `/w/big.ts` (previous content too large to diff)",
+      diffs: [{ path: "/w/big.ts", change: "modified", omitted: "too_large" }],
+    });
+  });
+
+  const SPLIT_HOOK_BEFORE = [
+    "L1",
+    "u1",
+    "u2",
+    "u3",
+    "u4",
+    "u5",
+    "u6",
+    "u7",
+    "u8",
+    "old",
+    "",
+  ].join("\n");
+  const SPLIT_HOOK_AFTER = [
+    "L1",
+    "ins",
+    "u1",
+    "u2",
+    "u3",
+    "u4",
+    "u5",
+    "u6",
+    "u7",
+    "u8",
+    "new",
+    "",
+  ].join("\n");
+  const SPLIT_HOOK_STEPS = [
+    {
+      type: "tool_call" as const,
+      toolCallId: "t-split",
+      title: "Edit /w/split.ts",
+      kind: "edit" as const,
+      content: [
+        {
+          type: "diff" as const,
+          path: "/w/split.ts",
+          oldText: SPLIT_HOOK_BEFORE,
+          newText: SPLIT_HOOK_AFTER,
+        },
+      ],
+    },
+    {
+      type: "tool_call_update" as const,
+      toolCallId: "t-split",
+      status: "completed" as const,
+      content: [
+        {
+          type: "diff" as const,
+          path: "/w/split.ts",
+          oldText: SPLIT_HOOK_BEFORE,
+          newText: SPLIT_HOOK_AFTER,
+        },
+      ],
+      locations: [{ path: "/w/split.ts", line: 50 }],
+    },
+    { type: "end" as const, stopReason: "end_turn" as const },
+  ];
+
+  it("acp_adapter_split_hook_hunk_keeps_old_start", async () => {
+    const rig = await createRig();
+    const { handle, events } = await startHandle(rig);
+    agentOf(rig).enqueue(SPLIT_HOOK_STEPS);
+
+    await handle.prompt("split hunk", { model: null });
+
+    expect(events).toContainEqual({
+      type: "tool_call_update",
+      toolCallId: "t-split",
+      status: "completed",
+      diffs: [
+        {
+          path: "/w/split.ts",
+          change: "modified",
+          patch: [
+            "@@ -50,4 +50,5 @@",
+            " L1",
+            "+ins",
+            " u1",
+            " u2",
+            " u3",
+            "@@ -56,4 +57,4 @@",
+            " u6",
+            " u7",
+            " u8",
+            "-old",
+            "+new",
+          ].join("\n"),
+        },
+      ],
+    });
+  });
+
+  const HELD_LOCATIONS_STEPS = [
+    {
+      type: "tool_call" as const,
+      toolCallId: "t-held-large",
+      title: "Write /w/big.ts",
+      kind: "edit" as const,
+      content: [
+        {
+          type: "diff" as const,
+          path: "/w/big.ts",
+          oldText: null,
+          newText: "big",
+        },
+      ],
+      locations: [{ path: "/w/big.ts" }],
+    },
+    {
+      type: "tool_call_update" as const,
+      toolCallId: "t-held-large",
+      status: "completed" as const,
+      content: [
+        {
+          type: "content" as const,
+          content: {
+            type: "text" as const,
+            text: "Updated `/w/big.ts` (previous content too large to diff)",
+          },
+        },
+      ],
+    },
+    { type: "end" as const, stopReason: "end_turn" as const },
+  ];
+
+  it("acp_adapter_too_large_write_without_repeated_locations", async () => {
+    const rig = await createRig();
+    const { handle, events } = await startHandle(rig);
+    agentOf(rig).enqueue(HELD_LOCATIONS_STEPS);
+
+    await handle.prompt("write big file", { model: null });
+
+    expect(events).toContainEqual({
+      type: "tool_call_update",
+      toolCallId: "t-held-large",
+      status: "completed",
+      output: "Updated `/w/big.ts` (previous content too large to diff)",
+      diffs: [{ path: "/w/big.ts", change: "modified", omitted: "too_large" }],
+    });
+  });
 });
