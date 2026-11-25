@@ -60,6 +60,7 @@ const RUNNING_VIEW: SessionView = {
   turnInFlight: true,
   flowRef: { flowId: "ship", nodeId: "build" },
   currentModel: null,
+  contextUsage: null,
   turns: [],
   orchestrate: false,
 };

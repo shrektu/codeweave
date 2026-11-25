@@ -27,6 +27,11 @@ export type FileDiff =
       readonly omitted: DiffOmission;
     };
 
+export interface ContextUsage {
+  readonly usedTokens: number;
+  readonly limitTokens: number | null;
+}
+
 export interface PermissionOption {
   readonly optionId: string;
   readonly name: string;
@@ -82,6 +87,7 @@ export type AgentEvent =
     }
   | { readonly type: "api_retry" }
   | { readonly type: "model"; readonly model: string }
+  | { readonly type: "context_usage"; readonly usage: ContextUsage }
   | { readonly type: "turn_end"; readonly stopReason: string }
   | {
       readonly type: "turn_error";

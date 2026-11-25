@@ -280,6 +280,10 @@ describe("mapSessionUpdate rate limit", () => {
         rateLimitType: "five_hour",
         utilization: 0.97,
       },
+      {
+        type: "context_usage",
+        usage: { usedTokens: 1, limitTokens: 10 },
+      },
     ]);
   });
 
@@ -296,21 +300,63 @@ describe("mapSessionUpdate rate limit", () => {
         rateLimitType: undefined,
         utilization: undefined,
       },
+      {
+        type: "context_usage",
+        usage: { usedTokens: 1, limitTokens: 10 },
+      },
+    ]);
+  });
+
+  it("maps_usage_update_to_context_usage", () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: "usage_update",
+      used: 45_000,
+      size: 200_000,
+    });
+
+    expect(events).toEqual([
+      {
+        type: "context_usage",
+        usage: { usedTokens: 45_000, limitTokens: 200_000 },
+      },
+    ]);
+  });
+
+  it("acp_zero_size_gives_unknown_limit", () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: "usage_update",
+      used: 12_345,
+      size: 0,
+    });
+
+    expect(events).toEqual([
+      {
+        type: "context_usage",
+        usage: { usedTokens: 12_345, limitTokens: null },
+      },
     ]);
   });
 
   it("acp_ignores_rate_limit_meta_with_wrong_type", () => {
+    const contextOnly = [
+      { type: "context_usage", usage: { usedTokens: 1, limitTokens: 10 } },
+    ];
     expect(mapSessionUpdate(usage({ [RATE_LIMIT_KEY]: "rejected" }))).toEqual(
-      [],
+      contextOnly,
     );
-    expect(mapSessionUpdate(usage({ [RATE_LIMIT_KEY]: null }))).toEqual([]);
+    expect(mapSessionUpdate(usage({ [RATE_LIMIT_KEY]: null }))).toEqual(
+      contextOnly,
+    );
   });
 
   it("usage_update_without_meta_maps_nothing", () => {
-    expect(mapSessionUpdate(usage(undefined))).toEqual([]);
-    expect(mapSessionUpdate(usage(null))).toEqual([]);
+    const contextOnly = [
+      { type: "context_usage", usage: { usedTokens: 1, limitTokens: 10 } },
+    ];
+    expect(mapSessionUpdate(usage(undefined))).toEqual(contextOnly);
+    expect(mapSessionUpdate(usage(null))).toEqual(contextOnly);
     expect(mapSessionUpdate(usage({ other: { status: "rejected" } }))).toEqual(
-      [],
+      contextOnly,
     );
   });
 });

@@ -1,6 +1,11 @@
 import type { ApiProviderId } from "./apiProviders";
 import { SYNTHETIC_MODEL_NAME } from "./constants";
-import type { AgentEvent, FileDiff, ToolCallStatus } from "./events";
+import type {
+  AgentEvent,
+  ContextUsage,
+  FileDiff,
+  ToolCallStatus,
+} from "./events";
 import {
   createPermissionRecord,
   expireAll,
@@ -54,6 +59,7 @@ export interface SessionState {
   readonly permissions: readonly PermissionRecord[];
   readonly lastTurn: LastTurn | null;
   readonly currentModel: string | null;
+  readonly contextUsage: ContextUsage | null;
   readonly nextSeq: number;
 }
 
@@ -66,6 +72,7 @@ export const INITIAL_SESSION_STATE: SessionState = {
   permissions: [],
   lastTurn: null,
   currentModel: null,
+  contextUsage: null,
   nextSeq: 0,
 };
 
@@ -269,8 +276,8 @@ export function applyServedModel(
       };
 }
 
-export function resetCurrentModel(state: SessionState): SessionState {
-  return { ...state, currentModel: null };
+export function resetServedState(state: SessionState): SessionState {
+  return { ...state, currentModel: null, contextUsage: null };
 }
 
 export function reduceSession(
@@ -306,6 +313,8 @@ export function reduceSession(
       return withCurrentModel(state, event.model);
     case "permission_settled":
       return settlePermission(state, event);
+    case "context_usage":
+      return { ...state, contextUsage: event.usage };
     case "rate_limit":
     case "api_retry":
       return state;

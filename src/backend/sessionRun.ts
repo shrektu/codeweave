@@ -38,7 +38,7 @@ import {
   INITIAL_SESSION_STATE,
   applyServedModel,
   reduceSession,
-  resetCurrentModel,
+  resetServedState,
   type SessionState,
 } from "../domain/sessionReducer";
 import {
@@ -428,7 +428,7 @@ export class SessionRun {
 
   private register(handle: AgentHandle): void {
     this.handles.set(handle.accountId, handle);
-    this.state = resetCurrentModel(this.state);
+    this.state = resetServedState(this.state);
     this.current = handle;
     handle.subscribe((event) => {
       this.onEvent(handle, event);

@@ -45,6 +45,7 @@ function sessionIn(cwd: string | undefined): SessionView {
     turnInFlight: false,
     flowRef: null,
     currentModel: null,
+    contextUsage: null,
     turns: [],
     orchestrate: false,
   };

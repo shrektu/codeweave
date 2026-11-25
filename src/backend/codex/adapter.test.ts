@@ -641,3 +641,93 @@ describe("codex adapter cancel regressions", () => {
     expect(codexContainedOf(rig).stopCalls).toEqual([CODEX_RIG_GRACE_MS]);
   });
 });
+
+function pushTokenUsage(rig: CodexRig, params: Json): void {
+  const line = JSON.stringify({
+    method: "thread/tokenUsage/updated",
+    params,
+  });
+  codexContainedOf(rig).stdout.write(`${line}\n`);
+}
+
+describe("codex adapter context usage", () => {
+  it("emits_context_usage_from_token_usage_notification", async () => {
+    const rig = await createCodexRig();
+    const { events } = await startCodexHandle(rig);
+    pushTokenUsage(rig, {
+      threadId: "thr-1",
+      turnId: "turn-1",
+      tokenUsage: {
+        total: { totalTokens: 60_000 },
+        last: { totalTokens: 30_000 },
+        modelContextWindow: 258_400,
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(events).toContainEqual({
+        type: "context_usage",
+        usage: { usedTokens: 30_000, limitTokens: 258_400 },
+      });
+    });
+  });
+
+  it("codex_null_context_window_gives_unknown_limit", async () => {
+    const rig = await createCodexRig();
+    const { events } = await startCodexHandle(rig);
+    pushTokenUsage(rig, {
+      threadId: "thr-1",
+      turnId: "turn-1",
+      tokenUsage: {
+        total: { totalTokens: 12_000 },
+        last: { totalTokens: 8_000 },
+        modelContextWindow: null,
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(events).toContainEqual({
+        type: "context_usage",
+        usage: { usedTokens: 8_000, limitTokens: null },
+      });
+    });
+  });
+});
+
+describe("codex adapter context usage filtering", () => {
+  it("codex_ignores_other_thread_usage", async () => {
+    const rig = await createCodexRig();
+    const { events } = await startCodexHandle(rig);
+    pushTokenUsage(rig, {
+      threadId: "thr-other",
+      turnId: "turn-1",
+      tokenUsage: {
+        total: { totalTokens: 99_000 },
+        last: { totalTokens: 99_000 },
+        modelContextWindow: 258_400,
+      },
+    });
+    pushTokenUsage(rig, {
+      threadId: "thr-1",
+      turnId: "turn-2",
+      tokenUsage: {
+        total: { totalTokens: 15_000 },
+        last: { totalTokens: 5_000 },
+        modelContextWindow: 258_400,
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(events).toContainEqual({
+        type: "context_usage",
+        usage: { usedTokens: 5_000, limitTokens: 258_400 },
+      });
+    });
+    expect(events.filter((event) => event.type === "context_usage")).toEqual([
+      {
+        type: "context_usage",
+        usage: { usedTokens: 5_000, limitTokens: 258_400 },
+      },
+    ]);
+  });
+});

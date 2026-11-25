@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 
 import { z } from "zod";
 
+import { contextUsageOf } from "../../../domain/contextUsage";
 import type { AgentEvent } from "../../../domain/events";
 import { DEFAULT_TOOL_KIND } from "../../constants";
 import {
@@ -23,6 +24,7 @@ import {
   TEXT_CONTENT_TYPE,
   V2_TOOL_KINDS,
 } from "./constants";
+import type { V2ModelRef } from "./client";
 import type { OpencodeV2Event } from "./protocol";
 
 export interface OpencodeV2EventMapper {
@@ -283,18 +285,33 @@ function createScopeTracker(sessionId: string): {
 export function createV2EventMapper(
   sessionId: string,
   cwd: string,
+  contextLimitOf: (model: V2ModelRef) => number | null = () => null,
 ): OpencodeV2EventMapper {
   const scopes = createScopeTracker(sessionId);
   const mapText = createTextMapper();
   const mapTool = createToolMapper();
   const toolInputs = new Map<string, unknown>();
   let reportedModel: string | null = null;
+  let lastModel: V2ModelRef | null = null;
 
   function mapOwn(event: OpencodeV2Event): AgentEvent[] {
+    if (event.type === OpencodeV2EventType.stepEnded) {
+      const { tokens } = event.data;
+      const usedTokens =
+        tokens.input +
+        tokens.output +
+        tokens.reasoning +
+        tokens.cache.read +
+        tokens.cache.write;
+      const limitTokens = lastModel === null ? null : contextLimitOf(lastModel);
+      const usage = contextUsageOf(usedTokens, limitTokens);
+      return usage === null ? [] : [{ type: "context_usage", usage }];
+    }
     if (event.type !== OpencodeV2EventType.stepStarted) {
       return [...mapText(event), ...mapTool(event)];
     }
     const { id, providerID } = event.data.model;
+    lastModel = { id, providerID: providerID ?? "" };
     const model = servedModelName(providerID, id);
     if (model === reportedModel) {
       return [];

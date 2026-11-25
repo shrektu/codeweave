@@ -88,7 +88,27 @@ export class OpencodeV2Handle extends OpencodeHandleBase<
     this.sessionId = await watch.untilExit(
       client.createSession(this.lastAgent),
     );
-    this.mapper = createV2EventMapper(this.sessionId, spec.cwd);
+    const contextLimits = new Map<string, number>();
+    void client
+      .models()
+      .then((models) => {
+        for (const model of models) {
+          if (model.limit !== undefined) {
+            contextLimits.set(
+              `${model.providerID}/${model.id}`,
+              model.limit.context,
+            );
+          }
+        }
+      })
+      .catch((error: unknown) => {
+        console.warn(`opencode models load failed: ${this.runId}`, error);
+      });
+    this.mapper = createV2EventMapper(
+      this.sessionId,
+      spec.cwd,
+      (ref) => contextLimits.get(`${ref.providerID}/${ref.id}`) ?? null,
+    );
   }
 
   protected override createTurn(): ActiveTurn {

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { z } from "zod";
 
+import { contextUsageOf } from "../../domain/contextUsage";
 import type { AgentEvent } from "../../domain/events";
 import { ERROR_KIND_RATE_LIMIT } from "../../domain/constants";
 import type { PermissionProfile } from "../../domain/types";
@@ -76,6 +77,7 @@ import {
   PermissionsApprovalParamsSchema,
   RateLimitsReadResponseSchema,
   ThreadStartResponseSchema,
+  ThreadTokenUsageUpdatedParamsSchema,
   TurnCompletedParamsSchema,
   TurnStartResponseSchema,
   type Turn,
@@ -568,10 +570,31 @@ class CodexAppServerSession implements AgentHandle {
     }
   }
 
+  private onTokenUsageUpdated(params: unknown): void {
+    const parsed = this.parse(
+      ThreadTokenUsageUpdatedParamsSchema,
+      CodexNotification.tokenUsageUpdated,
+      params,
+    );
+    if (parsed?.threadId !== this.threadId) {
+      return;
+    }
+    const usage = contextUsageOf(
+      parsed.tokenUsage.last.totalTokens,
+      parsed.tokenUsage.modelContextWindow,
+    );
+    if (usage !== null) {
+      this.emit({ type: "context_usage", usage });
+    }
+  }
+
   private onNotification(method: string, params: unknown): void {
     switch (method) {
       case CodexNotification.modelRerouted:
         this.onModelRerouted(params);
+        return;
+      case CodexNotification.tokenUsageUpdated:
+        this.onTokenUsageUpdated(params);
         return;
       case CodexNotification.itemStarted:
         this.onItemStarted(params);

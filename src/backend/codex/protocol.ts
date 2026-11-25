@@ -52,6 +52,24 @@ export const ModelReroutedParamsSchema = z.looseObject({
   toModel: z.string(),
 });
 
+const TokenUsageBreakdownSchema = z.looseObject({
+  totalTokens: z.number(),
+  inputTokens: z.number().optional(),
+  cachedInputTokens: z.number().optional(),
+  outputTokens: z.number().optional(),
+  reasoningOutputTokens: z.number().optional(),
+});
+
+export const ThreadTokenUsageUpdatedParamsSchema = z.looseObject({
+  threadId: z.string(),
+  turnId: z.string(),
+  tokenUsage: z.looseObject({
+    total: TokenUsageBreakdownSchema,
+    last: TokenUsageBreakdownSchema,
+    modelContextWindow: z.number().nullable().optional(),
+  }),
+});
+
 export const CodexErrorInfoSchema = z.union([
   z.string(),
   z.record(z.string(), z.unknown()),

@@ -518,4 +518,49 @@ describe("v2 model events", () => {
     ]);
     expect(mapper.map(stepStarted("groq/llama", "groq"))).toEqual([]);
   });
+
+  it("maps_step_ended_tokens_to_context_usage", () => {
+    const mapper = createV2EventMapper(OWN, CWD, (ref) =>
+      ref.providerID === "p" && ref.id === "m" ? 128_000 : null,
+    );
+    mapper.map(stepStarted("m", "p"));
+
+    const mapped = mapper.map(
+      event("session.step.ended", {
+        sessionID: OWN,
+        tokens: {
+          input: 1000,
+          output: 200,
+          reasoning: 50,
+          cache: { read: 3000, write: 0 },
+        },
+      }),
+    );
+
+    expect(mapped).toEqual([
+      {
+        type: "context_usage",
+        usage: { usedTokens: 4250, limitTokens: 128_000 },
+      },
+    ]);
+  });
+
+  it("opencode_ignores_foreign_step_ended", () => {
+    const mapper = createV2EventMapper(OWN, CWD, () => 128_000);
+    mapper.map(stepStarted("m", "p"));
+
+    const mapped = mapper.map(
+      event("session.step.ended", {
+        sessionID: STRANGER,
+        tokens: {
+          input: 1000,
+          output: 200,
+          reasoning: 50,
+          cache: { read: 3000, write: 0 },
+        },
+      }),
+    );
+
+    expect(mapped).toEqual([]);
+  });
 });

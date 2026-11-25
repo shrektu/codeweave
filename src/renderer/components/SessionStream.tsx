@@ -32,6 +32,7 @@ import { useRecentFolders } from "../useRecentFolders";
 import { Markdown } from "../markdown/Markdown";
 
 import { Composer } from "./Composer";
+import { ContextMeter } from "./ContextMeter";
 import { PathField } from "./PathField";
 import { PermissionCard } from "./PermissionCard";
 import { ToolCard } from "./ToolCard";
@@ -454,6 +455,10 @@ function SessionBody({
       <div className="session-head">
         <span className="cwd">{session.cwd}</span>
         <SessionIdentity session={session} accounts={accounts} />
+        <ContextMeter
+          usage={session.contextUsage}
+          provider={session.activeProvider}
+        />
         <span className="phase">
           {phaseText(session.phase, accounts, session.turnInFlight)}
         </span>

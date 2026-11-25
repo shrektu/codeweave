@@ -11,6 +11,7 @@ import {
   recordTurnRoute,
   reduceSession,
   reservePromptSeq,
+  resetServedState,
   type SessionState,
   type TurnRouteEntry,
 } from "./sessionReducer";
@@ -497,5 +498,32 @@ describe("session reducer: turn routes", () => {
     expect(state.turns.map((turn) => turn.effectiveModel)).toEqual([
       "real-model",
     ]);
+  });
+
+  it("stores_latest_context_usage", () => {
+    const state = reduceSession(INITIAL_SESSION_STATE, {
+      type: "context_usage",
+      usage: { usedTokens: 45_000, limitTokens: 200_000 },
+    });
+
+    expect(state.contextUsage).toEqual({
+      usedTokens: 45_000,
+      limitTokens: 200_000,
+    });
+  });
+
+  it("reset_served_state_clears_context_usage", () => {
+    const withUsage = reduceAll([
+      { type: "model", model: "claude-opus-4-6" },
+      {
+        type: "context_usage",
+        usage: { usedTokens: 45_000, limitTokens: 200_000 },
+      },
+    ]);
+
+    const reset = resetServedState(withUsage);
+
+    expect(reset.currentModel).toBeNull();
+    expect(reset.contextUsage).toBeNull();
   });
 });

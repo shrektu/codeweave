@@ -80,6 +80,22 @@ const StepStartedSchema = z.looseObject({
   }),
 });
 
+const StepEndedSchema = z.looseObject({
+  type: z.literal(OpencodeV2EventType.stepEnded),
+  data: z.looseObject({
+    ...SESSION_SHAPE,
+    tokens: z.looseObject({
+      input: z.number(),
+      output: z.number(),
+      reasoning: z.number(),
+      cache: z.looseObject({
+        read: z.number(),
+        write: z.number(),
+      }),
+    }),
+  }),
+});
+
 const TextDeltaSchema = z.looseObject({
   type: z.literal(OpencodeV2EventType.textDelta),
   data: z.looseObject({
@@ -177,6 +193,7 @@ export const OpencodeV2EventSchema = z.discriminatedUnion("type", [
   ExecutionFailedSchema,
   ExecutionInterruptedSchema,
   StepStartedSchema,
+  StepEndedSchema,
   TextDeltaSchema,
   TextEndedSchema,
   ToolInputStartedSchema,

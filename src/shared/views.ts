@@ -189,6 +189,12 @@ export const TurnRouteViewSchema = z.strictObject({
 });
 export type TurnRouteView = z.infer<typeof TurnRouteViewSchema>;
 
+export const ContextUsageViewSchema = z.strictObject({
+  usedTokens: z.int().nonnegative(),
+  limitTokens: z.int().positive().nullable(),
+});
+export type ContextUsageView = z.infer<typeof ContextUsageViewSchema>;
+
 export const SessionViewSchema = z.strictObject({
   id: z.string(),
   cwd: z.string(),
@@ -206,6 +212,7 @@ export const SessionViewSchema = z.strictObject({
   turnInFlight: z.boolean(),
   flowRef: FlowRefSchema.nullable(),
   currentModel: z.string().nullable(),
+  contextUsage: ContextUsageViewSchema.nullable(),
   turns: z.array(TurnRouteViewSchema),
   orchestrate: z.boolean(),
 });
