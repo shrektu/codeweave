@@ -91,7 +91,7 @@ function SessionsSection({
   };
 
   return (
-    <section className="sidebar-section" aria-label="Sessions">
+    <nav className="sidebar-section" aria-label="Sessions">
       <div className="sidebar-head">
         <h2 className="sec">Sessions</h2>
         <button
@@ -126,7 +126,7 @@ function SessionsSection({
           ))}
         </ul>
       )}
-    </section>
+    </nav>
   );
 }
 

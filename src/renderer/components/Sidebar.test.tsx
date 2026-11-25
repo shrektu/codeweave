@@ -48,8 +48,8 @@ it("renders_sessions_newest_first_with_badges_and_statuses", () => {
     store,
   );
 
-  const region = screen.getByRole("region", { name: "Sessions" });
-  const labels = within(region)
+  const nav = screen.getByRole("navigation", { name: "Sessions" });
+  const labels = within(nav)
     .getAllByRole("button")
     .filter((button) => button.classList.contains("session-pick"))
     .map((button) => button.textContent);

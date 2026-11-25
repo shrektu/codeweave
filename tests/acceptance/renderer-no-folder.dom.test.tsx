@@ -329,9 +329,9 @@ it("unsent_draft_belongs_to_the_session_that_failed", async () => {
 
   emitSession(client, { id: SECOND_SESSION, cwd: PICKED_CWD });
   fireEvent.click(
-    await within(screen.getByRole("region", { name: "Sessions" })).findByText(
-      "picked",
-    ),
+    await within(
+      screen.getByRole("navigation", { name: "Sessions" }),
+    ).findByText("picked"),
   );
 
   await waitFor(() => {

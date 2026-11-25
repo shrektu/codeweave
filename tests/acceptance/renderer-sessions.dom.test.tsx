@@ -69,7 +69,7 @@ it("sidebar_lists_sessions_with_status", async () => {
 
   renderWithServices(<Sidebar onManageAccounts={() => undefined} />, client);
 
-  const nav = await screen.findByRole("region", { name: "Sessions" });
+  const nav = await screen.findByRole("navigation", { name: "Sessions" });
   expect(within(nav).getByText("alpha")).toBeTruthy();
   expect(within(nav).getByText("beta")).toBeTruthy();
   expect(within(nav).getByText("No folder")).toBeTruthy();
@@ -81,6 +81,21 @@ it("sidebar_lists_sessions_with_status", async () => {
     .getByText("beta")
     .closest("[aria-current='true']");
   expect(activeItem).not.toBeNull();
+});
+
+it("session_region_name_is_unique", async () => {
+  const client = setupClient(
+    makeSnapshot({
+      sessions: [makeSession({ id: "s-1", cwd: "/work/one" })],
+      accounts: [makeAccount()],
+    }),
+  );
+
+  renderWithServices(<App />, client);
+
+  await screen.findByText("one");
+
+  expect(screen.getAllByRole("region", { name: /session/i })).toHaveLength(1);
 });
 
 it("clicking_session_switches_stream_and_composer_target", async () => {
@@ -104,7 +119,7 @@ it("clicking_session_switches_stream_and_composer_target", async () => {
   renderWithServices(<App />, client);
 
   await screen.findByText("Second stream");
-  const nav = screen.getByRole("region", { name: "Sessions" });
+  const nav = screen.getByRole("navigation", { name: "Sessions" });
   fireEvent.click(within(nav).getByText("one"));
 
   await screen.findByText("First stream");
@@ -133,7 +148,7 @@ it("new_session_shows_start_form", async () => {
 
   renderWithServices(<App />, client);
 
-  const nav = await screen.findByRole("region", { name: "Sessions" });
+  const nav = await screen.findByRole("navigation", { name: "Sessions" });
   fireEvent.click(within(nav).getByRole("button", { name: "New session" }));
 
   expect(screen.getByPlaceholderText("What should the agent do?")).toBeTruthy();
@@ -155,7 +170,7 @@ it("started_session_becomes_active", async () => {
 
   renderWithServices(<App />, client);
 
-  const nav = await screen.findByRole("region", { name: "Sessions" });
+  const nav = await screen.findByRole("navigation", { name: "Sessions" });
   fireEvent.click(within(nav).getByRole("button", { name: "New session" }));
   fireEvent.change(screen.getByPlaceholderText("What should the agent do?"), {
     target: { value: "Start two" },
@@ -185,7 +200,7 @@ it("close_button_only_on_ended_sessions", async () => {
 
   renderWithServices(<Sidebar onManageAccounts={() => undefined} />, client);
 
-  const nav = await screen.findByRole("region", { name: "Sessions" });
+  const nav = await screen.findByRole("navigation", { name: "Sessions" });
   const closeButtons = within(nav).getAllByRole("button", {
     name: "Close session",
   });
@@ -251,7 +266,7 @@ it("first_snapshot_activates_newest_ended_session", async () => {
 
   renderWithServices(<App />, client);
 
-  const nav = await screen.findByRole("region", { name: "Sessions" });
+  const nav = await screen.findByRole("navigation", { name: "Sessions" });
   expect(
     within(nav).getByText("two").closest("[aria-current='true']"),
   ).not.toBeNull();
@@ -281,7 +296,7 @@ it("late_started_session_becomes_active_after_start_timeout", async () => {
     payload: makeSession({ id: "s-late", cwd: "/work/late" }),
   });
 
-  const nav = screen.getByRole("region", { name: "Sessions" });
+  const nav = screen.getByRole("navigation", { name: "Sessions" });
   const late = await within(nav).findByText("late");
   expect(late.closest("[aria-current='true']")).not.toBeNull();
 });
@@ -337,7 +352,7 @@ it("new_session_ignores_other_orchestrators_runs", async () => {
 
   renderWithServices(<App />, client);
 
-  const nav = await screen.findByRole("region", { name: "Sessions" });
+  const nav = await screen.findByRole("navigation", { name: "Sessions" });
   fireEvent.click(within(nav).getByRole("button", { name: "New session" }));
 
   expect(screen.getByPlaceholderText("What should the agent do?")).toBeTruthy();
@@ -360,7 +375,7 @@ it("flow_run_blocked_while_background_session_live", async () => {
 
   renderWithServices(<App />, client);
 
-  const nav = await screen.findByRole("region", { name: "Sessions" });
+  const nav = await screen.findByRole("navigation", { name: "Sessions" });
   fireEvent.click(within(nav).getByText("ended"));
   fireEvent.click(screen.getByRole("tab", { name: "Flow" }));
 
