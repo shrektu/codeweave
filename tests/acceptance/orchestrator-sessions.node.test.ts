@@ -1,4 +1,11 @@
-import { mkdtemp, realpath, rm, writeFile, chmod } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  mkdtemp,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -106,33 +113,62 @@ async function commitMainChange(repo: string): Promise<void> {
   await git(repo, ["commit", "--quiet", "-m", "Main conflict"]);
 }
 
-const FLOW_COMMIT_WAIT_TICKS = 600;
-const FLOW_COMMIT_WAIT_INTERVAL = "0.1";
+const MERGE_GATE_DRIVER = "codeweave-merge-gate";
+const MERGE_GATE_WAIT_TICKS = 300;
+const MERGE_GATE_WAIT_INTERVAL = "0.05";
 
-function flowCommitGate(releaseFile: string): string {
+interface MergeGate {
+  entered(): Promise<void>;
+  release(): Promise<void>;
+}
+
+function mergeGateScript(): string {
   return [
     "#!/bin/sh",
-    'if [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ]; then',
-    "  exit 0",
-    "fi",
-    `for _ in $(seq 1 ${String(FLOW_COMMIT_WAIT_TICKS)}); do`,
-    `  if [ -f "${releaseFile}" ]; then`,
-    "    exit 0",
+    'entered="$1"',
+    'release="$2"',
+    ': > "$entered"',
+    "i=0",
+    `while [ "$i" -lt ${String(MERGE_GATE_WAIT_TICKS)} ]; do`,
+    '  if [ -f "$release" ]; then',
+    "    exit 1",
     "  fi",
-    `  sleep ${FLOW_COMMIT_WAIT_INTERVAL}`,
+    `  sleep ${MERGE_GATE_WAIT_INTERVAL}`,
+    "  i=$((i + 1))",
     "done",
     "exit 1",
     "",
   ].join("\n");
 }
 
-async function holdFlowCommits(
-  repo: string,
-  releaseFile: string,
-): Promise<void> {
-  const hook = join(repo, ".git", "hooks", "pre-commit");
-  await writeFile(hook, flowCommitGate(releaseFile));
-  await chmod(hook, 0o755);
+function shellPath(path: string): string {
+  return `"${path.replaceAll("\\", "/")}"`;
+}
+
+async function holdMerge(repo: string, root: string): Promise<MergeGate> {
+  const enteredFile = join(root, "merge-entered");
+  const releaseFile = join(root, "merge-release");
+  const script = join(root, "merge-gate.sh");
+  await writeFile(script, mergeGateScript());
+  await chmod(script, 0o755);
+  await writeFile(
+    join(repo, ".gitattributes"),
+    `${BASE_FILE} merge=${MERGE_GATE_DRIVER}\n`,
+  );
+  await git(repo, ["add", ".gitattributes"]);
+  await git(repo, ["commit", "--quiet", "-m", "Gate merges of the base file"]);
+  await git(repo, [
+    "config",
+    `merge.${MERGE_GATE_DRIVER}.driver`,
+    `${shellPath(script)} ${shellPath(enteredFile)} ${shellPath(releaseFile)}`,
+  ]);
+  return {
+    entered: () =>
+      settled(async () => {
+        await access(enteredFile);
+      }),
+    release: () => writeFile(releaseFile, ""),
+  };
 }
 
 async function startOrchestrator(
@@ -379,41 +415,35 @@ function heldMergeResolution(repo: string): HeldMergeResolution {
   };
 }
 
-function expectMergeConflictOrEnded(reply: ToolReply): void {
-  if (reply.isError) {
-    expect(reply.text).toBe("The orchestration has ended");
-    return;
-  }
+function expectMergeConflict(reply: ToolReply): void {
+  expect(reply.isError).toBe(false);
   const outcome: unknown = JSON.parse(reply.text);
-  expect(outcome).toMatchObject({ status: "conflict" });
+  expect(outcome).toMatchObject({ status: "conflict", files: [BASE_FILE] });
 }
 
 it("merge_lease_released_when_orchestration_ends_during_merge", async () => {
   const flowRepo = await createFlowRepo();
   flowRepos.push(flowRepo);
   const repo = flowRepo.repo;
-  const releaseFile = join(flowRepo.root, "release-flow-commit");
-  await holdFlowCommits(repo, releaseFile);
+  const gate = await holdMerge(repo, flowRepo.root);
   const rig = await openRig({ accounts: [ACCOUNT_A, ACCOUNT_B] });
   const first = await startOrchestrator(rig, 0, repo);
   const worktreeRun = await doneWorktreeRun(rig, first.tools, repo);
   await commitMainChange(repo);
 
   const merging = first.tools.call("merge_flow", { runId: worktreeRun });
-  await settled(async () => {
-    const reply = await first.tools.call("merge_flow", {
-      runId: worktreeRun,
+  try {
+    await gate.entered();
+    await rig.call("session/stop", { sessionId: first.sessionId });
+    await settled(async () => {
+      expect(await postWithToken(first.endpoint, first.endpoint.token)).toBe(
+        HTTP_UNAUTHORIZED,
+      );
     });
-    expect(reply.text).toContain("Another merge is in progress");
-  });
-  await rig.call("session/stop", { sessionId: first.sessionId });
-  await settled(async () => {
-    expect(await postWithToken(first.endpoint, first.endpoint.token)).toBe(
-      HTTP_UNAUTHORIZED,
-    );
-  });
-  await writeFile(releaseFile, "");
-  expectMergeConflictOrEnded(await merging);
+  } finally {
+    await gate.release();
+  }
+  expectMergeConflict(await merging);
 
   await expect(rig.call("session/start", { cwd: repo })).resolves.toMatchObject(
     {
