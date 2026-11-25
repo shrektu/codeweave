@@ -49,9 +49,9 @@ import {
 import type { StopResult } from "../process/container";
 
 import {
+  createAcpEventMapper,
   isAuthError,
   mapPromptError,
-  mapSessionUpdate,
   modelOf,
   modelValueOf,
 } from "./acpEvents";
@@ -164,6 +164,7 @@ class ClaudeAcpSession implements AgentHandle {
   private readonly agentProcess: AgentProcess;
   private readonly listeners = new Set<Listener>();
   private readonly pending = new Map<string, PendingPermission>();
+  private readonly mapUpdate = createAcpEventMapper();
   private readonly peer: AcpPeer;
   private readonly exitSignal: Promise<void>;
   private resolveExit: () => void = () => undefined;
@@ -281,7 +282,7 @@ class ClaudeAcpSession implements AgentHandle {
   }
 
   private emitUpdate(update: SessionUpdate): void {
-    for (const event of mapSessionUpdate(update)) {
+    for (const event of this.mapUpdate.map(update)) {
       this.emit(event);
     }
   }

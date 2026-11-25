@@ -33,6 +33,7 @@ import type {
 import { AccountsDialog } from "./components/AccountsDialog";
 import { AgentsTab } from "./components/AgentsTab";
 import { EditFeedback } from "./components/EditFeedback";
+import { EditedFilesPanel } from "./components/EditedFilesPanel";
 import { FlowErrors } from "./components/FlowErrors";
 import { FlowGraph } from "./components/FlowGraph";
 import { FlowInspector } from "./components/FlowInspector";
@@ -94,6 +95,7 @@ import { useGpuAccelerated } from "./useGpuAccelerated";
 
 type OpenDialog = "accounts" | "settings" | null;
 type CentreTab = "session" | "flow" | "agents";
+type SideTab = "limits" | "edits";
 
 const CENTRE_TABS: readonly { id: CentreTab; label: string }[] = [
   { id: "session", label: "Session" },
@@ -603,6 +605,7 @@ export function App(): JSX.Element {
   const [measuredFps, setMeasuredFps] = useState<number | undefined>(undefined);
   const [openDialog, setOpenDialog] = useState<OpenDialog>(null);
   const [centreTab, setCentreTab] = useState<CentreTab>("session");
+  const [sideTab, setSideTab] = useState<SideTab>("limits");
   const [pickedFolder, setPickedFolder] = useState<string | null>(null);
   const pinnedCwd = pinnedCwdOf(state.snapshot);
   if (pinnedCwd !== null && pinnedCwd !== pickedFolder) {
@@ -676,6 +679,14 @@ export function App(): JSX.Element {
     setCentreTab("flow");
   };
   const orchestrating = state.snapshot?.session?.orchestrate === true;
+  const sessionId = state.snapshot?.session?.id ?? null;
+  const sessionEdits =
+    sessionId === null
+      ? null
+      : (state.snapshot?.editedFiles.find(
+          (entry) => entry.sessionId === sessionId,
+        ) ?? null);
+  const editedFileCount = sessionEdits?.files.length ?? 0;
 
   return (
     <div className="app">
@@ -794,8 +805,57 @@ export function App(): JSX.Element {
         )}
       </div>
       <div className="side-column">
-        <LimitsPanel />
-        <SwitchLog />
+        <div role="tablist" aria-label="Details" className="tabs">
+          <button
+            type="button"
+            role="tab"
+            id="side-tab-limits"
+            aria-selected={sideTab === "limits"}
+            aria-controls="side-panel-limits"
+            className="tab"
+            onClick={() => {
+              setSideTab("limits");
+            }}
+          >
+            Limits
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="side-tab-edits"
+            aria-selected={sideTab === "edits"}
+            aria-controls="side-panel-edits"
+            className="tab"
+            onClick={() => {
+              setSideTab("edits");
+            }}
+          >
+            {editedFileCount > 0
+              ? `Edited files (${String(editedFileCount)})`
+              : "Edited files"}
+          </button>
+        </div>
+        {sideTab === "limits" ? (
+          <div
+            id="side-panel-limits"
+            role="tabpanel"
+            aria-labelledby="side-tab-limits"
+          >
+            <LimitsPanel />
+            <SwitchLog />
+          </div>
+        ) : (
+          <div
+            id="side-panel-edits"
+            role="tabpanel"
+            aria-labelledby="side-tab-edits"
+          >
+            <EditedFilesPanel
+              edits={sessionEdits}
+              cwd={state.snapshot?.session?.cwd ?? null}
+            />
+          </div>
+        )}
       </div>
       {openDialog === "accounts" && <AccountsDialog onClose={closeDialog} />}
       {openDialog === "settings" && <SettingsDialog onClose={closeDialog} />}

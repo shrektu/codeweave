@@ -86,6 +86,11 @@ async function rig(): Promise<{
         }),
     }),
     postUpdaterConfig: () => undefined,
+    editedFiles: {
+      observeMain: () => undefined,
+      observeRun: () => undefined,
+      views: () => [],
+    },
   });
   return { handlers, userData, broadcast };
 }

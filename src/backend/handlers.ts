@@ -5,6 +5,7 @@ import { createAccountsService, type AccountsService } from "./accountsService";
 import type { ConnectionRegistry } from "./connections";
 import { createAgent, deleteAgent, saveAgent } from "./agents";
 import { createDefinitionRoots } from "./definitionLibrary";
+import type { EditedFilesTracker } from "./editedFiles";
 import { listFlows, saveFlow } from "./flows";
 import type { FlowRunService } from "./flowRuns";
 import type { IpcHandlers } from "./ipcServer";
@@ -37,6 +38,7 @@ export interface HandlerDeps {
   containerStatus: ContainerStatus;
   terminals: TerminalService;
   postUpdaterConfig: PostUpdaterConfig;
+  editedFiles: EditedFilesTracker;
 }
 
 const FLOW_RUNNING_MESSAGE = "A flow is running";
@@ -62,6 +64,7 @@ export function createHandlers({
   containerStatus,
   terminals,
   postUpdaterConfig,
+  editedFiles,
 }: HandlerDeps): IpcHandlers {
   const accounts = createAccountsService({
     store,
@@ -115,6 +118,7 @@ export function createHandlers({
       terminal: terminals.view(),
       flowRuns: flowRuns.views(),
       flowSessions: [...sessions.runViews()],
+      editedFiles: [...editedFiles.views()],
     }),
     "session/start": async (params) => {
       if (flowRuns.hasOpenUserRuns()) {

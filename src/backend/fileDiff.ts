@@ -47,21 +47,24 @@ function formatHunk(hunk: StructuredPatchHunk): string {
   return [header, ...hunk.lines].join(LINE_SEPARATOR);
 }
 
-export function computeFileDiff(
-  path: string,
+export interface PositionedDiffInput {
+  readonly before: FileSnapshot;
+  readonly after: FileSnapshot;
+  readonly line: number;
+}
+
+type StructuredResult =
+  | { readonly hunks: readonly StructuredPatchHunk[] }
+  | { readonly omitted: DiffOmission }
+  | null;
+
+function structuredHunksOf(
   before: FileSnapshot,
   after: FileSnapshot,
-): FileDiff | null {
-  if (
-    before.kind === SnapshotKind.missing &&
-    after.kind === SnapshotKind.missing
-  ) {
-    return null;
-  }
-  const change = changeOf(before, after);
+): StructuredResult {
   const omitted = omissionOf(before, after);
   if (omitted !== null) {
-    return { path, change, omitted };
+    return { omitted };
   }
   const beforeText = textOf(before);
   const afterText = textOf(after);
@@ -77,12 +80,73 @@ export function computeFileDiff(
     timeout: DIFF_TIMEOUT_MS,
     maxEditLength: DIFF_MAX_EDIT_LENGTH,
   });
-  if (structured === undefined) {
-    return { path, change, omitted: DiffOmission.tooLarge };
+  return structured === undefined
+    ? { omitted: DiffOmission.tooLarge }
+    : { hunks: structured.hunks };
+}
+
+function finalizePatch(
+  path: string,
+  change: FileChange,
+  hunkStrings: readonly string[],
+): FileDiff {
+  const patch = hunkStrings.join(LINE_SEPARATOR);
+  return patch.length > DIFF_MAX_PATCH_CHARS
+    ? { path, change, omitted: DiffOmission.tooLarge }
+    : { path, change, patch };
+}
+
+export function computeFileDiff(
+  path: string,
+  before: FileSnapshot,
+  after: FileSnapshot,
+): FileDiff | null {
+  if (
+    before.kind === SnapshotKind.missing &&
+    after.kind === SnapshotKind.missing
+  ) {
+    return null;
   }
-  const patch = structured.hunks.map(formatHunk).join(LINE_SEPARATOR);
-  if (patch.length > DIFF_MAX_PATCH_CHARS) {
-    return { path, change, omitted: DiffOmission.tooLarge };
+  const change = changeOf(before, after);
+  const result = structuredHunksOf(before, after);
+  if (result === null) {
+    return null;
   }
-  return { path, change, patch };
+  if ("omitted" in result) {
+    return { path, change, omitted: result.omitted };
+  }
+  return finalizePatch(path, change, result.hunks.map(formatHunk));
+}
+
+export function computePositionedFileDiff(
+  path: string,
+  inputs: readonly PositionedDiffInput[],
+): FileDiff | null {
+  const hunkStrings: string[] = [];
+  let delta = 0;
+  for (const input of inputs) {
+    const result = structuredHunksOf(input.before, input.after);
+    if (result === null) {
+      continue;
+    }
+    if ("omitted" in result) {
+      return { path, change: FileChange.modified, omitted: result.omitted };
+    }
+    const oldOffset = input.line - 1 - delta;
+    const newOffset = input.line - 1;
+    let inputDelta = 0;
+    for (const hunk of result.hunks) {
+      const shifted: StructuredPatchHunk = {
+        ...hunk,
+        oldStart: hunk.oldStart + oldOffset,
+        newStart: hunk.newStart + newOffset,
+      };
+      hunkStrings.push(formatHunk(shifted));
+      inputDelta += hunk.newLines - hunk.oldLines;
+    }
+    delta += inputDelta;
+  }
+  return hunkStrings.length === 0
+    ? null
+    : finalizePatch(path, FileChange.modified, hunkStrings);
 }

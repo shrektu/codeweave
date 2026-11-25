@@ -54,6 +54,11 @@ it("switch_log_list_skips_malformed_lines", async () => {
     containerStatus: { available: true, message: null },
     terminals: fakeTerminals(),
     postUpdaterConfig: () => undefined,
+    editedFiles: {
+      observeMain: () => undefined,
+      observeRun: () => undefined,
+      views: () => [],
+    },
   });
 
   const { entries } = await handlers["switchLog/list"]({});

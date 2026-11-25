@@ -312,3 +312,58 @@ it.each([
     expect(combineRuntimes(own, external, NOW_MS)).toEqual(expected);
   },
 );
+
+it("pool_reports_main_and_run_views_to_observers", async () => {
+  const userData = await mkdtemp(join(tmpdir(), "codeweave-pool-obs-"));
+  const cwd = await mkdtemp(join(tmpdir(), "codeweave-pool-obs-cwd-"));
+  dirs.push(userData, cwd);
+  const store = createJsonStore(userData);
+  await store.writeAccounts([ACCOUNT]);
+  const mainViews: ReturnType<SessionPool["main"]["view"]>[] = [];
+  const runViews: {
+    runId: string;
+    view: ReturnType<SessionPool["main"]["view"]>;
+  }[] = [];
+  const pool = createSessionPool({
+    adapter: {
+      start: (spec) =>
+        Promise.resolve({
+          ok: true,
+          handle: handleOf(spec.runId, spec.account.id, []),
+        }),
+    },
+    store,
+    broadcast: vi.fn<ConnectionRegistry["broadcast"]>(),
+    now: () => NOW_MS,
+    schedule: () => () => undefined,
+    inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),
+    newRunId: () => "agent-obs",
+    resolveExecutable: () => "/usr/bin/claude",
+    stopGraceMs: 10,
+    containerStatus: { available: true, message: null },
+    externalRuntime: () => null,
+    beforeLaunch: () => Promise.resolve(),
+    isBlocked: () => false,
+    hasKey: () => true,
+    secrets: () => [],
+    homeDir: userData,
+    resolveFolder: (requested) => Promise.resolve(requested ?? cwd),
+    protectedPaths: () => Promise.resolve([]),
+    leaseModes: createLeaseModes(),
+    onMainView: (view) => {
+      mainViews.push(view);
+    },
+    onRunView: (runId, view) => {
+      runViews.push({ runId, view });
+    },
+  });
+  pools.push(pool);
+
+  await pool.main.start({ cwd });
+  await pool.forRun("run-obs").start({ cwd });
+
+  expect(mainViews.some((view) => view !== null)).toBe(true);
+  expect(
+    runViews.some((entry) => entry.runId === "run-obs" && entry.view !== null),
+  ).toBe(true);
+});

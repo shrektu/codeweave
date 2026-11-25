@@ -109,9 +109,11 @@ it("segmented_tabs_mark_current", async () => {
 
   expect(session.getAttribute("aria-selected")).toBe("false");
   expect(agents.getAttribute("aria-selected")).toBe("true");
-  expect(screen.getByRole("tabpanel").getAttribute("aria-labelledby")).toBe(
-    "tab-agents",
-  );
+  expect(
+    screen
+      .getByRole("tabpanel", { name: "Agents" })
+      .getAttribute("aria-labelledby"),
+  ).toBe("tab-agents");
 });
 
 it("long_account_labels_are_ellipsized_in_sidebar_and_dialog", async () => {

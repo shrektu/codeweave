@@ -358,6 +358,11 @@ it("flows_list_handler_delegates_to_listFlows", async () => {
     containerStatus: { available: true, message: null },
     terminals: fakeTerminals(),
     postUpdaterConfig: () => undefined,
+    editedFiles: {
+      observeMain: () => undefined,
+      observeRun: () => undefined,
+      views: () => [],
+    },
   });
 
   const result = await handlers["flows/list"]({ cwd });

@@ -12,6 +12,7 @@ export type FileChange = (typeof FileChange)[keyof typeof FileChange];
 export const DiffOmission = {
   binary: "binary",
   tooLarge: "too_large",
+  notReported: "not_reported",
 } as const;
 export type DiffOmission = (typeof DiffOmission)[keyof typeof DiffOmission];
 

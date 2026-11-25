@@ -117,7 +117,7 @@ it("icon_buttons_have_accessible_names", async () => {
   const tabs = ["Session", "Flow", "Agents"];
   for (const tab of tabs) {
     fireEvent.click(screen.getByRole("tab", { name: tab }));
-    await screen.findByRole("tabpanel", {}, WAIT_OPTIONS);
+    await screen.findByRole("tabpanel", { name: tab }, WAIT_OPTIONS);
     expect(unnamedButtons(document.body)).toEqual([]);
     expect(iconOnlyWithoutTitle(document.body)).toEqual([]);
   }

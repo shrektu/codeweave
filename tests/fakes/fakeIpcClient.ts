@@ -378,6 +378,7 @@ export function makeSnapshot(overrides: Partial<Snapshot> = {}): Snapshot {
     terminal: null,
     flowRuns: [],
     flowSessions: [],
+    editedFiles: [],
     ...overrides,
   };
 }

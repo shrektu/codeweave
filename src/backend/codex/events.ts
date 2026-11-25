@@ -5,19 +5,26 @@ import {
   RATE_LIMIT_TYPE_FIVE_HOUR,
   RATE_LIMIT_TYPE_SEVEN_DAY,
 } from "../../domain/constants";
-import type {
-  AgentEvent,
-  PermissionOption,
-  ToolCallStatus,
+import {
+  DiffOmission,
+  FileChange,
+  type AgentEvent,
+  type FileDiff,
+  type PermissionOption,
+  type ToolCallStatus,
 } from "../../domain/events";
 import type { LimitWindow } from "../../domain/limitWindows";
 import { PermissionProfile } from "../../domain/types";
 import {
   DEFAULT_TOOL_KIND,
+  DIFF_MAX_FILE_BYTES,
+  DIFF_MAX_PATCH_CHARS,
   OPTION_KIND_ALLOW_ALWAYS,
   OPTION_KIND_ALLOW_ONCE,
   OPTION_KIND_REJECT_ONCE,
 } from "../constants";
+import { computeFileDiff } from "../fileDiff";
+import { SnapshotKind, type FileSnapshot } from "../fileSnapshot";
 
 import {
   CodexApprovalPolicy,
@@ -245,6 +252,79 @@ export function mapItemStarted(item: ThreadItem): AgentEvent[] {
   ];
 }
 
+const HUNK_LINE_PREFIX = "@@";
+const LINE_BREAK = "\n";
+const CODEX_CHANGE_ADD = "add";
+const CODEX_CHANGE_DELETE = "delete";
+
+function textSnapshot(text: string): FileSnapshot {
+  if (Buffer.byteLength(text, "utf8") > DIFF_MAX_FILE_BYTES) {
+    return { kind: SnapshotKind.tooLarge };
+  }
+  if (text.includes("\0")) {
+    return { kind: SnapshotKind.binary };
+  }
+  return { kind: SnapshotKind.text, text };
+}
+
+function stripDiffHeaders(diff: string): string {
+  const lines = diff.split(LINE_BREAK);
+  const hunkIndex = lines.findIndex((line) =>
+    line.startsWith(HUNK_LINE_PREFIX),
+  );
+  return hunkIndex === -1 ? diff : lines.slice(hunkIndex).join(LINE_BREAK);
+}
+
+function changeTypeOf(kindType: string | undefined): FileChange {
+  if (kindType === CODEX_CHANGE_ADD) {
+    return FileChange.created;
+  }
+  return kindType === CODEX_CHANGE_DELETE
+    ? FileChange.deleted
+    : FileChange.modified;
+}
+
+type FileChangeEntry = Extract<
+  KnownThreadItem,
+  { type: typeof CodexItemType.fileChange }
+>["changes"][number];
+
+function fileChangeDiff(change: FileChangeEntry): FileDiff | null {
+  const path = change.kind?.move_path ?? change.path;
+  const kindType = change.kind?.type;
+  if (change.diff === undefined) {
+    return {
+      path,
+      change: changeTypeOf(kindType),
+      omitted: DiffOmission.notReported,
+    };
+  }
+  if (kindType === CODEX_CHANGE_ADD) {
+    return computeFileDiff(
+      path,
+      { kind: SnapshotKind.missing },
+      textSnapshot(change.diff),
+    );
+  }
+  if (kindType === CODEX_CHANGE_DELETE) {
+    return computeFileDiff(path, textSnapshot(change.diff), {
+      kind: SnapshotKind.missing,
+    });
+  }
+  const patch = stripDiffHeaders(change.diff);
+  return patch.length > DIFF_MAX_PATCH_CHARS
+    ? { path, change: FileChange.modified, omitted: DiffOmission.tooLarge }
+    : { path, change: FileChange.modified, patch };
+}
+
+function fileChangeDiffs(
+  item: Extract<KnownThreadItem, { type: typeof CodexItemType.fileChange }>,
+): FileDiff[] {
+  return item.changes
+    .map(fileChangeDiff)
+    .filter((diff): diff is FileDiff => diff !== null);
+}
+
 export function mapItemCompleted(item: ThreadItem): AgentEvent[] {
   const tool = knownTool(item);
   if (tool === null) {
@@ -254,6 +334,10 @@ export function mapItemCompleted(item: ThreadItem): AgentEvent[] {
     tool.item.type === CodexItemType.commandExecution
       ? (tool.item.aggregatedOutput ?? "")
       : "";
+  const diffs =
+    tool.item.type === CodexItemType.fileChange
+      ? fileChangeDiffs(tool.item)
+      : [];
   return [
     {
       type: "tool_call_update",
@@ -261,6 +345,7 @@ export function mapItemCompleted(item: ThreadItem): AgentEvent[] {
       status: toolStatus(statusOf(tool.item), "completed"),
       ...rawInputOf(tool.description),
       ...(output === "" ? {} : { output }),
+      ...(diffs.length === 0 ? {} : { diffs }),
     },
   ];
 }

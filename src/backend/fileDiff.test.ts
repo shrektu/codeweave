@@ -2,7 +2,7 @@ import { applyPatch } from "diff";
 import { expect, it } from "vitest";
 
 import { DIFF_MAX_PATCH_CHARS } from "./constants";
-import { computeFileDiff } from "./fileDiff";
+import { computeFileDiff, computePositionedFileDiff } from "./fileDiff";
 import { type FileSnapshot } from "./fileSnapshot";
 
 const PATH = "src/app.ts";
@@ -185,4 +185,62 @@ it("patch_round_trips_over_seeded_random_edits", () => {
       expect(applyPatch(before, fullPatch(patch))).toBe(after);
     }
   }
+});
+
+const SPLIT_SNIPPET_BEFORE = [
+  "L1",
+  "u1",
+  "u2",
+  "u3",
+  "u4",
+  "u5",
+  "u6",
+  "u7",
+  "u8",
+  "old",
+  "",
+].join("\n");
+
+const SPLIT_SNIPPET_AFTER = [
+  "L1",
+  "ins",
+  "u1",
+  "u2",
+  "u3",
+  "u4",
+  "u5",
+  "u6",
+  "u7",
+  "u8",
+  "new",
+  "",
+].join("\n");
+
+it("positioned_diff_keeps_old_start_for_split_snippet", () => {
+  const diff = computePositionedFileDiff(PATH, [
+    {
+      before: text(SPLIT_SNIPPET_BEFORE),
+      after: text(SPLIT_SNIPPET_AFTER),
+      line: 50,
+    },
+  ]);
+
+  expect(diff).toEqual({
+    path: PATH,
+    change: "modified",
+    patch: [
+      "@@ -50,4 +50,5 @@",
+      " L1",
+      "+ins",
+      " u1",
+      " u2",
+      " u3",
+      "@@ -56,4 +57,4 @@",
+      " u6",
+      " u7",
+      " u8",
+      "-old",
+      "+new",
+    ].join("\n"),
+  });
 });

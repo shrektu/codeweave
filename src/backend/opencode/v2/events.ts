@@ -3,7 +3,11 @@ import { resolve } from "node:path";
 import { z } from "zod";
 
 import { contextUsageOf } from "../../../domain/contextUsage";
-import type { AgentEvent } from "../../../domain/events";
+import {
+  DiffOmission,
+  FileChange,
+  type AgentEvent,
+} from "../../../domain/events";
 import { DEFAULT_TOOL_KIND } from "../../constants";
 import {
   TITLE_EDIT_FILE,
@@ -156,7 +160,7 @@ function permissionRequest(
   event: EventOfType<"permission.asked">,
   cwd: string,
   toolInputs: ReadonlyMap<string, unknown>,
-): AgentEvent {
+): Extract<AgentEvent, { type: "permission_request" }> {
   const { data } = event;
   return {
     type: "permission_request",
@@ -167,57 +171,118 @@ function permissionRequest(
   };
 }
 
-function createToolMapper(): (event: OpencodeV2Event) => AgentEvent[] {
-  const names = new Map<string, string>();
-  return (event) => {
-    switch (event.type) {
-      case OpencodeV2EventType.toolInputStarted:
-        names.set(event.data.id, event.data.name);
-        return [];
-      case OpencodeV2EventType.toolCalled: {
-        const name = names.get(event.data.id);
-        return [
-          {
-            type: "tool_call",
-            toolCallId: event.data.id,
-            title: name ?? DEFAULT_TOOL_TITLE,
-            kind: V2_TOOL_KINDS[name ?? ""] ?? DEFAULT_TOOL_KIND,
-            status: "pending",
-            rawInput: event.data.input,
-          },
-        ];
-      }
-      case OpencodeV2EventType.toolProgress:
-        return [
-          {
-            type: "tool_call_update",
-            toolCallId: event.data.id,
-            status: "in_progress",
-          },
-        ];
-      case OpencodeV2EventType.toolSuccess: {
-        const output = outputOf(event.data.content);
-        return [
-          {
-            type: "tool_call_update",
-            toolCallId: event.data.id,
-            status: "completed",
-            ...(output === undefined ? {} : { output }),
-          },
-        ];
-      }
-      case OpencodeV2EventType.toolFailed:
-        return [
-          {
-            type: "tool_call_update",
-            toolCallId: event.data.id,
-            status: "failed",
-            output: event.data.error.message,
-          },
-        ];
-      default:
-        return [];
+function editInputPaths(input: unknown, cwd: string): readonly string[] {
+  if (typeof input !== "object" || input === null) {
+    return [];
+  }
+  const record = input as Record<string, unknown>;
+  for (const key of ["filePath", "file_path", "path"]) {
+    const value = record[key];
+    if (typeof value === "string" && value !== "") {
+      return [resolve(cwd, value)];
     }
+  }
+  return [];
+}
+
+function mapToolSuccess(
+  event: EventOfType<"session.tool.success">,
+  editPaths: ReadonlyMap<string, readonly string[]>,
+): AgentEvent {
+  const output = outputOf(event.data.content);
+  const paths = editPaths.get(event.data.id) ?? [];
+  const diffs = paths.map((path) => ({
+    path,
+    change: FileChange.modified,
+    omitted: DiffOmission.notReported,
+  }));
+  return {
+    type: "tool_call_update",
+    toolCallId: event.data.id,
+    status: "completed",
+    ...(output === undefined ? {} : { output }),
+    ...(diffs.length === 0 ? {} : { diffs }),
+  };
+}
+
+function addEditPaths(
+  editPaths: Map<string, readonly string[]>,
+  toolCallId: string,
+  paths: readonly string[],
+): void {
+  if (paths.length === 0) {
+    return;
+  }
+  const existing = editPaths.get(toolCallId) ?? [];
+  editPaths.set(toolCallId, [...new Set([...existing, ...paths])]);
+}
+
+function mapToolCalledEvent(
+  event: EventOfType<"session.tool.called">,
+  cwd: string,
+  names: ReadonlyMap<string, string>,
+  editPaths: Map<string, readonly string[]>,
+): AgentEvent {
+  const name = names.get(event.data.id);
+  const kind = V2_TOOL_KINDS[name ?? ""] ?? DEFAULT_TOOL_KIND;
+  if (kind === TOOL_KIND_EDIT) {
+    addEditPaths(
+      editPaths,
+      event.data.id,
+      editInputPaths(event.data.input, cwd),
+    );
+  }
+  return {
+    type: "tool_call",
+    toolCallId: event.data.id,
+    title: name ?? DEFAULT_TOOL_TITLE,
+    kind,
+    status: "pending",
+    rawInput: event.data.input,
+  };
+}
+
+function createToolMapper(cwd: string): {
+  map(event: OpencodeV2Event): AgentEvent[];
+  recordEditPaths(toolCallId: string, paths: readonly string[]): void;
+} {
+  const names = new Map<string, string>();
+  const editPaths = new Map<string, readonly string[]>();
+
+  return {
+    recordEditPaths(toolCallId, paths) {
+      addEditPaths(editPaths, toolCallId, paths);
+    },
+    map(event) {
+      switch (event.type) {
+        case OpencodeV2EventType.toolInputStarted:
+          names.set(event.data.id, event.data.name);
+          return [];
+        case OpencodeV2EventType.toolCalled:
+          return [mapToolCalledEvent(event, cwd, names, editPaths)];
+        case OpencodeV2EventType.toolProgress:
+          return [
+            {
+              type: "tool_call_update",
+              toolCallId: event.data.id,
+              status: "in_progress",
+            },
+          ];
+        case OpencodeV2EventType.toolSuccess:
+          return [mapToolSuccess(event, editPaths)];
+        case OpencodeV2EventType.toolFailed:
+          return [
+            {
+              type: "tool_call_update",
+              toolCallId: event.data.id,
+              status: "failed",
+              output: event.data.error.message,
+            },
+          ];
+        default:
+          return [];
+      }
+    },
   };
 }
 
@@ -289,7 +354,7 @@ export function createV2EventMapper(
 ): OpencodeV2EventMapper {
   const scopes = createScopeTracker(sessionId);
   const mapText = createTextMapper();
-  const mapTool = createToolMapper();
+  const toolMapper = createToolMapper(cwd);
   const toolInputs = new Map<string, unknown>();
   let reportedModel: string | null = null;
   let lastModel: V2ModelRef | null = null;
@@ -308,7 +373,7 @@ export function createV2EventMapper(
       return usage === null ? [] : [{ type: "context_usage", usage }];
     }
     if (event.type !== OpencodeV2EventType.stepStarted) {
-      return [...mapText(event), ...mapTool(event)];
+      return [...mapText(event), ...toolMapper.map(event)];
     }
     const { id, providerID } = event.data.model;
     lastModel = { id, providerID: providerID ?? "" };
@@ -342,9 +407,17 @@ export function createV2EventMapper(
         return [];
       }
       if (event.type === OpencodeV2EventType.permissionAsked) {
-        return scope === SessionScope.foreign
-          ? []
-          : [permissionRequest(event, cwd, toolInputs)];
+        if (scope === SessionScope.foreign) {
+          return [];
+        }
+        const request = permissionRequest(event, cwd, toolInputs);
+        if (
+          scope === SessionScope.own &&
+          event.data.action === OpencodeV2Action.edit
+        ) {
+          toolMapper.recordEditPaths(request.toolCallId, request.locations);
+        }
+        return [request];
       }
       return scope === SessionScope.own ? mapOwn(event) : [];
     },

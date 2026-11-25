@@ -107,6 +107,27 @@ export const FileDiffViewSchema = z.union([
 ]);
 export type FileDiffView = z.infer<typeof FileDiffViewSchema>;
 
+export const EditViewSchema = z.strictObject({
+  toolCallId: z.string(),
+  runId: z.string().nullable(),
+  agent: z.string(),
+  diff: FileDiffViewSchema,
+});
+export type EditView = z.infer<typeof EditViewSchema>;
+
+export const EditedFileViewSchema = z.strictObject({
+  path: z.string(),
+  change: z.enum(FileChange),
+  edits: z.array(EditViewSchema),
+});
+export type EditedFileView = z.infer<typeof EditedFileViewSchema>;
+
+export const SessionEditsViewSchema = z.strictObject({
+  sessionId: NonEmptyString,
+  files: z.array(EditedFileViewSchema),
+});
+export type SessionEditsView = z.infer<typeof SessionEditsViewSchema>;
+
 export const ToolCallViewSchema = z.strictObject({
   toolCallId: z.string(),
   title: z.string(),
@@ -395,5 +416,6 @@ export const SnapshotSchema = z.strictObject({
   flowSessions: z.array(
     z.strictObject({ runId: NonEmptyString, view: SessionViewSchema }),
   ),
+  editedFiles: z.array(SessionEditsViewSchema),
 });
 export type Snapshot = z.infer<typeof SnapshotSchema>;
