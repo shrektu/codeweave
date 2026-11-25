@@ -214,6 +214,29 @@ it("flow_run_starts_with_task_and_selected_flow", async () => {
   }, WAIT_OPTIONS);
 });
 
+it("typed_task_survives_folder_pick", async () => {
+  const libraryFlow = makeFlow({
+    source: DefinitionSource.library,
+    file: "/data/library/flows/ship.md",
+  });
+  const client = appClient({ list: makeFlowsList({ flows: [libraryFlow] }) });
+  await openFlowTab(client);
+  await findGraphNode("build");
+  expect(screen.getByText("Library")).toBeTruthy();
+  typeTask("Add a login form");
+  expect(runButton().disabled).toBe(true);
+
+  fireEvent.click(screen.getByRole("button", { name: "Choose folder…" }));
+  await waitFor(() => {
+    expect(requestsOf(client, "flows/list")).toContainEqual({
+      cwd: PICKED_CWD,
+    });
+  }, WAIT_OPTIONS);
+  await findGraphNode("build");
+  expect(taskField().value).toBe("Add a login form");
+  expect(runButton().disabled).toBe(false);
+});
+
 it("flow_run_shows_backend_start_errors", async () => {
   const client = appClient();
   client.fail(

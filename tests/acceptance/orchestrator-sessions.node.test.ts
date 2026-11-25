@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import type { LockKeyResolver } from "../../src/backend/locks";
 import { IpcErrorCode } from "../../src/shared/protocol";
 import {
   ACCOUNT_A,
@@ -31,13 +32,16 @@ import {
   type FlowRepo,
   type ToolClient,
   type ToolEndpoint,
+  type ToolReply,
 } from "../fakes/orchestratorHarness";
 import { PROCESS_TEST_TIMEOUT_MS } from "../fakes/processHelpers";
+import { resolvePathLockKey } from "../fakes/rigProcesses";
 import { settled } from "../fakes/settle";
 
 vi.setConfig({ testTimeout: PROCESS_TEST_TIMEOUT_MS });
 
 const END_TURN: ScriptStep = { type: "end", stopReason: "end_turn" };
+const HANGING_TURN: ScriptStep = { type: "hang" };
 const HTTP_UNAUTHORIZED = 401;
 const clients: ToolClient[] = [];
 const tempDirs: string[] = [];
@@ -233,18 +237,22 @@ it("shutdown_ends_all_orchestrations", async () => {
   const first = await startOrchestrator(rig, 0);
   const second = await startOrchestrator(rig, 1, secondCwd);
 
+  rig.container.scriptNext([HANGING_TURN]);
   const run1 = (await first.tools.json("start_flow", {
     cwd: rig.cwd,
     flowId: "solo",
     task: `${TASK} 1`,
     placement: "in_place",
   })) as { runId: string };
+  rig.container.scriptNext([HANGING_TURN]);
   const run2 = (await second.tools.json("start_flow", {
     cwd: secondCwd,
     flowId: "solo",
     task: `${TASK} 2`,
     placement: "in_place",
   })) as { runId: string };
+  await untilRunStatus(rig, run1.runId, "running");
+  await untilRunStatus(rig, run2.runId, "running");
 
   await rig.dispose();
 
@@ -341,6 +349,45 @@ it("merge_lease_released_after_abort", async () => {
   );
 });
 
+interface HeldMergeResolution {
+  readonly resolver: LockKeyResolver;
+  hold(): void;
+  entered(): Promise<void>;
+  release(): void;
+}
+
+function heldMergeResolution(repo: string): HeldMergeResolution {
+  const entered = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+  let hold = false;
+  return {
+    resolver: async (cwd) => {
+      if (hold && cwd === repo) {
+        hold = false;
+        entered.resolve(undefined);
+        await release.promise;
+      }
+      return resolvePathLockKey(cwd);
+    },
+    hold: () => {
+      hold = true;
+    },
+    entered: () => entered.promise,
+    release: () => {
+      release.resolve(undefined);
+    },
+  };
+}
+
+function expectMergeConflictOrEnded(reply: ToolReply): void {
+  if (reply.isError) {
+    expect(reply.text).toBe("The orchestration has ended");
+    return;
+  }
+  const outcome: unknown = JSON.parse(reply.text);
+  expect(outcome).toMatchObject({ status: "conflict" });
+}
+
 it("merge_lease_released_when_orchestration_ends_during_merge", async () => {
   const flowRepo = await createFlowRepo();
   flowRepos.push(flowRepo);
@@ -352,9 +399,7 @@ it("merge_lease_released_when_orchestration_ends_during_merge", async () => {
   const worktreeRun = await doneWorktreeRun(rig, first.tools, repo);
   await commitMainChange(repo);
 
-  const merging = first.tools.json("merge_flow", {
-    runId: worktreeRun,
-  }) as Promise<{ status: string }>;
+  const merging = first.tools.call("merge_flow", { runId: worktreeRun });
   await settled(async () => {
     const reply = await first.tools.call("merge_flow", {
       runId: worktreeRun,
@@ -368,8 +413,39 @@ it("merge_lease_released_when_orchestration_ends_during_merge", async () => {
     );
   });
   await writeFile(releaseFile, "");
-  const merged = await merging;
-  expect(merged.status).toBe("conflict");
+  expectMergeConflictOrEnded(await merging);
+
+  await expect(rig.call("session/start", { cwd: repo })).resolves.toMatchObject(
+    {
+      cwd: repo,
+    },
+  );
+});
+
+it("merge_lease_released_when_orchestration_ends_before_the_lease", async () => {
+  const flowRepo = await createFlowRepo();
+  flowRepos.push(flowRepo);
+  const repo = flowRepo.repo;
+  const gate = heldMergeResolution(repo);
+  const rig = await openRig({
+    accounts: [ACCOUNT_A, ACCOUNT_B],
+    resolveLockKey: gate.resolver,
+  });
+  const first = await startOrchestrator(rig, 0, repo);
+  const worktreeRun = await doneWorktreeRun(rig, first.tools, repo);
+
+  gate.hold();
+  const merging = first.tools.call("merge_flow", { runId: worktreeRun });
+  try {
+    await gate.entered();
+    await rig.call("session/stop", { sessionId: first.sessionId });
+  } finally {
+    gate.release();
+  }
+  expect(await merging).toEqual({
+    text: "The orchestration has ended",
+    isError: true,
+  });
 
   await expect(rig.call("session/start", { cwd: repo })).resolves.toMatchObject(
     {

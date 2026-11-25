@@ -276,6 +276,8 @@ function FlowToolbar({
 
 function FlowPicker({
   cwd,
+  task,
+  onTaskChange,
   list,
   session,
   sessionLive,
@@ -289,6 +291,8 @@ function FlowPicker({
   onReload,
 }: {
   cwd: string | null;
+  task: string;
+  onTaskChange: (task: string) => void;
   list: FlowsList;
   session: SessionView | null;
   sessionLive: boolean;
@@ -384,6 +388,8 @@ function FlowPicker({
       {(flow !== undefined || shownRun !== null) && (
         <FlowRunPanel
           cwd={cwd}
+          task={task}
+          onTaskChange={onTaskChange}
           flow={flow}
           run={shownRun}
           sessionLive={sessionLive}
@@ -456,6 +462,8 @@ function FlowPicker({
 
 function FlowTabBody({
   cwd,
+  task,
+  onTaskChange,
   session,
   sessionLive,
   flowRun,
@@ -466,6 +474,8 @@ function FlowTabBody({
   onOpenSession,
 }: {
   cwd: string | null;
+  task: string;
+  onTaskChange: (task: string) => void;
   session: SessionView | null;
   sessionLive: boolean;
   flowRun: FlowRunView | null;
@@ -485,6 +495,8 @@ function FlowTabBody({
       return (
         <FlowPicker
           cwd={cwd}
+          task={task}
+          onTaskChange={onTaskChange}
           list={load.list}
           session={session}
           sessionLive={sessionLive}
@@ -568,6 +580,7 @@ function FlowTab({
 }): JSX.Element {
   const { state } = useApp();
   const source = useFlowsLoad(cwd);
+  const [task, setTask] = useState("");
   const { session } = shownSessionOf(state.snapshot, state.activeSessionId);
   const focusedRun = focusedRunOf(
     state.snapshot,
@@ -590,6 +603,8 @@ function FlowTab({
       )}
       <FlowTabBody
         cwd={cwd}
+        task={task}
+        onTaskChange={setTask}
         session={session?.cwd === cwd ? session : null}
         sessionLive={anySessionLive(state.snapshot)}
         flowRun={flowRun}

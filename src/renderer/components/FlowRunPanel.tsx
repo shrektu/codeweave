@@ -1,5 +1,5 @@
 import { Play, Square } from "lucide-react";
-import { useState, type JSX } from "react";
+import { type JSX } from "react";
 
 import {
   DecisionReason,
@@ -216,16 +216,19 @@ function OpenRun({
 function RunForm({
   cwd,
   flow,
+  task,
+  onTaskChange,
   disabledReason,
   action,
 }: {
   cwd: string | null;
   flow: FlowView;
+  task: string;
+  onTaskChange: (task: string) => void;
   disabledReason: string | null;
   action: AsyncAction;
 }): JSX.Element {
   const { client } = useApp();
-  const [task, setTask] = useState("");
   const trimmed = task.trim();
   return (
     <form
@@ -240,7 +243,7 @@ function RunForm({
           rows={2}
           value={task}
           onChange={(event) => {
-            setTask(event.target.value);
+            onTaskChange(event.target.value);
           }}
         />
       </label>
@@ -275,12 +278,16 @@ function RunForm({
 export function FlowRunPanel({
   cwd,
   flow,
+  task,
+  onTaskChange,
   run,
   sessionLive,
   editing,
 }: {
   cwd: string | null;
   flow: FlowView | undefined;
+  task: string;
+  onTaskChange: (task: string) => void;
   run: FlowRunView | null;
   sessionLive: boolean;
   editing: boolean;
@@ -299,6 +306,8 @@ export function FlowRunPanel({
             <RunForm
               cwd={cwd}
               flow={flow}
+              task={task}
+              onTaskChange={onTaskChange}
               disabledReason={blockerOf(cwd, sessionLive, editing)}
               action={action}
             />
