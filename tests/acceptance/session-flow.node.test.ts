@@ -71,7 +71,10 @@ it("session_text_and_tool_card_reach_view", async () => {
     END_TURN,
   ]);
 
-  const accepted = await rig.call("session/prompt", { text: "run tests" });
+  const accepted = await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "run tests",
+  });
   await turnEnded(rig);
 
   expect(accepted).toEqual({ accepted: true });
@@ -97,7 +100,10 @@ it("user_turn_settles_through_controller", async () => {
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
 
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
 
   await settled(async () => {
     expect((await rig.session()).phase).toEqual({
@@ -126,7 +132,10 @@ it("ask_permission_snapshot_and_exact_option_answer", async () => {
     END_TURN,
   ]);
 
-  await rig.call("session/prompt", { text: "test it" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "test it",
+  });
 
   const pending = await settled(async () => {
     const { permissions } = await rig.session();
@@ -154,7 +163,11 @@ it("ask_permission_snapshot_and_exact_option_answer", async () => {
 
   const requestId = pending[0]?.requestId ?? "";
   await expect(
-    rig.call("permission/answer", { requestId, optionId: "allow-always" }),
+    rig.call("permission/answer", {
+      sessionId: (await rig.session()).id,
+      requestId,
+      optionId: "allow-always",
+    }),
   ).resolves.toEqual({ ok: true });
 
   await turnEnded(rig);
@@ -201,7 +214,10 @@ it("unattended_auto_answers_read_edit_and_denies_sudo", async () => {
     END_TURN,
   ]);
 
-  await rig.call("session/prompt", { text: "tidy up" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "tidy up",
+  });
   await turnEnded(rig);
 
   expect(agentOf(rig).permissionOutcomes).toEqual([
@@ -227,7 +243,10 @@ it("ui_reconnect_restores_pending_permission", async () => {
     },
     END_TURN,
   ]);
-  await rig.call("session/prompt", { text: "list" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "list",
+  });
   await settled(async () => {
     expect((await rig.session()).permissions).toHaveLength(1);
   });
@@ -256,7 +275,7 @@ it("ui_reconnect_restores_pending_permission", async () => {
   const response = ResponseSchema.parse(await reply);
   expect(response.ok).toBe(true);
   const snapshot = SnapshotSchema.parse(response.ok ? response.result : null);
-  expect(snapshot.session?.permissions.map((item) => item.title)).toEqual([
+  expect(snapshot.sessions[0]?.permissions.map((item) => item.title)).toEqual([
     "Run ls",
   ]);
 });
@@ -280,7 +299,10 @@ it("rotation_stops_a_before_spawning_b_with_context_package", async () => {
     RATE_LIMIT_FAILURE,
   ]);
 
-  await rig.call("session/prompt", { text: "make the tests pass" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "make the tests pass",
+  });
 
   await settled(() => {
     expect(rig.container.agents).toHaveLength(2);
@@ -328,7 +350,10 @@ it("accounts_changed_broadcast_marks_exhausted_account", async () => {
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
 
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
 
   await settled(() => {
     expect(rig.broadcastsOf("accounts/changed").at(-1)).toEqual({
@@ -364,7 +389,10 @@ it("exhausted_turn_records_rejected_limit", async () => {
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
 
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
 
   await settled(async () => {
     expect((await rig.session()).limits).toEqual([
@@ -410,7 +438,10 @@ it("claude_live_windows_accumulate", async () => {
     END_TURN,
   ]);
 
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
   await turnEnded(rig);
 
   expect((await rig.session()).limits).toEqual([
@@ -457,7 +488,10 @@ it("probe_and_live_opus_windows_merge", async () => {
     END_TURN,
   ]);
 
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
   await turnEnded(rig);
 
   const live = (await rig.session()).limits.flatMap((limit) => limit.windows);
@@ -477,7 +511,10 @@ it("runtime_broadcast_only_on_change", async () => {
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([{ type: "text", text: "hello" }, END_TURN]);
 
-  await rig.call("session/prompt", { text: "hi" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "hi",
+  });
   await turnEnded(rig);
 
   expect(rig.broadcastsOf("session/changed").length).toBeGreaterThan(2);
@@ -491,7 +528,10 @@ it("runtime_broadcast_on_needs_login", async () => {
     { type: "fail", code: AUTH_REQUIRED_CODE, message: "Auth required" },
   ]);
 
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
 
   await settled(() => {
     expect(rig.broadcastsOf("accounts/changed").at(-1)).toEqual({
@@ -522,19 +562,17 @@ it("runtime_broadcast_on_needs_login", async () => {
 it("runtime_broadcast_on_new_session_resets", async () => {
   const rig = await openProbed();
   const broadcastsBefore = rig.broadcastsOf("accounts/changed").length;
-  await rig.call("session/start", startParams(rig));
+  const s1 = await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", { sessionId: s1.id, text: "go" });
   await settled(() => {
     expect(rig.broadcastsOf("accounts/changed")).toHaveLength(
       broadcastsBefore + 1,
     );
   });
 
-  await rig.call("session/stop", {});
-  expect(rig.broadcastsOf("accounts/changed")).toHaveLength(
-    broadcastsBefore + 1,
-  );
+  await rig.call("session/stop", { sessionId: s1.id });
+  await rig.call("session/close", { sessionId: s1.id });
   await rig.call("session/start", startParams(rig));
 
   await settled(() => {
@@ -585,7 +623,10 @@ it("context_package_names_command_from_tool_call_update", async () => {
     RATE_LIMIT_FAILURE,
   ]);
 
-  await rig.call("session/prompt", { text: "ship it" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "ship it",
+  });
 
   await settled(() => {
     expect(agentOf(rig, 1).prompts).toHaveLength(1);
@@ -690,7 +731,10 @@ it("session_edited_files_drops_stale_edits_on_update", async () => {
     END_TURN,
   ]);
 
-  await rig.call("session/prompt", { text: "write same" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "write same",
+  });
   await turnEnded(rig);
 
   const snapshot = await rig.call("sessions/snapshot", {});

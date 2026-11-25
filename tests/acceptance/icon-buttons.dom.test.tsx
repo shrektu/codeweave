@@ -50,7 +50,7 @@ function appClient(): FakeIpcClient {
   client.respond(
     "sessions/snapshot",
     makeSnapshot({
-      session: makeSession({ cwd: CWD }),
+      sessions: [makeSession({ cwd: CWD })],
       accounts: [
         makeAccount(),
         makeAccount({ id: "acc-2", label: "Personal", order: 1 }),

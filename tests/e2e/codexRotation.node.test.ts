@@ -185,7 +185,8 @@ async function openRig(
 }
 
 async function sessionOf(rig: Rig): Promise<SessionView> {
-  const { session } = await rig.backend.handlers["sessions/snapshot"]({});
+  const { sessions } = await rig.backend.handlers["sessions/snapshot"]({});
+  const session = sessions.at(-1) ?? null;
   if (session === null) {
     throw new Error("no session in snapshot");
   }
@@ -205,6 +206,7 @@ async function approveCommand(rig: Rig): Promise<void> {
   expect(permission?.command).toContain(ROTATION_COMMAND);
   expect(existsSync(join(rig.workspace.repo, EFFECTS_FILE))).toBe(false);
   await rig.backend.handlers["permission/answer"]({
+    sessionId: (await sessionOf(rig)).id,
     requestId: permission?.requestId ?? "",
     optionId: allow?.optionId ?? "",
   });
@@ -214,12 +216,15 @@ async function rotate(): Promise<Rig> {
   const profile = PermissionProfile.ask;
   const rig = await openRig(profile);
   const { handlers } = rig.backend;
-  await handlers["session/start"]({
+  const started = await handlers["session/start"]({
     cwd: rig.workspace.repo,
     profile,
     provider: ProviderId.codex,
   });
-  await handlers["session/prompt"]({ text: ROTATION_PROMPT });
+  await handlers["session/prompt"]({
+    sessionId: started.id,
+    text: ROTATION_PROMPT,
+  });
   await approveCommand(rig);
   await vi.waitFor(async () => {
     const view = await sessionOf(rig);
@@ -310,13 +315,16 @@ describe("model selection with the real codex CLI and a local Responses mock", (
       });
       const { handlers } = rig.backend;
 
-      await handlers["session/start"]({
+      const started = await handlers["session/start"]({
         cwd: rig.workspace.repo,
         profile: PermissionProfile.unattended,
         provider: ProviderId.codex,
         model: { provider: ProviderId.codex, model: REQUESTED_MODEL },
       });
-      await handlers["session/prompt"]({ text: "Reply with one word" });
+      await handlers["session/prompt"]({
+        sessionId: started.id,
+        text: "Reply with one word",
+      });
       await vi.waitFor(async () => {
         expect((await sessionOf(rig)).lastTurn).not.toBeNull();
       }, WAIT_OPTIONS);

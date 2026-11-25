@@ -771,9 +771,9 @@ it("session_stop_leaves_the_flow_running_and_flow_stop_stops_it", async () => {
   const { runId } = await startFlow(rig, "ask-review");
   await untilTurnHeld(rig);
 
-  await expect(rig.call("session/stop", {})).resolves.toEqual({
-    stopped: false,
-  });
+  await expect(
+    rig.call("session/stop", { sessionId: (await nodeSession(rig)).id }),
+  ).rejects.toMatchObject({ code: IpcErrorCode.NOT_FOUND });
 
   expect((await flowRunOf(rig)).status).toBe("running");
   expect(await sessionPhase(rig)).toBe("running");
@@ -931,7 +931,7 @@ it("flow-start-refused-while-orchestrator-folder-resolves", async () => {
   const rig = await openFlowRig();
   const orchestrate = { ...startParams(rig), orchestrate: true };
   await rig.call("session/start", orchestrate);
-  await rig.call("session/stop", {});
+  await rig.call("session/stop", { sessionId: (await rig.session()).id });
 
   const orchestrator = rig.call("session/start", orchestrate);
   await setImmediate();
@@ -996,5 +996,5 @@ it("flow_stop_during_node_session_start_stops_the_agent", async () => {
   expect(
     rig.container.contained.map((contained) => contained.stopCalls.length),
   ).toEqual([1]);
-  expect((await rig.call("sessions/snapshot", {})).session).toBeNull();
+  expect((await rig.call("sessions/snapshot", {})).sessions).toEqual([]);
 });

@@ -195,7 +195,7 @@ it("a_library_only_flow_runs_in_the_project_cwd", async () => {
   const service = createFlowRunService({
     sessions: () => fakeSessions({ start }),
     releaseSessions: () => Promise.resolve(),
-    mainSessionLive: () => false,
+    anyMainSessionLive: () => false,
     listFlows: (cwd) =>
       listFlows({ project: cwd ?? null, library: dirs.library }),
     inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),

@@ -88,7 +88,10 @@ function appClient(
 ): FakeIpcClient {
   const client = createFakeIpcClient();
   client.respond("ping", { pong: true, backendPid: 1 });
-  client.respond("sessions/snapshot", makeSnapshot({ session }));
+  client.respond(
+    "sessions/snapshot",
+    makeSnapshot({ sessions: session === null ? [] : [session] }),
+  );
   return client;
 }
 

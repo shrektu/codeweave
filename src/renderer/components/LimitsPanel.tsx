@@ -159,7 +159,11 @@ export function LimitsPanel(): JSX.Element {
   const { state } = useApp();
   const now = useNow(MS_PER_MINUTE);
   const accounts = state.snapshot?.accounts ?? [];
-  const { session } = shownSessionOf(state.snapshot, state.focusedRunId);
+  const { session } = shownSessionOf(
+    state.snapshot,
+    state.activeSessionId,
+    state.focusedRunId,
+  );
   const sessionLimits = session?.limits ?? [];
   const activeAccountId = session?.activeAccountId ?? null;
   const unlisted = sessionLimits.filter(

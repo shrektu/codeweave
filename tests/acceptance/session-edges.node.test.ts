@@ -1,3 +1,7 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { afterEach, expect, it } from "vitest";
 
 import { IpcErrorCode } from "../../src/shared/protocol";
@@ -65,7 +69,10 @@ async function pendingRequestId(rig: BackendRig): Promise<string> {
 async function askForPermission(rig: BackendRig): Promise<string> {
   await rig.call("session/start", startParams(rig, "ask"));
   agentOf(rig).enqueue([ASK_STEP, END_TURN]);
-  await rig.call("session/prompt", { text: "list files" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "list files",
+  });
   return pendingRequestId(rig);
 }
 
@@ -77,7 +84,10 @@ it("session_prompt_rejected_while_switching", async () => {
   });
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
   await settled(async () => {
     expect((await rig.session()).phase).toEqual({
       phase: "switching",
@@ -87,7 +97,10 @@ it("session_prompt_rejected_while_switching", async () => {
   });
 
   await expect(
-    rig.call("session/prompt", { text: "again" }),
+    rig.call("session/prompt", {
+      sessionId: (await rig.session()).id,
+      text: "again",
+    }),
   ).rejects.toMatchObject({ code: IpcErrorCode.SESSION_BUSY });
 
   gate.resolve(undefined);
@@ -103,10 +116,16 @@ it("session_prompt_rejected_while_turn_in_flight", async () => {
   const rig = await openRig();
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([{ type: "hang" }]);
-  await rig.call("session/prompt", { text: "first" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "first",
+  });
 
   await expect(
-    rig.call("session/prompt", { text: "second" }),
+    rig.call("session/prompt", {
+      sessionId: (await rig.session()).id,
+      text: "second",
+    }),
   ).rejects.toMatchObject({ code: IpcErrorCode.SESSION_BUSY });
 
   expect((await rig.session()).turnInFlight).toBe(true);
@@ -116,11 +135,19 @@ it("session_prompt_rejected_while_turn_in_flight", async () => {
 it("permission_answer_twice_rejected", async () => {
   const rig = await openRig();
   const requestId = await askForPermission(rig);
-  await rig.call("permission/answer", { requestId, optionId: "allow-once" });
+  await rig.call("permission/answer", {
+    sessionId: (await rig.session()).id,
+    requestId,
+    optionId: "allow-once",
+  });
   await turnEnded(rig);
 
   await expect(
-    rig.call("permission/answer", { requestId, optionId: "reject-once" }),
+    rig.call("permission/answer", {
+      sessionId: (await rig.session()).id,
+      requestId,
+      optionId: "reject-once",
+    }),
   ).rejects.toMatchObject({ code: IpcErrorCode.CONFLICT });
 
   expect(agentOf(rig).permissionOutcomes).toEqual([
@@ -131,10 +158,14 @@ it("permission_answer_twice_rejected", async () => {
 it("permission_answer_after_stop_rejected_as_expired", async () => {
   const rig = await openRig();
   const requestId = await askForPermission(rig);
-  await rig.call("session/stop", {});
+  await rig.call("session/stop", { sessionId: (await rig.session()).id });
 
   await expect(
-    rig.call("permission/answer", { requestId, optionId: "allow-once" }),
+    rig.call("permission/answer", {
+      sessionId: (await rig.session()).id,
+      requestId,
+      optionId: "allow-once",
+    }),
   ).rejects.toMatchObject({ code: IpcErrorCode.EXPIRED });
 });
 
@@ -143,10 +174,18 @@ it("permission_answer_rejects_unknown_request_and_option", async () => {
   const requestId = await askForPermission(rig);
 
   await expect(
-    rig.call("permission/answer", { requestId: "ghost", optionId: "x" }),
+    rig.call("permission/answer", {
+      sessionId: (await rig.session()).id,
+      requestId: "ghost",
+      optionId: "x",
+    }),
   ).rejects.toMatchObject({ code: IpcErrorCode.NOT_FOUND });
   await expect(
-    rig.call("permission/answer", { requestId, optionId: "not-offered" }),
+    rig.call("permission/answer", {
+      sessionId: (await rig.session()).id,
+      requestId,
+      optionId: "not-offered",
+    }),
   ).rejects.toMatchObject({ code: IpcErrorCode.VALIDATION });
 });
 
@@ -154,7 +193,10 @@ it("agent_crash_mid_turn_marks_session_failed_and_releases_lock", async () => {
   const rig = await openRig();
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([{ type: "hang" }]);
-  await rig.call("session/prompt", { text: "work" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "work",
+  });
   await settled(async () => {
     expect((await rig.session()).turnInFlight).toBe(true);
   });
@@ -175,7 +217,10 @@ it("agent_crash_mid_turn_marks_session_failed_and_releases_lock", async () => {
     });
   });
   await expect(
-    rig.call("session/prompt", { text: "more" }),
+    rig.call("session/prompt", {
+      sessionId: (await rig.session()).id,
+      text: "more",
+    }),
   ).rejects.toMatchObject({ code: IpcErrorCode.SESSION_BUSY });
   const restarted = await rig.call("session/start", startParams(rig));
   expect(restarted.phase).toEqual({
@@ -185,21 +230,35 @@ it("agent_crash_mid_turn_marks_session_failed_and_releases_lock", async () => {
   expect(rig.container.contained).toHaveLength(2);
 });
 
-it("session_start_rejected_while_a_session_is_live", async () => {
+it("same_folder_plain_start_rejected_while_session_is_live_other_folder_starts", async () => {
   const rig = await openRig();
   await rig.call("session/start", startParams(rig));
 
   await expect(
     rig.call("session/start", startParams(rig)),
-  ).rejects.toMatchObject({ code: IpcErrorCode.CONFLICT });
+  ).rejects.toMatchObject({ code: IpcErrorCode.UNAVAILABLE });
   expect(rig.container.contained).toHaveLength(1);
+  expect((await rig.call("sessions/snapshot", {})).sessions).toHaveLength(1);
+
+  const secondCwd = await mkdtemp(join(tmpdir(), "codeweave-other-"));
+  try {
+    await expect(
+      rig.call("session/start", { cwd: secondCwd }),
+    ).resolves.toMatchObject({ cwd: secondCwd });
+    expect((await rig.call("sessions/snapshot", {})).sessions).toHaveLength(2);
+  } finally {
+    await rm(secondCwd, { recursive: true, force: true });
+  }
 });
 
 it("start_after_halt_stops_old_agent_first", async () => {
   const rig = await openRig({ accounts: [ACCOUNT_A] });
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([NEEDS_LOGIN_FAILURE]);
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
   await settled(async () => {
     expect((await rig.session()).phase).toEqual({ phase: "halted" });
   });
@@ -223,7 +282,10 @@ it("prompt_rejected_while_rotation_chain_busy", async () => {
   const rig = await openRig({ accounts: [ACCOUNT_A] });
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
   await settled(async () => {
     expect((await rig.session()).phase.phase).toBe("waiting");
   });
@@ -240,7 +302,10 @@ it("prompt_rejected_while_rotation_chain_busy", async () => {
     expect(view.turnInFlight).toBe(false);
 
     await expect(
-      rig.call("session/prompt", { text: "again" }),
+      rig.call("session/prompt", {
+        sessionId: (await rig.session()).id,
+        text: "again",
+      }),
     ).rejects.toMatchObject({ code: IpcErrorCode.SESSION_BUSY });
     expect(agentOf(rig, 1).prompts).toHaveLength(1);
   } finally {
@@ -257,7 +322,10 @@ it("account_remove_rejected_while_switching", async () => {
   await rig.call("session/start", startParams(rig));
   containedOf(rig, 0).holdStops();
   agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
   await settled(() => {
     expect(containedOf(rig, 0).stopCalls).toHaveLength(1);
   });
@@ -287,7 +355,10 @@ it("shutdown_stops_all_containers", async () => {
   });
   await rig.call("session/start", startParams(rig));
   agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
   await settled(async () => {
     expect((await rig.session()).phase.phase).toBe("switching");
   });
@@ -329,7 +400,7 @@ it("account_remove_active_rejected", async () => {
     ACCOUNT_A.id,
   ]);
 
-  await rig.call("session/stop", {});
+  await rig.call("session/stop", { sessionId: (await rig.session()).id });
   const afterStop = await rig.call("accounts/remove", { id: ACCOUNT_A.id });
   expect(afterStop.accounts).toEqual([]);
 });
@@ -343,7 +414,10 @@ it("accounts_added_during_a_session_are_used_for_the_next_switch", async () => {
   });
   agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
 
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
 
   await settled(async () => {
     expect((await rig.session()).phase).toEqual({
@@ -359,7 +433,7 @@ it("first_run_has_no_accounts", async () => {
   const snapshot = await rig.call("sessions/snapshot", {});
 
   expect(snapshot.accounts).toEqual([]);
-  expect(snapshot.session).toBeNull();
+  expect(snapshot.sessions).toEqual([]);
   await expect(
     rig.call("session/start", startParams(rig)),
   ).rejects.toMatchObject({

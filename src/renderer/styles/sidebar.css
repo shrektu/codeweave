@@ -1,3 +1,20 @@
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sidebar-section > .btn {
+  align-self: flex-start;
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 .sidebar ul {
   display: flex;
   flex-direction: column;
@@ -7,6 +24,32 @@
 
 .sidebar > .btn {
   align-self: flex-start;
+}
+
+.session-item {
+  padding: 0;
+  gap: var(--space-1);
+}
+
+.session-pick {
+  display: flex;
+  align-items: center;
+  flex: 1 1 0;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 2px var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-close {
+  flex: none;
+  margin-right: var(--space-1);
 }
 
 .item {

@@ -191,7 +191,8 @@ async function openRig(scenario: GeminiScenario): Promise<Rig> {
 }
 
 async function sessionOf(rig: Rig): Promise<SessionView> {
-  const { session } = await rig.backend.handlers["sessions/snapshot"]({});
+  const { sessions } = await rig.backend.handlers["sessions/snapshot"]({});
+  const session = sessions.at(-1) ?? null;
   if (session === null) {
     throw new Error("no session in snapshot");
   }
@@ -208,12 +209,15 @@ async function accountIds(rig: Rig): Promise<Record<string, string>> {
 async function runTurn(rig: Rig): Promise<void> {
   assertAgyIsolated(rig.isolation);
   const { handlers } = rig.backend;
-  await handlers["session/start"]({
+  const started = await handlers["session/start"]({
     cwd: rig.repo,
     profile: PermissionProfile.unattended,
     provider: ProviderId.gemini,
   });
-  await handlers["session/prompt"]({ text: ROTATION_PROMPT });
+  await handlers["session/prompt"]({
+    sessionId: started.id,
+    text: ROTATION_PROMPT,
+  });
 }
 
 async function rotate(): Promise<Rig> {
@@ -306,13 +310,16 @@ describe("model selection with the real agy CLI and a local Gemini API mock", ()
       assertAgyIsolated(rig.isolation);
       const { handlers } = rig.backend;
 
-      await handlers["session/start"]({
+      const started = await handlers["session/start"]({
         cwd: rig.repo,
         profile: PermissionProfile.unattended,
         provider: ProviderId.gemini,
         model: { provider: ProviderId.gemini, model: REQUESTED_MODEL },
       });
-      await handlers["session/prompt"]({ text: "Reply with one word" });
+      await handlers["session/prompt"]({
+        sessionId: started.id,
+        text: "Reply with one word",
+      });
       await vi.waitFor(async () => {
         expect((await sessionOf(rig)).lastTurn).not.toBeNull();
       }, WAIT_OPTIONS);
@@ -336,13 +343,16 @@ describe("rejected model with the real agy CLI", () => {
       assertAgyIsolated(rig.isolation);
       const { handlers } = rig.backend;
 
-      await handlers["session/start"]({
+      const started = await handlers["session/start"]({
         cwd: rig.repo,
         profile: PermissionProfile.unattended,
         provider: ProviderId.gemini,
         model: { provider: ProviderId.gemini, model: "nonsense" },
       });
-      await handlers["session/prompt"]({ text: "Reply with one word" });
+      await handlers["session/prompt"]({
+        sessionId: started.id,
+        text: "Reply with one word",
+      });
       await vi.waitFor(async () => {
         expect((await sessionOf(rig)).lastTurn).not.toBeNull();
       }, WAIT_OPTIONS);

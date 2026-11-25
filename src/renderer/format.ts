@@ -27,6 +27,10 @@ export function isSessionLive(session: SessionView | null): boolean {
   return session !== null && !ENDED_PHASES.includes(session.phase.phase);
 }
 
+export function anySessionLive(snapshot: Snapshot | null): boolean {
+  return snapshot?.sessions.some((session) => isSessionLive(session)) ?? false;
+}
+
 export interface ShownSession {
   readonly session: SessionView | null;
   readonly runId: string | null;
@@ -38,27 +42,52 @@ export function isLiveOrchestrator(session: SessionView | null): boolean {
   return session?.orchestrate === true && isSessionLive(session);
 }
 
+export function activeSessionOf(
+  snapshot: Snapshot | null,
+  activeSessionId: string | null,
+): SessionView | null {
+  if (snapshot === null || activeSessionId === null) {
+    return null;
+  }
+  return (
+    snapshot.sessions.find((session) => session.id === activeSessionId) ?? null
+  );
+}
+
 export function shownSessionOf(
   snapshot: Snapshot | null,
+  activeSessionId: string | null,
   focusedRunId: string | null = null,
 ): ShownSession {
   if (snapshot === null) {
     return NO_SHOWN_SESSION;
   }
-  const focusedId = isLiveOrchestrator(snapshot.session) ? focusedRunId : null;
+  const active = activeSessionOf(snapshot, activeSessionId);
+  const focusedId =
+    isLiveOrchestrator(active) &&
+    snapshot.flowRuns.some(
+      (run) => run.runId === focusedRunId && run.ownerSessionId === active?.id,
+    )
+      ? focusedRunId
+      : null;
   const focused = snapshot.flowSessions.find(
     (entry) => entry.runId === focusedId,
   );
   if (focused !== undefined) {
     return { session: focused.view, runId: focused.runId };
   }
-  const main: ShownSession = { session: snapshot.session, runId: null };
-  if (isSessionLive(snapshot.session)) {
+  const main: ShownSession = { session: active, runId: null };
+  if (isSessionLive(active)) {
     return main;
   }
   const openRuns = snapshot.flowRuns
     .toReversed()
-    .filter((run) => isRunOpen(run.status));
+    .filter(
+      (run) =>
+        isRunOpen(run.status) &&
+        (run.ownerSessionId === null ||
+          (active !== null && run.ownerSessionId === active.id)),
+    );
   const found = openRuns.flatMap((run) =>
     snapshot.flowSessions.filter((entry) => entry.runId === run.runId),
   )[0];
@@ -67,8 +96,11 @@ export function shownSessionOf(
     : { session: found.view, runId: found.runId };
 }
 
-export function orchestratedRunsOf(snapshot: Snapshot | null): FlowRunView[] {
-  const session = snapshot?.session;
+export function orchestratedRunsOf(
+  snapshot: Snapshot | null,
+  activeSessionId: string | null,
+): FlowRunView[] {
+  const session = activeSessionOf(snapshot, activeSessionId);
   if (snapshot === null || session?.orchestrate !== true) {
     return [];
   }
@@ -79,12 +111,18 @@ export function orchestratedRunsOf(snapshot: Snapshot | null): FlowRunView[] {
 
 export function focusedRunOf(
   snapshot: Snapshot | null,
+  activeSessionId: string | null,
   focusedRunId: string | null,
 ): FlowRunView | null {
-  if (snapshot === null || !isLiveOrchestrator(snapshot.session)) {
+  const active = activeSessionOf(snapshot, activeSessionId);
+  if (snapshot === null || !isLiveOrchestrator(active) || active === null) {
     return null;
   }
-  return snapshot.flowRuns.find((run) => run.runId === focusedRunId) ?? null;
+  return (
+    snapshot.flowRuns.find(
+      (run) => run.runId === focusedRunId && run.ownerSessionId === active.id,
+    ) ?? null
+  );
 }
 
 export function nodeModelOf(

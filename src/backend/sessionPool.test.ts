@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, expect, it, vi } from "vitest";
 
+import type { AgentEvent } from "../domain/events";
 import type { AccountRuntime } from "../domain/rotation";
 import { ProviderId, type Account } from "../domain/types";
 import { SessionViewSchema } from "../shared/views";
@@ -66,16 +67,76 @@ function handleOf(
   };
 }
 
-async function compose(
-  beforeLaunch: SessionPoolDeps["beforeLaunch"] = () => Promise.resolve(),
-): Promise<Composition> {
+interface Emitter {
+  listener: ((event: AgentEvent) => void) | null;
+}
+
+function haltingAdapter(stops: string[], emitter: Emitter): AgentAdapter {
+  return {
+    start: (spec) =>
+      Promise.resolve({
+        ok: true,
+        handle: {
+          ...handleOf(spec.runId, spec.account.id, stops),
+          subscribe: (listener) => {
+            emitter.listener = listener;
+            return () => {
+              emitter.listener = null;
+            };
+          },
+          prompt: () => {
+            queueMicrotask(() => {
+              emitter.listener?.({
+                type: "turn_error",
+                message: "Needs login",
+                errorKind: "auth_required",
+                rpcCode: null,
+              });
+            });
+            return Promise.resolve();
+          },
+        },
+      }),
+  };
+}
+
+function exitingAdapter(stops: string[], emitter: Emitter): AgentAdapter {
+  return {
+    start: (spec) =>
+      Promise.resolve({
+        ok: true,
+        handle: {
+          ...handleOf(spec.runId, spec.account.id, stops),
+          subscribe: (listener) => {
+            emitter.listener = listener;
+            return () => {
+              emitter.listener = null;
+            };
+          },
+          prompt: () => {
+            queueMicrotask(() => {
+              emitter.listener?.({ type: "process_exit" });
+            });
+            return Promise.resolve();
+          },
+        },
+      }),
+  };
+}
+
+interface ComposeOptions {
+  readonly beforeLaunch?: SessionPoolDeps["beforeLaunch"];
+  readonly adapter?: AgentAdapter;
+}
+
+async function compose(options: ComposeOptions = {}): Promise<Composition> {
   const userData = await mkdtemp(join(tmpdir(), "codeweave-pool-user-"));
   const cwd = await mkdtemp(join(tmpdir(), "codeweave-pool-cwd-"));
   dirs.push(userData, cwd);
   const store = createJsonStore(userData);
   await store.writeAccounts([ACCOUNT]);
   const stops: string[] = [];
-  const adapter: AgentAdapter = {
+  const adapter: AgentAdapter = options.adapter ?? {
     start: (spec) =>
       Promise.resolve({
         ok: true,
@@ -99,7 +160,7 @@ async function compose(
     stopGraceMs: 10,
     containerStatus: { available: true, message: null },
     externalRuntime: () => null,
-    beforeLaunch,
+    beforeLaunch: options.beforeLaunch ?? (() => Promise.resolve()),
     isBlocked: () => false,
     hasKey: () => true,
     secrets: () => [],
@@ -120,19 +181,20 @@ function eventsOf(composition: Composition, event: string): unknown[] {
 
 it("for_run_creates_an_instance_once_per_run_and_never_returns_the_main_one", async () => {
   const { pool } = await compose();
+  const main = pool.createMain();
 
   const first = pool.forRun("run-1");
 
   expect(pool.forRun("run-1")).toBe(first);
   expect(pool.forRun("run-2")).not.toBe(first);
-  expect(first).not.toBe(pool.main);
+  expect(first).not.toBe(main);
 });
 
 it("main_views_go_to_session_changed_and_run_views_to_flow_session_changed", async () => {
   const composition = await compose();
   const { pool, cwd } = composition;
 
-  const main = await pool.main.start({ cwd });
+  const main = await pool.createMain().start({ cwd });
   const node = await pool.forRun("run-1").start({ cwd });
 
   const sessionEvents = eventsOf(composition, "session/changed");
@@ -222,7 +284,7 @@ it("on_runtime_changed_fires_when_a_run_instance_is_released", async () => {
 
 it("shutdown_stops_the_main_session_and_every_run_session", async () => {
   const { pool, cwd, stops } = await compose();
-  await pool.main.start({ cwd });
+  await pool.createMain().start({ cwd });
   await pool.forRun("run-1").start({ cwd });
   await pool.forRun("run-2").start({ cwd });
 
@@ -238,12 +300,15 @@ it("account_stays_in_use_while_a_second_instance_still_launches_on_it", async ()
   const secondLaunch = Promise.withResolvers<undefined>();
   const launches = [firstLaunch, secondLaunch];
   let launched = 0;
-  const { pool, cwd } = await compose(() => {
-    const gate = launches[launched];
-    launched += 1;
-    return gate?.promise ?? Promise.resolve(undefined);
+  const { pool, cwd } = await compose({
+    beforeLaunch: () => {
+      const gate = launches[launched];
+      launched += 1;
+      return gate?.promise ?? Promise.resolve(undefined);
+    },
   });
-  const mainStart = pool.main.start({ cwd });
+  const main = pool.createMain();
+  const mainStart = main.start({ cwd });
   await vi.waitFor(() => {
     expect(launched).toBe(1);
   });
@@ -254,7 +319,7 @@ it("account_stays_in_use_while_a_second_instance_still_launches_on_it", async ()
 
   firstLaunch.resolve(undefined);
   await mainStart;
-  await pool.main.stop();
+  await main.stop();
 
   try {
     expect(pool.isInUse(ACCOUNT.id)).toBe(true);
@@ -319,10 +384,11 @@ it("pool_reports_main_and_run_views_to_observers", async () => {
   dirs.push(userData, cwd);
   const store = createJsonStore(userData);
   await store.writeAccounts([ACCOUNT]);
-  const mainViews: ReturnType<SessionPool["main"]["view"]>[] = [];
+  const mainViews: ReturnType<ReturnType<SessionPool["createMain"]>["view"]>[] =
+    [];
   const runViews: {
     runId: string;
-    view: ReturnType<SessionPool["main"]["view"]>;
+    view: ReturnType<ReturnType<SessionPool["createMain"]>["view"]>;
   }[] = [];
   const pool = createSessionPool({
     adapter: {
@@ -359,11 +425,158 @@ it("pool_reports_main_and_run_views_to_observers", async () => {
   });
   pools.push(pool);
 
-  await pool.main.start({ cwd });
+  await pool.createMain().start({ cwd });
   await pool.forRun("run-obs").start({ cwd });
 
   expect(mainViews.some((view) => view !== null)).toBe(true);
   expect(
     runViews.some((entry) => entry.runId === "run-obs" && entry.view !== null),
   ).toBe(true);
+});
+
+it("create_main_registers_and_main_lookup_before_start_returns_null", async () => {
+  const { pool, cwd } = await compose();
+  const service = pool.createMain();
+
+  expect(pool.main("unknown")).toBeNull();
+  expect(pool.mainViews()).toEqual([]);
+  expect(pool.anyMainLive()).toBe(false);
+
+  const started = await service.start({ cwd });
+
+  expect(pool.main(started.id)).toBe(service);
+  expect(pool.mainViews()).toHaveLength(1);
+  expect(pool.anyMainLive()).toBe(true);
+});
+
+it("discard_main_unregisters_without_broadcasting", async () => {
+  const composition = await compose();
+  const { pool, cwd } = composition;
+  const service = pool.createMain();
+
+  await service.start({ cwd });
+  const beforeCount = eventsOf(composition, "session/changed").length;
+  await pool.discardMain(service);
+
+  expect(pool.mainViews()).toEqual([]);
+  expect(eventsOf(composition, "session/changed")).toHaveLength(beforeCount);
+});
+
+it("close_main_rejects_unknown_or_live_and_removes_ended_session", async () => {
+  const composition = await compose();
+  const { pool, cwd } = composition;
+
+  await expect(pool.closeMain("missing")).rejects.toMatchObject({
+    code: "NOT_FOUND",
+  });
+
+  const service = pool.createMain();
+  const started = await service.start({ cwd });
+  await expect(pool.closeMain(started.id)).rejects.toMatchObject({
+    code: "CONFLICT",
+  });
+
+  await service.stop();
+  await pool.closeMain(started.id);
+
+  expect(pool.main(started.id)).toBeNull();
+  expect(eventsOf(composition, "session/removed")).toContainEqual({
+    sessionId: started.id,
+  });
+});
+
+it("double_close_is_not_found", async () => {
+  const { pool, cwd } = await compose();
+  const service = pool.createMain();
+  const started = await service.start({ cwd });
+  await service.stop();
+
+  await pool.closeMain(started.id);
+  await expect(pool.closeMain(started.id)).rejects.toMatchObject({
+    code: "NOT_FOUND",
+  });
+});
+
+it("publish_after_close_is_ignored", async () => {
+  const composition = await compose();
+  const { pool, cwd } = composition;
+  const service = pool.createMain();
+  const started = await service.start({ cwd });
+  await service.stop();
+  await pool.closeMain(started.id);
+
+  const before = eventsOf(composition, "session/changed").length;
+  await service.stop();
+
+  expect(eventsOf(composition, "session/changed")).toHaveLength(before);
+});
+
+it("settle_ended_stops_lingering_agents", async () => {
+  const userData = await mkdtemp(join(tmpdir(), "codeweave-pool-halt-"));
+  const cwd = await mkdtemp(join(tmpdir(), "codeweave-pool-halt-cwd-"));
+  dirs.push(userData, cwd);
+  const store = createJsonStore(userData);
+  await store.writeAccounts([ACCOUNT]);
+  const stops: string[] = [];
+  const emitter: Emitter = { listener: null };
+  const pool = createSessionPool({
+    adapter: haltingAdapter(stops, emitter),
+    store,
+    broadcast: vi.fn(),
+    now: () => 1_700_000_000_000,
+    schedule: () => () => undefined,
+    inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),
+    newRunId: () => "agent-1",
+    resolveExecutable: () => "/bin/true",
+    stopGraceMs: 1000,
+    containerStatus: { available: true, message: null },
+    externalRuntime: () => null,
+    beforeLaunch: () => Promise.resolve(),
+    isBlocked: () => false,
+    hasKey: () => true,
+    secrets: () => [],
+    homeDir: "/home/u",
+    resolveFolder: (requested) => Promise.resolve(requested ?? "/home/u"),
+    protectedPaths: () => Promise.resolve([]),
+    leaseModes: createLeaseModes(),
+  });
+  pools.push(pool);
+  const service = pool.createMain();
+  await service.start({ cwd });
+  await service.prompt("go");
+
+  await vi.waitFor(() => {
+    expect(service.isLive()).toBe(false);
+  });
+  expect(service.isSettled()).toBe(false);
+  expect(stops).toEqual([]);
+
+  await pool.settleEnded();
+
+  expect(stops).toEqual(["agent-1"]);
+  expect(service.view()?.phase.phase).toBe("stopped");
+});
+
+it("settle_ended_keeps_failed_session_failure", async () => {
+  const stops: string[] = [];
+  const emitter: Emitter = { listener: null };
+  const { pool, cwd } = await compose({
+    adapter: exitingAdapter(stops, emitter),
+  });
+  const service = pool.createMain();
+  await service.start({ cwd });
+  await service.prompt("go");
+  const failedPhase = {
+    phase: "failed",
+    reason: "Agent process exited",
+    runningAccountId: ACCOUNT.id,
+  };
+
+  await vi.waitFor(() => {
+    expect(service.view()?.phase).toEqual(failedPhase);
+  });
+  await pool.settleEnded();
+
+  expect(service.view()?.phase).toEqual(failedPhase);
+  expect(stops).toEqual([]);
 });

@@ -59,7 +59,7 @@ function appClient(list: FlowsList = makeFlowsList()): FakeIpcClient {
   client.respond("ping", { pong: true, backendPid: 1 });
   client.respond(
     "sessions/snapshot",
-    makeSnapshot({ session: makeSession({ cwd: SESSION_CWD }) }),
+    makeSnapshot({ sessions: [makeSession({ cwd: SESSION_CWD })] }),
   );
   client.respond("flows/list", list);
   return client;

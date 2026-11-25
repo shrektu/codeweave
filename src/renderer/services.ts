@@ -18,7 +18,11 @@ export function useServices(): Services {
   return services;
 }
 
-export function useApp(): { client: IpcClient; state: AppState } {
+export function useApp(): {
+  client: IpcClient;
+  store: AppStore;
+  state: AppState;
+} {
   const { client, store } = useServices();
-  return { client, state: useAppState(store) };
+  return { client, store, state: useAppState(store) };
 }

@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { FlowRunStatus } from "../../domain/flowRun";
-import { FlowPlacement, FlowRunOrigin } from "../../domain/types";
+import {
+  FlowPlacement,
+  FlowRunOrigin,
+  type MergeOutcome,
+} from "../../domain/types";
 import { IpcErrorCode } from "../../shared/protocol";
 import { SAMPLE_FLOWS, SAMPLE_RUN } from "../../../tests/fakes/fakeFlowControl";
 import {
@@ -13,10 +17,17 @@ import {
   repositoryDeps,
 } from "../../../tests/fakes/fakeOrchestration";
 import type { FlowControl } from "../flowTools/control";
+import {
+  LeaseMode,
+  WorktreeBusyError,
+  WorktreeLocks,
+  type LockKeyResolver,
+} from "../locks";
 
 import {
   createOrchestratorFlowControl,
   type Orchestration,
+  type OwnedRun,
 } from "./flowControl";
 
 const SESSION_ID = "orchestrator-session";
@@ -37,27 +48,44 @@ interface Rig {
   readonly orchestration: Orchestration;
 }
 
-function openRig(): Rig {
+function openRig(
+  shared: {
+    readonly allRuns?: () => readonly (readonly [string, OwnedRun])[];
+    readonly locks?: WorktreeLocks;
+    readonly runs?: FakeRuns;
+    readonly idPrefix?: string;
+    readonly project?: string;
+    readonly platform?: NodeJS.Platform;
+    readonly resolveLockKey?: LockKeyResolver;
+  } = {},
+): Rig {
   let counter = 0;
-  const runs = new FakeRuns();
+  const runs = shared.runs ?? new FakeRuns();
+  const project = shared.project ?? PROJECT;
   const worktrees = new FakeWorktrees();
   const orchestration: Orchestration = {
-    cwd: PROJECT,
+    cwd: project,
     explicitFolder: true,
     runs: new Map(),
     sessionId: SESSION_ID,
     ended: false,
   };
+  const locks = shared.locks ?? new WorktreeLocks();
+  const prefix = shared.idPrefix ?? "run";
   const control = createOrchestratorFlowControl(
     {
       flowRuns: runs,
       flowWorktrees: worktrees,
       ...repositoryDeps(),
+      platform: shared.platform ?? "linux",
+      resolveLockKey: shared.resolveLockKey ?? ((cwd) => Promise.resolve(cwd)),
       listFlows: () => Promise.resolve(SAMPLE_FLOWS),
       newRunId: () => {
         counter += 1;
-        return `run-${String(counter)}`;
+        return `${prefix}-${String(counter)}`;
       },
+      ...(shared.allRuns === undefined ? {} : { allRuns: shared.allRuns }),
+      acquireMergeLock: (key) => locks.acquire(key, LeaseMode.exclusive),
     },
     orchestration,
   );
@@ -609,6 +637,132 @@ it("refuses_an_in_place_start_while_a_merge_step_is_running", async () => {
   await expect(rig.control.startFlow(IN_PLACE_REQUEST)).resolves.toMatchObject({
     status: FlowRunStatus.running,
   });
+});
+
+it("merge_blocked_while_other_orchestration_runs_in_place", async () => {
+  const runs = new FakeRuns();
+  const orchestrations: Orchestration[] = [];
+  const allRuns = (): readonly (readonly [string, OwnedRun])[] =>
+    orchestrations.flatMap((entry) => [...entry.runs]);
+  const rigA = openRig({ allRuns, runs, idPrefix: "run-a" });
+  const rigB = openRig({ allRuns, runs, idPrefix: "run-b" });
+  orchestrations.push(rigA.orchestration, rigB.orchestration);
+  const runA = await doneWorktreeRun(rigA);
+  await rigB.control.startFlow(IN_PLACE_REQUEST);
+
+  await expect(rigA.control.merge(runA)).rejects.toMatchObject({
+    code: IpcErrorCode.CONFLICT,
+  });
+});
+
+it("in_place_blocked_while_other_orchestration_merges", async () => {
+  const runs = new FakeRuns();
+  const orchestrations: Orchestration[] = [];
+  const allRuns = (): readonly (readonly [string, OwnedRun])[] =>
+    orchestrations.flatMap((entry) => [...entry.runs]);
+  const rigA = openRig({ allRuns, runs, idPrefix: "run-a" });
+  const rigB = openRig({ allRuns, runs, idPrefix: "run-b" });
+  orchestrations.push(rigA.orchestration, rigB.orchestration);
+  const runA = await doneWorktreeRun(rigA);
+  rigA.worktrees.mergeOutcome = CONFLICTED;
+  await rigA.control.merge(runA);
+
+  await expect(rigB.control.startFlow(IN_PLACE_REQUEST)).rejects.toMatchObject({
+    code: IpcErrorCode.CONFLICT,
+  });
+});
+
+it("merge_conflicts_with_live_plain_session_in_same_repo", async () => {
+  const locks = new WorktreeLocks();
+  const rig = openRig({ locks });
+  const runId = await doneWorktreeRun(rig);
+  locks.acquire(PROJECT, LeaseMode.exclusive);
+
+  await expect(rig.control.merge(runId)).rejects.toMatchObject({
+    code: IpcErrorCode.CONFLICT,
+  });
+});
+
+it("merge_lease_released_after_abort", async () => {
+  const locks = new WorktreeLocks();
+  const rig = openRig({ locks });
+  const runId = await doneWorktreeRun(rig);
+  rig.worktrees.mergeOutcome = CONFLICTED;
+  await rig.control.merge(runId);
+  await rig.control.abortMerge(runId);
+
+  expect(() => locks.acquire(PROJECT, LeaseMode.exclusive)).not.toThrow();
+});
+
+function teardownRun(rig: Rig, runId: string): void {
+  const run = ownedRun(rig, runId);
+  run.mergeLease?.release();
+  run.mergeLease = null;
+}
+
+async function mergeEndedByTeardown(mergeOutcome: MergeOutcome): Promise<{
+  locks: WorktreeLocks;
+  merging: MergeOutcome;
+}> {
+  const locks = new WorktreeLocks();
+  const rig = openRig({ locks });
+  const runId = await doneWorktreeRun(rig);
+  rig.worktrees.mergeOutcome = mergeOutcome;
+  const gate = Promise.withResolvers<undefined>();
+  rig.worktrees.mergeGate = gate.promise;
+
+  const merging = rig.control.merge(runId);
+  await vi.waitFor(() => {
+    expect(rig.worktrees.log).toContain("merge:run-1");
+  });
+  teardownRun(rig, runId);
+  gate.resolve(undefined);
+
+  return { locks, merging: await merging };
+}
+
+it("merge_lease_released_when_orchestration_ends_during_merge", async () => {
+  for (const outcome of [MERGED, CONFLICTED]) {
+    const { locks, merging } = await mergeEndedByTeardown(outcome);
+
+    expect(merging).toEqual(outcome);
+    expect(() => locks.acquire(PROJECT, LeaseMode.exclusive)).not.toThrow();
+  }
+});
+
+it("merge_lease_uses_session_lock_key", async () => {
+  const project = "/work/MixedCase";
+  const locks = new WorktreeLocks();
+  const rig = openRig({ locks, project, platform: "darwin" });
+  const runId = await doneWorktreeRun(rig);
+  locks.acquire(project, LeaseMode.exclusive);
+
+  await expect(rig.control.merge(runId)).rejects.toMatchObject({
+    code: IpcErrorCode.CONFLICT,
+  });
+  expect(rig.worktrees.log).toEqual(["create:run-1"]);
+});
+
+it("abort_merge_keeps_lease_when_abort_fails", async () => {
+  const locks = new WorktreeLocks();
+  const rig = openRig({ locks });
+  const runId = await doneWorktreeRun(rig);
+  rig.worktrees.mergeOutcome = CONFLICTED;
+  await rig.control.merge(runId);
+  rig.worktrees.abortError = new Error("abort refused");
+
+  await expect(rig.control.abortMerge(runId)).rejects.toThrow("abort refused");
+
+  expect(ownedRun(rig, runId).merging).toBe(true);
+  expect(() => locks.acquire(PROJECT, LeaseMode.exclusive)).toThrow(
+    WorktreeBusyError,
+  );
+
+  rig.worktrees.abortError = null;
+  await rig.control.abortMerge(runId);
+
+  expect(ownedRun(rig, runId).merging).toBe(false);
+  expect(() => locks.acquire(PROJECT, LeaseMode.exclusive)).not.toThrow();
 });
 
 it("allows_an_in_place_fix_flow_while_a_merge_conflict_is_unresolved", async () => {

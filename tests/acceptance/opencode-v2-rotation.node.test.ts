@@ -66,7 +66,10 @@ it("opencode_2x_session_rotates_on_a_go_limit", async () => {
     cwd: rig.cwd,
     provider: "opencode",
   });
-  await rig.call("session/prompt", { text: "ship the release" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "ship the release",
+  });
 
   const handoff = await settled(() => {
     const [request] =

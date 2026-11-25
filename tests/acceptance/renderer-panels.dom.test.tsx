@@ -1,4 +1,10 @@
-import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { LimitsPanel } from "../../src/renderer/components/LimitsPanel";
@@ -49,10 +55,12 @@ function limitsSnapshot(
       makeAccount({ id: "acc-1", label: "Work" }),
       makeAccount({ id: "acc-2", label: "Personal", order: 1 }),
     ],
-    session: makeSession({
-      activeAccountId,
-      limits: [makeLimit(limit)],
-    }),
+    sessions: [
+      makeSession({
+        activeAccountId,
+        limits: [makeLimit(limit)],
+      }),
+    ],
   });
 }
 
@@ -178,16 +186,18 @@ it("limits_panel_shows_probe_limit", () => {
           }),
         }),
       ],
-      session: makeSession({
-        activeAccountId: "codex-2",
-        limits: [
-          makeLimit({
-            accountId: "codex-2",
-            utilization: 0.6,
-            observedAt: NOW_MS,
-          }),
-        ],
-      }),
+      sessions: [
+        makeSession({
+          activeAccountId: "codex-2",
+          limits: [
+            makeLimit({
+              accountId: "codex-2",
+              utilization: 0.6,
+              observedAt: NOW_MS,
+            }),
+          ],
+        }),
+      ],
     }),
   );
 
@@ -532,12 +542,14 @@ it("sidebar_shows_account_statuses_and_active_marker", () => {
           runtime: { status: "needs_login" },
         }),
       ],
-      session: makeSession({ activeAccountId: "acc-2" }),
+      sessions: [makeSession({ activeAccountId: "acc-2" })],
     }),
   );
 
-  expect(screen.getByRole("region", { name: "Accounts" })).toBeTruthy();
-  const [work, personal, spare] = screen.getAllByRole("listitem");
+  const accountsRegion = screen.getByRole("region", { name: "Accounts" });
+  expect(accountsRegion).toBeTruthy();
+  const [work, personal, spare] =
+    within(accountsRegion).getAllByRole("listitem");
   expect(work?.textContent).toBe("WorkReady");
   expect(personal?.textContent).toBe("PersonalExhausted · 12:30");
   expect(personal?.querySelector("small")?.getAttribute("title")).toBe(

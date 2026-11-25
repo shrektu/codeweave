@@ -110,12 +110,19 @@ export function staticStore(state: AppState): AppStore {
     getState: () => state,
     subscribe: () => () => undefined,
     start: () => () => undefined,
+    activateSession: () => undefined,
     focusRun: () => undefined,
   };
 }
 
 export function readyState(snapshot: Snapshot): AppState {
-  return { connection: "ready", snapshot, error: null, focusedRunId: null };
+  return {
+    connection: "ready",
+    snapshot,
+    error: null,
+    activeSessionId: snapshot.sessions.at(-1)?.id ?? null,
+    focusedRunId: null,
+  };
 }
 
 export function renderWithServices(
@@ -370,7 +377,7 @@ export function makeVaultStatus(
 
 export function makeSnapshot(overrides: Partial<Snapshot> = {}): Snapshot {
   return {
-    session: null,
+    sessions: [],
     accounts: [],
     settings: makeSettings(),
     switchLog: [],

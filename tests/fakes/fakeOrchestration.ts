@@ -174,6 +174,7 @@ export class FakeWorktrees implements FlowWorktrees {
   mergeOutcome: MergeOutcome = MERGED;
   finishOutcome: MergeOutcome = MERGED;
   removeError: Error | null = null;
+  abortError: Error | null = null;
   commitError: Error | null = null;
   commitGate: Promise<undefined> | null = null;
   createGate: Promise<undefined> | null = null;
@@ -235,7 +236,9 @@ export class FakeWorktrees implements FlowWorktrees {
 
   abortMerge(worktree: FlowWorktree): Promise<void> {
     this.log.push(`abort:${worktree.runId}`);
-    return Promise.resolve();
+    return this.abortError === null
+      ? Promise.resolve()
+      : Promise.reject(this.abortError);
   }
 
   remove(worktree: FlowWorktree): Promise<void> {

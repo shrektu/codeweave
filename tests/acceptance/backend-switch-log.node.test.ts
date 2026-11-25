@@ -57,6 +57,7 @@ it("switch_log_list_skips_malformed_lines", async () => {
     editedFiles: {
       observeMain: () => undefined,
       observeRun: () => undefined,
+      forget: () => undefined,
       views: () => [],
     },
   });

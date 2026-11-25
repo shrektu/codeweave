@@ -403,7 +403,7 @@ export const SwitchLogEntryViewSchema = z.strictObject({
 export type SwitchLogEntryView = z.infer<typeof SwitchLogEntryViewSchema>;
 
 export const SnapshotSchema = z.strictObject({
-  session: SessionViewSchema.nullable(),
+  sessions: z.array(SessionViewSchema),
   accounts: z.array(AccountViewSchema),
   settings: SettingsViewSchema,
   switchLog: z.array(SwitchLogEntryViewSchema).max(SWITCH_LOG_SNAPSHOT_LIMIT),

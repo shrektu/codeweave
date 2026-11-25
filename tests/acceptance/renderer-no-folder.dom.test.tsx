@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, it } from "vitest";
 
 import { PROTOCOL_VERSION } from "../../src/shared/constants";
@@ -64,7 +70,9 @@ it("start_prompt_typed_task_starts_without_a_folder_then_prompts", async () => {
   fireEvent.click(startButton());
 
   await waitFor(() => {
-    expect(requestsOf(client, "session/prompt")).toEqual([{ text: TASK }]);
+    expect(requestsOf(client, "session/prompt")).toEqual([
+      { sessionId: "sess-1", text: TASK },
+    ]);
   });
   expect(requestsOf(client, "session/start")).toEqual([{}]);
   const order = client.requests.map((request) => request.method);
@@ -319,7 +327,12 @@ it("unsent_draft_belongs_to_the_session_that_failed", async () => {
   expect(await screen.findByText("Prompt rejected")).toBeTruthy();
   expect(composerBox().value).toBe(TASK);
 
-  emitSession(client, { id: SECOND_SESSION });
+  emitSession(client, { id: SECOND_SESSION, cwd: PICKED_CWD });
+  fireEvent.click(
+    await within(screen.getByRole("region", { name: "Sessions" })).findByText(
+      "picked",
+    ),
+  );
 
   await waitFor(() => {
     expect(composerBox().value).toBe("");

@@ -148,7 +148,10 @@ it("two_runs_ending_together_are_coalesced_into_one_codeweave_prompt", async () 
   const { rig, tools, flowRepo } = session;
   const release = Promise.withResolvers<undefined>();
   agentOf(rig).enqueue([{ type: "gate", until: release.promise }, END_TURN]);
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
   rig.container.scriptNext(writeBase("flow one\n"));
   const first = await startWorktree(tools);
   await untilAgents(rig, 2);

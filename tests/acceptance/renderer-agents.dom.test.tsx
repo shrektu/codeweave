@@ -66,7 +66,7 @@ function appClient(
   client.respond("ping", { pong: true, backendPid: 1 });
   client.respond(
     "sessions/snapshot",
-    makeSnapshot({ session: makeSession({ cwd: CWD }) }),
+    makeSnapshot({ sessions: [makeSession({ cwd: CWD })] }),
   );
   client.respond("flows/list", listOf(agents));
   return client;
@@ -602,7 +602,7 @@ function stoppedClient(): FakeIpcClient {
   client.respond(
     "sessions/snapshot",
     makeSnapshot({
-      session: makeSession({ cwd: CWD, phase: { phase: "stopped" } }),
+      sessions: [makeSession({ cwd: CWD, phase: { phase: "stopped" } })],
     }),
   );
   client.on("flows/list", (params) =>
@@ -742,7 +742,7 @@ const LIBRARY_LOCATION = { project: null, library: "/data/library" };
 function libraryClient(agents: AgentView[]): FakeIpcClient {
   const client = createFakeIpcClient();
   client.respond("ping", { pong: true, backendPid: 1 });
-  client.respond("sessions/snapshot", makeSnapshot({ session: null }));
+  client.respond("sessions/snapshot", makeSnapshot({ sessions: [] }));
   client.respond(
     "flows/list",
     makeFlowsList({ flows: [], agents, locations: LIBRARY_LOCATION }),
@@ -831,7 +831,7 @@ it("picking_a_folder_overlays_project_agents_over_library", async () => {
   });
   const client = createFakeIpcClient();
   client.respond("ping", { pong: true, backendPid: 1 });
-  client.respond("sessions/snapshot", makeSnapshot({ session: null }));
+  client.respond("sessions/snapshot", makeSnapshot({ sessions: [] }));
   client.on("flows/list", (params) =>
     params.cwd === PICKED_CWD
       ? makeFlowsList({ flows: [], agents: [projImpl, libRev] })
@@ -863,10 +863,12 @@ it("folderless_session_does_not_overlay_default_workspace_in_agents_tab", async 
   client.respond(
     "sessions/snapshot",
     makeSnapshot({
-      session: makeSession({
-        cwd: "/home/user/default-ws",
-        explicitFolder: false,
-      }),
+      sessions: [
+        makeSession({
+          cwd: "/home/user/default-ws",
+          explicitFolder: false,
+        }),
+      ],
     }),
   );
   client.respond(

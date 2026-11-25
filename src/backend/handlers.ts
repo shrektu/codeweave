@@ -14,7 +14,7 @@ import type { ModelCatalogService } from "./opencode/catalog";
 import type { OrchestratorService } from "./orchestrator/service";
 import type { KeyStore } from "./secrets/keyStore";
 import type { SecretVault } from "./secrets/vault";
-import type { ContainerStatus } from "./session";
+import type { ContainerStatus, SessionService } from "./session";
 import type { SessionPool } from "./sessionPool";
 import {
   createSettingsService,
@@ -42,6 +42,15 @@ export interface HandlerDeps {
 }
 
 const FLOW_RUNNING_MESSAGE = "A flow is running";
+const SESSION_NOT_FOUND_MESSAGE = "Session not found";
+
+function requireMain(sessions: SessionPool, sessionId: string): SessionService {
+  const service = sessions.main(sessionId);
+  if (service === null) {
+    throw new IpcError(IpcErrorCode.NOT_FOUND, SESSION_NOT_FOUND_MESSAGE);
+  }
+  return service;
+}
 
 function publishAccounts(accounts: AccountsService): void {
   accounts.publish().catch((error: unknown) => {
@@ -82,7 +91,6 @@ export function createHandlers({
   probes.onChanged(() => {
     publishAccounts(accounts);
   });
-  const { main } = sessions;
   const synced = async <T>(mutation: Promise<T>): Promise<T> => {
     const result = await mutation;
     sessions.setAccounts(await store.readAccounts());
@@ -110,7 +118,7 @@ export function createHandlers({
   return {
     ping: () => ({ pong: true, backendPid: process.pid }),
     "sessions/snapshot": async () => ({
-      session: main.view(),
+      sessions: [...sessions.mainViews()],
       accounts: (await accounts.list()).accounts,
       settings: await settings.get(),
       switchLog: await store.readSwitchLog(SWITCH_LOG_SNAPSHOT_LIMIT),
@@ -124,10 +132,23 @@ export function createHandlers({
       if (flowRuns.hasOpenUserRuns()) {
         throw new IpcError(IpcErrorCode.CONFLICT, FLOW_RUNNING_MESSAGE);
       }
+      const startPlain = async (): Promise<
+        Awaited<ReturnType<SessionService["start"]>>
+      > => {
+        const settling = sessions.settleEnded();
+        if (settling !== null) {
+          await settling;
+        }
+        const service = sessions.createMain();
+        try {
+          return await service.start(params);
+        } catch (error) {
+          await sessions.discardMain(service);
+          throw error;
+        }
+      };
       const started =
-        params.orchestrate === true
-          ? orchestrator.start(params)
-          : main.start(params);
+        params.orchestrate === true ? orchestrator.start(params) : startPlain();
       const view = await (params.cwd === undefined
         ? started
         : recorded(params.cwd, started));
@@ -136,23 +157,28 @@ export function createHandlers({
       });
       return view;
     },
-    "session/prompt": async ({ text, ...overrides }) => {
-      await main.prompt(text, overrides);
+    "session/prompt": async ({ sessionId, text, ...overrides }) => {
+      await requireMain(sessions, sessionId).prompt(text, overrides);
       return { accepted: true };
     },
-    "session/stop": async () => {
-      const live = main.isLive();
-      const phase = main.view()?.phase.phase;
-      await main.stop();
+    "session/stop": async ({ sessionId }) => {
+      const service = requireMain(sessions, sessionId);
+      const live = service.isLive();
+      const phase = service.view()?.phase.phase;
+      await service.stop();
       return {
         stopped: live || (phase !== undefined && phase !== "stopped"),
       };
     },
-    "permission/answer": ({ requestId, optionId, runId }) => {
-      if (runId === undefined) {
-        main.answerPermission(requestId, optionId);
-      } else {
+    "session/close": async ({ sessionId }) => {
+      await sessions.closeMain(sessionId);
+      return { closed: true };
+    },
+    "permission/answer": ({ requestId, optionId, sessionId, runId }) => {
+      if (runId !== undefined) {
         flowRuns.answerPermission(runId, requestId, optionId);
+      } else if (sessionId !== undefined) {
+        requireMain(sessions, sessionId).answerPermission(requestId, optionId);
       }
       return { ok: true };
     },

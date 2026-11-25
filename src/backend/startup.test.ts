@@ -287,7 +287,10 @@ it("session_permissions_protect_the_user_data_folder_inside_the_root", async () 
     accounts: [ACCOUNT_A],
     homeDir: root,
   });
-  await rig.call("session/start", { cwd: root, profile: "unattended" });
+  const started = await rig.call("session/start", {
+    cwd: root,
+    profile: "unattended",
+  });
   const guarded = join(userData, "accounts.json");
   const notes = join(root, "notes.txt");
   const edit = (id: string, path: string): ScriptStep => ({
@@ -305,7 +308,7 @@ it("session_permissions_protect_the_user_data_folder_inside_the_root", async () 
     { type: "end", stopReason: "end_turn" },
   ]);
 
-  await rig.call("session/prompt", { text: "edit" });
+  await rig.call("session/prompt", { sessionId: started.id, text: "edit" });
 
   await settled(async () => {
     const { permissions } = await rig.session();

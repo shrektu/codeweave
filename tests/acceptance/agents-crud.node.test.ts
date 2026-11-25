@@ -162,6 +162,7 @@ function handlersFor(cwd: string): ReturnType<typeof createHandlers> {
     editedFiles: {
       observeMain: () => undefined,
       observeRun: () => undefined,
+      forget: () => undefined,
       views: () => [],
     },
   });
@@ -864,7 +865,7 @@ function flowRunRig(): {
   const runs = createFlowRunService({
     sessions: () => sessions,
     releaseSessions: () => Promise.resolve(),
-    mainSessionLive: () => false,
+    anyMainSessionLive: () => false,
     listFlows: (cwd = "") => listFlows(projectRoots(cwd)),
     inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),
     broadcast: () => undefined,

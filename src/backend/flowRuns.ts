@@ -32,6 +32,7 @@ import type {
 } from "../shared/views";
 
 import type { ConnectionRegistry } from "./connections";
+import type { LeaseMode } from "./locks";
 import { failure, highestSeq, watchTurn, type NodeOutcome } from "./nodeTurn";
 import type { SessionService } from "./session";
 
@@ -49,7 +50,7 @@ function modelChoiceOf(
 export interface FlowRunDeps {
   readonly sessions: (runId: string) => SessionService;
   readonly releaseSessions: (runId: string) => Promise<void>;
-  readonly mainSessionLive: () => boolean;
+  readonly anyMainSessionLive: () => boolean;
   readonly listFlows: (cwd?: string) => Promise<FlowsList>;
   readonly inspectWorktree: (cwd: string) => Promise<WorktreeState>;
   readonly broadcast: ConnectionRegistry["broadcast"];
@@ -63,6 +64,7 @@ export type FlowStartRequest = ParamsMap["flow/start"] & {
   readonly runId?: string;
   readonly definitionsCwd?: string | null;
   readonly ownerSessionId?: string | null;
+  readonly leaseMode?: LeaseMode;
 };
 
 export interface FlowRunService {
@@ -98,6 +100,7 @@ interface RunIdentity {
   readonly placement: FlowPlacement;
   readonly branch: string | null;
   readonly ownerSessionId: string | null;
+  readonly leaseMode?: LeaseMode;
 }
 
 type DecisionLog = FlowRunView["decisions"];
@@ -419,14 +422,21 @@ class FlowRun {
     const { node, agent } = this.resolve(run, nodeId);
     const model = modelChoiceOf(node.provider, agent);
     const taskClass = node.taskClass ?? agent.taskClass;
-    await this.deps.sessions(this.runId).start({
+    const startParams = {
       cwd: run.state.cwd,
       profile: agent.permissionProfile,
       provider: node.provider ?? agent.provider,
       flowRef: { flowId: run.state.flowId, nodeId },
       ...(model === null ? {} : { model }),
       ...(taskClass === null ? {} : { taskClass }),
-    });
+    };
+    if (this.identity.leaseMode === undefined) {
+      await this.deps.sessions(this.runId).start(startParams);
+    } else {
+      await this.deps.sessions(this.runId).start(startParams, {
+        leaseMode: this.identity.leaseMode,
+      });
+    }
   }
 
   private resolve(
@@ -534,6 +544,9 @@ class FlowRunPool implements FlowRunService {
         placement: request.placement ?? FlowPlacement.inPlace,
         branch: request.branch ?? null,
         ownerSessionId: request.ownerSessionId ?? null,
+        ...(request.leaseMode === undefined
+          ? {}
+          : { leaseMode: request.leaseMode }),
       },
       (view) => {
         this.publish(view);
@@ -598,7 +611,7 @@ class FlowRunPool implements FlowRunService {
       throw new IpcError(IpcErrorCode.UNAVAILABLE, SHUT_DOWN_MESSAGE);
     }
     const origin = request.origin ?? FlowRunOrigin.user;
-    if (origin === FlowRunOrigin.user && this.deps.mainSessionLive()) {
+    if (origin === FlowRunOrigin.user && this.deps.anyMainSessionLive()) {
       throw new IpcError(
         IpcErrorCode.CONFLICT,
         SESSION_ALREADY_RUNNING_MESSAGE,

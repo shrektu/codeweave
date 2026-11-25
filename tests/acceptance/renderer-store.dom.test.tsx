@@ -119,5 +119,5 @@ it("store_replays_events_received_before_snapshot", async () => {
   expect(snapshot?.switchLog).toEqual([entryFromSnapshot, entryFromEvent]);
   expect(snapshot?.settings.effectLevel).toBe(EffectLevel.full);
   expect(snapshot?.accounts).toEqual(eventAccounts);
-  expect(snapshot?.session).toEqual(eventSession);
+  expect(snapshot?.sessions).toEqual([eventSession]);
 });

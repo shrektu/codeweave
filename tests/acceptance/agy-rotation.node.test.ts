@@ -113,7 +113,10 @@ describe("gemini session through the startup registration", () => {
       cwd: rig.cwd,
       provider: "gemini",
     });
-    await rig.call("session/prompt", { text: "say hello" });
+    await rig.call("session/prompt", {
+      sessionId: (await rig.session()).id,
+      text: "say hello",
+    });
     await turnEnded(rig);
 
     expect(started).toMatchObject({
@@ -151,7 +154,10 @@ describe("gemini session through the startup registration", () => {
     await writeFile(join(rig.cwd, ".agents", "hooks.json"), '{"evil":true}');
     rig.agyContainer.scriptTurn(replyTurn(CONV, "one"));
 
-    await rig.call("session/prompt", { text: "one" });
+    await rig.call("session/prompt", {
+      sessionId: (await rig.session()).id,
+      text: "one",
+    });
     await turnEnded(rig);
 
     expect((await rig.session()).lastTurn).toEqual({
@@ -172,7 +178,10 @@ describe("gemini quota rotation", () => {
     rig.agyContainer.scriptUsage(EXHAUSTED_USAGE);
     rig.agyContainer.scriptTurn(quotaFailureTurn(CONV));
 
-    await rig.call("session/prompt", { text: "ship the release" });
+    await rig.call("session/prompt", {
+      sessionId: (await rig.session()).id,
+      text: "ship the release",
+    });
 
     await settled(async () => {
       const view = await rig.session();
@@ -301,7 +310,7 @@ describe("agy executable", () => {
     });
     const startedCommands = async (): Promise<string[]> => {
       await rig.call("session/start", { cwd: rig.cwd, provider: "gemini" });
-      await rig.call("session/stop", {});
+      await rig.call("session/stop", { sessionId: (await rig.session()).id });
       return rig.agyContainer.agySpawns().map((spawn) => spawn.spec.command);
     };
 

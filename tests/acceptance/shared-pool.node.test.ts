@@ -68,7 +68,10 @@ it("claude_session_switches_to_codex_subscription_before_api", async () => {
   });
   agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
 
-  await rig.call("session/prompt", { text: "ship the release" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "ship the release",
+  });
 
   await settled(async () => {
     const view = await rig.session();
@@ -96,7 +99,10 @@ it("opencode_session_pool_never_contains_subscriptions", async () => {
   rig.opencodeContainer.scriptNextServer(EXHAUSTED_TURN);
 
   await rig.call("session/start", { cwd: rig.cwd, provider: "opencode" });
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
 
   await settled(async () => {
     const view = await rig.session();

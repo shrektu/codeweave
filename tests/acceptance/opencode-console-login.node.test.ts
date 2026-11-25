@@ -160,7 +160,10 @@ it("console_login_go_account_launches_keyless_with_the_account_db", async () => 
     cwd: rig.cwd,
     provider: "opencode",
   });
-  await rig.call("session/prompt", { text: "ship it" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "ship it",
+  });
 
   expect(view.activeAccountId).toBe(CONSOLE_ID);
   const [spec] = rig.opencodeV2Container.specs;
@@ -218,7 +221,10 @@ it("go_limit_on_a_console_account_rotates_like_a_key_account", async () => {
     cwd: rig.cwd,
     provider: "opencode",
   });
-  await rig.call("session/prompt", { text: "ship the release" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "ship the release",
+  });
 
   await settled(async () => {
     expect((await rig.session()).phase).toEqual({
@@ -281,7 +287,10 @@ it("v1 console account is skipped by rotation instead of aborting the session", 
     cwd: rig.cwd,
     provider: "opencode",
   });
-  await rig.call("session/prompt", { text: "ship the release" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "ship the release",
+  });
 
   await settled(async () => {
     expect((await rig.session()).phase).toEqual({

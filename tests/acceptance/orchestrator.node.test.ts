@@ -118,7 +118,10 @@ it("starts_an_orchestrate_session_with_plan_profile_and_the_flow_tools_without_l
       message: `failed with ${token}`,
     },
   ]);
-  await rig.call("session/prompt", { text: "hello" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "hello",
+  });
   await settled(async () => {
     const current = await rig.session();
     expect(current.turnInFlight).toBe(false);
@@ -146,7 +149,10 @@ it("rotation_launches_the_next_account_with_the_same_tools_and_the_preamble_agai
   const { rig, endpoint } = await orchestrated();
   agentOf(rig).enqueue([RATE_LIMIT_FAILURE]);
 
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
   await settled(() => {
     expect(agentOf(rig, 1).prompts).toHaveLength(1);
   });
@@ -205,7 +211,10 @@ it("one_waiting_flow_produces_exactly_one_codeweave_prompt_after_the_turn_ends",
     { type: "text", text: "turn text" },
     END_TURN,
   ]);
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
   rig.container.scriptNext(say("built"));
 
   const started = FlowRunViewSchema.parse(
@@ -238,7 +247,7 @@ it("session_stop_ends_the_orchestration_stops_its_runs_and_revokes_the_token", a
   await untilRunStatus(rig, started.runId, "running");
   expect(await postWithToken(endpoint, endpoint.token)).toBe(200);
 
-  await rig.call("session/stop", {});
+  await rig.call("session/stop", { sessionId: (await rig.session()).id });
 
   await untilRunStatus(rig, started.runId, "stopped");
   expect(await postWithToken(endpoint, endpoint.token)).toBe(401);
@@ -260,7 +269,7 @@ it("a_start_flow_in_flight_when_the_session_stops_leaves_no_open_run", async () 
 
   const starting = tools.call("start_flow", { flowId: "solo", task: TASK });
   await entered.promise;
-  await rig.call("session/stop", {});
+  await rig.call("session/stop", { sessionId: (await rig.session()).id });
   release.resolve(undefined);
 
   expect(await starting).toEqual({
@@ -277,22 +286,15 @@ it("a_start_flow_in_flight_when_the_session_stops_leaves_no_open_run", async () 
 
 it("a_session_that_stops_right_after_an_orchestrate_start_revokes_the_token", async () => {
   const grants: ToolGrant[] = [];
-  const spawnGate = Promise.withResolvers<undefined>();
   const rig = await openOrchestrated({
-    spawnGate: spawnGate.promise,
     startToolServer: recordingToolServer(grants),
   });
 
-  const starting = rig.call("session/start", {
+  const started = await rig.call("session/start", {
     cwd: rig.cwd,
     orchestrate: true,
   });
-  await settled(() => {
-    expect(rig.order.some((entry) => entry.startsWith("spawn:"))).toBe(true);
-  });
-  const stopping = rig.call("session/stop", {});
-  spawnGate.resolve(undefined);
-  await Promise.allSettled([starting, stopping]);
+  await rig.call("session/stop", { sessionId: started.id });
 
   const [grant] = grants;
   if (grant === undefined) {
@@ -325,7 +327,7 @@ it("an_unavailable_tool_server_fails_orchestrate_only_and_is_retried_later", asy
   expect(rig.container.agents).toHaveLength(0);
   const ordinary = await rig.call("session/start", startParams(rig));
   expect(ordinary.orchestrate).toBe(false);
-  await rig.call("session/stop", {});
+  await rig.call("session/stop", { sessionId: (await rig.session()).id });
   const retried = await rig.call("session/start", {
     cwd: rig.cwd,
     orchestrate: true,

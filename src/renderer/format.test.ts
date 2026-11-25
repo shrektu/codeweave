@@ -8,6 +8,8 @@ import {
 
 import {
   accountLabel,
+  activeSessionOf,
+  anySessionLive,
   compactPath,
   contextUsageText,
   focusedRunOf,
@@ -56,12 +58,12 @@ it("flow_graph_ignores_foreign_session_model_unit", () => {
 
 it("shown_session_prefers_the_open_run_node_session_over_a_stopped_main", () => {
   const snapshot = makeSnapshot({
-    session: STOPPED_MAIN,
+    sessions: [STOPPED_MAIN],
     flowRuns: [makeFlowRun({ runId: "run-1", status: "running" })],
     flowSessions: [{ runId: "run-1", view: NODE_SESSION }],
   });
 
-  expect(shownSessionOf(snapshot)).toEqual({
+  expect(shownSessionOf(snapshot, STOPPED_MAIN.id)).toEqual({
     session: NODE_SESSION,
     runId: "run-1",
   });
@@ -70,22 +72,31 @@ it("shown_session_prefers_the_open_run_node_session_over_a_stopped_main", () => 
 it("shown_session_keeps_a_live_main_over_the_open_run_node_session", () => {
   const live = makeSession({ id: "live-main" });
   const snapshot = makeSnapshot({
-    session: live,
-    flowRuns: [makeFlowRun({ runId: "run-1", status: "running" })],
+    sessions: [live],
+    flowRuns: [
+      makeFlowRun({
+        runId: "run-1",
+        status: "running",
+        ownerSessionId: "live-main",
+      }),
+    ],
     flowSessions: [{ runId: "run-1", view: NODE_SESSION }],
   });
 
-  expect(shownSessionOf(snapshot)).toEqual({ session: live, runId: null });
+  expect(shownSessionOf(snapshot, live.id)).toEqual({
+    session: live,
+    runId: null,
+  });
 });
 
 it("shown_session_falls_back_to_a_stopped_main_when_no_run_is_open", () => {
   const snapshot = makeSnapshot({
-    session: STOPPED_MAIN,
+    sessions: [STOPPED_MAIN],
     flowRuns: [makeFlowRun({ runId: "run-1", status: "done" })],
     flowSessions: [{ runId: "run-1", view: NODE_SESSION }],
   });
 
-  expect(shownSessionOf(snapshot)).toEqual({
+  expect(shownSessionOf(snapshot, STOPPED_MAIN.id)).toEqual({
     session: STOPPED_MAIN,
     runId: null,
   });
@@ -94,12 +105,18 @@ it("shown_session_falls_back_to_a_stopped_main_when_no_run_is_open", () => {
 it("shown_session_prefers_the_focused_run_node_session_over_a_live_main", () => {
   const live = makeSession({ id: "live-main", orchestrate: true });
   const snapshot = makeSnapshot({
-    session: live,
-    flowRuns: [makeFlowRun({ runId: "run-1", status: "running" })],
+    sessions: [live],
+    flowRuns: [
+      makeFlowRun({
+        runId: "run-1",
+        status: "running",
+        ownerSessionId: "live-main",
+      }),
+    ],
     flowSessions: [{ runId: "run-1", view: NODE_SESSION }],
   });
 
-  expect(shownSessionOf(snapshot, "run-1")).toEqual({
+  expect(shownSessionOf(snapshot, live.id, "run-1")).toEqual({
     session: NODE_SESSION,
     runId: "run-1",
   });
@@ -108,16 +125,16 @@ it("shown_session_prefers_the_focused_run_node_session_over_a_live_main", () => 
 it("shown_session_falls_back_when_the_focused_run_has_no_session", () => {
   const live = makeSession({ id: "live-main", orchestrate: true });
   const snapshot = makeSnapshot({
-    session: live,
+    sessions: [live],
     flowRuns: [makeFlowRun({ runId: "run-1", status: "done" })],
     flowSessions: [],
   });
 
-  expect(shownSessionOf(snapshot, "run-1")).toEqual({
+  expect(shownSessionOf(snapshot, live.id, "run-1")).toEqual({
     session: live,
     runId: null,
   });
-  expect(shownSessionOf(snapshot, "run-gone")).toEqual({
+  expect(shownSessionOf(snapshot, live.id, "run-gone")).toEqual({
     session: live,
     runId: null,
   });
@@ -134,32 +151,36 @@ it("orchestrated_runs_keep_only_runs_of_the_current_orchestrate_session_newest_f
 
   expect(
     orchestratedRunsOf(
-      makeSnapshot({ session: orchestrator, flowRuns: runs }),
+      makeSnapshot({ sessions: [orchestrator], flowRuns: runs }),
+      "orch",
     ).map((run) => run.runId),
   ).toEqual(["new", "old"]);
   expect(
     orchestratedRunsOf(
       makeSnapshot({
-        session: makeSession({ id: "orch", orchestrate: false }),
+        sessions: [makeSession({ id: "orch", orchestrate: false })],
         flowRuns: runs,
       }),
+      "orch",
     ),
   ).toEqual([]);
-  expect(orchestratedRunsOf(makeSnapshot({ flowRuns: runs }))).toEqual([]);
-  expect(orchestratedRunsOf(null)).toEqual([]);
+  expect(orchestratedRunsOf(makeSnapshot({ flowRuns: runs }), "orch")).toEqual(
+    [],
+  );
+  expect(orchestratedRunsOf(null, "orch")).toEqual([]);
 });
 
 it("focused_run_returns_null_for_an_evicted_run", () => {
-  const run = makeFlowRun({ runId: "run-1" });
+  const run = makeFlowRun({ runId: "run-1", ownerSessionId: "sess-1" });
   const snapshot = makeSnapshot({
-    session: makeSession({ orchestrate: true }),
+    sessions: [makeSession({ id: "sess-1", orchestrate: true })],
     flowRuns: [run],
   });
 
-  expect(focusedRunOf(snapshot, "run-1")).toEqual(run);
-  expect(focusedRunOf(snapshot, "run-evicted")).toBeNull();
-  expect(focusedRunOf(snapshot, null)).toBeNull();
-  expect(focusedRunOf(null, "run-1")).toBeNull();
+  expect(focusedRunOf(snapshot, "sess-1", "run-1")).toEqual(run);
+  expect(focusedRunOf(snapshot, "sess-1", "run-evicted")).toBeNull();
+  expect(focusedRunOf(snapshot, "sess-1", null)).toBeNull();
+  expect(focusedRunOf(null, "sess-1", "run-1")).toBeNull();
 });
 
 it("focused_run_is_ignored_when_the_main_session_is_not_a_live_orchestrator", () => {
@@ -178,22 +199,68 @@ it("focused_run_is_ignored_when_the_main_session_is_not_a_live_orchestrator", ()
 
   for (const session of mains) {
     const snapshot = makeSnapshot({
-      session,
+      sessions: session === null ? [] : [session],
       flowRuns: [run],
       flowSessions: [nodeView],
     });
-    expect(focusedRunOf(snapshot, "run-1")).toBeNull();
+    expect(focusedRunOf(snapshot, "main", "run-1")).toBeNull();
   }
   expect(
     shownSessionOf(
       makeSnapshot({
-        session: makeSession({ id: "main", orchestrate: false }),
+        sessions: [makeSession({ id: "main", orchestrate: false })],
         flowRuns: [makeFlowRun({ runId: "run-1", status: "done" })],
         flowSessions: [nodeView],
       }),
+      "main",
       "run-1",
     ).runId,
   ).toBeNull();
+});
+
+it("active_session_of_picks_only_the_matching_id", () => {
+  const s1 = makeSession({ id: "s-1" });
+  const s2 = makeSession({ id: "s-2" });
+  const snapshot = makeSnapshot({ sessions: [s1, s2] });
+
+  expect(activeSessionOf(snapshot, "s-2")).toBe(s2);
+  expect(activeSessionOf(snapshot, "missing")).toBeNull();
+  expect(activeSessionOf(snapshot, null)).toBeNull();
+});
+
+it("new_session_ignores_other_orchestrators_runs", () => {
+  const orchA = makeSession({ id: "orch-a", orchestrate: true });
+  const endedB = makeSession({
+    id: "ended-b",
+    phase: { phase: "stopped" },
+  });
+  const childRun = makeFlowRun({
+    runId: "run-a",
+    ownerSessionId: "orch-a",
+    status: "running",
+  });
+  const snapshot = makeSnapshot({
+    sessions: [orchA, endedB],
+    flowRuns: [childRun],
+    flowSessions: [{ runId: "run-a", view: NODE_SESSION }],
+  });
+
+  expect(shownSessionOf(snapshot, null, null)).toEqual({
+    session: null,
+    runId: null,
+  });
+  expect(shownSessionOf(snapshot, "ended-b", null)).toEqual({
+    session: endedB,
+    runId: null,
+  });
+});
+
+it("flow_run_blocked_while_background_session_live", () => {
+  const live = makeSession({ id: "s-live" });
+  const ended = makeSession({ id: "s-ended", phase: { phase: "stopped" } });
+
+  expect(anySessionLive(makeSnapshot({ sessions: [live, ended] }))).toBe(true);
+  expect(anySessionLive(makeSnapshot({ sessions: [ended] }))).toBe(false);
 });
 
 it("limit_window_label_per_period_and_scope", () => {

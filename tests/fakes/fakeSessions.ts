@@ -30,7 +30,16 @@ export function fakeSessionPool(
   overrides: Partial<SessionPool> = {},
 ): SessionPool {
   return {
-    main,
+    createMain: () => main,
+    discardMain: () => Promise.resolve(),
+    main: () => main,
+    mainViews: () => {
+      const view = main.view();
+      return view === null ? [] : [view];
+    },
+    anyMainLive: () => main.isLive(),
+    settleEnded: () => Promise.resolve(),
+    closeMain: () => Promise.resolve(),
     forRun: () => main,
     release: () => Promise.resolve(),
     isInUse: () => false,

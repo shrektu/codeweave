@@ -492,3 +492,24 @@ it("tracker_removes_file_when_diffs_become_empty", () => {
     { sessionId: "sess-1", files: [] },
   ]);
 });
+
+it("forget_drops_entries_without_publishing", () => {
+  const publish = vi.fn();
+  const tracker = createEditedFilesTracker({
+    ownerOf: () => null,
+    publish,
+  });
+
+  tracker.observeMain(
+    makeView({
+      id: "sess-1",
+      toolCalls: [makeToolCall({ toolCallId: "tc-1", diffs: [MAIN_DIFF] })],
+    }),
+  );
+  publish.mockClear();
+
+  tracker.forget("sess-1");
+
+  expect(tracker.views()).toEqual([]);
+  expect(publish).not.toHaveBeenCalled();
+});

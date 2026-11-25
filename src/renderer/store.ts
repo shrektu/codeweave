@@ -8,13 +8,14 @@ import type { IpcEvent } from "../shared/protocol";
 import type { Snapshot, SwitchLogEntryView } from "../shared/views";
 
 import { errorMessage } from "./errorMessage";
-import { isLiveOrchestrator } from "./format";
+import { activeSessionOf, isLiveOrchestrator, isSessionLive } from "./format";
 import type { IpcClient } from "./ipc";
 
 export interface AppState {
   connection: "connecting" | "ready" | "disconnected";
   snapshot: Snapshot | null;
   error: string | null;
+  activeSessionId: string | null;
   focusedRunId: string | null;
 }
 
@@ -22,6 +23,7 @@ export interface AppStore {
   getState: () => AppState;
   subscribe: (listener: () => void) => () => void;
   start: () => () => void;
+  activateSession: (sessionId: string | null) => void;
   focusRun: (runId: string | null) => void;
 }
 
@@ -29,12 +31,32 @@ const INITIAL_STATE: AppState = {
   connection: "connecting",
   snapshot: null,
   error: null,
+  activeSessionId: null,
   focusedRunId: null,
 };
 
+function initialActiveSessionId(snapshot: Snapshot): string | null {
+  return (
+    snapshot.sessions.findLast((session) => isSessionLive(session))?.id ??
+    snapshot.sessions.at(-1)?.id ??
+    null
+  );
+}
+
+function activeAfter(next: AppState): string | null {
+  if (next.activeSessionId === null || next.snapshot === null) {
+    return next.activeSessionId;
+  }
+  return next.snapshot.sessions.some(
+    (session) => session.id === next.activeSessionId,
+  )
+    ? next.activeSessionId
+    : null;
+}
+
 function focusAfter(previous: AppState, next: AppState): string | null {
-  const session = next.snapshot?.session ?? null;
-  return previous.snapshot?.session?.id === session?.id &&
+  const session = activeSessionOf(next.snapshot, next.activeSessionId);
+  return previous.activeSessionId === next.activeSessionId &&
     isLiveOrchestrator(session)
     ? next.focusedRunId
     : null;
@@ -43,7 +65,26 @@ function focusAfter(previous: AppState, next: AppState): string | null {
 function applyEvent(snapshot: Snapshot, event: IpcEvent): Snapshot {
   switch (event.event) {
     case "session/changed":
-      return { ...snapshot, session: event.payload };
+      return event.payload === null
+        ? snapshot
+        : {
+            ...snapshot,
+            sessions: upsertBy(
+              snapshot.sessions,
+              event.payload,
+              (entry) => entry.id,
+            ),
+          };
+    case "session/removed":
+      return {
+        ...snapshot,
+        sessions: snapshot.sessions.filter(
+          (entry) => entry.id !== event.payload.sessionId,
+        ),
+        editedFiles: snapshot.editedFiles.filter(
+          (entry) => entry.sessionId !== event.payload.sessionId,
+        ),
+      };
     case "accounts/changed":
       return { ...snapshot, accounts: event.payload.accounts };
     case "settings/changed":
@@ -107,6 +148,10 @@ function applyFlowSession(
 
 function streamKey(event: IpcEvent): string {
   switch (event.event) {
+    case "session/changed":
+      return `${event.event}:${event.payload?.id ?? "null"}`;
+    case "session/removed":
+      return `${event.event}:${event.payload.sessionId}`;
     case "flow/changed":
     case "flowSession/changed":
       return `${event.event}:${event.payload.runId}`;
@@ -152,7 +197,9 @@ export function createAppStore(client: IpcClient): AppStore {
   const listeners = new Set<() => void>();
 
   const setState = (next: AppState): void => {
-    state = { ...next, focusedRunId: focusAfter(state, next) };
+    const activeSessionId = activeAfter(next);
+    const updated: AppState = { ...next, activeSessionId };
+    state = { ...updated, focusedRunId: focusAfter(state, updated) };
     for (const listener of listeners) {
       listener();
     }
@@ -160,6 +207,9 @@ export function createAppStore(client: IpcClient): AppStore {
 
   return {
     getState: () => state,
+    activateSession(sessionId): void {
+      setState({ ...state, activeSessionId: sessionId, focusedRunId: null });
+    },
     focusRun(runId): void {
       setState({ ...state, focusedRunId: runId });
     },
@@ -177,7 +227,20 @@ export function createAppStore(client: IpcClient): AppStore {
         if (state.snapshot === null) {
           buffered = bufferEvent(buffered, event);
         } else {
-          setState({ ...state, snapshot: applyEvent(state.snapshot, event) });
+          const isNewLateSession =
+            event.event === "session/changed" &&
+            event.payload !== null &&
+            state.activeSessionId === null &&
+            !state.snapshot.sessions.some(
+              (session) => session.id === event.payload?.id,
+            );
+          setState({
+            ...state,
+            snapshot: applyEvent(state.snapshot, event),
+            activeSessionId: isNewLateSession
+              ? (event.payload?.id ?? null)
+              : state.activeSessionId,
+          });
         }
       });
       const load = (): void => {
@@ -185,10 +248,15 @@ export function createAppStore(client: IpcClient): AppStore {
           .request("sessions/snapshot", {})
           .then((snapshot) => {
             if (active) {
+              const nextSnapshot = buffered.reduce(applyEvent, snapshot);
+              const firstSnapshot = state.snapshot === null;
               setState({
                 ...state,
                 connection: "ready",
-                snapshot: buffered.reduce(applyEvent, snapshot),
+                snapshot: nextSnapshot,
+                activeSessionId: firstSnapshot
+                  ? initialActiveSessionId(nextSnapshot)
+                  : state.activeSessionId,
                 error: null,
               });
             }

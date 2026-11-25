@@ -103,7 +103,7 @@ export function OrchestratorTimeline({
 }): JSX.Element {
   const { store } = useServices();
   const state = useAppState(store);
-  const runs = orchestratedRunsOf(state.snapshot);
+  const runs = orchestratedRunsOf(state.snapshot, state.activeSessionId);
   return (
     <section
       className="glass panel orchestrator-timeline"

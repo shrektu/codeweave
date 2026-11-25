@@ -41,10 +41,11 @@ const VALID_REQUESTS: [string, unknown][] = [
     },
   ],
   ["session/start", { cwd: "/work", provider: "codex" }],
-  ["session/prompt", { text: "hi" }],
+  ["session/prompt", { sessionId: "s-1", text: "hi" }],
   [
     "session/prompt",
     {
+      sessionId: "s-1",
       text: "hi",
       taskClass: "light",
       model: { provider: "opencode", model: "groq/openai/gpt-oss-20b" },
@@ -52,8 +53,9 @@ const VALID_REQUESTS: [string, unknown][] = [
   ],
   ["session/start", { cwd: "/work", taskClass: "heavy" }],
   ["settings/set", { defaultTaskClass: "light" }],
-  ["session/stop", {}],
-  ["permission/answer", { requestId: "r", optionId: "o" }],
+  ["session/stop", { sessionId: "s-1" }],
+  ["session/close", { sessionId: "s-1" }],
+  ["permission/answer", { requestId: "r", optionId: "o", sessionId: "s-1" }],
   ["permission/answer", { requestId: "r", optionId: "o", runId: "run-1" }],
   ["accounts/list", {}],
   ["accounts/suggest", {}],
@@ -416,11 +418,33 @@ const INVALID_REQUESTS: [string, unknown][] = [
   ],
   [
     "permission/answer without option",
-    request("permission/answer", { requestId: "r" }),
+    request("permission/answer", { requestId: "r", sessionId: "s-1" }),
   ],
   [
     "permission/answer with empty request",
-    request("permission/answer", { requestId: "", optionId: "o" }),
+    request("permission/answer", {
+      requestId: "",
+      optionId: "o",
+      sessionId: "s-1",
+    }),
+  ],
+  [
+    "permission/answer without sessionId or runId",
+    request("permission/answer", { requestId: "r", optionId: "o" }),
+  ],
+  [
+    "permission/answer with both sessionId and runId",
+    request("permission/answer", {
+      requestId: "r",
+      optionId: "o",
+      sessionId: "s-1",
+      runId: "run-1",
+    }),
+  ],
+  ["session/stop without sessionId", request("session/stop", {})],
+  [
+    "session/close with empty sessionId",
+    request("session/close", { sessionId: "" }),
   ],
   ["accounts/add without dir", request("accounts/add", { label: "W" })],
   [

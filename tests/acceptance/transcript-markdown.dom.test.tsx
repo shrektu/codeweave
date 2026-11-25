@@ -49,7 +49,7 @@ function renderMessage(
   const client = createFakeIpcClient();
   client.respond("terminal/input", { ok: true });
   const snapshot = makeSnapshot({
-    session: makeSession({ messages: [makeMessage({ text })] }),
+    sessions: [makeSession({ messages: [makeMessage({ text })] })],
     terminal,
   });
   const { container } = renderWithServices(

@@ -108,7 +108,11 @@ async function promptOn(
   text: string,
   taskClass: TaskClass,
 ): Promise<SessionView> {
-  return promptAndSettle(rig, { text, taskClass });
+  return promptAndSettle(rig, {
+    sessionId: (await rig.session()).id,
+    text,
+    taskClass,
+  });
 }
 
 async function runningOn(rig: BackendRig, accountId: string): Promise<void> {
@@ -182,6 +186,7 @@ it("rotation routes the resend on the next account", async () => {
   await startOpencode(rig);
 
   await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
     text: "big refactor",
     taskClass: "heavy",
   });
@@ -219,7 +224,10 @@ it("agent model stays on its own provider after rotation", async () => {
     model: { provider: ProviderId.opencode, model: "groq/openai/gpt-oss-20b" },
   });
 
-  await rig.call("session/prompt", { text: "go" });
+  await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
   await runningOn(rig, cerebras.id);
   const view = await rig.session();
 
@@ -271,6 +279,7 @@ it("override for another provider falls back to routing", async () => {
   await startOpencode(rig);
 
   await rig.call("session/prompt", {
+    sessionId: (await rig.session()).id,
     text: "go",
     taskClass: "light",
     model: { provider: ProviderId.opencode, model: "cerebras/qwen-3.8-27b" },
@@ -345,7 +354,10 @@ it("prompt class beats node and agent class", async () => {
   await startOpencode(rig, { taskClass: "heavy" });
 
   await promptOn(rig, "first", "light");
-  const view = await promptAndSettle(rig, { text: "second" });
+  const view = await promptAndSettle(rig, {
+    sessionId: (await rig.session()).id,
+    text: "second",
+  });
 
   expect(promptedModels(rig, 0)).toEqual([
     "openai/gpt-oss-20b",
@@ -363,7 +375,10 @@ it("settings default class applies when no layer sets one", async () => {
   await rig.call("settings/set", { defaultTaskClass: "light" });
   await startOpencode(rig);
 
-  const view = await promptAndSettle(rig, { text: "go" });
+  const view = await promptAndSettle(rig, {
+    sessionId: (await rig.session()).id,
+    text: "go",
+  });
 
   expect(promptedModels(rig, 0)).toEqual(["openai/gpt-oss-20b"]);
   expect(view.turns[0]?.requestedClass).toBe("light");
@@ -399,8 +414,12 @@ it("free z.ai account ignores an explicit paid model", async () => {
     model: { provider: ProviderId.opencode, model: "zai/glm-5.3" },
   });
 
-  await promptAndSettle(rig, { text: "agent model" });
+  await promptAndSettle(rig, {
+    sessionId: (await rig.session()).id,
+    text: "agent model",
+  });
   const view = await promptAndSettle(rig, {
+    sessionId: (await rig.session()).id,
     text: "override",
     taskClass: "heavy",
     model: { provider: ProviderId.opencode, model: "zai/glm-5.3" },

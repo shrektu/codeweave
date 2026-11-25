@@ -157,6 +157,8 @@ class FakeToolServer implements FlowToolServer {
 interface Rig {
   readonly service: OrchestratorService;
   readonly main: FakeMain;
+  readonly mains: FakeMain[];
+  readonly discarded: SessionService[];
   readonly runs: FakeRuns;
   readonly worktrees: FakeWorktrees;
   readonly server: FakeToolServer;
@@ -171,6 +173,8 @@ function openRig(
   ) => Promise.resolve(requested ?? CWD),
 ): Rig {
   const main = new FakeMain(resolveFolder);
+  const mains: FakeMain[] = [];
+  const discarded: SessionService[] = [];
   const runs = new FakeRuns();
   const worktrees = new FakeWorktrees();
   const server = new FakeToolServer();
@@ -178,7 +182,24 @@ function openRig(
   let counter = 0;
   const listedCwds: (string | undefined)[] = [];
   const service = createOrchestratorService({
-    main,
+    sessions: {
+      createMain: () => {
+        if (mains.length === 0) {
+          mains.push(main);
+          return main;
+        }
+        const extra = new FakeMain(resolveFolder);
+        extra.sessionId = `sess-${String(mains.length + 1)}`;
+        extra.shown = sessionView({ id: extra.sessionId });
+        mains.push(extra);
+        return extra;
+      },
+      discardMain: (session) => {
+        discarded.push(session);
+        return Promise.resolve();
+      },
+      settleEnded: () => Promise.resolve(),
+    },
     flowRuns: runs,
     flowWorktrees: worktrees,
     ...repositoryDeps(),
@@ -200,6 +221,8 @@ function openRig(
   return {
     service,
     main,
+    mains,
+    discarded,
     runs,
     worktrees,
     server,
@@ -338,25 +361,19 @@ it("ends_the_orchestration_when_the_session_was_replaced_before_it_subscribed", 
   expect(rig.server.revoked).toEqual(["tok-1"]);
 });
 
-it("ends_the_previous_orchestration_after_subscribing_the_new_one", async () => {
+it("keeps_the_previous_orchestration_when_a_second_one_starts", async () => {
   const rig = openRig();
   await rig.service.start(START_PARAMS);
   const { runId } = await rig.server
     .control("tok-1")
     .startFlow(IN_PLACE_REQUEST);
-  const gate = Promise.withResolvers<undefined>();
-  rig.runs.stopGate = gate.promise;
 
-  const restarting = rig.service.start(START_PARAMS);
-  await vi.waitFor(() => {
-    expect(rig.runs.stopped).toEqual([runId]);
-  });
-  rig.main.shown = sessionView({ id: "sess-1", phase: { phase: "stopped" } });
-  rig.main.emit(rig.main.shown);
+  await rig.service.start(START_PARAMS);
 
-  expect(rig.server.revoked).toEqual(["tok-1", "tok-2"]);
-  gate.resolve(undefined);
-  await restarting;
+  expect(rig.runs.stopped).toEqual([]);
+  expect(rig.server.revoked).toEqual([]);
+  expect(rig.mains).toHaveLength(2);
+  expect(runId).toBe("run-1");
 });
 
 it("keeps_the_orchestration_while_halted", async () => {

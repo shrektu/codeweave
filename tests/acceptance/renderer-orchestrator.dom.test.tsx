@@ -123,7 +123,7 @@ async function findGraphNode(id: string): Promise<HTMLElement> {
 
 function runningSnapshot(): Parameters<typeof makeSnapshot>[0] {
   return {
-    session: orchestrator(),
+    sessions: [orchestrator()],
     flowRuns: [
       ownedRun({
         status: "running",
@@ -190,7 +190,7 @@ it("start_prompt_disables_orchestrate_for_gemini_and_says_why", async () => {
 
 function timelineSnapshot(): Parameters<typeof makeSnapshot>[0] {
   return {
-    session: orchestrator(),
+    sessions: [orchestrator()],
     flowRuns: [
       makeFlowRun({
         runId: "run-foreign",
@@ -309,7 +309,7 @@ it("timeline_follows_flow_changed", async () => {
 });
 
 it("timeline_says_when_the_orchestrator_has_run_no_flows", async () => {
-  const client = clientWith({ session: orchestrator() });
+  const client = clientWith({ sessions: [orchestrator()] });
   renderWithServices(<App />, client);
 
   const timeline = await findTimeline();
