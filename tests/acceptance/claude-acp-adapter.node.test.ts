@@ -359,6 +359,7 @@ describe("acp adapter: rate limits", () => {
         rateLimitType: "five_hour",
         utilization: 1,
       },
+      { type: "context_usage", usage: { usedTokens: 1, limitTokens: 100 } },
       { type: "turn_end", stopReason: "end_turn" },
     ]);
   });
@@ -525,7 +526,7 @@ describe("acp adapter: after process exit", () => {
 });
 
 describe("acp adapter: usage and ordering", () => {
-  it("acp_usage_update_without_meta_emits_nothing", async () => {
+  it("acp_usage_update_without_meta_emits_only_context_usage", async () => {
     const rig = await createRig();
     const { handle, events } = await startHandle(rig);
     agentOf(rig).enqueue([
@@ -535,7 +536,10 @@ describe("acp adapter: usage and ordering", () => {
 
     await handle.prompt("go", { model: null });
 
-    expect(events).toEqual([{ type: "turn_end", stopReason: "end_turn" }]);
+    expect(events).toEqual([
+      { type: "context_usage", usage: { usedTokens: 1, limitTokens: 100 } },
+      { type: "turn_end", stopReason: "end_turn" },
+    ]);
   });
 
   it("acp_turn_end_follows_all_session_updates", async () => {
@@ -685,6 +689,7 @@ describe("acp adapter: model reporting", () => {
 
     expect(events).toEqual([
       { type: "model", model: "claude-opus-5-5" },
+      { type: "context_usage", usage: { usedTokens: 1, limitTokens: 100 } },
       { type: "turn_end", stopReason: "end_turn" },
     ]);
   });
@@ -711,7 +716,12 @@ describe("acp adapter: model reporting", () => {
 
     await handle.prompt("go", { model: null });
 
-    expect(events).toEqual([{ type: "turn_end", stopReason: "end_turn" }]);
+    expect(events).toEqual([
+      { type: "context_usage", usage: { usedTokens: 1, limitTokens: 100 } },
+      { type: "context_usage", usage: { usedTokens: 1, limitTokens: 100 } },
+      { type: "context_usage", usage: { usedTokens: 1, limitTokens: 100 } },
+      { type: "turn_end", stopReason: "end_turn" },
+    ]);
   });
 
   it("rejected model fails the turn without a rate limit", async () => {

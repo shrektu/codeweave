@@ -173,7 +173,7 @@ it("creates_the_session_after_the_event_stream_and_warm_up", async () => {
   await startOpencodeV2Handle(rig);
 
   const server = opencodeV2ServerOf(rig);
-  expect(pathsOf(server)).toEqual([
+  expect(pathsOf(server).filter((path) => path !== "GET /api/model")).toEqual([
     "GET /api/event",
     "GET /api/provider",
     "POST /api/session",
@@ -605,8 +605,11 @@ it("profile_change_switches_the_agent", async () => {
   await handle.setProfile(PermissionProfile.ask);
   await handle.prompt("three", { model: null });
 
+  expect(server.requestsTo("GET", "/api/model")).toHaveLength(1);
   expect(
-    pathsOf(server).filter((path) => path !== "GET /api/session/active"),
+    pathsOf(server).filter(
+      (path) => path !== "GET /api/session/active" && path !== "GET /api/model",
+    ),
   ).toEqual([
     "GET /api/event",
     "GET /api/provider",
