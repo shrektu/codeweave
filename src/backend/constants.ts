@@ -104,6 +104,7 @@ export const ACCOUNTS_FILE = "accounts.json";
 export const SETTINGS_FILE = "settings.json";
 export const SWITCH_LOG_FILE = "switch-log.jsonl";
 export const ACCOUNTS_DIR_NAME = "accounts";
+export const SESSIONS_DIR = "sessions";
 export const API_KEYS_FILE = "api-keys.json";
 export const KEY_STORE_FILE_MODE = 0o600;
 export const VAULT_CRYPTO_TIMEOUT_MS = 120_000;

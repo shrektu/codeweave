@@ -24,6 +24,7 @@ function makeToolCall(overrides: Partial<ToolCallView> = {}): ToolCallView {
 function makeView(overrides: Partial<SessionView> = {}): SessionView {
   return {
     id: "sess-1",
+    createdAt: 0,
     cwd: "/repo",
     explicitFolder: true,
     provider: ProviderId.claude,
@@ -42,6 +43,7 @@ function makeView(overrides: Partial<SessionView> = {}): SessionView {
     contextUsage: null,
     turns: [],
     orchestrate: false,
+    prompts: [],
     ...overrides,
   };
 }

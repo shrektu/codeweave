@@ -11,6 +11,7 @@ import type {
 
 export interface SessionViewInput {
   readonly id: string;
+  readonly createdAt: number;
   readonly cwd: string;
   readonly explicitFolder: boolean;
   readonly provider: ProviderId;
@@ -74,6 +75,7 @@ export function toSessionView(input: SessionViewInput): SessionView {
   const activeAccountId = activeAccountOf(input.phase);
   return {
     id: input.id,
+    createdAt: input.createdAt,
     cwd: input.cwd,
     explicitFolder: input.explicitFolder,
     provider: input.provider,
@@ -95,5 +97,6 @@ export function toSessionView(input: SessionViewInput): SessionView {
       state.contextUsage === null ? null : { ...state.contextUsage },
     turns: state.turns.map((turn) => ({ ...turn })),
     orchestrate: input.orchestrate,
+    prompts: state.prompts.map((prompt) => ({ ...prompt })),
   };
 }

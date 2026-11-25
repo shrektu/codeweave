@@ -9,6 +9,7 @@ export const EPOCH_MILLIS_THRESHOLD = 100_000_000_000;
 
 export const DEFAULT_MAX_RESULT_CHARS = 2000;
 export const DEFAULT_HANDOFF_CHARS = 16_000;
+export const SESSION_TITLE_MAX_CHARS = 80;
 
 export const MAX_PARALLEL_FLOWS = 3;
 export const RETAINED_FLOW_RUNS = 20;

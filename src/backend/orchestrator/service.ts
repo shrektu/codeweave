@@ -11,7 +11,7 @@ import {
 } from "../flowTools/server";
 import type { FlowWorktree } from "../flowWorktrees";
 import { LeaseMode } from "../locks";
-import type { SessionService } from "../session";
+import type { SessionService, ResumeSeed } from "../session";
 import type { SessionPool } from "../sessionPool";
 
 import {
@@ -34,8 +34,15 @@ export interface OrchestratorServiceDeps extends OrchestratorFlowDeps {
   readonly startToolServer?: () => Promise<FlowToolServer>;
 }
 
+export interface OrchestratorStartOptions {
+  readonly resume?: ResumeSeed;
+}
+
 export interface OrchestratorService {
-  start(params: ParamsMap["session/start"]): Promise<SessionView>;
+  start(
+    params: ParamsMap["session/start"],
+    options?: OrchestratorStartOptions,
+  ): Promise<SessionView>;
   shutdown(): Promise<void>;
 }
 
@@ -184,7 +191,10 @@ class OrchestratorServiceImpl implements OrchestratorService {
     this.deps = deps;
   }
 
-  async start(params: ParamsMap["session/start"]): Promise<SessionView> {
+  async start(
+    params: ParamsMap["session/start"],
+    options: OrchestratorStartOptions = {},
+  ): Promise<SessionView> {
     const settling = this.deps.sessions.settleEnded();
     if (settling !== null) {
       await settling;
@@ -208,7 +218,7 @@ class OrchestratorServiceImpl implements OrchestratorService {
       ),
     );
     const session = this.deps.sessions.createMain();
-    const view = await this.launch(session, tools, grant, params);
+    const view = await this.launch(session, tools, grant, params, options);
     orchestration.cwd = view.cwd;
     orchestration.explicitFolder = view.explicitFolder;
     orchestration.sessionId = view.id;
@@ -259,6 +269,7 @@ class OrchestratorServiceImpl implements OrchestratorService {
     tools: FlowToolServer,
     grant: ToolGrant,
     params: ParamsMap["session/start"],
+    options: OrchestratorStartOptions,
   ): Promise<SessionView> {
     try {
       return await session.start(
@@ -267,6 +278,7 @@ class OrchestratorServiceImpl implements OrchestratorService {
           leaseMode: LeaseMode.observer,
           tools: grant,
           preamble: ORCHESTRATOR_INSTRUCTIONS,
+          ...(options.resume === undefined ? {} : { resume: options.resume }),
         },
       );
     } catch (error) {

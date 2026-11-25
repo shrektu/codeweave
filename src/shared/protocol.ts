@@ -33,9 +33,11 @@ import {
   FlowsListSchema,
   ModelCatalogSchema,
   SessionEditsViewSchema,
+  SessionHistoryEntrySchema,
   SessionViewSchema,
   SettingsViewSchema,
   SnapshotSchema,
+  StoredSessionSchema,
   SwitchLogEntryViewSchema,
   TerminalViewSchema,
 } from "./views";
@@ -141,6 +143,13 @@ export const ParamsSchemas = {
   }),
   "session/stop": SessionIdParamsSchema,
   "session/close": SessionIdParamsSchema,
+  "session/resume": z.strictObject({ sessionId: z.uuid() }),
+  "history/list": EmptyParamsSchema,
+  "history/get": z.strictObject({ sessionId: z.uuid() }),
+  "history/archive": z.strictObject({
+    sessionId: z.uuid(),
+    archived: z.boolean(),
+  }),
   "permission/answer": z
     .strictObject({
       requestId: NonEmptyString,
@@ -294,6 +303,10 @@ export const RequestSchema = z.discriminatedUnion("method", [
   requestSchema("session/prompt"),
   requestSchema("session/stop"),
   requestSchema("session/close"),
+  requestSchema("session/resume"),
+  requestSchema("history/list"),
+  requestSchema("history/get"),
+  requestSchema("history/archive"),
   requestSchema("permission/answer"),
   requestSchema("accounts/list"),
   requestSchema("accounts/suggest"),
@@ -340,6 +353,12 @@ const resultSchemaDefinitions = {
   "session/prompt": z.strictObject({ accepted: z.literal(true) }),
   "session/stop": z.strictObject({ stopped: z.boolean() }),
   "session/close": z.strictObject({ closed: z.literal(true) }),
+  "session/resume": SessionViewSchema,
+  "history/list": z.strictObject({
+    entries: z.array(SessionHistoryEntrySchema),
+  }),
+  "history/get": StoredSessionSchema,
+  "history/archive": SessionHistoryEntrySchema,
   "permission/answer": z.strictObject({ ok: z.literal(true) }),
   "accounts/list": AccountsResultSchema,
   "accounts/suggest": z.strictObject({ configDir: z.string() }),
@@ -414,6 +433,11 @@ export const EventSchema = z.discriminatedUnion("event", [
     v: z.int(),
     event: z.literal("session/removed"),
     payload: z.strictObject({ sessionId: z.string() }),
+  }),
+  z.strictObject({
+    v: z.int(),
+    event: z.literal("history/changed"),
+    payload: SessionHistoryEntrySchema,
   }),
   z.strictObject({
     v: z.int(),

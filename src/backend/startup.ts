@@ -47,6 +47,7 @@ import {
   CONTAINER_UNAVAILABLE_MESSAGE,
   PROBE_RUN_ID_PREFIX,
   PROBE_TIMEOUT_MS,
+  SESSIONS_DIR,
 } from "./constants";
 import { buildAgentEnv } from "./env";
 import { resolveExecutable } from "./executable";
@@ -106,6 +107,7 @@ import { createKeyStore, type KeyStore } from "./secrets/keyStore";
 import { createSecretSource } from "./secrets/source";
 import type { SecretVault } from "./secrets/vault";
 import type { ContainerStatus } from "./session";
+import { createSessionHistory } from "./sessionHistory";
 import { createSessionPool, type SessionPool } from "./sessionPool";
 import {
   configuredExecutable,
@@ -634,6 +636,13 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
   const { userData } = deps.args;
   const postUpdaterConfig = deps.postUpdaterConfig ?? NO_UPDATER_CONFIG;
   const store = createJsonStore(userData);
+  const history = createSessionHistory({
+    dir: join(userData, SESSIONS_DIR),
+    now: deps.now,
+    broadcast: (event, entry) => {
+      deps.broadcast(event, entry);
+    },
+  });
   const keyStore = createKeyStore({
     path: join(userData, API_KEYS_FILE),
     vault: deps.vault,
@@ -706,6 +715,9 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     protectedPaths: protectedPathsNow,
     onMainView: (view) => {
       editedFiles.observeMain(view);
+      if (view !== null) {
+        history.record(view);
+      }
     },
     onMainClosed: (sessionId) => {
       editedFiles.forget(sessionId);
@@ -752,6 +764,8 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     homeDir: deps.homeDir,
     broadcast: deps.broadcast,
     sessions,
+    history,
+    inspectWorktree: deps.inspectWorktree,
     flowRuns,
     orchestrator,
     probes,
@@ -774,6 +788,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
       await orchestrator.shutdown();
       await flowRuns.shutdown();
       await sessions.shutdown();
+      await history.flush();
     },
   };
 }

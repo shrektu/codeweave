@@ -12,6 +12,7 @@ import { createJsonStore } from "../../src/backend/storage";
 import {
   fakeFlowRuns,
   fakeProbes,
+  fakeSessionHistory,
   fakeSessionPool,
   fakeTerminals,
 } from "../fakes/fakeSessions";
@@ -351,6 +352,8 @@ it("flows_list_handler_delegates_to_listFlows", async () => {
     homeDir: tmpdir(),
     broadcast: vi.fn(),
     sessions: fakeSessionPool(),
+    history: fakeSessionHistory(),
+    inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),
     flowRuns: fakeFlowRuns(),
     orchestrator: fakeOrchestrator(),
     probes: fakeProbes(),

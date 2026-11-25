@@ -1,4 +1,5 @@
-import { useState, type JSX } from "react";
+import { ArrowUp } from "lucide-react";
+import { useEffect, useState, type JSX } from "react";
 
 import { ProviderId } from "../../domain/types";
 import type {
@@ -8,6 +9,7 @@ import type {
   FlowsList,
   MessageView,
   PermissionView,
+  PromptView,
   RotationPhaseView,
   SessionView,
   ToolCallView,
@@ -17,15 +19,21 @@ import {
   accountLabel,
   focusedRunOf,
   formatLocalTime,
+  historyOnlyIdOf,
   isSelectable,
   isSessionLive,
   PROVIDER_LABELS,
   providerOf,
+  resumeFailureVisible,
   shownSessionOf,
+  storedSessionView,
+  type ResumeFailure,
   type SelectableProvider,
 } from "../format";
+import { errorMessage } from "../errorMessage";
 import { sessionModelText, turnBadge } from "../routingText";
 import { useApp, useServices } from "../services";
+import type { AppState } from "../store";
 import { useAsyncAction, type AsyncAction } from "../useAsyncAction";
 import { useRecentFolders } from "../useRecentFolders";
 
@@ -65,6 +73,9 @@ interface SessionBodyProps {
   session: SessionView;
   runId: string | null;
   accounts: readonly AccountView[];
+  historyOnly: boolean;
+  promptError: string | null;
+  onResumeFailure: (text: string, message: string) => void;
 }
 
 function phaseText(
@@ -89,6 +100,7 @@ function phaseText(
 }
 
 type StreamItem = { readonly key: string; readonly seq: number } & (
+  | { readonly kind: "prompt"; readonly prompt: PromptView }
   | { readonly kind: "message"; readonly message: MessageView }
   | { readonly kind: "tool"; readonly tool: ToolCallView }
   | { readonly kind: "permission"; readonly permission: PermissionView }
@@ -97,6 +109,12 @@ type StreamItem = { readonly key: string; readonly seq: number } & (
 
 function streamItems(session: SessionView): StreamItem[] {
   const items: StreamItem[] = [
+    ...session.prompts.map((prompt): StreamItem => ({
+      kind: "prompt",
+      key: `prompt-${prompt.seq.toString()}`,
+      seq: prompt.seq,
+      prompt,
+    })),
     ...session.messages.map((message, index): StreamItem => ({
       kind: "message",
       key: `message-${index.toString()}`,
@@ -150,6 +168,12 @@ function StreamEntry({
   switch (item.kind) {
     case "turn":
       return <TurnBadgeEntry turn={item.turn} />;
+    case "prompt":
+      return (
+        <li className="card msg prompt" aria-label="You">
+          <Markdown text={item.prompt.text} />
+        </li>
+      );
     case "message":
       return (
         <li className="card msg">
@@ -446,11 +470,77 @@ function SessionIdentity({
   );
 }
 
+function ResumeComposer({
+  sessionId,
+  onFailure,
+}: {
+  sessionId: string;
+  onFailure: (text: string, message: string) => void;
+}): JSX.Element {
+  const { client } = useApp();
+  const [text, setText] = useState("");
+  const send = useAsyncAction();
+  const ready = !send.pending && text.trim() !== "";
+
+  const submit = async (): Promise<void> => {
+    if (!ready) {
+      return;
+    }
+    const sent = await send.run(async () => {
+      await client.request("session/resume", { sessionId });
+      try {
+        await client.request("session/prompt", { sessionId, text });
+      } catch (error: unknown) {
+        onFailure(text, errorMessage(error));
+        throw error;
+      }
+    });
+    if (sent) {
+      setText("");
+    }
+  };
+
+  return (
+    <div className="composer">
+      <textarea
+        placeholder="Describe the task"
+        value={text}
+        disabled={send.pending}
+        onChange={(event) => {
+          setText(event.target.value);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            void submit();
+          }
+        }}
+      />
+      {send.error !== null && <p className="error">{send.error}</p>}
+      <button
+        type="button"
+        className="send"
+        aria-label="Send"
+        title="Send"
+        disabled={!ready}
+        onClick={() => {
+          void submit();
+        }}
+      >
+        <ArrowUp size={16} aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
 function SessionBody({
   draft,
   session,
   runId,
   accounts,
+  historyOnly,
+  promptError,
+  onResumeFailure,
 }: SessionBodyProps): JSX.Element {
   const { client } = useApp();
   const stop = useAsyncAction();
@@ -497,11 +587,19 @@ function SessionBody({
           />
         ))}
       </ul>
-      {!live && <StartPrompt draft={draft} />}
+      {!live && !historyOnly && <StartPrompt draft={draft} />}
       {live && draft.start.error !== null && (
         <p className="error">{draft.start.error}</p>
       )}
-      <Composer key={`${session.id}:${unsentText}`} initialText={unsentText} />
+      {promptError !== null && <p className="error">{promptError}</p>}
+      {historyOnly ? (
+        <ResumeComposer sessionId={session.id} onFailure={onResumeFailure} />
+      ) : (
+        <Composer
+          key={`${session.id}:${unsentText}`}
+          initialText={unsentText}
+        />
+      )}
     </>
   );
 }
@@ -524,36 +622,108 @@ function FocusBanner({ run }: { run: FlowRunView }): JSX.Element {
   );
 }
 
+function failureStillLive(failure: ResumeFailure, state: AppState): boolean {
+  const live =
+    state.snapshot?.sessions.some((item) => item.id === failure.sessionId) ??
+    false;
+  return live && state.activeSessionId === failure.sessionId;
+}
+
 export function SessionStream(): JSX.Element {
-  const { state } = useApp();
+  const { state, store } = useApp();
   const [task, setTask] = useState("");
   const start = useAsyncAction();
   const [unsent, setUnsent] = useState<UnsentDraft | null>(null);
-  const draft: StartDraft = { task, setTask, unsent, setUnsent, start };
-  const { session, runId } = shownSessionOf(
+  const [resumeFailure, setResumeFailure] = useState<ResumeFailure | null>(
+    null,
+  );
+  const shown = shownSessionOf(
     state.snapshot,
     state.activeSessionId,
     state.focusedRunId,
   );
+  const historyOnlyId = historyOnlyIdOf(
+    state.snapshot,
+    state.activeSessionId,
+    state.history,
+  );
+  const stored =
+    historyOnlyId === null
+      ? undefined
+      : state.historyTranscripts[historyOnlyId];
+  useEffect(() => {
+    if (historyOnlyId !== null && stored === undefined) {
+      void store.loadTranscript(historyOnlyId);
+    }
+  }, [historyOnlyId, stored, store]);
+  useEffect(
+    () =>
+      store.subscribe(() => {
+        setResumeFailure((current) => {
+          if (current === null) {
+            return current;
+          }
+          return failureStillLive(current, store.getState()) ? current : null;
+        });
+      }),
+    [store],
+  );
+  const historyOnly = shown.session === null && historyOnlyId !== null;
+  const session =
+    shown.session ?? (stored === undefined ? null : storedSessionView(stored));
+  const failureActive = resumeFailureVisible(
+    resumeFailure,
+    shown.session,
+    state.activeSessionId,
+  );
+  const staleResumeUnsent =
+    resumeFailure !== null &&
+    !failureActive &&
+    unsent?.sessionId === resumeFailure.sessionId;
+  const draft: StartDraft = {
+    task,
+    setTask,
+    unsent: staleResumeUnsent ? null : unsent,
+    setUnsent,
+    start,
+  };
   const focusedRun = focusedRunOf(
     state.snapshot,
     state.activeSessionId,
     state.focusedRunId,
   );
-  const bannerRun = focusedRun?.runId === runId ? focusedRun : null;
+  const bannerRun = focusedRun?.runId === shown.runId ? focusedRun : null;
 
   return (
     <section className="glass panel" aria-label="Session">
       <h2 className="sec">Session</h2>
       {bannerRun !== null && <FocusBanner run={bannerRun} />}
       {session === null ? (
-        <StartPrompt draft={draft} />
+        historyOnly ? (
+          <p className="empty">Loading session…</p>
+        ) : (
+          <StartPrompt draft={draft} />
+        )
       ) : (
         <SessionBody
           draft={draft}
           session={session}
-          runId={runId}
+          runId={shown.runId}
           accounts={state.snapshot?.accounts ?? []}
+          historyOnly={historyOnly}
+          promptError={
+            failureActive && resumeFailure !== null
+              ? resumeFailure.message
+              : null
+          }
+          onResumeFailure={(text, message) => {
+            setUnsent({ sessionId: session.id, text });
+            setResumeFailure({
+              sessionId: session.id,
+              message,
+              promptCount: session.prompts.length,
+            });
+          }}
         />
       )}
     </section>

@@ -234,6 +234,7 @@ it("composer class change during a turn applies to the next send", async () => {
     start: () => () => undefined,
     activateSession: () => undefined,
     focusRun: () => undefined,
+    loadTranscript: () => Promise.resolve(null),
   };
   renderWithServices(<Composer />, client, store);
 
@@ -328,6 +329,7 @@ it("composer resets its choice for a new session", async () => {
     start: () => () => undefined,
     activateSession: () => undefined,
     focusRun: () => undefined,
+    loadTranscript: () => Promise.resolve(null),
   };
   renderWithServices(<Composer />, client, store);
 

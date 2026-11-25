@@ -19,6 +19,7 @@ import {
   isStale,
   orchestratedRunsOf,
   shownSessionOf,
+  resumeFailureVisible,
   limitPercent,
   limitWindowLabel,
   nodeModelOf,
@@ -419,4 +420,32 @@ it("context_usage_text_without_limit", () => {
   expect(contextUsageText({ usedTokens: 12_345, limitTokens: null })).toBe(
     "12.3K tokens in context",
   );
+});
+
+const RESUME_FAILURE = {
+  sessionId: "sess-1",
+  message: "The session cannot take a prompt right now",
+  promptCount: 1,
+};
+
+it("resume_failure_visibility_follows_session_and_prompts", () => {
+  const failed = makeSession({
+    id: "sess-1",
+    prompts: [{ seq: 0, text: "first" }],
+  });
+  const other = makeSession({ id: "sess-2", prompts: [{ seq: 0, text: "x" }] });
+  const advanced = makeSession({
+    id: "sess-1",
+    prompts: [
+      { seq: 0, text: "first" },
+      { seq: 2, text: "second" },
+    ],
+  });
+
+  expect(resumeFailureVisible(RESUME_FAILURE, failed, "sess-1")).toBe(true);
+  expect(resumeFailureVisible(RESUME_FAILURE, failed, "sess-2")).toBe(false);
+  expect(resumeFailureVisible(RESUME_FAILURE, other, "sess-2")).toBe(false);
+  expect(resumeFailureVisible(RESUME_FAILURE, null, "sess-1")).toBe(false);
+  expect(resumeFailureVisible(RESUME_FAILURE, advanced, "sess-1")).toBe(false);
+  expect(resumeFailureVisible(null, failed, "sess-1")).toBe(false);
 });

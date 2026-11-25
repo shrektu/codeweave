@@ -22,6 +22,7 @@ import { SAMPLE_RUN } from "./fakeFlowControl";
 export function sessionView(overrides: Partial<SessionView> = {}): SessionView {
   return {
     id: "sess-1",
+    createdAt: 0,
     cwd: "/work/project",
     explicitFolder: true,
     provider: ProviderId.claude,
@@ -40,6 +41,7 @@ export function sessionView(overrides: Partial<SessionView> = {}): SessionView {
     contextUsage: null,
     turns: [],
     orchestrate: true,
+    prompts: [],
     ...overrides,
   };
 }

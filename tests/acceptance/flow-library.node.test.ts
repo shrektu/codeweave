@@ -45,6 +45,7 @@ const LIBRARY_SHIP_FLOW = SHIP_FLOW.replace("Ship it", "Library ship");
 
 const RUNNING_VIEW: SessionView = {
   id: "session-1",
+  createdAt: 0,
   cwd: "",
   explicitFolder: true,
   provider: "claude",
@@ -63,6 +64,7 @@ const RUNNING_VIEW: SessionView = {
   contextUsage: null,
   turns: [],
   orchestrate: false,
+  prompts: [],
 };
 
 async function populate(

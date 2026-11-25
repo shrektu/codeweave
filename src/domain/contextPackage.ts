@@ -1,9 +1,18 @@
-import { SIDE_EFFECT_PATTERNS } from "./constants";
+import { DEFAULT_HANDOFF_CHARS, SIDE_EFFECT_PATTERNS } from "./constants";
 import type { TurnLogEntry } from "./sessionReducer";
 import type { WorktreeState } from "./types";
 
+export const ContextPackageReason = {
+  rotation: "rotation",
+  resume: "resume",
+} as const;
+export type ContextPackageReason =
+  (typeof ContextPackageReason)[keyof typeof ContextPackageReason];
+
 export interface ContextPackageInput {
+  readonly reason: ContextPackageReason;
   readonly userPrompts: readonly string[];
+  readonly lastReply: string | null;
   readonly interruptedTurn: readonly TurnLogEntry[];
   readonly worktree: WorktreeState;
   readonly maxResultChars: number;
@@ -14,6 +23,11 @@ const INTRO =
   "Everything you need to know about the session so far is below.";
 const INSTRUCTION =
   "Inspect the current state of the working directory first, then continue the work from where it was interrupted.";
+const RESUME_INTRO =
+  "You are taking over a coding session that is being resumed in a new agent after the application restarted. " +
+  "Everything known about the session so far is below.";
+const RESUME_INSTRUCTION =
+  "Inspect the current state of the working directory first, then continue the work from where this session stopped.";
 
 export function truncate(text: string, maxChars: number): string {
   if (text.length <= maxChars) {
@@ -63,6 +77,14 @@ function turnSection(turn: readonly TurnLogEntry[], maxChars: number): string {
   return `## Interrupted turn\n${body}`;
 }
 
+function replySection(reply: string | null): string {
+  const body =
+    reply === null || reply.trim() === ""
+      ? "No assistant reply was recorded."
+      : truncate(reply, DEFAULT_HANDOFF_CHARS);
+  return `## Last assistant message\n${body}`;
+}
+
 export function worktreeSection(worktree: WorktreeState): string {
   if (!worktree.isRepo) {
     return `## Working tree\nThe working directory ${worktree.cwd} is not a git repository.`;
@@ -78,7 +100,7 @@ export function worktreeSection(worktree: WorktreeState): string {
   return `## Working tree\nRepository root: ${worktree.root}\n${status}${stat}`;
 }
 
-export function buildContextPackage(input: ContextPackageInput): string {
+function rotationPackage(input: ContextPackageInput): string {
   return [
     INTRO,
     goalSection(input.userPrompts),
@@ -86,4 +108,21 @@ export function buildContextPackage(input: ContextPackageInput): string {
     worktreeSection(input.worktree),
     `## Instruction\n${INSTRUCTION}`,
   ].join("\n\n");
+}
+
+function resumePackage(input: ContextPackageInput): string {
+  return [
+    RESUME_INTRO,
+    goalSection(input.userPrompts),
+    replySection(input.lastReply),
+    turnSection(input.interruptedTurn, input.maxResultChars),
+    worktreeSection(input.worktree),
+    `## Instruction\n${RESUME_INSTRUCTION}`,
+  ].join("\n\n");
+}
+
+export function buildContextPackage(input: ContextPackageInput): string {
+  return input.reason === ContextPackageReason.resume
+    ? resumePackage(input)
+    : rotationPackage(input);
 }

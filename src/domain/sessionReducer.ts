@@ -35,6 +35,11 @@ export interface AssistantMessage {
   readonly seq: number;
 }
 
+export interface UserPrompt {
+  readonly seq: number;
+  readonly text: string;
+}
+
 export type LastTurn =
   | { readonly kind: "ended"; readonly stopReason: string }
   | { readonly kind: "failed"; readonly message: string };
@@ -51,6 +56,7 @@ export interface TurnRouteEntry {
 }
 
 export interface SessionState {
+  readonly prompts: readonly UserPrompt[];
   readonly messages: readonly AssistantMessage[];
   readonly turns: readonly TurnRouteEntry[];
   readonly toolCalls: readonly ToolCallEntry[];
@@ -64,6 +70,7 @@ export interface SessionState {
 }
 
 export const INITIAL_SESSION_STATE: SessionState = {
+  prompts: [],
   messages: [],
   turns: [],
   toolCalls: [],
@@ -239,6 +246,14 @@ export function reservePromptSeq(state: SessionState): {
     state: { ...state, nextSeq: state.nextSeq + 1 },
     seq: state.nextSeq,
   };
+}
+
+export function recordPrompt(
+  state: SessionState,
+  seq: number,
+  text: string,
+): SessionState {
+  return { ...state, prompts: [...state.prompts, { seq, text }] };
 }
 
 export function recordTurnRoute(

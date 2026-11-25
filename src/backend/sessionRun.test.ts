@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 
 import type { AgentEvent } from "../domain/events";
+import { INITIAL_SESSION_STATE } from "../domain/sessionReducer";
 import { PermissionProfile, ProviderId, type Account } from "../domain/types";
 
 import { settled } from "../../tests/fakes/settle";
@@ -18,7 +19,11 @@ import {
   type AgentToolAccess,
 } from "./agentAdapter";
 import { createLeaseModes } from "./leaseModes";
-import { createSessionService, type SessionService } from "./session";
+import {
+  createSessionService,
+  type ResumeSeed,
+  type SessionService,
+} from "./session";
 import { createJsonStore } from "./storage";
 
 const ACCOUNT: Account = {
@@ -456,4 +461,56 @@ it("masks_the_flow_tool_token_in_events_and_errors", async () => {
   ).rejects.toThrow(
     "Could not start the agent: refused [redacted:flow tool token]",
   );
+});
+
+const RESUME_ID = "old-session-id";
+const RESUME_CREATED_AT = 1234;
+
+function resumeSeed(): ResumeSeed {
+  return {
+    id: RESUME_ID,
+    createdAt: RESUME_CREATED_AT,
+    state: {
+      ...INITIAL_SESSION_STATE,
+      prompts: [{ seq: 0, text: "old goal" }],
+      messages: [{ id: null, text: "old reply", seq: 1 }],
+      nextSeq: 2,
+    },
+    contextPackage: "PACKAGE",
+  };
+}
+
+it("resume_package_sent_only_with_first_prompt", async () => {
+  const rig = await openToolRig();
+  await rig.service.start(
+    { cwd: rig.cwd },
+    { resume: resumeSeed(), preamble: PREAMBLE },
+  );
+
+  await rig.service.prompt("first");
+  await untilIdle(rig.service);
+  await rig.service.prompt("second");
+  await untilIdle(rig.service);
+
+  expect(rig.prompts[ACCOUNT.id]).toEqual([
+    `PACKAGE${PREAMBLE_GAP}${PREAMBLE}${PREAMBLE_GAP}first`,
+    "second",
+  ]);
+});
+
+it("resumed_seq_continues_after_stored_max", async () => {
+  const rig = await openToolRig();
+  await rig.service.start({ cwd: rig.cwd }, { resume: resumeSeed() });
+
+  await rig.service.prompt("first");
+  await untilIdle(rig.service);
+
+  const view = rig.service.view();
+  expect(view?.id).toBe(RESUME_ID);
+  expect(view?.createdAt).toBe(RESUME_CREATED_AT);
+  expect(view?.prompts).toEqual([
+    { seq: 0, text: "old goal" },
+    { seq: 2, text: "first" },
+  ]);
+  expect(view?.messages).toEqual([{ id: null, text: "old reply", seq: 1 }]);
 });

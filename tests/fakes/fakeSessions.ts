@@ -1,6 +1,7 @@
 import type { FlowRunService } from "../../src/backend/flowRuns";
 import type { LimitProbeService } from "../../src/backend/limitProbe";
 import type { SessionService } from "../../src/backend/session";
+import type { SessionHistory } from "../../src/backend/sessionHistory";
 import type { SessionPool } from "../../src/backend/sessionPool";
 import type { TerminalService } from "../../src/backend/terminal/service";
 
@@ -48,6 +49,20 @@ export function fakeSessionPool(
     onRuntimeChanged: () => () => undefined,
     setAccounts: () => undefined,
     shutdown: () => Promise.resolve(),
+    ...overrides,
+  };
+}
+
+export function fakeSessionHistory(
+  overrides: Partial<SessionHistory> = {},
+): SessionHistory {
+  return {
+    record: () => undefined,
+    list: () => Promise.resolve([]),
+    get: () => Promise.resolve(null),
+    setArchived: () => Promise.reject(new Error("not available in this test")),
+    setArchivedIfPresent: () => Promise.resolve(),
+    flush: () => Promise.resolve(),
     ...overrides,
   };
 }

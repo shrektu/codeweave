@@ -10,9 +10,12 @@ import {
   createFakeIpcClient,
   makeAccount,
   makeFlowRun,
+  makeHistoryEntry,
+  makeMessage,
   makeSession,
   makeSettings,
   makeSnapshot,
+  makeStoredSession,
   makeSwitchEntry,
 } from "../../tests/fakes/fakeIpcClient";
 
@@ -71,7 +74,9 @@ it("snapshot_failure_retries_and_bounds_buffer", async () => {
 
   await vi.advanceTimersByTimeAsync(SNAPSHOT_RETRY_MS);
 
-  expect(client.requests).toHaveLength(2);
+  expect(
+    client.requests.filter((request) => request.method === "sessions/snapshot"),
+  ).toHaveLength(2);
   expect(store.getState().connection).toBe("ready");
   expect(store.getState().error).toBeNull();
 });
@@ -600,4 +605,57 @@ it("late_started_session_becomes_active_after_start_timeout", async () => {
   });
 
   expect(store.getState().activeSessionId).toBe("s-late");
+});
+
+const HISTORY_ID = "h-1";
+
+it("resumed_session_transcript_not_stale", async () => {
+  const client = createFakeIpcClient();
+  const entry = makeHistoryEntry({
+    id: HISTORY_ID,
+    updatedAt: 1,
+    archived: false,
+  });
+  const oldStored = makeStoredSession({
+    id: HISTORY_ID,
+    updatedAt: 1,
+    messages: [makeMessage({ text: "old answer", seq: 1 })],
+  });
+  const newStored = makeStoredSession({
+    id: HISTORY_ID,
+    updatedAt: 2,
+    messages: [
+      makeMessage({ text: "old answer", seq: 1 }),
+      makeMessage({ id: "m2", text: "new answer", seq: 2 }),
+    ],
+  });
+  let served = oldStored;
+  client.respond("sessions/snapshot", makeSnapshot());
+  client.respond("history/list", { entries: [entry] });
+  client.on("history/get", () => served);
+  const store = createAppStore(client);
+  store.start();
+  await vi.waitFor(() => {
+    expect(store.getState().connection).toBe("ready");
+  });
+
+  expect(await store.loadTranscript(HISTORY_ID)).toEqual(oldStored);
+
+  served = newStored;
+  client.emit({
+    v: EVENT_VERSION,
+    event: "history/changed",
+    payload: { ...entry, updatedAt: 2 },
+  });
+  expect(store.getState().historyTranscripts[HISTORY_ID]).toBeUndefined();
+  expect((await store.loadTranscript(HISTORY_ID))?.messages.at(-1)?.text).toBe(
+    "new answer",
+  );
+
+  client.emit({
+    v: EVENT_VERSION,
+    event: "session/changed",
+    payload: makeSession({ id: HISTORY_ID }),
+  });
+  expect(store.getState().historyTranscripts[HISTORY_ID]).toBeUndefined();
 });

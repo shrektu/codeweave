@@ -22,6 +22,7 @@ import type { AgentView, FlowsList, SessionView } from "../../src/shared/views";
 import {
   fakeFlowRuns,
   fakeProbes,
+  fakeSessionHistory,
   fakeSessionPool,
   fakeSessions,
   fakeTerminals,
@@ -152,6 +153,8 @@ function handlersFor(cwd: string): ReturnType<typeof createHandlers> {
     homeDir: tmpdir(),
     broadcast: vi.fn(),
     sessions: fakeSessionPool(),
+    history: fakeSessionHistory(),
+    inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),
     flowRuns: fakeFlowRuns(),
     orchestrator: fakeOrchestrator(),
     probes: fakeProbes(),
@@ -817,6 +820,7 @@ it("delete_waits_for_flow_save_lock", async () => {
 
 const RUNNING_VIEW: SessionView = {
   id: "session-1",
+  createdAt: 0,
   cwd: "/work",
   explicitFolder: true,
   provider: "claude",
@@ -835,6 +839,7 @@ const RUNNING_VIEW: SessionView = {
   contextUsage: null,
   turns: [],
   orchestrate: false,
+  prompts: [],
 };
 
 function flowRunRig(): {

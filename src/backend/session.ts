@@ -7,6 +7,7 @@ import {
   type RotationPorts,
 } from "../domain/rotation";
 import type { SecretEntry } from "../domain/secretMask";
+import type { SessionState } from "../domain/sessionReducer";
 import {
   ProviderId,
   type Account,
@@ -68,10 +69,19 @@ export interface SessionServiceDeps {
   readonly resolveFolder: (requested: string | undefined) => Promise<string>;
 }
 
+export interface ResumeSeed {
+  readonly id: string;
+  readonly createdAt: number;
+  readonly state: SessionState;
+  readonly contextPackage: string;
+}
+
 export interface StartOptions {
   readonly leaseMode?: LeaseMode;
   readonly tools?: AgentToolAccess;
   readonly preamble?: string;
+  readonly resume?: ResumeSeed;
+  readonly explicitFolder?: boolean;
 }
 
 export interface SessionService {
@@ -217,6 +227,7 @@ async function createRun(
     reserved: wiring.reserved,
     loginFailures: wiring.loginFailures,
     onRuntimeSettled: wiring.onRuntimeSettled,
+    ...(params.resume === undefined ? {} : { resume: params.resume }),
   });
   return { run, initial };
 }
@@ -344,7 +355,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       const params: StartRequest = {
         ...input,
         cwd: await deps.resolveFolder(input.cwd),
-        explicitFolder: input.cwd !== undefined,
+        explicitFolder: input.explicitFolder ?? input.cwd !== undefined,
       };
       await releasePrevious();
       if (isCancelled(token)) {

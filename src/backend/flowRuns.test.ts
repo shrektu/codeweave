@@ -55,6 +55,7 @@ const FLOWS: FlowsList = {
 };
 const RUNNING_VIEW: SessionView = {
   id: "session-1",
+  createdAt: 0,
   cwd: WORK_DIR,
   explicitFolder: true,
   provider: ProviderId.claude,
@@ -73,6 +74,7 @@ const RUNNING_VIEW: SessionView = {
   contextUsage: null,
   turns: [],
   orchestrate: false,
+  prompts: [],
 };
 const FINISHED_VIEW: SessionView = {
   ...RUNNING_VIEW,

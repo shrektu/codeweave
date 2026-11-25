@@ -5,7 +5,9 @@ import { buildContextPackage } from "../../src/domain/contextPackage";
 describe("context package acceptance", () => {
   it("context_package_outside_git_repo", () => {
     const text = buildContextPackage({
+      reason: "rotation",
       userPrompts: ["Add a README"],
+      lastReply: null,
       interruptedTurn: [],
       worktree: { isRepo: false, cwd: "/home/user/scratch" },
       maxResultChars: 2000,
