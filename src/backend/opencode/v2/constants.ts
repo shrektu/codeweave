@@ -30,6 +30,7 @@ export const OpencodeV2EventType = {
   executionFailed: "session.execution.failed",
   executionInterrupted: "session.execution.interrupted",
   stepStarted: "session.step.started",
+  stepEnded: "session.step.ended",
   textDelta: "session.text.delta",
   textEnded: "session.text.ended",
   toolInputStarted: "session.tool.input.started",

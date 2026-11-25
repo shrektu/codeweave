@@ -424,6 +424,24 @@ pre.diff {
   margin-left: auto;
 }
 
+.context-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font: var(--text-xs) var(--font-mono);
+  color: var(--label-3);
+}
+
+.context-meter meter {
+  width: 64px;
+  height: 6px;
+}
+
+.flow-node-context {
+  color: var(--label-3);
+  font: var(--text-xs) / var(--leading) var(--font-mono);
+}
+
 .composer {
   display: flex;
   flex-wrap: wrap;

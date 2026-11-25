@@ -44,6 +44,7 @@ function flush(): Promise<void> {
 function createClient(
   readable: ReadableStream<OpencodeV2Event>,
   calls: Calls,
+  overrides: Partial<OpencodeV2Client> = {},
 ): OpencodeV2Client {
   return {
     warmUp: () => Promise.resolve(),
@@ -65,6 +66,7 @@ function createClient(
     isActive: () => Promise.resolve(calls.active.current),
     models: () => Promise.resolve([]),
     events: () => Promise.resolve(readable),
+    ...overrides,
   };
 }
 
@@ -116,7 +118,9 @@ function createHandle(client: OpencodeV2Client): OpencodeV2Handle {
   });
 }
 
-function createRig(): Rig & { connect(): Promise<void> } {
+function createRig(
+  overrides: Partial<OpencodeV2Client> = {},
+): Rig & { connect(): Promise<void> } {
   const { readable, writable } = new TransformStream<
     OpencodeV2Event,
     OpencodeV2Event
@@ -129,7 +133,7 @@ function createRig(): Rig & { connect(): Promise<void> } {
     promptGate: { current: null },
     active: { current: false },
   };
-  const handle = createHandle(createClient(readable, calls));
+  const handle = createHandle(createClient(readable, calls, overrides));
   const events: AgentEvent[] = [];
   handle.subscribe((event) => events.push(event));
   const push = async (
@@ -148,8 +152,10 @@ function createRig(): Rig & { connect(): Promise<void> } {
   };
 }
 
-async function openRig(): Promise<Rig> {
-  const rig = createRig();
+async function openRig(
+  overrides: Partial<OpencodeV2Client> = {},
+): Promise<Rig> {
+  const rig = createRig(overrides);
   void rig.connect();
   await rig.handle.open();
   return rig;
@@ -510,5 +516,34 @@ describe("open", () => {
     const rig = createRig();
 
     await expect(rig.handle.open()).rejects.toThrow(READY_TIMEOUT_MESSAGE);
+  });
+
+  it("opencode_models_failure_keeps_usage_without_limit", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const rig = await openRig({
+      models: () => Promise.reject(new Error("models down")),
+    });
+    const { turn } = await startedTurn(rig);
+
+    await rig.push("session.step.started", {
+      sessionID: SESSION,
+      model: { id: "m", providerID: "p" },
+    });
+    await rig.push("session.step.ended", {
+      sessionID: SESSION,
+      tokens: {
+        input: 1000,
+        output: 200,
+        reasoning: 50,
+        cache: { read: 3000, write: 0 },
+      },
+    });
+    await rig.push("session.execution.succeeded", { sessionID: SESSION });
+    await turn;
+
+    expect(rig.events).toContainEqual({
+      type: "context_usage",
+      usage: { usedTokens: 4250, limitTokens: null },
+    });
   });
 });

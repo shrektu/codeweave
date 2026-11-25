@@ -9,6 +9,7 @@ import {
   RPC_CODE_AUTH_REJECTED,
   UNKNOWN_ERROR,
 } from "../../domain/constants";
+import { contextUsageOf } from "../../domain/contextUsage";
 import type { AgentEvent, ToolCallStatus } from "../../domain/events";
 import {
   CLAUDE_MODEL_META_KEY,
@@ -168,12 +169,20 @@ function mapRateLimit(limit: unknown): AgentEvent[] {
   ];
 }
 
+function mapContextUsage(
+  update: Extract<SessionUpdate, { sessionUpdate: "usage_update" }>,
+): AgentEvent[] {
+  const usage = contextUsageOf(update.used, update.size);
+  return usage === null ? [] : [{ type: "context_usage", usage }];
+}
+
 function mapUsageUpdate(
   update: Extract<SessionUpdate, { sessionUpdate: "usage_update" }>,
 ): AgentEvent[] {
   return [
     ...mapRateLimit(update._meta?.[CLAUDE_RATE_LIMIT_META_KEY]),
     ...mapModel(update._meta?.[CLAUDE_MODEL_META_KEY]),
+    ...mapContextUsage(update),
   ];
 }
 

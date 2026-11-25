@@ -91,6 +91,8 @@ export function toSessionView(input: SessionViewInput): SessionView {
     turnInFlight: input.turnInFlight,
     flowRef: input.flowRef,
     currentModel: state.currentModel,
+    contextUsage:
+      state.contextUsage === null ? null : { ...state.contextUsage },
     turns: state.turns.map((turn) => ({ ...turn })),
     orchestrate: input.orchestrate,
   };

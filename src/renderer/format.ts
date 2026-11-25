@@ -8,6 +8,7 @@ import {
 } from "../domain/types";
 import type {
   AccountView,
+  ContextUsageView,
   FlowRunView,
   LimitView,
   LimitWindowView,
@@ -102,6 +103,42 @@ export function nodeModelOf(
     run.nodes.find((node) => node.id === nodeId)?.model ??
     null
   );
+}
+
+const COMPACT_TOKENS = new Intl.NumberFormat("en-US", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+const PERCENT_FULL = 100;
+
+export function contextUsageText(usage: ContextUsageView | null): string {
+  if (usage === null) {
+    return "Context not reported";
+  }
+  const used = COMPACT_TOKENS.format(usage.usedTokens);
+  if (usage.limitTokens === null) {
+    return `${used} tokens in context`;
+  }
+  const limit = COMPACT_TOKENS.format(usage.limitTokens);
+  const pct = Math.min(
+    PERCENT_FULL,
+    Math.round((usage.usedTokens / usage.limitTokens) * PERCENT_FULL),
+  );
+  return `${used} / ${limit} · ${String(pct)}%`;
+}
+
+export function nodeContextUsageOf(
+  run: FlowRunView,
+  nodeId: string,
+  flowSessions: Snapshot["flowSessions"],
+): ContextUsageView | null {
+  const live = flowSessions.find(
+    (entry) =>
+      entry.runId === run.runId &&
+      entry.view.flowRef?.flowId === run.flowId &&
+      entry.view.flowRef.nodeId === nodeId,
+  );
+  return live?.view.contextUsage ?? null;
 }
 
 export function latestRunOf(

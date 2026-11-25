@@ -47,7 +47,12 @@ import {
   type FlowLayoutEdge,
   type FlowSize,
 } from "../flowLayout";
-import { PROVIDER_LABELS, nodeModelOf } from "../format";
+import {
+  PROVIDER_LABELS,
+  contextUsageText,
+  nodeContextUsageOf,
+  nodeModelOf,
+} from "../format";
 import { useElementSize } from "../useElementSize";
 
 import { FlowEdge } from "./FlowEdge";
@@ -86,6 +91,7 @@ type FlowNodeData = Record<string, unknown> & {
   custom: boolean;
   editable: boolean;
   model: string | null;
+  context: string | null;
 };
 type FlowGraphNode = Node<FlowNodeData, "flowNode">;
 
@@ -149,6 +155,9 @@ function FlowNodeCardView({ id, data }: NodeProps<FlowGraphNode>): JSX.Element {
       <p className="flow-node-role">{data.role}</p>
       {data.model !== null && (
         <span className="flow-node-model">{data.model}</span>
+      )}
+      {data.context !== null && (
+        <span className="flow-node-context">{data.context}</span>
       )}
       {data.editable && data.provider !== null && (
         <p className="flow-node-provider">
@@ -294,6 +303,7 @@ interface GraphSource {
   agents: readonly AgentView[];
   states: NodeStates;
   models: ReadonlyMap<string, string>;
+  contexts: ReadonlyMap<string, string>;
   activeNodeId: string | null;
   editable: boolean;
   selection: FlowSelection;
@@ -315,6 +325,24 @@ function modelsOf(
   );
 }
 
+function contextsOf(
+  flow: FlowView,
+  run: FlowRunView | null,
+  flowSessions: Snapshot["flowSessions"],
+): ReadonlyMap<string, string> {
+  if (run === null) {
+    return new Map();
+  }
+  return new Map(
+    flow.nodes.flatMap((node) => {
+      const usage = nodeContextUsageOf(run, node.id, flowSessions);
+      return usage === null
+        ? []
+        : [[node.id, contextUsageText(usage)] as const];
+    }),
+  );
+}
+
 function layoutEdgeKey(edge: FlowLayoutEdge): string | null {
   return edge.data === undefined
     ? null
@@ -328,6 +356,7 @@ function buildGraph({
   agents,
   states,
   models,
+  contexts,
   activeNodeId,
   editable,
   selection,
@@ -353,6 +382,7 @@ function buildGraph({
           custom: (flowNode?.provider ?? null) !== null,
           editable,
           model: models.get(node.id) ?? null,
+          context: contexts.get(node.id) ?? null,
         },
       };
     }),
@@ -497,6 +527,7 @@ function FlowCanvas(props: FlowGraphProps): JSX.Element {
   const states = useStableEntries(statesOf(shown, session, run));
   const activeNodeId = activeNodeOf(shown, session, run);
   const models = useStableEntries(modelsOf(shown, run, flowSessions));
+  const contexts = useStableEntries(contextsOf(shown, run, flowSessions));
   const graph = useMemo(
     () =>
       layout
@@ -507,6 +538,7 @@ function FlowCanvas(props: FlowGraphProps): JSX.Element {
             agents,
             states,
             models,
+            contexts,
             activeNodeId,
             editable,
             selection,
@@ -519,6 +551,7 @@ function FlowCanvas(props: FlowGraphProps): JSX.Element {
       agents,
       states,
       models,
+      contexts,
       activeNodeId,
       editable,
       selection,

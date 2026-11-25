@@ -9,6 +9,7 @@ import {
 import {
   accountLabel,
   compactPath,
+  contextUsageText,
   focusedRunOf,
   formatCountdown,
   formatLocalTime,
@@ -332,4 +333,23 @@ it("account_label_falls_back_to_id", () => {
 
   expect(accountLabel(accounts, "acc-1")).toBe("Work");
   expect(accountLabel(accounts, "gone")).toBe("gone");
+});
+
+it("context_usage_text_formats_used_limit_and_percent", () => {
+  expect(contextUsageText({ usedTokens: 45_000, limitTokens: 200_000 })).toBe(
+    "45K / 200K · 23%",
+  );
+  expect(contextUsageText(null)).toBe("Context not reported");
+});
+
+it("context_usage_text_clamps_over_limit_to_100", () => {
+  expect(contextUsageText({ usedTokens: 250_000, limitTokens: 200_000 })).toBe(
+    "250K / 200K · 100%",
+  );
+});
+
+it("context_usage_text_without_limit", () => {
+  expect(contextUsageText({ usedTokens: 12_345, limitTokens: null })).toBe(
+    "12.3K tokens in context",
+  );
 });

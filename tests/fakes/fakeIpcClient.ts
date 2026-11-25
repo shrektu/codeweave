@@ -210,6 +210,7 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
     turnInFlight: false,
     flowRef: null,
     currentModel: null,
+    contextUsage: null,
     turns: [],
     orchestrate: false,
     ...overrides,
