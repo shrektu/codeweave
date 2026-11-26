@@ -8,6 +8,7 @@ import {
 import {
   INITIAL_SESSION_STATE,
   applyServedModel,
+  recordPrompt,
   recordTurnRoute,
   reduceSession,
   reservePromptSeq,
@@ -525,5 +526,22 @@ describe("session reducer: turn routes", () => {
 
     expect(reset.currentModel).toBeNull();
     expect(reset.contextUsage).toBeNull();
+  });
+});
+
+describe("session reducer: prompts", () => {
+  it("prompt_seq_matches_turn_prompt_seq", () => {
+    const first = reservePromptSeq(INITIAL_SESSION_STATE);
+    const afterFirst = recordPrompt(first.state, first.seq, "hello");
+    const second = reservePromptSeq(afterFirst);
+    const afterSecond = recordPrompt(second.state, second.seq, "again");
+
+    expect(first.seq).toBe(0);
+    expect(second.seq).toBe(1);
+    expect(afterSecond.prompts).toEqual([
+      { seq: 0, text: "hello" },
+      { seq: 1, text: "again" },
+    ]);
+    expect(afterSecond.nextSeq).toBe(2);
   });
 });

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { FakeContained } from "../../../tests/fakes/fakeContainer";
 import type { AgentEvent } from "../../domain/events";
 import { PermissionProfile, ProviderId } from "../../domain/types";
-import { UnknownPermissionError } from "../agentAdapter";
+import { UnknownPermissionError, type AgentResumeSpec } from "../agentAdapter";
 
 import { OpencodeHttpError, type OpencodeClient } from "./client";
 import { OpencodeHandle } from "./handle";
@@ -64,6 +64,7 @@ function createClient(
     warmUp: () => Promise.resolve(),
     providers: () => Promise.resolve({ providers: [] }),
     createSession: () => Promise.resolve(SESSION),
+    sessionExists: () => Promise.resolve(false),
     promptAsync: ({ text }) => {
       sinks.prompts.push(text);
       const failure = sinks.promptFailures.shift();
@@ -106,7 +107,10 @@ function parsedEvent(
   return event;
 }
 
-function createHandle(client: OpencodeClient): OpencodeHandle {
+function createHandle(
+  client: OpencodeClient,
+  resume?: AgentResumeSpec,
+): OpencodeHandle {
   const contained = new FakeContained("run-1", []);
   return new OpencodeHandle({
     spec: {
@@ -121,6 +125,7 @@ function createHandle(client: OpencodeClient): OpencodeHandle {
       profile: PermissionProfile.ask,
       runId: "run-1",
       executable: "/usr/bin/opencode",
+      ...(resume === undefined ? {} : { resume }),
     },
     agentProcess: {
       contained,
@@ -829,5 +834,56 @@ describe("opencode go usage limit", () => {
     await turn;
 
     expect(rig.events).toEqual(GO_RATE_LIMIT_EVENTS);
+  });
+});
+
+describe("opencode handle native resume", () => {
+  function resumeSinks(): Sinks {
+    return {
+      prompts: [],
+      aborts: [],
+      replies: [],
+      promptFailures: [],
+      abortGate: { current: null },
+      serverBusy: { current: false },
+      serverFaults: { status: false, latest: false },
+      latestMessage: { current: null },
+    };
+  }
+
+  async function openWithResume(
+    exists: boolean,
+  ): Promise<{ handle: OpencodeHandle; creates: () => number }> {
+    const { readable } = new TransformStream<OpencodeEvent, OpencodeEvent>();
+    const sinks = resumeSinks();
+    let creates = 0;
+    const base = createClient(readable, sinks);
+    const client: OpencodeClient = {
+      ...base,
+      sessionExists: () => Promise.resolve(exists),
+      createSession: () => {
+        creates += 1;
+        return Promise.resolve(SESSION);
+      },
+    };
+    const handle = createHandle(client, { nativeSessionId: SESSION });
+    await handle.open();
+    return { handle, creates: () => creates };
+  }
+
+  it("resume_reuses_existing_session", async () => {
+    const { handle, creates } = await openWithResume(true);
+
+    expect(handle.resumed).toBe(true);
+    expect(handle.nativeSessionId).toBe(SESSION);
+    expect(creates()).toBe(0);
+  });
+
+  it("resume_missing_session_creates_new", async () => {
+    const { handle, creates } = await openWithResume(false);
+
+    expect(handle.resumed).toBe(false);
+    expect(handle.nativeSessionId).toBe(SESSION);
+    expect(creates()).toBe(1);
   });
 });

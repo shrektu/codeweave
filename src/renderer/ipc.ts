@@ -28,6 +28,7 @@ const METHOD_TIMEOUTS_MS: Readonly<Partial<Record<RequestMethod, number>>> = {
   "accounts/setKey": VAULT_REQUEST_TIMEOUT_MS,
   "models/catalog": CATALOG_REQUEST_TIMEOUT_MS,
   "session/start": SESSION_START_TIMEOUT_MS,
+  "session/resume": SESSION_START_TIMEOUT_MS,
 };
 
 export class IpcRemoteError extends Error {

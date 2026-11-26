@@ -139,3 +139,59 @@ describe("acp adapter start failures", () => {
     });
   });
 });
+
+const NATIVE_ID = "native-session-1";
+
+describe("acp adapter native resume", () => {
+  it("resume_rejected_starts_fresh", async () => {
+    const rig = await createRig();
+    rig.container.config.resume = true;
+    rig.container.config.resumeError = {
+      code: -32603,
+      message: "unknown session",
+    };
+
+    const result = await rig.start(undefined, "run-1", undefined, {
+      nativeSessionId: NATIVE_ID,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(agentOf(rig).resumeCalls).toHaveLength(1);
+    expect(agentOf(rig).newSessions).toHaveLength(1);
+    if (result.ok) {
+      expect(result.handle.resumed).toBe(false);
+      expect(result.handle.nativeSessionId).toBe("fake-session-1");
+    }
+  });
+
+  it("replay_notifications_dropped_during_load", async () => {
+    const rig = await createRig();
+    rig.container.config.loadSession = true;
+    rig.container.config.replayed = [
+      { type: "text", text: "replayed history" },
+    ];
+
+    const result = await rig.start(undefined, "run-1", undefined, {
+      nativeSessionId: NATIVE_ID,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(agentOf(rig).loadCalls).toHaveLength(1);
+    expect(agentOf(rig).newSessions).toHaveLength(0);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.handle.resumed).toBe(true);
+    expect(result.handle.nativeSessionId).toBe(NATIVE_ID);
+    const texts: string[] = [];
+    result.handle.subscribe((event) => {
+      if (event.type === "text") {
+        texts.push(event.text);
+      }
+    });
+    agentOf(rig).enqueue([{ type: "text", text: "fresh reply" }]);
+    await result.handle.prompt("go", { model: null });
+
+    expect(texts).toEqual(["fresh reply"]);
+  });
+});

@@ -1,7 +1,11 @@
 import { X } from "lucide-react";
 import { useState, type JSX } from "react";
 
-import type { AccountRuntimeView, SessionView } from "../../shared/views";
+import type {
+  AccountRuntimeView,
+  SessionHistoryEntry,
+  SessionView,
+} from "../../shared/views";
 import {
   formatLocalTime,
   isSessionLive,
@@ -18,15 +22,69 @@ export interface SidebarProps {
 }
 
 const NO_FOLDER_LABEL = "No folder";
+const SAVED_LABEL = "Saved";
+const ARCHIVED_LABEL = "Archived";
 const PATH_SEPARATOR = /[\\/]/;
 
 function sessionLabel(session: SessionView): string {
   if (!session.explicitFolder) {
     return NO_FOLDER_LABEL;
   }
-  return (
-    session.cwd.split(PATH_SEPARATOR).filter(Boolean).at(-1) ?? session.cwd
-  );
+  return folderLabel(session.cwd);
+}
+
+function folderLabel(cwd: string): string {
+  return cwd.split(PATH_SEPARATOR).filter(Boolean).at(-1) ?? cwd;
+}
+
+interface SessionListItem {
+  readonly id: string;
+  readonly at: number;
+  readonly view: SessionView | null;
+  readonly history: SessionHistoryEntry | null;
+}
+
+function sessionListItems(
+  sessions: readonly SessionView[],
+  history: readonly SessionHistoryEntry[],
+  showArchived: boolean,
+): SessionListItem[] {
+  const known = new Set(sessions.map((session) => session.id));
+  const entries = new Map(history.map((entry) => [entry.id, entry]));
+  const live: SessionListItem[] = sessions.map((view) => ({
+    id: view.id,
+    at: view.createdAt,
+    view,
+    history: entries.get(view.id) ?? null,
+  }));
+  const saved: SessionListItem[] = history
+    .filter(
+      (entry) => !known.has(entry.id) && (showArchived || !entry.archived),
+    )
+    .map((entry) => ({
+      id: entry.id,
+      at: entry.updatedAt,
+      view: null,
+      history: entry,
+    }));
+  return [...live, ...saved]
+    .map((item, index) => ({ item, index }))
+    .toSorted(
+      (left, right) => right.item.at - left.item.at || right.index - left.index,
+    )
+    .map(({ item }) => item);
+}
+
+function itemLabel(item: SessionListItem): string {
+  if (item.history !== null && item.history.title !== "") {
+    return item.history.title;
+  }
+  if (item.view !== null) {
+    return sessionLabel(item.view);
+  }
+  return item.history === null
+    ? NO_FOLDER_LABEL
+    : folderLabel(item.history.cwd);
 }
 
 function sessionStatus(session: SessionView): string {
@@ -78,15 +136,23 @@ function SessionsSection({
   onOpenSession?: (() => void) | undefined;
 }): JSX.Element {
   const { client, store, state } = useApp();
-  const [closingId, setClosingId] = useState<string | null>(null);
-  const sessions = [...(state.snapshot?.sessions ?? [])].toReversed();
+  const [showArchived, setShowArchived] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const items = sessionListItems(
+    state.snapshot?.sessions ?? [],
+    state.history,
+    showArchived,
+  );
 
-  const closeSession = async (sessionId: string): Promise<void> => {
-    setClosingId(sessionId);
+  const run = async (
+    sessionId: string,
+    action: () => Promise<unknown>,
+  ): Promise<void> => {
+    setBusyId(sessionId);
     try {
-      await client.request("session/close", { sessionId });
+      await action();
     } finally {
-      setClosingId((current) => (current === sessionId ? null : current));
+      setBusyId((current) => (current === sessionId ? null : current));
     }
   };
 
@@ -105,25 +171,74 @@ function SessionsSection({
           New session
         </button>
       </div>
-      {sessions.length === 0 ? (
+      <label className="field archive-toggle">
+        <input
+          type="checkbox"
+          checked={showArchived}
+          onChange={(event) => {
+            setShowArchived(event.target.checked);
+          }}
+        />
+        Show archived
+      </label>
+      {items.length === 0 ? (
         <p className="empty">No sessions yet</p>
       ) : (
         <ul>
-          {sessions.map((session) => (
-            <SessionRow
-              key={session.id}
-              session={session}
-              active={session.id === state.activeSessionId}
-              closing={closingId === session.id}
-              onSelect={() => {
-                store.activateSession(session.id);
-                onOpenSession?.();
-              }}
-              onClose={() => {
-                void closeSession(session.id);
-              }}
-            />
-          ))}
+          {items.map((item) => {
+            const active = item.id === state.activeSessionId;
+            const select = (): void => {
+              store.activateSession(item.id);
+              onOpenSession?.();
+            };
+            const closing = busyId === item.id;
+            if (item.history !== null && item.view === null) {
+              const entry = item.history;
+              return (
+                <HistoryRow
+                  key={item.id}
+                  entry={entry}
+                  active={active}
+                  closing={closing}
+                  onSelect={select}
+                  onArchive={() => {
+                    void run(item.id, () =>
+                      client.request("history/archive", {
+                        sessionId: item.id,
+                        archived: true,
+                      }),
+                    );
+                  }}
+                  onRestore={() => {
+                    void run(item.id, () =>
+                      client.request("history/archive", {
+                        sessionId: item.id,
+                        archived: false,
+                      }),
+                    );
+                  }}
+                />
+              );
+            }
+            if (item.view === null) {
+              return null;
+            }
+            return (
+              <SessionRow
+                key={item.id}
+                session={item.view}
+                title={itemLabel(item)}
+                active={active}
+                closing={closing}
+                onSelect={select}
+                onClose={() => {
+                  void run(item.id, () =>
+                    client.request("session/close", { sessionId: item.id }),
+                  );
+                }}
+              />
+            );
+          })}
         </ul>
       )}
     </nav>
@@ -132,12 +247,14 @@ function SessionsSection({
 
 function SessionRow({
   session,
+  title,
   active,
   closing,
   onSelect,
   onClose,
 }: {
   session: SessionView;
+  title: string;
   active: boolean;
   closing: boolean;
   onSelect: () => void;
@@ -152,7 +269,7 @@ function SessionRow({
     >
       <button type="button" className="session-pick" onClick={onSelect}>
         <span className="dot" />
-        <span className="item-label">{sessionLabel(session)}</span>
+        <span className="item-label">{title}</span>
         {session.orchestrate && <span className="badge">Orchestrator</span>}
         <small>{sessionStatus(session)}</small>
       </button>
@@ -164,6 +281,59 @@ function SessionRow({
           title="Close session"
           disabled={closing}
           onClick={onClose}
+        >
+          <X size={14} aria-hidden="true" />
+        </button>
+      )}
+    </li>
+  );
+}
+
+function HistoryRow({
+  entry,
+  active,
+  closing,
+  onSelect,
+  onArchive,
+  onRestore,
+}: {
+  entry: SessionHistoryEntry;
+  active: boolean;
+  closing: boolean;
+  onSelect: () => void;
+  onArchive: () => void;
+  onRestore: () => void;
+}): JSX.Element {
+  const label = entry.title === "" ? folderLabel(entry.cwd) : entry.title;
+  return (
+    <li
+      className="item session-item"
+      data-provider={entry.provider}
+      aria-current={active ? "true" : undefined}
+    >
+      <button type="button" className="session-pick" onClick={onSelect}>
+        <span className="dot" />
+        <span className="item-label">{label}</span>
+        {entry.orchestrate && <span className="badge">Orchestrator</span>}
+        <small>{entry.archived ? ARCHIVED_LABEL : SAVED_LABEL}</small>
+      </button>
+      {entry.archived ? (
+        <button
+          type="button"
+          className="btn session-restore"
+          disabled={closing}
+          onClick={onRestore}
+        >
+          Restore
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="icon-btn session-close"
+          aria-label="Close session"
+          title="Archive session"
+          disabled={closing}
+          onClick={onArchive}
         >
           <X size={14} aria-hidden="true" />
         </button>

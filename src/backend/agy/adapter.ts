@@ -131,6 +131,8 @@ function newTurn(): ActiveTurn {
 class AgySession implements AgentHandle {
   readonly accountId: string;
   readonly runId: string;
+  readonly nativeSessionId: string | null = null;
+  readonly resumed = false;
   private readonly deps: AgyAdapterDeps;
   private readonly spec: AgentStartSpec;
   private readonly graceMs: number;

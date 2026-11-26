@@ -86,7 +86,7 @@ test("transcript_renders_markdown_and_copies_commands", async () => {
     await page.getByPlaceholder("Describe the task").fill(ROTATION_PROMPT);
     await page.getByRole("button", { name: "Send" }).click();
 
-    const message = page.locator(".stream .msg");
+    const message = page.locator(".stream .msg:not(.prompt)");
     await expect(message.locator("table td").first()).toHaveText("a.ts", {
       timeout: STEP_TIMEOUT_MS,
     });

@@ -548,3 +548,10 @@ pre.diff {
 .session-model {
   color: var(--label);
 }
+
+.card.msg.prompt {
+  align-self: flex-end;
+  max-width: 80%;
+  background: var(--accent-soft);
+  border-color: transparent;
+}

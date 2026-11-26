@@ -6,6 +6,7 @@ import { PermissionProfile, ProviderId } from "../../../domain/types";
 import {
   TurnInProgressError,
   UnknownPermissionError,
+  type AgentResumeSpec,
 } from "../../agentAdapter";
 
 import type { OpencodeV2Client } from "./client";
@@ -49,6 +50,7 @@ function createClient(
   return {
     warmUp: () => Promise.resolve(),
     createSession: () => Promise.resolve(SESSION),
+    sessionExists: () => Promise.resolve(false),
     prompt: (_sessionId, text) => {
       calls.prompts.push(text);
       return calls.promptGate.current ?? Promise.resolve();
@@ -78,7 +80,10 @@ function parsed(type: string, data: Record<string, unknown>): OpencodeV2Event {
   return event;
 }
 
-function createHandle(client: OpencodeV2Client): OpencodeV2Handle {
+function createHandle(
+  client: OpencodeV2Client,
+  resume?: AgentResumeSpec,
+): OpencodeV2Handle {
   return new OpencodeV2Handle({
     consoleLogin: false,
     spec: {
@@ -93,6 +98,7 @@ function createHandle(client: OpencodeV2Client): OpencodeV2Handle {
       profile: PermissionProfile.ask,
       runId: "run-1",
       executable: "/usr/bin/opencode",
+      ...(resume === undefined ? {} : { resume }),
     },
     agentProcess: {
       contained: new FakeContained("run-1", []),
@@ -120,6 +126,7 @@ function createHandle(client: OpencodeV2Client): OpencodeV2Handle {
 
 function createRig(
   overrides: Partial<OpencodeV2Client> = {},
+  resume?: AgentResumeSpec,
 ): Rig & { connect(): Promise<void> } {
   const { readable, writable } = new TransformStream<
     OpencodeV2Event,
@@ -133,7 +140,7 @@ function createRig(
     promptGate: { current: null },
     active: { current: false },
   };
-  const handle = createHandle(createClient(readable, calls, overrides));
+  const handle = createHandle(createClient(readable, calls, overrides), resume);
   const events: AgentEvent[] = [];
   handle.subscribe((event) => events.push(event));
   const push = async (
@@ -154,8 +161,9 @@ function createRig(
 
 async function openRig(
   overrides: Partial<OpencodeV2Client> = {},
+  resume?: AgentResumeSpec,
 ): Promise<Rig> {
-  const rig = createRig(overrides);
+  const rig = createRig(overrides, resume);
   void rig.connect();
   await rig.handle.open();
   return rig;
@@ -545,5 +553,35 @@ describe("open", () => {
       type: "context_usage",
       usage: { usedTokens: 4250, limitTokens: null },
     });
+  });
+});
+
+describe("opencode v2 handle native resume", () => {
+  it("resume_reuses_existing_session", async () => {
+    const rig = await openRig(
+      { sessionExists: () => Promise.resolve(true) },
+      { nativeSessionId: SESSION },
+    );
+
+    expect(rig.handle.resumed).toBe(true);
+    expect(rig.handle.nativeSessionId).toBe(SESSION);
+  });
+
+  it("resume_missing_session_creates_new", async () => {
+    let creates = 0;
+    const rig = await openRig(
+      {
+        sessionExists: () => Promise.resolve(false),
+        createSession: () => {
+          creates += 1;
+          return Promise.resolve(SESSION);
+        },
+      },
+      { nativeSessionId: "ses-missing" },
+    );
+
+    expect(rig.handle.resumed).toBe(false);
+    expect(rig.handle.nativeSessionId).toBe(SESSION);
+    expect(creates).toBe(1);
   });
 });

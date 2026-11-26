@@ -112,6 +112,7 @@ describe("turnBadge", () => {
 function sessionOf(overrides: Partial<SessionView>): SessionView {
   return {
     id: "s1",
+    createdAt: 0,
     cwd: "/work",
     explicitFolder: true,
     provider: ProviderId.claude,
@@ -130,6 +131,7 @@ function sessionOf(overrides: Partial<SessionView>): SessionView {
     contextUsage: null,
     turns: [],
     orchestrate: false,
+    prompts: [],
     ...overrides,
   };
 }

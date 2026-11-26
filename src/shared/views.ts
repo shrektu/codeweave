@@ -147,6 +147,12 @@ export const MessageViewSchema = z.strictObject({
 });
 export type MessageView = z.infer<typeof MessageViewSchema>;
 
+export const PromptViewSchema = z.strictObject({
+  seq: z.int(),
+  text: z.string(),
+});
+export type PromptView = z.infer<typeof PromptViewSchema>;
+
 export const PermissionViewSchema = z.strictObject({
   requestId: z.string(),
   toolCallId: z.string(),
@@ -218,6 +224,7 @@ export type ContextUsageView = z.infer<typeof ContextUsageViewSchema>;
 
 export const SessionViewSchema = z.strictObject({
   id: z.string(),
+  createdAt: z.int().nonnegative(),
   cwd: z.string(),
   explicitFolder: z.boolean(),
   provider: z.enum(ProviderId),
@@ -236,8 +243,48 @@ export const SessionViewSchema = z.strictObject({
   contextUsage: ContextUsageViewSchema.nullable(),
   turns: z.array(TurnRouteViewSchema),
   orchestrate: z.boolean(),
+  prompts: z.array(PromptViewSchema),
 });
 export type SessionView = z.infer<typeof SessionViewSchema>;
+
+export const SessionHistoryEntrySchema = z.strictObject({
+  id: z.string(),
+  title: z.string(),
+  cwd: z.string(),
+  provider: z.enum(ProviderId),
+  orchestrate: z.boolean(),
+  createdAt: z.int().nonnegative(),
+  updatedAt: z.int().nonnegative(),
+  archived: z.boolean(),
+});
+export type SessionHistoryEntry = z.infer<typeof SessionHistoryEntrySchema>;
+
+export const NativeSessionRefSchema = z.strictObject({
+  accountId: z.string(),
+  nativeSessionId: z.string(),
+});
+export type NativeSessionRef = z.infer<typeof NativeSessionRefSchema>;
+
+export const StoredSessionSchema = z.strictObject({
+  version: z.int(),
+  id: z.string(),
+  createdAt: z.int().nonnegative(),
+  updatedAt: z.int().nonnegative(),
+  title: z.string(),
+  cwd: z.string(),
+  explicitFolder: z.boolean(),
+  provider: z.enum(ProviderId),
+  profile: z.enum(PermissionProfile),
+  orchestrate: z.boolean(),
+  archived: z.boolean(),
+  prompts: z.array(PromptViewSchema),
+  messages: z.array(MessageViewSchema),
+  toolCalls: z.array(ToolCallViewSchema),
+  turns: z.array(TurnRouteViewSchema),
+  lastTurn: LastTurnViewSchema.nullable(),
+  nativeSessions: z.array(NativeSessionRefSchema).default([]),
+});
+export type StoredSession = z.infer<typeof StoredSessionSchema>;
 
 export const AgentViewSchema = z.strictObject({
   id: z.string(),

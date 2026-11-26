@@ -12,6 +12,7 @@ import { fakeOrchestrator } from "../fakes/fakeOrchestrator";
 import {
   fakeFlowRuns,
   fakeProbes,
+  fakeSessionHistory,
   fakeSessionPool,
   fakeSessions,
   fakeTerminals,
@@ -30,6 +31,7 @@ const DEFAULT_CWD = "/home/user";
 function sessionIn(cwd: string | undefined): SessionView {
   return {
     id: "sess-1",
+    createdAt: 0,
     cwd: cwd ?? DEFAULT_CWD,
     explicitFolder: cwd !== undefined,
     provider: "claude",
@@ -48,6 +50,7 @@ function sessionIn(cwd: string | undefined): SessionView {
     contextUsage: null,
     turns: [],
     orchestrate: false,
+    prompts: [],
   };
 }
 
@@ -64,6 +67,8 @@ async function rig(): Promise<{
     userData,
     homeDir: userData,
     broadcast,
+    history: fakeSessionHistory(),
+    inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),
     flowRuns: fakeFlowRuns(),
     orchestrator: fakeOrchestrator(),
     sessions: fakeSessionPool(

@@ -40,9 +40,12 @@ import type {
   MessageView,
   ModelCatalog,
   PermissionView,
+  PromptView,
+  SessionHistoryEntry,
   SessionView,
   SettingsView,
   Snapshot,
+  StoredSession,
   SwitchLogEntryView,
   TerminalView,
   ToolCallView,
@@ -70,6 +73,7 @@ export function createFakeIpcClient(): FakeIpcClient {
   const handlers = new Map<RequestMethod, Handler<RequestMethod>>();
   const listeners = new Set<(event: IpcEvent) => void>();
   const requests: RecordedRequest[] = [];
+  handlers.set("history/list", () => ({ entries: [] }));
   return {
     requests,
     on(method, handler): void {
@@ -112,6 +116,7 @@ export function staticStore(state: AppState): AppStore {
     start: () => () => undefined,
     activateSession: () => undefined,
     focusRun: () => undefined,
+    loadTranscript: () => Promise.resolve(null),
   };
 }
 
@@ -122,6 +127,8 @@ export function readyState(snapshot: Snapshot): AppState {
     error: null,
     activeSessionId: snapshot.sessions.at(-1)?.id ?? null,
     focusedRunId: null,
+    history: [],
+    historyTranscripts: {},
   };
 }
 
@@ -181,6 +188,51 @@ export function makeMessage(overrides: Partial<MessageView> = {}): MessageView {
   return { id: null, text: "Working on it", seq: 0, ...overrides };
 }
 
+export function makePrompt(overrides: Partial<PromptView> = {}): PromptView {
+  return { seq: 0, text: "Do the task", ...overrides };
+}
+
+export function makeHistoryEntry(
+  overrides: Partial<SessionHistoryEntry> = {},
+): SessionHistoryEntry {
+  return {
+    id: "11111111-1111-4111-8111-111111111111",
+    title: "Do the task",
+    cwd: "/home/user/project",
+    provider: ProviderId.claude,
+    orchestrate: false,
+    createdAt: 1_700_000_000_000,
+    updatedAt: 1_700_000_000_000,
+    archived: false,
+    ...overrides,
+  };
+}
+
+export function makeStoredSession(
+  overrides: Partial<StoredSession> = {},
+): StoredSession {
+  return {
+    version: 1,
+    id: "11111111-1111-4111-8111-111111111111",
+    createdAt: 1_700_000_000_000,
+    updatedAt: 1_700_000_000_000,
+    title: "Do the task",
+    cwd: "/home/user/project",
+    explicitFolder: true,
+    provider: ProviderId.claude,
+    profile: PermissionProfile.ask,
+    orchestrate: false,
+    archived: false,
+    prompts: [makePrompt()],
+    messages: [],
+    toolCalls: [],
+    turns: [],
+    lastTurn: null,
+    nativeSessions: [],
+    ...overrides,
+  };
+}
+
 export function makePermission(
   overrides: Partial<PermissionView> = {},
 ): PermissionView {
@@ -220,6 +272,8 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
     contextUsage: null,
     turns: [],
     orchestrate: false,
+    prompts: [],
+    createdAt: 0,
     ...overrides,
   };
 }

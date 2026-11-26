@@ -186,6 +186,8 @@ function newActiveTurn(): ActiveTurn {
 class CodexAppServerSession implements AgentHandle {
   readonly accountId: string;
   readonly runId: string;
+  nativeSessionId: string | null = null;
+  resumed = false;
   private readonly agentProcess: AgentProcess;
   private readonly rpc: CodexRpc;
   private readonly listeners = new Set<Listener>();
@@ -370,18 +372,46 @@ class CodexAppServerSession implements AgentHandle {
       throw new CodexNeedsLoginError();
     }
     await this.loadInitialRateLimits();
-    const thread = await this.rpc.request(
-      CodexMethod.threadStart,
-      {
-        cwd: spec.cwd,
-        approvalPolicy: this.appliedPolicy.approvalPolicy,
-        sandbox: this.appliedPolicy.sandbox,
-        approvalsReviewer: APPROVALS_REVIEWER_USER,
-      },
-      ThreadStartResponseSchema,
-    );
+    const resumed = await this.resumeThread(spec);
+    const thread =
+      resumed ??
+      (await this.rpc.request(
+        CodexMethod.threadStart,
+        this.threadParams(spec),
+        ThreadStartResponseSchema,
+      ));
     this.threadId = thread.thread.id;
+    this.nativeSessionId = this.threadId;
+    this.resumed = resumed !== null;
     this.model = thread.model ?? null;
+  }
+
+  private threadParams(spec: AgentStartSpec): Record<string, unknown> {
+    return {
+      cwd: spec.cwd,
+      approvalPolicy: this.appliedPolicy.approvalPolicy,
+      sandbox: this.appliedPolicy.sandbox,
+      approvalsReviewer: APPROVALS_REVIEWER_USER,
+    };
+  }
+
+  private async resumeThread(
+    spec: AgentStartSpec,
+  ): Promise<z.infer<typeof ThreadStartResponseSchema> | null> {
+    const threadId = spec.resume?.nativeSessionId;
+    if (threadId === undefined) {
+      return null;
+    }
+    try {
+      return await this.rpc.request(
+        CodexMethod.threadResume,
+        { threadId, ...this.threadParams(spec) },
+        ThreadStartResponseSchema,
+      );
+    } catch (error) {
+      console.warn(`thread/resume failed: ${this.runId}`, error);
+      return null;
+    }
   }
 
   private async loadInitialRateLimits(): Promise<void> {

@@ -141,6 +141,7 @@ it("session_view_with_diffs_passes_session_view_schema", () => {
 
   const view = toSessionView({
     id: "s1",
+    createdAt: 0,
     cwd: "/work",
     explicitFolder: true,
     provider: "claude",
@@ -166,6 +167,7 @@ it("session_view_requires_current_model_nullable", () => {
   });
   const input = {
     id: "s1",
+    createdAt: 0,
     cwd: "/work",
     explicitFolder: true,
     provider: "claude",
@@ -426,6 +428,7 @@ it("flows_list_schema_accepts_nullable_project_location", () => {
 it("session_view_schema_requires_explicit_folder", () => {
   const view = toSessionView({
     id: "s1",
+    createdAt: 0,
     cwd: "/work",
     explicitFolder: false,
     provider: "claude",

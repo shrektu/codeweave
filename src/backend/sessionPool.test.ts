@@ -55,6 +55,8 @@ function handleOf(
   return {
     accountId,
     runId,
+    nativeSessionId: null,
+    resumed: false,
     subscribe: () => () => undefined,
     prompt: () => Promise.resolve(),
     answerPermission: () => undefined,

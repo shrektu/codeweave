@@ -67,7 +67,9 @@ it("snapshot_failure_retries_and_bounds_buffer_in_ui", async () => {
   await vi.advanceTimersByTimeAsync(SNAPSHOT_RETRY_MS);
 
   expect(screen.getByText("Recovered")).toBeTruthy();
-  expect(client.requests).toHaveLength(2);
+  expect(
+    client.requests.filter((request) => request.method === "sessions/snapshot"),
+  ).toHaveLength(2);
 });
 
 it("store_replays_events_received_before_snapshot", async () => {

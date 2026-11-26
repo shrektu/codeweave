@@ -4,6 +4,7 @@ export const CodexMethod = {
   accountRead: "account/read",
   rateLimitsRead: "account/rateLimits/read",
   threadStart: "thread/start",
+  threadResume: "thread/resume",
   turnStart: "turn/start",
   turnInterrupt: "turn/interrupt",
 } as const;

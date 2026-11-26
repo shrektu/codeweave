@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { DEFAULT_HANDOFF_CHARS } from "./constants";
 import { buildContextPackage } from "./contextPackage";
 import type { TurnLogEntry } from "./sessionReducer";
 import type { WorktreeState } from "./types";
@@ -20,7 +21,9 @@ function pack(
   } = {},
 ): string {
   return buildContextPackage({
+    reason: "rotation",
     userPrompts: overrides.userPrompts ?? ["Do the thing"],
+    lastReply: null,
     interruptedTurn,
     worktree: overrides.worktree ?? CLEAN_REPO,
     maxResultChars: overrides.maxResultChars ?? 100,
@@ -140,5 +143,59 @@ describe("context package: interrupted turn", () => {
     ]);
 
     expect(text).not.toContain("do not re-run automatically");
+  });
+});
+
+describe("context package: reasons", () => {
+  it("rotation_package_text_unchanged", () => {
+    const text = buildContextPackage({
+      reason: "rotation",
+      userPrompts: ["Do the thing"],
+      lastReply: null,
+      interruptedTurn: [],
+      worktree: CLEAN_REPO,
+      maxResultChars: 100,
+    });
+
+    expect(text).toBe(
+      [
+        "You are taking over a coding session from another account that hit its usage limit. Everything you need to know about the session so far is below.",
+        "## Goal\n1. Do the thing",
+        "## Interrupted turn\nNo tool calls were made in the interrupted turn.",
+        "## Working tree\nRepository root: /repo\nThe working tree is clean.",
+        "## Instruction\nInspect the current state of the working directory first, then continue the work from where it was interrupted.",
+      ].join("\n\n"),
+    );
+  });
+
+  it("resume_package_contains_prompts_last_reply_and_worktree", () => {
+    const text = buildContextPackage({
+      reason: "resume",
+      userPrompts: ["Old goal", "Second goal"],
+      lastReply: "Old reply",
+      interruptedTurn: [],
+      worktree: CLEAN_REPO,
+      maxResultChars: 100,
+    });
+
+    expect(text).toContain("1. Old goal\n2. Second goal");
+    expect(text).toContain("## Last assistant message\nOld reply");
+    expect(text).toContain("## Working tree\nRepository root: /repo");
+    expect(text).toContain("after the application restarted");
+    expect(text).toContain("where this session stopped");
+    expect(text).not.toContain("hit its usage limit");
+  });
+
+  it("resume_package_truncates_a_long_last_reply", () => {
+    const text = buildContextPackage({
+      reason: "resume",
+      userPrompts: ["Old goal"],
+      lastReply: "z".repeat(DEFAULT_HANDOFF_CHARS + 5),
+      interruptedTurn: [],
+      worktree: CLEAN_REPO,
+      maxResultChars: 100,
+    });
+
+    expect(text).toContain("[truncated, 5 more characters]");
   });
 });

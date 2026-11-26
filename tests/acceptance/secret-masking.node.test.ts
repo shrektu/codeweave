@@ -202,6 +202,8 @@ function scriptedHandle(
   return {
     accountId,
     runId: "run-1",
+    nativeSessionId: null,
+    resumed: false,
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {

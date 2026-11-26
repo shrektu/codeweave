@@ -731,3 +731,41 @@ describe("codex adapter context usage filtering", () => {
     ]);
   });
 });
+
+const NATIVE_CODEX_ID = "thr-native-1";
+
+describe("codex adapter native resume", () => {
+  it("resume_uses_thread_resume", async () => {
+    const rig = await createCodexRig();
+    rig.container.config.resumedThreadIds = [NATIVE_CODEX_ID];
+
+    const result = await rig.start(undefined, "run-1", undefined, {
+      nativeSessionId: NATIVE_CODEX_ID,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(serverOf(rig).methods()).toContain("thread/resume");
+    expect(serverOf(rig).methods()).not.toContain("thread/start");
+    if (result.ok) {
+      expect(result.handle.resumed).toBe(true);
+      expect(result.handle.nativeSessionId).toBe(NATIVE_CODEX_ID);
+    }
+  });
+
+  it("resume_rejected_starts_fresh", async () => {
+    const rig = await createCodexRig();
+    rig.container.config.resumedThreadIds = [];
+
+    const result = await rig.start(undefined, "run-1", undefined, {
+      nativeSessionId: NATIVE_CODEX_ID,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(serverOf(rig).methods()).toContain("thread/resume");
+    expect(serverOf(rig).methods()).toContain("thread/start");
+    if (result.ok) {
+      expect(result.handle.resumed).toBe(false);
+      expect(result.handle.nativeSessionId).toBe("thr-1");
+    }
+  });
+});

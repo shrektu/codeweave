@@ -119,6 +119,10 @@ class FakeMain implements SessionService {
     return undefined;
   }
 
+  nativeSessions(): [] {
+    return [];
+  }
+
   shutdown(): Promise<void> {
     return Promise.resolve();
   }

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 
 import type { AgentEvent } from "../domain/events";
+import { INITIAL_SESSION_STATE } from "../domain/sessionReducer";
 import { PermissionProfile, ProviderId, type Account } from "../domain/types";
 
 import { settled } from "../../tests/fakes/settle";
@@ -18,7 +19,11 @@ import {
   type AgentToolAccess,
 } from "./agentAdapter";
 import { createLeaseModes } from "./leaseModes";
-import { createSessionService, type SessionService } from "./session";
+import {
+  createSessionService,
+  type ResumeSeed,
+  type SessionService,
+} from "./session";
 import { createJsonStore } from "./storage";
 
 const ACCOUNT: Account = {
@@ -72,6 +77,8 @@ function createHandle(
 ): AgentHandle {
   return {
     accountId: ACCOUNT.id,
+    nativeSessionId: null,
+    resumed: false,
     runId: "run-1",
     subscribe: (listener) => {
       listeners.add(listener);
@@ -222,6 +229,7 @@ interface ToolRigOptions {
   readonly replayed?: Readonly<Record<string, readonly AgentEvent[]>>;
   readonly contextFailure?: Error;
   readonly startFailure?: string;
+  readonly promptFailures?: number;
 }
 
 interface ToolRig {
@@ -229,6 +237,8 @@ interface ToolRig {
   readonly cwd: string;
   readonly specs: AgentStartSpec[];
   readonly prompts: Record<string, string[]>;
+  readonly attempts: string[];
+  readonly nativeIds: Record<string, string | null>;
 }
 
 function toolHandle(
@@ -236,10 +246,19 @@ function toolHandle(
   events: readonly AgentEvent[],
   replayed: readonly AgentEvent[],
   prompts: Record<string, string[]>,
+  attempts: string[],
+  failures: { count: number },
+  nativeIds: Record<string, string | null>,
 ): AgentHandle {
   const listeners = new Set<(event: AgentEvent) => void>();
   return {
     accountId: spec.account.id,
+    get nativeSessionId(): string | null {
+      return nativeIds[spec.account.id] ?? null;
+    },
+    get resumed(): boolean {
+      return spec.resume !== undefined;
+    },
     runId: spec.runId,
     subscribe: (listener) => {
       listeners.add(listener);
@@ -251,6 +270,11 @@ function toolHandle(
       };
     },
     prompt: (text) => {
+      attempts.push(text);
+      if (failures.count > 0) {
+        failures.count -= 1;
+        return Promise.reject(new Error("send failed"));
+      }
       (prompts[spec.account.id] ??= []).push(text);
       for (const event of events) {
         listeners.forEach((listener) => {
@@ -274,9 +298,13 @@ async function openToolRig(options: ToolRigOptions = {}): Promise<ToolRig> {
   await store.writeAccounts([ACCOUNT, ACCOUNT_B]);
   const specs: AgentStartSpec[] = [];
   const prompts: Record<string, string[]> = {};
+  const attempts: string[] = [];
+  const failures = { count: options.promptFailures ?? 0 };
+  const nativeIds: Record<string, string | null> = {};
   const adapter: AgentAdapter = {
     start: (spec) => {
       specs.push(spec);
+      nativeIds[spec.account.id] = spec.resume?.nativeSessionId ?? null;
       return Promise.resolve(
         options.startFailure === undefined
           ? {
@@ -286,6 +314,9 @@ async function openToolRig(options: ToolRigOptions = {}): Promise<ToolRig> {
                 options.events?.[spec.account.id] ?? [],
                 options.replayed?.[spec.account.id] ?? [],
                 prompts,
+                attempts,
+                failures,
+                nativeIds,
               ),
             }
           : {
@@ -327,7 +358,7 @@ async function openToolRig(options: ToolRigOptions = {}): Promise<ToolRig> {
     protectedPaths: () => Promise.resolve([]),
   });
   services.push(service);
-  return { service, cwd, specs, prompts };
+  return { service, cwd, specs, prompts, attempts, nativeIds };
 }
 
 async function untilIdle(service: SessionService): Promise<void> {
@@ -456,4 +487,145 @@ it("masks_the_flow_tool_token_in_events_and_errors", async () => {
   ).rejects.toThrow(
     "Could not start the agent: refused [redacted:flow tool token]",
   );
+});
+
+const RESUME_ID = "old-session-id";
+const RESUME_CREATED_AT = 1234;
+
+function resumeSeed(): ResumeSeed {
+  return {
+    id: RESUME_ID,
+    createdAt: RESUME_CREATED_AT,
+    state: {
+      ...INITIAL_SESSION_STATE,
+      prompts: [{ seq: 0, text: "old goal" }],
+      messages: [{ id: null, text: "old reply", seq: 1 }],
+      nextSeq: 2,
+    },
+    nativeSessions: [],
+    contextPackage: "PACKAGE",
+  };
+}
+
+it("resume_package_sent_only_with_first_prompt", async () => {
+  const rig = await openToolRig();
+  await rig.service.start(
+    { cwd: rig.cwd },
+    { resume: resumeSeed(), preamble: PREAMBLE },
+  );
+
+  await rig.service.prompt("first");
+  await untilIdle(rig.service);
+  await rig.service.prompt("second");
+  await untilIdle(rig.service);
+
+  expect(rig.prompts[ACCOUNT.id]).toEqual([
+    `PACKAGE${PREAMBLE_GAP}${PREAMBLE}${PREAMBLE_GAP}first`,
+    "second",
+  ]);
+});
+
+it("resumed_seq_continues_after_stored_max", async () => {
+  const rig = await openToolRig();
+  await rig.service.start({ cwd: rig.cwd }, { resume: resumeSeed() });
+
+  await rig.service.prompt("first");
+  await untilIdle(rig.service);
+
+  const view = rig.service.view();
+  expect(view?.id).toBe(RESUME_ID);
+  expect(view?.createdAt).toBe(RESUME_CREATED_AT);
+  expect(view?.prompts).toEqual([
+    { seq: 0, text: "old goal" },
+    { seq: 2, text: "first" },
+  ]);
+  expect(view?.messages).toEqual([{ id: null, text: "old reply", seq: 1 }]);
+});
+
+it("package_skipped_when_handle_resumed", async () => {
+  const rig = await openToolRig();
+  await rig.service.start(
+    { cwd: rig.cwd },
+    {
+      resume: {
+        ...resumeSeed(),
+        nativeSessions: [
+          { accountId: ACCOUNT.id, nativeSessionId: "native-session-1" },
+        ],
+      },
+    },
+  );
+
+  await rig.service.prompt("first");
+  await untilIdle(rig.service);
+
+  expect(rig.specs[0]?.resume).toEqual({
+    nativeSessionId: "native-session-1",
+  });
+  expect(rig.prompts[ACCOUNT.id]).toEqual(["first"]);
+  expect(rig.service.view()?.id).toBe(RESUME_ID);
+});
+
+it("native_id_used_only_by_its_account", async () => {
+  const rig = await openToolRig({ events: { [ACCOUNT.id]: [RATE_LIMITED] } });
+  await rig.service.start(
+    { cwd: rig.cwd },
+    {
+      resume: {
+        ...resumeSeed(),
+        nativeSessions: [
+          { accountId: ACCOUNT.id, nativeSessionId: "native-session-1" },
+        ],
+      },
+    },
+  );
+
+  await rig.service.prompt("first");
+  await settled(() => {
+    expect(rig.specs).toHaveLength(2);
+  });
+  await untilIdle(rig.service);
+
+  expect(rig.specs[0]?.resume).toEqual({
+    nativeSessionId: "native-session-1",
+  });
+  expect(rig.specs[1]?.resume).toBeUndefined();
+  expect(
+    rig.service
+      .nativeSessions()
+      .some((entry) => entry.accountId === ACCOUNT_B.id),
+  ).toBe(false);
+});
+
+it("native_ids_follow_live_handle", async () => {
+  const rig = await openToolRig();
+  await rig.service.start({ cwd: rig.cwd });
+
+  expect(rig.service.nativeSessions()).toEqual([]);
+
+  rig.nativeIds[ACCOUNT.id] = "conv-live";
+  expect(rig.service.nativeSessions()).toEqual([
+    { accountId: ACCOUNT.id, nativeSessionId: "conv-live" },
+  ]);
+
+  rig.nativeIds[ACCOUNT.id] = "conv-next";
+  expect(rig.service.nativeSessions()).toEqual([
+    { accountId: ACCOUNT.id, nativeSessionId: "conv-next" },
+  ]);
+});
+
+it("resume_package_survives_failed_first_prompt", async () => {
+  const rig = await openToolRig({ promptFailures: 1 });
+  await rig.service.start({ cwd: rig.cwd }, { resume: resumeSeed() });
+
+  await rig.service.prompt("first");
+  await untilIdle(rig.service);
+  await rig.service.prompt("second");
+  await untilIdle(rig.service);
+
+  expect(rig.attempts).toEqual([
+    `PACKAGE${PREAMBLE_GAP}first`,
+    `PACKAGE${PREAMBLE_GAP}second`,
+  ]);
+  expect(rig.prompts[ACCOUNT.id]).toEqual([`PACKAGE${PREAMBLE_GAP}second`]);
 });

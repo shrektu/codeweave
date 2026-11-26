@@ -40,6 +40,7 @@ const ACTIVE_PATH = "/api/session/active";
 const EVENT_PATH = "/api/event";
 const SESSION_ACTION_ROUTE =
   /^\/api\/session\/([^/]+)\/(prompt|agent|model|interrupt)$/;
+const SESSION_BY_ID_ROUTE = /^\/api\/session\/([^/]+)$/;
 const PERMISSION_REPLY_ROUTE =
   /^\/api\/session\/([^/]+)\/permission\/([^/]+)\/reply$/;
 const ASSISTANT_MESSAGE_ID = "msg_assistant_1";
@@ -173,6 +174,7 @@ type V2Route =
         "provider" | "models" | "active" | "events" | "create" | "unknown";
     }
   | { readonly kind: "reply"; readonly match: RegExpExecArray }
+  | { readonly kind: "session"; readonly sessionId: string }
   | { readonly kind: "action"; readonly action: string };
 
 const UNKNOWN_ROUTE: V2Route = { kind: "unknown" };
@@ -197,7 +199,14 @@ function postRouteOf(path: string): V2Route {
 
 function routeOf(method: string, path: string): V2Route {
   if (method === "GET") {
-    return GET_ROUTES.get(path) ?? UNKNOWN_ROUTE;
+    const mapped = GET_ROUTES.get(path);
+    if (mapped !== undefined) {
+      return mapped;
+    }
+    const session = SESSION_BY_ID_ROUTE.exec(path);
+    return session === null
+      ? UNKNOWN_ROUTE
+      : { kind: "session", sessionId: session[1] ?? "" };
   }
   return method === "POST" ? postRouteOf(path) : UNKNOWN_ROUTE;
 }
@@ -346,6 +355,7 @@ const TERMINAL_STEPS: readonly OpencodeV2Step["type"][] = [
 ];
 
 export class FakeOpencodeV2Server implements ScriptedServer<OpencodeV2Step> {
+  knownSessionIds: readonly string[] = [OPENCODE_SESSION_ID];
   interruptOutcome: readonly OpencodeV2Step[] = DEFAULT_INTERRUPT_OUTCOME;
   readonly requests: RecordedRequest[] = [];
   readonly replies: V2PermissionReply[] = [];
@@ -490,6 +500,13 @@ export class FakeOpencodeV2Server implements ScriptedServer<OpencodeV2Step> {
         return;
       case "create":
         sendJson(response, { data: { id: OPENCODE_SESSION_ID } });
+        return;
+      case "session":
+        if (this.knownSessionIds.includes(route.sessionId)) {
+          sendJson(response, { data: { id: route.sessionId } });
+        } else {
+          response.writeHead(NOT_FOUND).end();
+        }
         return;
       case "reply":
         response
@@ -710,6 +727,7 @@ export class FakeOpencodeV2Server implements ScriptedServer<OpencodeV2Step> {
 
 export interface FakeOpencodeV2Config extends BaseContainerConfig {
   models?: readonly Json[];
+  knownSessionIds?: readonly string[];
 }
 
 export class ScriptedOpencodeV2Container extends ScriptedContainerBase<
@@ -739,11 +757,15 @@ export class ScriptedOpencodeV2Container extends ScriptedContainerBase<
     password: string,
     env: Readonly<Record<string, string>>,
   ): FakeOpencodeV2Server {
-    return new FakeOpencodeV2Server(
+    const server = new FakeOpencodeV2Server(
       password,
       env[CONFIG_ENV] ?? "",
       this.config.models,
     );
+    if (this.config.knownSessionIds !== undefined) {
+      server.knownSessionIds = this.config.knownSessionIds;
+    }
+    return server;
   }
 }
 

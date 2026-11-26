@@ -4,6 +4,7 @@ import { afterEach, expect, it } from "vitest";
 import {
   createFakeIpcClient,
   makeAccount,
+  makeHistoryEntry,
   makePermission,
   makeSession,
   makeSnapshot,
@@ -85,4 +86,74 @@ it("new_session_and_close_buttons_invoke_store_and_ipc", () => {
     method: "session/close",
     params: { sessionId: "s-ended" },
   });
+});
+
+it("live_session_wins_over_history_entry", () => {
+  const client = createFakeIpcClient();
+  const session = makeSession({ id: "h-1", cwd: "/work/live" });
+  const entry = makeHistoryEntry({
+    id: "h-1",
+    title: "Saved title",
+    cwd: "/work/live",
+  });
+  const store = staticStore({
+    ...readyState(
+      makeSnapshot({ sessions: [session], accounts: [makeAccount()] }),
+    ),
+    history: [entry],
+  });
+
+  renderWithServices(
+    <Sidebar onManageAccounts={() => undefined} />,
+    client,
+    store,
+  );
+
+  const nav = screen.getByRole("navigation", { name: "Sessions" });
+  expect(within(nav).getAllByRole("listitem")).toHaveLength(1);
+  expect(within(nav).getByText("Saved title")).toBeTruthy();
+  expect(within(nav).queryByText("live")).toBeNull();
+});
+
+it("merged_list_orders_snapshot_and_history_by_recency", () => {
+  const client = createFakeIpcClient();
+  const older = makeSession({
+    id: "s-old",
+    cwd: "/work/old",
+    createdAt: 100,
+  });
+  const newer = makeSession({
+    id: "s-new",
+    cwd: "/work/new",
+    createdAt: 300,
+  });
+  const entry = makeHistoryEntry({
+    id: "h-mid",
+    title: "Middle task",
+    updatedAt: 200,
+  });
+  const store = staticStore({
+    ...readyState(
+      makeSnapshot({
+        sessions: [older, newer],
+        accounts: [makeAccount()],
+      }),
+    ),
+    history: [entry],
+  });
+
+  renderWithServices(
+    <Sidebar onManageAccounts={() => undefined} />,
+    client,
+    store,
+  );
+
+  const nav = screen.getByRole("navigation", { name: "Sessions" });
+  const labels = within(nav)
+    .getAllByRole("button")
+    .filter((button) => button.classList.contains("session-pick"))
+    .map((button) => button.textContent);
+  expect(labels[0]).toContain("new");
+  expect(labels[1]).toContain("Middle task");
+  expect(labels[2]).toContain("old");
 });

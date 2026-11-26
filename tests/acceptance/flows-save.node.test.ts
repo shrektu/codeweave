@@ -19,6 +19,7 @@ import type { FlowsList } from "../../src/shared/views";
 import {
   fakeFlowRuns,
   fakeProbes,
+  fakeSessionHistory,
   fakeSessionPool,
   fakeTerminals,
 } from "../fakes/fakeSessions";
@@ -101,6 +102,8 @@ function handlersFor(cwd: string): ReturnType<typeof createHandlers> {
     homeDir: tmpdir(),
     broadcast: vi.fn(),
     sessions: fakeSessionPool(),
+    history: fakeSessionHistory(),
+    inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),
     flowRuns: fakeFlowRuns(),
     orchestrator: fakeOrchestrator(),
     probes: fakeProbes(),

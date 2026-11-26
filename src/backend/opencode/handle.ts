@@ -25,6 +25,7 @@ import {
 import {
   OpencodeHandleBase,
   agentFor,
+  existingSessionId,
   messageOf,
   rateLimitEvents,
   turnEnd,
@@ -100,7 +101,16 @@ export class OpencodeHandle extends OpencodeHandleBase<
     this.consume(stream);
     await watch.untilExit(client.warmUp());
     await removeKeyFile(files);
-    this.sessionId = await watch.untilExit(client.createSession());
+    const resumedId = await existingSessionId(
+      spec.resume?.nativeSessionId,
+      watch,
+      (sessionId) => client.sessionExists(sessionId),
+      this.runId,
+    );
+    this.sessionId =
+      resumedId ?? (await watch.untilExit(client.createSession()));
+    this.nativeSessionId = this.sessionId;
+    this.resumed = resumedId !== null;
     this.mapper = createEventMapper(this.sessionId, spec.cwd);
   }
 

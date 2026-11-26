@@ -382,7 +382,9 @@ describe("rotation acceptance: context handoff", () => {
     const { harness, detector, controller } = setup({
       contextPackage: () =>
         buildContextPackage({
+          reason: "rotation",
           userPrompts: ["Fix the login bug"],
+          lastReply: null,
           interruptedTurn: interrupted,
           worktree: {
             isRepo: true,

@@ -1,5 +1,7 @@
+import type { WorktreeState } from "../domain/types";
 import { SWITCH_LOG_SNAPSHOT_LIMIT } from "../shared/constants";
-import { IpcError, IpcErrorCode } from "../shared/protocol";
+import { IpcError, IpcErrorCode, type ParamsMap } from "../shared/protocol";
+import type { SessionView } from "../shared/views";
 
 import { createAccountsService, type AccountsService } from "./accountsService";
 import type { ConnectionRegistry } from "./connections";
@@ -14,8 +16,9 @@ import type { ModelCatalogService } from "./opencode/catalog";
 import type { OrchestratorService } from "./orchestrator/service";
 import type { KeyStore } from "./secrets/keyStore";
 import type { SecretVault } from "./secrets/vault";
-import type { ContainerStatus, SessionService } from "./session";
+import type { ContainerStatus, SessionService, StartOptions } from "./session";
 import type { SessionPool } from "./sessionPool";
+import { buildResumeSeed, type SessionHistory } from "./sessionHistory";
 import {
   createSettingsService,
   type PostUpdaterConfig,
@@ -31,6 +34,8 @@ export interface HandlerDeps {
   homeDir: string;
   broadcast: ConnectionRegistry["broadcast"];
   sessions: SessionPool;
+  history: SessionHistory;
+  inspectWorktree: (cwd: string) => Promise<WorktreeState>;
   flowRuns: FlowRunService;
   orchestrator: OrchestratorService;
   probes: LimitProbeService;
@@ -43,6 +48,8 @@ export interface HandlerDeps {
 
 const FLOW_RUNNING_MESSAGE = "A flow is running";
 const SESSION_NOT_FOUND_MESSAGE = "Session not found";
+const RESUME_CONFLICT_MESSAGE = "The session is already open";
+const ARCHIVE_LIVE_MESSAGE = "Cannot archive a live session";
 
 function requireMain(sessions: SessionPool, sessionId: string): SessionService {
   const service = sessions.main(sessionId);
@@ -66,6 +73,8 @@ export function createHandlers({
   homeDir,
   broadcast,
   sessions,
+  history,
+  inspectWorktree,
   flowRuns,
   orchestrator,
   probes,
@@ -115,6 +124,26 @@ export function createHandlers({
     return result;
   };
   const definitionRoots = createDefinitionRoots({ store, userData });
+  const startPlainMain = async (
+    params: ParamsMap["session/start"],
+    options?: StartOptions,
+  ): Promise<SessionView> => {
+    const settling = sessions.settleEnded();
+    if (settling !== null) {
+      await settling;
+    }
+    const service = sessions.createMain();
+    try {
+      return await service.start(params, options);
+    } catch (error) {
+      await sessions.discardMain(service);
+      throw error;
+    }
+  };
+  const retargetTerminal = (cwd: string): Promise<void> =>
+    terminals.retarget(cwd).catch((error: unknown) => {
+      console.error("terminal retarget failed", error);
+    });
   return {
     ping: () => ({ pong: true, backendPid: process.pid }),
     "sessions/snapshot": async () => ({
@@ -132,30 +161,57 @@ export function createHandlers({
       if (flowRuns.hasOpenUserRuns()) {
         throw new IpcError(IpcErrorCode.CONFLICT, FLOW_RUNNING_MESSAGE);
       }
-      const startPlain = async (): Promise<
-        Awaited<ReturnType<SessionService["start"]>>
-      > => {
-        const settling = sessions.settleEnded();
-        if (settling !== null) {
-          await settling;
-        }
-        const service = sessions.createMain();
-        try {
-          return await service.start(params);
-        } catch (error) {
-          await sessions.discardMain(service);
-          throw error;
-        }
-      };
       const started =
-        params.orchestrate === true ? orchestrator.start(params) : startPlain();
+        params.orchestrate === true
+          ? orchestrator.start(params)
+          : startPlainMain(params);
       const view = await (params.cwd === undefined
         ? started
         : recorded(params.cwd, started));
-      await terminals.retarget(view.cwd).catch((error: unknown) => {
-        console.error("terminal retarget failed", error);
-      });
+      await retargetTerminal(view.cwd);
       return view;
+    },
+    "session/resume": async ({ sessionId }) => {
+      const stored = await history.get(sessionId);
+      if (stored === null) {
+        throw new IpcError(IpcErrorCode.NOT_FOUND, SESSION_NOT_FOUND_MESSAGE);
+      }
+      if (sessions.main(sessionId) !== null) {
+        throw new IpcError(IpcErrorCode.CONFLICT, RESUME_CONFLICT_MESSAGE);
+      }
+      if (flowRuns.hasOpenUserRuns()) {
+        throw new IpcError(IpcErrorCode.CONFLICT, FLOW_RUNNING_MESSAGE);
+      }
+      await history.setArchivedIfPresent(sessionId, false);
+      const resume = buildResumeSeed(stored, await inspectWorktree(stored.cwd));
+      const params: ParamsMap["session/start"] = {
+        cwd: stored.cwd,
+        provider: stored.provider,
+        profile: stored.profile,
+      };
+      const started = stored.orchestrate
+        ? orchestrator.start(params, { resume })
+        : startPlainMain(params, {
+            resume,
+            explicitFolder: stored.explicitFolder,
+          });
+      const view = await recorded(stored.cwd, started);
+      await retargetTerminal(view.cwd);
+      return view;
+    },
+    "history/list": async () => ({ entries: await history.list() }),
+    "history/get": async ({ sessionId }) => {
+      const stored = await history.get(sessionId);
+      if (stored === null) {
+        throw new IpcError(IpcErrorCode.NOT_FOUND, SESSION_NOT_FOUND_MESSAGE);
+      }
+      return stored;
+    },
+    "history/archive": async ({ sessionId, archived }) => {
+      if (archived && sessions.main(sessionId)?.isLive()) {
+        throw new IpcError(IpcErrorCode.CONFLICT, ARCHIVE_LIVE_MESSAGE);
+      }
+      return history.setArchived(sessionId, archived);
     },
     "session/prompt": async ({ sessionId, text, ...overrides }) => {
       await requireMain(sessions, sessionId).prompt(text, overrides);
@@ -172,6 +228,11 @@ export function createHandlers({
     },
     "session/close": async ({ sessionId }) => {
       await sessions.closeMain(sessionId);
+      await history
+        .setArchivedIfPresent(sessionId, true)
+        .catch((error: unknown) => {
+          console.error("failed to archive the closed session", error);
+        });
       return { closed: true };
     },
     "permission/answer": ({ requestId, optionId, sessionId, runId }) => {

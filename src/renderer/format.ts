@@ -13,8 +13,10 @@ import type {
   LimitView,
   LimitWindowView,
   RotationPhaseView,
+  SessionHistoryEntry,
   SessionView,
   Snapshot,
+  StoredSession,
 } from "../shared/views";
 
 const ENDED_PHASES: readonly RotationPhaseView["phase"][] = [
@@ -52,6 +54,68 @@ export function activeSessionOf(
   return (
     snapshot.sessions.find((session) => session.id === activeSessionId) ?? null
   );
+}
+
+export function historyOnlyIdOf(
+  snapshot: Snapshot | null,
+  activeSessionId: string | null,
+  history: readonly SessionHistoryEntry[],
+): string | null {
+  if (snapshot === null || activeSessionId === null) {
+    return null;
+  }
+  const live = snapshot.sessions.some(
+    (session) => session.id === activeSessionId,
+  );
+  return !live && history.some((entry) => entry.id === activeSessionId)
+    ? activeSessionId
+    : null;
+}
+
+export interface ResumeFailure {
+  readonly sessionId: string;
+  readonly message: string;
+  readonly promptCount: number;
+}
+
+export function resumeFailureVisible(
+  failure: ResumeFailure | null,
+  session: SessionView | null,
+  activeSessionId: string | null,
+): boolean {
+  return (
+    failure !== null &&
+    session !== null &&
+    failure.sessionId === session.id &&
+    failure.sessionId === activeSessionId &&
+    session.prompts.length <= failure.promptCount
+  );
+}
+
+export function storedSessionView(stored: StoredSession): SessionView {
+  return {
+    id: stored.id,
+    createdAt: stored.createdAt,
+    cwd: stored.cwd,
+    explicitFolder: stored.explicitFolder,
+    provider: stored.provider,
+    profile: stored.profile,
+    phase: { phase: "stopped" },
+    activeAccountId: null,
+    activeProvider: stored.provider,
+    messages: [...stored.messages],
+    toolCalls: [...stored.toolCalls],
+    permissions: [],
+    limits: [],
+    lastTurn: stored.lastTurn,
+    turnInFlight: false,
+    flowRef: null,
+    currentModel: null,
+    contextUsage: null,
+    turns: [...stored.turns],
+    orchestrate: stored.orchestrate,
+    prompts: [...stored.prompts],
+  };
 }
 
 export function shownSessionOf(
