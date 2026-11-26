@@ -22,3 +22,10 @@ export const OVERWRITABLE_SKIP_REASONS: readonly RestoreSkipReason[] = [
   RestoreSkipReason.conflict,
   RestoreSkipReason.unverifiable,
 ];
+
+export const RewindMode = {
+  conversationAndFiles: "conversation_and_files",
+  conversation: "conversation",
+  files: "files",
+} as const;
+export type RewindMode = (typeof RewindMode)[keyof typeof RewindMode];

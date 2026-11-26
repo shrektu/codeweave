@@ -13,9 +13,15 @@ import type {
 } from "../shared/views";
 
 import { createCheckpointRecorder } from "./checkpointRecorder";
-import { createCheckpointStore, type CheckpointStore } from "./checkpointStore";
+import {
+  createCheckpointStore,
+  type CheckpointEdit,
+  type CheckpointStore,
+} from "./checkpointStore";
+import type { CheckpointEntry } from "./checkpointPlan";
 import { computeFileDiff } from "./fileDiff";
 import { SnapshotKind, type FileSnapshot } from "./fileSnapshot";
+import { settled } from "../../tests/fakes/settle";
 
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";
 const RUN_ID = "run-1";
@@ -106,6 +112,16 @@ async function writeText(path: string, text: string): Promise<void> {
   await writeFile(path, text, "utf8");
 }
 
+async function recordedEntries(
+  count: number,
+): Promise<readonly CheckpointEntry[]> {
+  return settled(async () => {
+    const entries = await store.entries(SESSION_ID);
+    expect(entries).toHaveLength(count);
+    return entries;
+  });
+}
+
 it("main edits use the last prompt before the call", async () => {
   const a = join(work, "a.txt");
   await writeText(a, "v1\n");
@@ -127,10 +143,7 @@ it("main edits use the last prompt before the call", async () => {
       ],
     }),
   );
-  await store.flush();
-
-  const entries = await store.entries(SESSION_ID);
-  expect(entries).toHaveLength(1);
+  const entries = await recordedEntries(1);
   expect(entries[0]?.promptSeq).toBe(1);
 });
 
@@ -150,10 +163,7 @@ it("run edits use the owner session's latest prompt seq", async () => {
       toolCalls: [makeToolCall({ toolCallId: "tc-run", diffs: [diffOf(a)] })],
     }),
   );
-  await store.flush();
-
-  const entries = await store.entries(SESSION_ID);
-  expect(entries).toHaveLength(1);
+  const entries = await recordedEntries(1);
   expect(entries[0]?.promptSeq).toBe(5);
   expect(entries[0]?.editKey.startsWith(RUN_ID)).toBe(true);
 });
@@ -190,9 +200,37 @@ it("repeated observation records an edit once", async () => {
   recorder.observeMain(makeView({ prompts: PROMPTS }));
   recorder.observeMain(makeView({ prompts: PROMPTS, toolCalls: [edit] }));
   recorder.observeMain(makeView({ prompts: PROMPTS, toolCalls: [edit] }));
-  await store.flush();
+  expect(await recordedEntries(1)).toHaveLength(1);
+});
 
-  expect(await store.entries(SESSION_ID)).toHaveLength(1);
+it("the after snapshot is read when the edit is observed, not when the record runs", async () => {
+  const a = join(work, "a.txt");
+  await writeText(a, "v1\n");
+  const recorded = Promise.withResolvers<CheckpointEdit>();
+  const release = Promise.withResolvers<undefined>();
+  const recorder = createCheckpointRecorder({
+    store: {
+      record: (_sessionId: string, edit: CheckpointEdit): Promise<void> => {
+        recorded.resolve(edit);
+        return release.promise;
+      },
+    },
+    ownerOf: () => null,
+  });
+
+  recorder.observeMain(makeView({ prompts: PROMPTS }));
+  recorder.observeMain(
+    makeView({
+      prompts: PROMPTS,
+      toolCalls: [makeToolCall({ toolCallId: "tc-1", diffs: [diffOf(a)] })],
+    }),
+  );
+  const edit = await recorded.promise;
+  const observed = await edit.after;
+  await writeText(a, "v2\n");
+  release.resolve(undefined);
+
+  expect(observed).toEqual({ kind: SnapshotKind.text, text: "v1\n" });
 });
 
 it("relative edit paths resolve against the session cwd", async () => {
@@ -218,9 +256,7 @@ it("relative edit paths resolve against the session cwd", async () => {
       ],
     }),
   );
-  await store.flush();
-
-  const entries = await store.entries(SESSION_ID);
+  const entries = await recordedEntries(1);
   expect(entries[0]?.path).toBe(absolute);
   await store.restore(SESSION_ID, 0, []);
   expect(await readFile(absolute, "utf8")).toBe("v0\n");

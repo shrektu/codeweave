@@ -271,6 +271,13 @@ export const SessionViewSchema = z.strictObject({
 });
 export type SessionView = z.infer<typeof SessionViewSchema>;
 
+export const RewindResultViewSchema = z.strictObject({
+  promptText: z.string(),
+  report: RestoreReportViewSchema.nullable(),
+  session: SessionViewSchema.nullable(),
+});
+export type RewindResultView = z.infer<typeof RewindResultViewSchema>;
+
 export const SessionHistoryEntrySchema = z.strictObject({
   id: z.string(),
   title: z.string(),

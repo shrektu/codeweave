@@ -25,7 +25,6 @@ export const CheckpointEntrySchema = z.strictObject({
   before: BlobRefSchema,
   after: BlobRefSchema,
   order: z.int(),
-  patch: z.string().nullable().optional(),
 });
 export type CheckpointEntry = z.infer<typeof CheckpointEntrySchema>;
 

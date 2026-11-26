@@ -13,24 +13,52 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { computeFileDiff } from "../../src/backend/fileDiff";
 import {
+  readFileSnapshot,
   SnapshotKind,
   type FileSnapshot,
 } from "../../src/backend/fileSnapshot";
 import { createCheckpointRecorder } from "../../src/backend/checkpointRecorder";
 import {
   createCheckpointStore,
+  type CheckpointEdit,
   type CheckpointStore,
 } from "../../src/backend/checkpointStore";
+import type { CheckpointEntry } from "../../src/backend/checkpointPlan";
 import { PermissionProfile, ProviderId } from "../../src/domain/types";
 import type {
   FileDiffView,
   SessionView,
   ToolCallView,
 } from "../../src/shared/views";
+import { settled } from "../fakes/settle";
+
+interface FsGate {
+  readonly match: string;
+  readonly entered: PromiseWithResolvers<undefined>;
+  readonly release: PromiseWithResolvers<undefined>;
+}
+
+const fsGate = vi.hoisted(() => ({ gate: undefined as FsGate | undefined }));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    rename: async (from: string, to: string): Promise<void> => {
+      const gate = fsGate.gate;
+      if (gate !== undefined && to.includes(gate.match)) {
+        fsGate.gate = undefined;
+        gate.entered.resolve(undefined);
+        await gate.release.promise;
+      }
+      await actual.rename(from, to);
+    },
+  };
+});
 
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";
 const MAX_SESSION_BYTES = 1024 * 1024;
@@ -80,6 +108,16 @@ async function writeText(path: string, text: string): Promise<void> {
   await writeFile(path, text, "utf8");
 }
 
+async function recordEdit(
+  target: CheckpointStore,
+  edit: Omit<CheckpointEdit, "after">,
+): Promise<void> {
+  await target.record(SESSION_ID, {
+    ...edit,
+    after: readFileSnapshot(edit.diff.path),
+  });
+}
+
 async function exists(path: string): Promise<boolean> {
   try {
     await access(path);
@@ -92,6 +130,26 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+function gateRenames(match: string): FsGate {
+  const gate = {
+    match,
+    entered: Promise.withResolvers<undefined>(),
+    release: Promise.withResolvers<undefined>(),
+  };
+  fsGate.gate = gate;
+  return gate;
+}
+
+async function recordedEntries(
+  count: number,
+): Promise<readonly CheckpointEntry[]> {
+  return settled(async () => {
+    const entries = await store.entries(SESSION_ID);
+    expect(entries).toHaveLength(count);
+    return entries;
+  });
+}
+
 function makeToolCall(overrides: Partial<ToolCallView> = {}): ToolCallView {
   return {
     toolCallId: "tc-1",
@@ -101,6 +159,18 @@ function makeToolCall(overrides: Partial<ToolCallView> = {}): ToolCallView {
     seq: 1,
     ...overrides,
   };
+}
+
+function diffCall(
+  toolCallId: string,
+  path: string,
+  before: string,
+  after: string,
+): ToolCallView {
+  return makeToolCall({
+    toolCallId,
+    diffs: [diffOf(path, before, after)],
+  });
 }
 
 function makeView(overrides: Partial<SessionView> = {}): SessionView {
@@ -135,19 +205,19 @@ it("restore rewinds every file edited at or after the prompt", async () => {
   const b = join(work, "b.txt");
   await writeText(a, "v0\n");
   await writeText(a, "v1\n");
-  await store.record(SESSION_ID, {
+  await recordEdit(store, {
     editKey: "e-1",
     promptSeq: 1,
     diff: diffOf(a, "v0\n", "v1\n"),
   });
   await writeText(b, "b1\n");
-  await store.record(SESSION_ID, {
+  await recordEdit(store, {
     editKey: "e-2",
     promptSeq: 1,
     diff: diffOf(b, null, "b1\n"),
   });
   await writeText(a, "v2\n");
-  await store.record(SESSION_ID, {
+  await recordEdit(store, {
     editKey: "e-3",
     promptSeq: 2,
     diff: diffOf(a, "v1\n", "v2\n"),
@@ -167,7 +237,7 @@ it("plan skips a file edited after the agent and restore leaves it untouched", a
   const a = join(work, "a.txt");
   await writeText(a, "v0\n");
   await writeText(a, "v1\n");
-  await store.record(SESSION_ID, {
+  await recordEdit(store, {
     editKey: "e-1",
     promptSeq: 1,
     diff: diffOf(a, "v0\n", "v1\n"),
@@ -187,7 +257,7 @@ it("restore overwrites a conflicting file when its path is requested", async () 
   const a = join(work, "a.txt");
   await writeText(a, "v0\n");
   await writeText(a, "v1\n");
-  await store.record(SESSION_ID, {
+  await recordEdit(store, {
     editKey: "e-1",
     promptSeq: 1,
     diff: diffOf(a, "v0\n", "v1\n"),
@@ -223,77 +293,8 @@ it("recorder treats calls present at the first observation as replays", async ()
     diffs: [diffOf(a, "v1\n", "v2\n")],
   });
   recorder.observeMain(makeView({ toolCalls: [replayed, fresh] }));
-  await store.flush();
-  expect(await store.entries(SESSION_ID)).toHaveLength(1);
+  expect(await recordedEntries(1)).toHaveLength(1);
 });
-
-it("restore does not bake a rapid later edit into the earlier before", async () => {
-  const a = join(work, "a.txt");
-  await writeText(a, "v0\n");
-  await writeText(a, "v2\n");
-
-  await store.record(SESSION_ID, {
-    editKey: "e-1",
-    promptSeq: 1,
-    diff: diffOf(a, "v0\n", "v1\n"),
-  });
-  await store.record(SESSION_ID, {
-    editKey: "e-2",
-    promptSeq: 2,
-    diff: diffOf(a, "v1\n", "v2\n"),
-  });
-  const entries = await store.entries(SESSION_ID);
-  expect(entries[0]?.after).toEqual(entries[1]?.before);
-
-  await store.restore(SESSION_ID, 1, []);
-  expect(await readFile(a, "utf8")).toBe("v0\n");
-});
-
-it.skipIf(process.platform === "win32")(
-  "restore writes through a symlink and keeps the link",
-  async (context) => {
-    const target = join(work, "target.txt");
-    const link = join(work, "link.txt");
-    await writeText(target, "v0\n");
-    try {
-      await symlink(target, link);
-    } catch (error) {
-      console.warn("symlink creation is not supported here", error);
-      context.skip();
-      return;
-    }
-    await writeText(target, "v1\n");
-    await store.record(SESSION_ID, {
-      editKey: "e-1",
-      promptSeq: 1,
-      diff: diffOf(link, "v0\n", "v1\n"),
-    });
-
-    await store.restore(SESSION_ID, 1, []);
-
-    expect((await lstat(link)).isSymbolicLink()).toBe(true);
-    expect(await readFile(target, "utf8")).toBe("v0\n");
-  },
-);
-
-it.skipIf(process.platform === "win32")(
-  "restore keeps the file mode",
-  async () => {
-    const script = join(work, "run.sh");
-    await writeText(script, "v0\n");
-    await chmod(script, SCRIPT_MODE);
-    await writeText(script, "v1\n");
-    await store.record(SESSION_ID, {
-      editKey: "e-1",
-      promptSeq: 1,
-      diff: diffOf(script, "v0\n", "v1\n"),
-    });
-
-    await store.restore(SESSION_ID, 1, []);
-
-    expect((await stat(script)).mode & PERMISSION_MASK).toBe(SCRIPT_MODE);
-  },
-);
 
 it("relative edit paths resolve against the session cwd", async () => {
   const relative = join("nested", "a.txt");
@@ -317,11 +318,65 @@ it("relative edit paths resolve against the session cwd", async () => {
       ],
     }),
   );
-  await store.flush();
-  expect((await store.entries(SESSION_ID))[0]?.path).toBe(absolute);
+  const entries = await recordedEntries(1);
+  expect(entries[0]?.path).toBe(absolute);
 
   await store.restore(SESSION_ID, 0, []);
   expect(await readFile(absolute, "utf8")).toBe("v0\n");
+});
+
+it("a slow record does not bake a later edit into the earlier before", async () => {
+  const a = join(work, "a.txt");
+  const b = join(work, "b.txt");
+  await writeText(a, "v0\n");
+  await writeText(b, "b1\n");
+  const gate = gateRenames(SESSION_ID);
+  const blocking = store.record(SESSION_ID, {
+    editKey: "slow",
+    promptSeq: 0,
+    diff: diffOf(b, null, "b1\n"),
+    after: Promise.resolve(snapshotOf("b1\n")),
+  });
+  await gate.entered.promise;
+
+  const recordCalls: string[] = [];
+  const recorder = createCheckpointRecorder({
+    store: {
+      record: (sessionId, edit): Promise<void> => {
+        recordCalls.push(edit.editKey);
+        return store.record(sessionId, edit);
+      },
+    },
+    ownerOf: () => null,
+  });
+  recorder.observeMain(makeView());
+
+  await writeText(a, "v1\n");
+  recorder.observeMain(
+    makeView({ toolCalls: [diffCall("tc-1", a, "v0\n", "v1\n")] }),
+  );
+  await settled(() => {
+    expect(recordCalls).toHaveLength(1);
+  });
+  await writeText(a, "v2\n");
+  recorder.observeMain(
+    makeView({
+      toolCalls: [
+        diffCall("tc-1", a, "v0\n", "v1\n"),
+        diffCall("tc-2", a, "v1\n", "v2\n"),
+      ],
+    }),
+  );
+  await settled(() => {
+    expect(recordCalls).toHaveLength(2);
+  });
+
+  gate.release.resolve(undefined);
+  await blocking;
+  await recordedEntries(3);
+
+  await store.restore(SESSION_ID, 0, []);
+  expect(await readFile(a, "utf8")).toBe("v0\n");
 });
 
 it("a user edit between two agent edits keeps the earlier before", async () => {
@@ -332,14 +387,14 @@ it("a user edit between two agent edits keeps the earlier before", async () => {
   const final = "one\nFINAL\nthree\n";
   await writeText(a, original);
   await writeText(a, agent);
-  await store.record(SESSION_ID, {
+  await recordEdit(store, {
     editKey: "e-1",
     promptSeq: 1,
     diff: diffOf(a, original, agent),
   });
   await writeText(a, user);
   await writeText(a, final);
-  await store.record(SESSION_ID, {
+  await recordEdit(store, {
     editKey: "e-2",
     promptSeq: 2,
     diff: diffOf(a, user, final),
@@ -358,14 +413,14 @@ it("a user edit outside the hunks keeps the earlier before", async () => {
   const final = "ONE\ntwo\nthree\nfour\nFIVE\nsix\nseven\neight\nNINE\n";
   await writeText(a, original);
   await writeText(a, agent);
-  await store.record(SESSION_ID, {
+  await recordEdit(store, {
     editKey: "e-1",
     promptSeq: 1,
     diff: diffOf(a, original, agent),
   });
   await writeText(a, user);
   await writeText(a, final);
-  await store.record(SESSION_ID, {
+  await recordEdit(store, {
     editKey: "e-2",
     promptSeq: 2,
     diff: diffOf(a, user, final),
@@ -396,7 +451,7 @@ it.skipIf(process.platform === "win32")(
       maxSessionBytes: MAX_SESSION_BYTES,
       protectedPaths: () => Promise.resolve([secretDir]),
     });
-    await guarded.record(SESSION_ID, {
+    await recordEdit(guarded, {
       editKey: "e-1",
       promptSeq: 1,
       diff: diffOf(link, "v0\n", "v1\n"),
@@ -409,5 +464,148 @@ it.skipIf(process.platform === "win32")(
     const report = await guarded.restore(SESSION_ID, 1, []);
     expect(await readFile(secret, "utf8")).toBe("v1\n");
     expect(report.skipped).toEqual([{ path: link, reason: "protected" }]);
+  },
+);
+
+it.skipIf(process.platform === "win32")(
+  "a protected root reached through a symlink still protects its files",
+  async (context) => {
+    const realRoot = join(dir, "real-secret");
+    await mkdir(realRoot, { recursive: true });
+    const alias = join(work, "alias");
+    try {
+      await symlink(realRoot, alias);
+    } catch (error) {
+      console.warn("symlink creation is not supported here", error);
+      context.skip();
+      return;
+    }
+    const file = join(realRoot, "data.txt");
+    await writeText(file, "v0\n");
+    await writeText(file, "v1\n");
+    const guarded = createCheckpointStore({
+      dir: join(dir, "guarded-alias"),
+      maxSessionBytes: MAX_SESSION_BYTES,
+      protectedPaths: () => Promise.resolve([alias]),
+    });
+    await recordEdit(guarded, {
+      editKey: "e-1",
+      promptSeq: 1,
+      diff: diffOf(file, "v0\n", "v1\n"),
+    });
+
+    const plan = await guarded.plan(SESSION_ID, 1);
+    expect(plan.files).toEqual([
+      { path: file, action: "write", skip: "protected" },
+    ]);
+    const report = await guarded.restore(SESSION_ID, 1, []);
+    expect(await readFile(file, "utf8")).toBe("v1\n");
+    expect(report.skipped).toEqual([{ path: file, reason: "protected" }]);
+  },
+);
+
+it.skipIf(process.platform === "win32")(
+  "restore writes through a symlink and keeps the link",
+  async (context) => {
+    const target = join(work, "target.txt");
+    const link = join(work, "link.txt");
+    await writeText(target, "v0\n");
+    try {
+      await symlink(target, link);
+    } catch (error) {
+      console.warn("symlink creation is not supported here", error);
+      context.skip();
+      return;
+    }
+    await writeText(target, "v1\n");
+    await recordEdit(store, {
+      editKey: "e-1",
+      promptSeq: 1,
+      diff: diffOf(link, "v0\n", "v1\n"),
+    });
+
+    await store.restore(SESSION_ID, 1, []);
+
+    expect((await lstat(link)).isSymbolicLink()).toBe(true);
+    expect(await readFile(target, "utf8")).toBe("v0\n");
+  },
+);
+
+it.skipIf(process.platform === "win32")(
+  "restore keeps the file mode",
+  async () => {
+    const script = join(work, "run.sh");
+    await writeText(script, "v0\n");
+    await chmod(script, SCRIPT_MODE);
+    await writeText(script, "v1\n");
+    await recordEdit(store, {
+      editKey: "e-1",
+      promptSeq: 1,
+      diff: diffOf(script, "v0\n", "v1\n"),
+    });
+
+    await store.restore(SESSION_ID, 1, []);
+
+    expect((await stat(script)).mode & PERMISSION_MASK).toBe(SCRIPT_MODE);
+  },
+);
+
+it("a record whose read is still pending is applied before a rewind's restore", async () => {
+  const a = join(work, "a.txt");
+  await writeText(a, "v0\n");
+  await writeText(a, "v1\n");
+  const after = Promise.withResolvers<FileSnapshot>();
+  const pending = store.record(SESSION_ID, {
+    editKey: "e-1",
+    promptSeq: 1,
+    diff: diffOf(a, "v0\n", "v1\n"),
+    after: after.promise,
+  });
+  const restoring = store.restore(SESSION_ID, 1, []);
+  after.resolve(snapshotOf("v1\n"));
+  await pending;
+  const report = await restoring;
+
+  expect(await readFile(a, "utf8")).toBe("v0\n");
+  expect(report.restored).toEqual([a]);
+});
+
+it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+  "an unreadable edited file does not crash the backend",
+  async () => {
+    const a = join(work, "locked.txt");
+    await writeText(a, "v1\n");
+    await chmod(a, 0o000);
+    const unhandled = vi.fn();
+    const error = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    process.on("unhandledRejection", unhandled);
+    try {
+      const recorder = createCheckpointRecorder({
+        store,
+        ownerOf: () => null,
+      });
+      recorder.observeMain(makeView());
+      recorder.observeMain(
+        makeView({
+          toolCalls: [
+            makeToolCall({
+              toolCallId: "tc-locked",
+              diffs: [diffOf(a, "v0\n", "v1\n")],
+            }),
+          ],
+        }),
+      );
+      await store.flush();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(await store.entries(SESSION_ID)).toEqual([]);
+      expect(error).toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+      await chmod(a, 0o600);
+    }
   },
 );

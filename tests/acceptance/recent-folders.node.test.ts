@@ -17,6 +17,7 @@ import {
   fakeSessions,
   fakeTerminals,
 } from "../fakes/fakeSessions";
+import { fakeCheckpointStore } from "../fakes/fakeCheckpointStore";
 import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
 
@@ -68,6 +69,7 @@ async function rig(): Promise<{
     homeDir: userData,
     broadcast,
     history: fakeSessionHistory(),
+    checkpoints: fakeCheckpointStore(),
     inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),
     flowRuns: fakeFlowRuns(),
     orchestrator: fakeOrchestrator(),

@@ -27,6 +27,7 @@ import {
   fakeSessions,
   fakeTerminals,
 } from "../fakes/fakeSessions";
+import { fakeCheckpointStore } from "../fakes/fakeCheckpointStore";
 import { projectRoots } from "../fakes/definitionRoots";
 import { fakeOrchestrator } from "../fakes/fakeOrchestrator";
 import { fakeSecrets } from "../fakes/fakeVault";
@@ -154,6 +155,7 @@ function handlersFor(cwd: string): ReturnType<typeof createHandlers> {
     broadcast: vi.fn(),
     sessions: fakeSessionPool(),
     history: fakeSessionHistory(),
+    checkpoints: fakeCheckpointStore(),
     inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),
     flowRuns: fakeFlowRuns(),
     orchestrator: fakeOrchestrator(),

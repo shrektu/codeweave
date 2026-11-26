@@ -18,13 +18,13 @@ export type FileSnapshot =
   | { readonly kind: typeof SnapshotKind.binary }
   | { readonly kind: typeof SnapshotKind.tooLarge };
 
-const MISSING_ERRNO_CODES: readonly string[] = ["ENOENT", "ENOTDIR"];
+export const MISSING_ERRNO_CODES: readonly string[] = ["ENOENT", "ENOTDIR"];
 const NUL_BYTE = 0;
 const READ_LIMIT_BYTES = DIFF_MAX_FILE_BYTES + 1;
 const READ_BUFFER_OFFSET = 0;
 const OPEN_FLAGS = constants.O_RDONLY | constants.O_NONBLOCK;
 
-function isMissingError(error: unknown): boolean {
+export function isMissingError(error: unknown): boolean {
   return (
     error instanceof Error &&
     "code" in error &&

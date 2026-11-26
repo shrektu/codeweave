@@ -4,6 +4,7 @@ import type { PromptView, SessionView, ToolCallView } from "../shared/views";
 
 import type { CheckpointStore } from "./checkpointStore";
 import { editKey } from "./editedFiles";
+import { readFileSnapshot } from "./fileSnapshot";
 
 const MAIN_SCOPE = "main";
 const RUN_SCOPE = "run";
@@ -169,11 +170,13 @@ class Recorder implements CheckpointRecorder {
           continue;
         }
         keys.add(key);
+        const path = resolve(input.cwd, diff.path);
         void this.store
           .record(input.sessionId, {
             editKey: key,
             promptSeq,
-            diff: { ...diff, path: resolve(input.cwd, diff.path) },
+            diff: { ...diff, path },
+            after: readFileSnapshot(path),
           })
           .catch((error: unknown) => {
             keys.delete(key);

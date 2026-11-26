@@ -7,7 +7,7 @@ import {
   realpath,
   rm,
 } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { z } from "zod";
 
@@ -30,7 +30,6 @@ import {
   reverseApply,
   rewindTargets,
   CheckpointEntrySchema,
-  sameRef,
   type BlobRef,
   type CheckpointEntry,
 } from "./checkpointPlan";
@@ -40,19 +39,20 @@ import {
   STORAGE_VERSION,
 } from "./constants";
 import {
+  isMissingError,
   readFileSnapshot,
   SnapshotKind,
   type FileSnapshot,
 } from "./fileSnapshot";
 import { isInside } from "./flows";
 import { KeyedMutex } from "./keyedMutex";
+import { realLocation } from "./permissionScope";
 import { readValidated, StorageCorruptError, writeAtomic } from "./storage";
+import { SESSION_ID_SCHEMA } from "./sessionHistory";
 
-const SESSION_ID_SCHEMA = z.uuid();
 const INVALID_SESSION_ID_MESSAGE = "Invalid session id";
 const JSON_INDENT = 2;
 const HASH_ALGORITHM = "sha256";
-const MISSING_FILE_CODE = "ENOENT";
 const EMPTY_TEXT = "";
 
 const CheckpointIndexSchema = z.strictObject({
@@ -72,6 +72,7 @@ export interface CheckpointEdit {
   readonly editKey: string;
   readonly promptSeq: number;
   readonly diff: FileDiffView;
+  readonly after: Promise<FileSnapshot>;
 }
 
 export interface CheckpointStore {
@@ -83,15 +84,8 @@ export interface CheckpointStore {
     promptSeq: number,
     overwrite: readonly string[],
   ): Promise<RestoreReportView>;
+  fold(sessionId: string, promptSeq: number, intoSeq: number): Promise<void>;
   flush(): Promise<void>;
-}
-
-function isMissingFile(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    "code" in error &&
-    error.code === MISSING_FILE_CODE
-  );
 }
 
 function emptyIndex(): CheckpointIndex {
@@ -128,7 +122,7 @@ async function fileExists(file: string): Promise<boolean> {
     await access(file);
     return true;
   } catch (error) {
-    if (isMissingFile(error)) {
+    if (isMissingError(error)) {
       return false;
     }
     throw error;
@@ -289,7 +283,7 @@ async function collectGarbage(
 ): Promise<void> {
   const blobsDir = join(sessionDir, CHECKPOINT_BLOBS_DIR);
   const names = await readdir(blobsDir).catch((error: unknown) => {
-    if (isMissingFile(error)) {
+    if (isMissingError(error)) {
       return [];
     }
     throw error;
@@ -313,103 +307,35 @@ async function readBlobText(sessionDir: string, hash: string): Promise<string> {
   return readFile(join(sessionDir, CHECKPOINT_BLOBS_DIR, hash), "utf8");
 }
 
-async function reverseRef(
-  sessionDir: string,
-  patch: string | null | undefined,
-  after: BlobRef,
-): Promise<BlobRef | null> {
-  if (patch === null || patch === undefined || after.kind === "unknown") {
-    return null;
-  }
-  const afterText =
-    after.kind === "stored"
-      ? await readBlobText(sessionDir, after.hash)
-      : EMPTY_TEXT;
-  const beforeText = reverseApply(patch, afterText);
-  return beforeText === null ? null : storeText(sessionDir, beforeText);
-}
+type SettledSnapshot =
+  | { readonly ok: true; readonly snapshot: FileSnapshot }
+  | { readonly ok: false; readonly error: unknown };
 
-async function repairedBefore(
-  sessionDir: string,
-  entry: CheckpointEntry,
-  after: BlobRef,
-  earlier: CheckpointEntry | undefined,
-): Promise<BlobRef> {
-  const reversed = await reverseRef(sessionDir, entry.patch, after);
-  if (reversed !== null) {
-    return reversed;
-  }
-  if (earlier !== undefined && earlier.after.kind !== "unknown") {
-    return earlier.after;
-  }
-  return { kind: "unknown", reason: RestoreSkipReason.patchMismatch };
-}
-
-function replaceEntry(
-  entries: CheckpointEntry[],
-  replacement: CheckpointEntry,
-): void {
-  const index = entries.findIndex(
-    (entry) => entry.editKey === replacement.editKey,
-  );
-  if (index !== -1) {
-    entries[index] = replacement;
-  }
-}
-
-async function repairEarlierEntries(
-  sessionDir: string,
-  entries: CheckpointEntry[],
-  path: string,
-  newBefore: BlobRef,
-  recordedAfter: BlobRef,
-): Promise<void> {
-  if (newBefore.kind !== "stored") {
-    return;
-  }
-  const ordered = entries
-    .filter((entry) => entry.path === path)
-    .toSorted((a, b) => a.order - b.order);
-  let after: BlobRef = newBefore;
-  let originalAfter: BlobRef = recordedAfter;
-  for (let position = ordered.length - 1; position >= 0; position -= 1) {
-    const entry = ordered[position];
-    if (
-      entry?.after.kind !== "stored" ||
-      !sameRef(entry.after, originalAfter) ||
-      sameRef(entry.after, after)
-    ) {
-      break;
-    }
-    const recordedBefore = entry.before;
-    const original = entry.after;
-    const before = await repairedBefore(
-      sessionDir,
-      entry,
-      after,
-      ordered[position - 1],
-    );
-    const replacement = { ...entry, after, before };
-    replaceEntry(entries, replacement);
-    ordered[position] = replacement;
-    originalAfter = original;
-    if (sameRef(before, recordedBefore)) {
-      break;
-    }
-    after = before;
-  }
+function settleAfter(after: Promise<FileSnapshot>): Promise<SettledSnapshot> {
+  return after
+    .then((snapshot): SettledSnapshot => ({ ok: true, snapshot }))
+    .catch((error: unknown): SettledSnapshot => ({ ok: false, error }));
 }
 
 async function recordStep(
   sessionDir: string,
   edit: CheckpointEdit,
+  settledAfter: Promise<SettledSnapshot>,
   maxSessionBytes: number,
 ): Promise<void> {
   const index = await readIndex(sessionDir);
   if (index.entries.some((entry) => entry.editKey === edit.editKey)) {
     return;
   }
-  const afterSnapshot = await readFileSnapshot(edit.diff.path);
+  const settled = await settledAfter;
+  if (!settled.ok) {
+    console.error(
+      "a file checkpoint snapshot could not be read",
+      settled.error,
+    );
+    return;
+  }
+  const afterSnapshot = settled.snapshot;
   const after = await storeSnapshot(sessionDir, afterSnapshot);
   const before = await computeBefore(
     sessionDir,
@@ -424,17 +350,8 @@ async function recordStep(
     before,
     after,
     order: index.nextOrder,
-    patch: "patch" in edit.diff ? edit.diff.patch : null,
   };
-  const entries = [...index.entries];
-  await repairEarlierEntries(
-    sessionDir,
-    entries,
-    edit.diff.path,
-    before,
-    after,
-  );
-  entries.push(entry);
+  const entries = [...index.entries, entry];
   const evicted = evictOldest(entries, maxSessionBytes);
   await writeIndex(sessionDir, {
     version: STORAGE_VERSION,
@@ -473,39 +390,26 @@ function isProtectedBy(roots: readonly string[], path: string): boolean {
   return roots.some((root) => root === path || isInside(root, path));
 }
 
-async function resolveMissingTarget(path: string): Promise<string | null> {
-  let current = path;
-  const missing: string[] = [];
-  let parent = dirname(current);
-  while (parent !== current) {
-    missing.unshift(basename(current));
-    const resolved = await resolveExistingPath(parent);
-    if (resolved !== null) {
-      return join(resolved, ...missing);
-    }
-    current = parent;
-    parent = dirname(current);
-  }
-  return null;
-}
-
-async function resolveForProtection(path: string): Promise<string | null> {
-  const resolved = await resolveExistingPath(path);
-  return resolved ?? resolveMissingTarget(path);
+async function canonicalRoots(
+  protectedPaths: () => Promise<readonly string[]>,
+): Promise<readonly string[]> {
+  const roots = await protectedPaths();
+  const canonical = await Promise.all(roots.map((root) => realLocation(root)));
+  return [...new Set([...roots, ...canonical])];
 }
 
 async function protectedChecker(
   protectedPaths: () => Promise<readonly string[]>,
   paths: readonly string[],
 ): Promise<(path: string) => boolean> {
-  const roots = await protectedPaths();
+  const roots = await canonicalRoots(protectedPaths);
   const redirected = new Set<string>();
   for (const path of paths) {
     if (isProtectedBy(roots, path)) {
       continue;
     }
-    const resolved = await resolveForProtection(path);
-    if (resolved !== null && isProtectedBy(roots, resolved)) {
+    const resolved = await realLocation(path);
+    if (isProtectedBy(roots, resolved)) {
       redirected.add(path);
     }
   }
@@ -516,7 +420,7 @@ async function resolveExistingPath(path: string): Promise<string | null> {
   try {
     return await realpath(path);
   } catch (error) {
-    if (isMissingFile(error)) {
+    if (isMissingError(error)) {
       return null;
     }
     throw error;
@@ -607,6 +511,21 @@ async function restoreStep(
   return { restored, deleted, skipped };
 }
 
+async function foldStep(
+  sessionDir: string,
+  promptSeq: number,
+  intoSeq: number,
+): Promise<void> {
+  const index = await readIndex(sessionDir);
+  if (index.entries.every((entry) => entry.promptSeq < promptSeq)) {
+    return;
+  }
+  const entries = index.entries.map((entry) =>
+    entry.promptSeq >= promptSeq ? { ...entry, promptSeq: intoSeq } : entry,
+  );
+  await writeIndex(sessionDir, { ...index, entries });
+}
+
 async function planStep(
   sessionDir: string,
   sessionId: string,
@@ -655,10 +574,12 @@ export function createCheckpointStore(
   }
 
   return {
-    record: (sessionId, edit) =>
-      run(sessionId, (sessionDir) =>
-        recordStep(sessionDir, edit, deps.maxSessionBytes),
-      ),
+    record: (sessionId, edit) => {
+      const settled = settleAfter(edit.after);
+      return run(sessionId, (sessionDir) =>
+        recordStep(sessionDir, edit, settled, deps.maxSessionBytes),
+      );
+    },
     entries: (sessionId) =>
       run(
         sessionId,
@@ -678,6 +599,8 @@ export function createCheckpointStore(
           protectedPaths: deps.protectedPaths,
         }),
       ),
+    fold: (sessionId, promptSeq, intoSeq) =>
+      run(sessionId, (sessionDir) => foldStep(sessionDir, promptSeq, intoSeq)),
     async flush(): Promise<void> {
       while (active.size > 0) {
         await Promise.allSettled([...active]);

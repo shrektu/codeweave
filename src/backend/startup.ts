@@ -792,6 +792,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     terminals,
     postUpdaterConfig,
     editedFiles,
+    checkpoints,
   });
   await postStoredUpdaterConfig(store, postUpdaterConfig);
   probes.start();

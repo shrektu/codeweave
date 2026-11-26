@@ -6,6 +6,8 @@ import type { SessionView } from "../shared/views";
 import { createAccountsService, type AccountsService } from "./accountsService";
 import type { ConnectionRegistry } from "./connections";
 import { createAgent, deleteAgent, saveAgent } from "./agents";
+import type { CheckpointStore } from "./checkpointStore";
+import { FLOW_RUNNING_MESSAGE } from "./constants";
 import { createDefinitionRoots } from "./definitionLibrary";
 import type { EditedFilesTracker } from "./editedFiles";
 import { listFlows, saveFlow } from "./flows";
@@ -14,6 +16,7 @@ import type { IpcHandlers } from "./ipcServer";
 import type { LimitProbeService } from "./limitProbe";
 import type { ModelCatalogService } from "./opencode/catalog";
 import type { OrchestratorService } from "./orchestrator/service";
+import { createRewindService } from "./rewind";
 import type { KeyStore } from "./secrets/keyStore";
 import type { SecretVault } from "./secrets/vault";
 import type { ContainerStatus, SessionService, StartOptions } from "./session";
@@ -44,9 +47,9 @@ export interface HandlerDeps {
   terminals: TerminalService;
   postUpdaterConfig: PostUpdaterConfig;
   editedFiles: EditedFilesTracker;
+  checkpoints: CheckpointStore;
 }
 
-const FLOW_RUNNING_MESSAGE = "A flow is running";
 const SESSION_NOT_FOUND_MESSAGE = "Session not found";
 const RESUME_CONFLICT_MESSAGE = "The session is already open";
 const ARCHIVE_LIVE_MESSAGE = "Cannot archive a live session";
@@ -83,6 +86,7 @@ export function createHandlers({
   terminals,
   postUpdaterConfig,
   editedFiles,
+  checkpoints,
 }: HandlerDeps): IpcHandlers {
   const accounts = createAccountsService({
     store,
@@ -144,6 +148,41 @@ export function createHandlers({
     terminals.retarget(cwd).catch((error: unknown) => {
       console.error("terminal retarget failed", error);
     });
+  const resumeSession = async (sessionId: string): Promise<SessionView> => {
+    const stored = await history.get(sessionId);
+    if (stored === null) {
+      throw new IpcError(IpcErrorCode.NOT_FOUND, SESSION_NOT_FOUND_MESSAGE);
+    }
+    if (sessions.main(sessionId) !== null) {
+      throw new IpcError(IpcErrorCode.CONFLICT, RESUME_CONFLICT_MESSAGE);
+    }
+    if (flowRuns.hasOpenUserRuns()) {
+      throw new IpcError(IpcErrorCode.CONFLICT, FLOW_RUNNING_MESSAGE);
+    }
+    await history.setArchivedIfPresent(sessionId, false);
+    const resume = buildResumeSeed(stored, await inspectWorktree(stored.cwd));
+    const params: ParamsMap["session/start"] = {
+      cwd: stored.cwd,
+      provider: stored.provider,
+      profile: stored.profile,
+    };
+    const started = stored.orchestrate
+      ? orchestrator.start(params, { resume })
+      : startPlainMain(params, {
+          resume,
+          explicitFolder: stored.explicitFolder,
+        });
+    const view = await recorded(stored.cwd, started);
+    await retargetTerminal(view.cwd);
+    return view;
+  };
+  const rewind = createRewindService({
+    sessions,
+    history,
+    checkpoints,
+    hasOpenFlowRuns: () => flowRuns.hasOpenRuns(),
+    resume: resumeSession,
+  });
   return {
     ping: () => ({ pong: true, backendPid: process.pid }),
     "sessions/snapshot": async () => ({
@@ -171,34 +210,9 @@ export function createHandlers({
       await retargetTerminal(view.cwd);
       return view;
     },
-    "session/resume": async ({ sessionId }) => {
-      const stored = await history.get(sessionId);
-      if (stored === null) {
-        throw new IpcError(IpcErrorCode.NOT_FOUND, SESSION_NOT_FOUND_MESSAGE);
-      }
-      if (sessions.main(sessionId) !== null) {
-        throw new IpcError(IpcErrorCode.CONFLICT, RESUME_CONFLICT_MESSAGE);
-      }
-      if (flowRuns.hasOpenUserRuns()) {
-        throw new IpcError(IpcErrorCode.CONFLICT, FLOW_RUNNING_MESSAGE);
-      }
-      await history.setArchivedIfPresent(sessionId, false);
-      const resume = buildResumeSeed(stored, await inspectWorktree(stored.cwd));
-      const params: ParamsMap["session/start"] = {
-        cwd: stored.cwd,
-        provider: stored.provider,
-        profile: stored.profile,
-      };
-      const started = stored.orchestrate
-        ? orchestrator.start(params, { resume })
-        : startPlainMain(params, {
-            resume,
-            explicitFolder: stored.explicitFolder,
-          });
-      const view = await recorded(stored.cwd, started);
-      await retargetTerminal(view.cwd);
-      return view;
-    },
+    "session/resume": ({ sessionId }) => resumeSession(sessionId),
+    "session/rewindPreview": (params) => rewind.preview(params),
+    "session/rewind": (params) => rewind.rewind(params),
     "history/list": async () => ({ entries: await history.list() }),
     "history/get": async ({ sessionId }) => {
       const stored = await history.get(sessionId);

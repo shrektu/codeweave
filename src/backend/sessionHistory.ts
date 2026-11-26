@@ -33,7 +33,7 @@ import { KeyedMutex } from "./keyedMutex";
 import type { ResumeSeed } from "./session";
 import { readValidated, writeAtomic } from "./storage";
 
-const SESSION_ID_SCHEMA = z.uuid();
+export const SESSION_ID_SCHEMA = z.uuid();
 const META_FILE_SUFFIX = ".meta.json";
 const TRANSCRIPT_FILE_SUFFIX = ".json";
 const MISSING_FILE_CODE = "ENOENT";
@@ -63,6 +63,7 @@ export interface SessionHistory {
   get(id: string): Promise<StoredSession | null>;
   setArchived(id: string, archived: boolean): Promise<SessionHistoryEntry>;
   setArchivedIfPresent(id: string, archived: boolean): Promise<void>;
+  truncate(id: string, promptSeq: number): Promise<StoredSession | null>;
   flush(): Promise<void>;
 }
 
@@ -237,6 +238,14 @@ class SessionHistoryImpl implements SessionHistory {
     await this.updateArchived(id, archived);
   }
 
+  async truncate(id: string, promptSeq: number): Promise<StoredSession | null> {
+    requireSessionId(id);
+    this.pending.delete(id);
+    return this.track(
+      this.mutex.run(id, () => this.truncateStep(id, promptSeq)),
+    );
+  }
+
   async flush(): Promise<void> {
     while (this.active.size > 0) {
       await Promise.allSettled([...this.active]);
@@ -309,6 +318,55 @@ class SessionHistoryImpl implements SessionHistory {
       archived: entry.archived,
       updatedAt: entry.updatedAt,
     });
+  }
+
+  private async truncateStep(
+    id: string,
+    promptSeq: number,
+  ): Promise<StoredSession | null> {
+    const stored = await readValidated(
+      this.transcriptPath(id),
+      StoredFileSchema,
+    );
+    if (stored === null) {
+      return null;
+    }
+    const prompts = stored.prompts.filter((prompt) => prompt.seq < promptSeq);
+    const messages = stored.messages.filter(
+      (message) => message.seq < promptSeq,
+    );
+    const toolCalls = stored.toolCalls.filter((tool) => tool.seq < promptSeq);
+    const turns = stored.turns.filter((turn) => turn.promptSeq < promptSeq);
+    const cut =
+      prompts.length !== stored.prompts.length ||
+      messages.length !== stored.messages.length ||
+      toolCalls.length !== stored.toolCalls.length ||
+      turns.length !== stored.turns.length;
+    const updatedAt = this.deps.now();
+    const title = prompts.length > 0 ? titleOf(prompts) : stored.title;
+    const truncated: StoredSession = {
+      ...stored,
+      updatedAt,
+      title,
+      prompts,
+      messages,
+      toolCalls,
+      turns,
+      lastTurn: cut ? null : stored.lastTurn,
+      nativeSessions: [],
+    };
+    await this.writeTranscript(truncated);
+    await this.writeMeta({
+      id: stored.id,
+      title,
+      cwd: stored.cwd,
+      provider: stored.provider,
+      orchestrate: stored.orchestrate,
+      createdAt: stored.createdAt,
+      updatedAt,
+      archived: stored.archived,
+    });
+    return truncated;
   }
 
   private scheduleDrain(id: string): void {

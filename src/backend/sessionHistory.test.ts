@@ -12,12 +12,16 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { PermissionProfile, ProviderId } from "../domain/types";
+import { RouteSource } from "../domain/routing";
+import { TaskClass } from "../domain/taskClass";
 import { IpcErrorCode } from "../shared/protocol";
 import type {
   MessageView,
   SessionHistoryEntry,
   SessionView,
   StoredSession,
+  ToolCallView,
+  TurnRouteView,
 } from "../shared/views";
 
 import { SESSION_TITLE_MAX_CHARS } from "../domain/constants";
@@ -392,6 +396,122 @@ it("archive_flag_survives_concurrent_record", async () => {
 function recordView(history: SessionHistory, content: SessionView): void {
   history.record(content, []);
 }
+
+function toolCall(seq: number): ToolCallView {
+  return {
+    toolCallId: `tool-${String(seq)}`,
+    title: "Edit",
+    kind: "edit",
+    status: "completed",
+    seq,
+  };
+}
+
+function turn(promptSeq: number): TurnRouteView {
+  return {
+    promptSeq,
+    accountId: "acc-a",
+    model: null,
+    effectiveModel: null,
+    apiProvider: null,
+    requestedClass: TaskClass.standard,
+    servedClass: null,
+    source: RouteSource.routed,
+  };
+}
+
+it("truncate drops seqs at and after the prompt and clears native sessions", async () => {
+  const dir = await tempDir();
+  const broadcasts: SessionHistoryEntry[] = [];
+  const history = createSessionHistory({
+    dir,
+    now: () => NOW,
+    broadcast: (_event, entry) => {
+      broadcasts.push(entry);
+    },
+  });
+  history.record(
+    view({
+      prompts: [
+        { seq: 0, text: "first" },
+        { seq: 2, text: "second" },
+      ],
+      messages: [message("reply")],
+      toolCalls: [toolCall(3)],
+      turns: [turn(0), turn(2)],
+      lastTurn: { kind: "ended", stopReason: "end_turn" },
+    }),
+    [{ accountId: "acc-a", nativeSessionId: "native-1" }],
+  );
+  await history.flush();
+
+  const truncated = await history.truncate(SESSION_ID, 2);
+
+  expect(truncated?.prompts.map((prompt) => prompt.text)).toEqual(["first"]);
+  expect(truncated?.messages.map((entry) => entry.seq)).toEqual([1]);
+  expect(truncated?.toolCalls).toEqual([]);
+  expect(truncated?.turns.map((entry) => entry.promptSeq)).toEqual([0]);
+  expect(truncated?.lastTurn).toBeNull();
+  expect(truncated?.nativeSessions).toEqual([]);
+  expect(truncated?.updatedAt).toBe(NOW);
+  expect(broadcasts.at(-1)).toMatchObject({
+    id: SESSION_ID,
+    title: "first",
+    updatedAt: NOW,
+  });
+});
+
+it("truncate to the first prompt keeps the title", async () => {
+  const dir = await tempDir();
+  const history = createSessionHistory({
+    dir,
+    now: () => NOW,
+    broadcast: () => undefined,
+  });
+  history.record(
+    view({
+      prompts: [
+        { seq: 0, text: "first title" },
+        { seq: 2, text: "second title" },
+      ],
+    }),
+    [],
+  );
+  await history.flush();
+
+  const truncated = await history.truncate(SESSION_ID, 0);
+
+  expect(truncated?.prompts).toEqual([]);
+  expect(truncated?.title).toBe("first title");
+  const [entry] = await history.list();
+  expect(entry?.title).toBe("first title");
+});
+
+it("truncate drops a pending record of the same session", async () => {
+  const dir = await tempDir();
+  const history = createSessionHistory({
+    dir,
+    now: () => NOW,
+    broadcast: () => undefined,
+  });
+  history.record(view({ prompts: [{ seq: 0, text: "first" }] }), []);
+  await history.flush();
+
+  history.record(
+    view({
+      prompts: [
+        { seq: 0, text: "first" },
+        { seq: 2, text: "second" },
+      ],
+    }),
+    [],
+  );
+  const truncated = await history.truncate(SESSION_ID, 10);
+
+  expect(truncated?.prompts.map((prompt) => prompt.text)).toEqual(["first"]);
+  const stored = await storedIn(dir, SESSION_ID);
+  expect(stored.prompts.map((prompt) => prompt.text)).toEqual(["first"]);
+});
 
 it("stored_file_without_native_sessions_still_loads", async () => {
   const dir = await tempDir();
