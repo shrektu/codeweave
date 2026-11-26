@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { _electron as electron, expect, test } from "@playwright/test";
 import type { ElectronApplication, Locator, Page } from "@playwright/test";
 
+import { firstReadyWindow } from "./appWindow";
 import { createCleanupStack } from "./rotationFixture";
 
 const ROOT_DIR = join(import.meta.dirname, "..", "..");
@@ -80,10 +81,7 @@ async function withTerminalApp(
       dialog.showOpenDialog = () =>
         Promise.resolve({ canceled: false, filePaths: [picked] });
     }, folder);
-    const page = await app.firstWindow();
-    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-      "Connected",
-    );
+    const page = await firstReadyWindow(app);
     await body({ app, page, folder });
   } finally {
     await cleanup.run();

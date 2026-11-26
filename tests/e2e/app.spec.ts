@@ -6,6 +6,8 @@ import { pathToFileURL } from "node:url";
 import { _electron as electron, expect, test } from "@playwright/test";
 import type { ElectronApplication, Page } from "@playwright/test";
 
+import { firstReadyWindow } from "./appWindow";
+
 const ROOT_DIR = join(import.meta.dirname, "..", "..");
 const REGION_NAMES = ["Accounts", "Session", "Limits", "Switch log"] as const;
 const BACKEND_READY_TEXT = "Connected";
@@ -45,7 +47,7 @@ async function withApp(
 
 test("app_starts_with_three_columns_and_backend_survives_reload", async () => {
   await withApp(async (app) => {
-    const page = await app.firstWindow();
+    const page = await firstReadyWindow(app);
     await expectRegionsVisible(page);
 
     const backend = page.getByRole("status", { name: "Backend" });
@@ -63,10 +65,7 @@ test("app_starts_with_three_columns_and_backend_survives_reload", async () => {
 
 test("settings_dialog_opens_and_closes", async () => {
   await withApp(async (app) => {
-    const page = await app.firstWindow();
-    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-      BACKEND_READY_TEXT,
-    );
+    const page = await firstReadyWindow(app);
 
     await page.getByRole("button", { name: "Settings" }).click();
     const dialog = page.getByRole("dialog", { name: "Settings" });
@@ -83,10 +82,7 @@ test("settings_dialog_opens_and_closes", async () => {
 
 test("app_switches_light_and_dark_appearance", async () => {
   await withApp(async (app) => {
-    const page = await app.firstWindow();
-    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-      BACKEND_READY_TEXT,
-    );
+    const page = await firstReadyWindow(app);
     const html = page.locator("html");
     const labelColor = (): Promise<string> =>
       page.evaluate(() => getComputedStyle(document.body).color);
@@ -116,10 +112,7 @@ test("app_switches_light_and_dark_appearance", async () => {
 
 test("dialog_escape_closes_and_traps_focus", async () => {
   await withApp(async (app) => {
-    const page = await app.firstWindow();
-    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-      BACKEND_READY_TEXT,
-    );
+    const page = await firstReadyWindow(app);
     const background = page.getByRole("button", { name: "Manage accounts" });
     const box = await background.boundingBox();
     expect(box).not.toBeNull();
@@ -144,9 +137,8 @@ test("dialog_escape_closes_and_traps_focus", async () => {
 
 test("navigation_to_foreign_url_is_blocked", async () => {
   await withApp(async (app) => {
-    const page = await app.firstWindow();
+    const page = await firstReadyWindow(app);
     const backend = page.getByRole("status", { name: "Backend" });
-    await expect(backend).toHaveText(BACKEND_READY_TEXT);
     const entryUrl = page.url();
     const pidBeforeAttacks = await backend.getAttribute(PID_ATTRIBUTE);
 

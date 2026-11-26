@@ -4,13 +4,14 @@ import { join } from "node:path";
 
 import { _electron as electron, expect, test } from "@playwright/test";
 
+import { firstReadyWindow } from "./appWindow";
+
 const ROOT_DIR = join(import.meta.dirname, "..", "..");
 const USER_DATA_DIR_ENV = "CODEWEAVE_USER_DATA_DIR";
 const USER_DATA_PREFIX = "codeweave-e2e-";
 const ACCOUNTS_FILE = "accounts.json";
 const ACCOUNT_COUNT = 40;
 const VIEWPORT_HEIGHT = 800;
-const BACKEND_READY_TEXT = "Connected";
 const SANDBOX_FLAGS =
   process.env.CI !== undefined && process.platform === "linux"
     ? ["--no-sandbox"]
@@ -47,11 +48,8 @@ test("dialog_lists_do_not_shrink_in_dialog_body_e2e", async () => {
     env: { ...process.env, [USER_DATA_DIR_ENV]: userDataDir },
   });
   try {
-    const page = await app.firstWindow();
+    const page = await firstReadyWindow(app);
     await page.setViewportSize({ width: 1200, height: VIEWPORT_HEIGHT });
-    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-      BACKEND_READY_TEXT,
-    );
 
     await page.getByRole("button", { name: "Manage accounts" }).click();
     const dialog = page.getByRole("dialog", { name: "Accounts" });

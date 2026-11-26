@@ -10,6 +10,8 @@ import {
   type Page,
 } from "@playwright/test";
 
+import { firstReadyWindow } from "./appWindow";
+
 const ROOT_DIR = join(import.meta.dirname, "..", "..");
 const USER_DATA_DIR_ENV = "CODEWEAVE_USER_DATA_DIR";
 const USER_DATA_PREFIX = "codeweave-e2e-";
@@ -33,10 +35,7 @@ test("settings_library_folder_uses_native_picker", async () => {
       dialog.showOpenDialog = () =>
         Promise.resolve({ canceled: false, filePaths: [picked] });
     }, PICKED_LIBRARY);
-    const page = await app.firstWindow();
-    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-      "Connected",
-    );
+    const page = await firstReadyWindow(app);
     await page.getByRole("button", { name: "Settings" }).click();
     const field = page.getByRole("group", { name: LIBRARY_FIELD_NAME });
 
@@ -78,10 +77,7 @@ async function withLibrary(
       dialog.showOpenDialog = () =>
         Promise.resolve({ canceled: false, filePaths: [picked] });
     }, picked);
-    const page = await app.firstWindow();
-    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-      "Connected",
-    );
+    const page = await firstReadyWindow(app);
     await page.getByRole("button", { name: "Settings" }).click();
     const field = page.getByRole("group", { name: LIBRARY_FIELD_NAME });
     await field.getByRole("button", { name: "Choose…" }).click();

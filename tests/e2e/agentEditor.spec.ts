@@ -69,9 +69,6 @@ test("agent_editor_creates_edits_and_flow_uses_agent", async () => {
     });
     cleanup.add(() => mock.close());
     const page = await launchFlowApp(workspace, mock.url, cleanup);
-    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-      "Connected",
-    );
 
     await page.getByRole("tab", { name: "Agents" }).click();
     await page.getByRole("button", { name: "Choose folder…" }).click();

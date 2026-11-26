@@ -13,6 +13,7 @@ import {
 
 import { startOpenaiChatMock } from "../fakes/openaiChatMock";
 
+import { firstReadyWindow } from "./appWindow";
 import {
   OPENCODE_ACCOUNT_SPECS,
   OPENCODE_GO_ROUTING_ACCOUNT_SPEC,
@@ -175,10 +176,7 @@ test("opencode_ui_rotates_api_key_a_to_b", async () => {
       dialog.showOpenDialog = () =>
         Promise.resolve({ canceled: false, filePaths: [folder] });
     }, repo);
-    const page = await app.firstWindow();
-    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-      "Connected",
-    );
+    const page = await firstReadyWindow(app);
 
     await addAccounts(page, userData, mock.url);
     await chooseAskProfile(page);
@@ -234,10 +232,7 @@ async function seedRoutingAccount(
   spec: OpencodeAccountSpec = OPENCODE_ROUTING_ACCOUNT_SPEC,
 ): Promise<void> {
   const setup = await launchApp(root, userData);
-  const page = await setup.firstWindow();
-  await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-    "Connected",
-  );
+  const page = await firstReadyWindow(setup);
   await addAccounts(page, userData, mockUrl, [spec]);
   await setup.close();
   await pointAccountsAtMock(userData, mockUrl);
@@ -263,10 +258,7 @@ test("composer classes route the real opencode", async () => {
     const app = await launchApp(root, userData);
     cleanup.add(() => app.close());
     await stubFolderDialog(app, repo);
-    const page = await app.firstWindow();
-    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-      "Connected",
-    );
+    const page = await firstReadyWindow(app);
     await page.getByRole("button", { name: "Choose folder…" }).click();
 
     const badges = page.locator(".turn-badge");
@@ -323,10 +315,7 @@ test("seeded go account routes a light turn", async () => {
     const app = await launchApp(root, userData);
     cleanup.add(() => app.close());
     await stubFolderDialog(app, repo);
-    const page = await app.firstWindow();
-    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-      "Connected",
-    );
+    const page = await firstReadyWindow(app);
     await page.getByRole("button", { name: "Choose folder…" }).click();
 
     await sendWithClass(page, "light", "Say hello");

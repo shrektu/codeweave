@@ -14,6 +14,7 @@ import {
   startAnthropicMock,
 } from "../fakes/anthropicMock";
 
+import { firstReadyWindow } from "./appWindow";
 import {
   KEY_A,
   KEY_B,
@@ -77,10 +78,7 @@ test("transcript_renders_markdown_and_copies_commands", async () => {
     cleanup.add(() => mock.close());
     const app = await launchApp(workspace.userData, workspace.repo, mock.url);
     cleanup.add(() => app.close());
-    const page = await app.firstWindow();
-    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-      "Connected",
-    );
+    const page = await firstReadyWindow(app);
 
     await page.getByRole("button", { name: "Choose folder…" }).click();
     await page.getByPlaceholder("Describe the task").fill(ROTATION_PROMPT);
