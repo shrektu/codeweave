@@ -43,12 +43,16 @@ import {
   AGY_BINARY,
   API_KEYS_FILE,
   CLAUDE_BINARY,
+  CHECKPOINT_MAX_SESSION_BYTES,
+  CHECKPOINTS_DIR,
   CODEX_BINARY,
   CONTAINER_UNAVAILABLE_MESSAGE,
   PROBE_RUN_ID_PREFIX,
   PROBE_TIMEOUT_MS,
   SESSIONS_DIR,
 } from "./constants";
+import { createCheckpointRecorder } from "./checkpointRecorder";
+import { createCheckpointStore } from "./checkpointStore";
 import { buildAgentEnv } from "./env";
 import { resolveExecutable } from "./executable";
 import { execText } from "./exec";
@@ -687,6 +691,17 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
       deps.broadcast("editedFiles/changed", edits);
     },
   });
+  const checkpoints = createCheckpointStore({
+    dir: join(userData, CHECKPOINTS_DIR),
+    maxSessionBytes: CHECKPOINT_MAX_SESSION_BYTES,
+    protectedPaths: protectedPathsNow,
+  });
+  const checkpointRecorder = createCheckpointRecorder({
+    store: checkpoints,
+    ownerOf: (runId) =>
+      flowRunsRef?.views().find((run) => run.runId === runId)?.ownerSessionId ??
+      null,
+  });
   const sessions: SessionPool = createSessionPool({
     adapter: createAdapter(
       deps,
@@ -715,15 +730,18 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     protectedPaths: protectedPathsNow,
     onMainView: (view, nativeSessions) => {
       editedFiles.observeMain(view);
+      checkpointRecorder.observeMain(view);
       if (view !== null) {
         history.record(view, nativeSessions);
       }
     },
     onMainClosed: (sessionId) => {
       editedFiles.forget(sessionId);
+      checkpointRecorder.forget(sessionId);
     },
     onRunView: (runId, view) => {
       editedFiles.observeRun(runId, view);
+      checkpointRecorder.observeRun(runId, view);
     },
   });
   const terminals = createTerminals(deps, container, store, lockKeyResolver);

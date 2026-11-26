@@ -78,7 +78,7 @@ function buildSessionView(
   return { sessionId, files };
 }
 
-function editKey(
+export function editKey(
   runId: string | null,
   toolCallId: string,
   index: number,
