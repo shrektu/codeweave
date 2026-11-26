@@ -1,7 +1,7 @@
 import { mergeRuntime, type AccountRuntime } from "../domain/rotation";
 import type { Account, EpochMillis } from "../domain/types";
 import { IpcError, IpcErrorCode } from "../shared/protocol";
-import type { SessionView } from "../shared/views";
+import type { NativeSessionRef, SessionView } from "../shared/views";
 
 import { createAccountReservations } from "./accountReservations";
 import {
@@ -23,7 +23,10 @@ export type SessionPoolDeps = Omit<
   SessionServiceDeps,
   "publishView" | "reserved"
 > & {
-  readonly onMainView?: (view: SessionView | null) => void;
+  readonly onMainView?: (
+    view: SessionView | null,
+    nativeSessions: readonly NativeSessionRef[],
+  ) => void;
   readonly onMainClosed?: (sessionId: string) => void;
   readonly onRunView?: (runId: string, view: SessionView | null) => void;
 };
@@ -82,7 +85,7 @@ class SessionPoolImpl implements SessionPool {
     const service: SessionService = this.build((view) => {
       if (this.mains.has(service)) {
         this.deps.broadcast("session/changed", view);
-        this.deps.onMainView?.(view);
+        this.deps.onMainView?.(view, service.nativeSessions());
       }
     });
     this.mains.add(service);

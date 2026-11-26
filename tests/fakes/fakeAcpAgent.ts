@@ -9,6 +9,7 @@ import {
   methods,
   type AgentContext,
   type InitializeResponse,
+  type LoadSessionRequest,
   type NewSessionRequest,
   type NewSessionResponse,
   type PermissionOption,
@@ -16,6 +17,7 @@ import {
   type RequestPermissionOutcome,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
+  type ResumeSessionRequest,
   type SessionConfigOption,
   type SessionUpdate,
   type StopReason,
@@ -27,6 +29,7 @@ import {
 
 import type {
   AgentHandle,
+  AgentResumeSpec,
   AgentStartResult,
   AgentStartSpec,
   AgentToolAccess,
@@ -132,6 +135,11 @@ export interface FakeAcpConfig {
   sessionModel?: string;
   defaultModelDescription?: string;
   stderrText?: string;
+  resume?: boolean;
+  loadSession?: boolean;
+  resumeError?: FakeRpcFailure;
+  loadError?: FakeRpcFailure;
+  replayed?: readonly NotificationStep[];
 }
 
 export interface ConfigCall {
@@ -240,6 +248,8 @@ function toUpdate(step: NotificationStep): SessionUpdate {
 export class FakeAcpAgent {
   readonly modeCalls: string[] = [];
   readonly newSessions: NewSessionRequest[] = [];
+  readonly resumeCalls: ResumeSessionRequest[] = [];
+  readonly loadCalls: LoadSessionRequest[] = [];
   readonly configCalls: ConfigCall[] = [];
   readonly callOrder: string[] = [];
   readonly prompts: string[] = [];
@@ -260,7 +270,15 @@ export class FakeAcpAgent {
         if (this.config.initializeError !== undefined) {
           throw toError(this.config.initializeError);
         }
-        return { protocolVersion: PROTOCOL_VERSION, agentCapabilities: {} };
+        return {
+          protocolVersion: PROTOCOL_VERSION,
+          agentCapabilities: {
+            ...(this.config.loadSession === true ? { loadSession: true } : {}),
+            ...(this.config.resume === true
+              ? { sessionCapabilities: { resume: {} } }
+              : {}),
+          },
+        };
       })
       .onRequest(
         methods.agent.session.new,
@@ -285,6 +303,32 @@ export class FakeAcpAgent {
                   ],
                 }),
           };
+        },
+      )
+      .onRequest(
+        methods.agent.session.resume,
+        ({ params }): Record<string, never> => {
+          this.resumeCalls.push(params);
+          if (this.config.resumeError !== undefined) {
+            throw toError(this.config.resumeError);
+          }
+          return {};
+        },
+      )
+      .onRequest(
+        methods.agent.session.load,
+        async ({ params, client: peer }): Promise<Record<string, never>> => {
+          this.loadCalls.push(params);
+          if (this.config.loadError !== undefined) {
+            throw toError(this.config.loadError);
+          }
+          for (const step of this.config.replayed ?? []) {
+            await peer.notify(methods.client.session.update, {
+              sessionId: params.sessionId,
+              update: toUpdate(step),
+            });
+          }
+          return {};
         },
       )
       .onRequest(methods.agent.authenticate, () => ({}))
@@ -506,6 +550,7 @@ export interface AcpRig {
     profile?: PermissionProfile,
     runId?: string,
     tools?: AgentToolAccess,
+    resume?: AgentResumeSpec,
   ): Promise<AgentStartResult>;
 }
 
@@ -534,7 +579,7 @@ export async function createRig(
   return {
     container,
     cwd,
-    start: (profile = PermissionProfile.ask, runId = "run-1", tools) =>
+    start: (profile = PermissionProfile.ask, runId = "run-1", tools, resume) =>
       adapter.start({
         account: RIG_ACCOUNT,
         cwd,
@@ -542,6 +587,7 @@ export async function createRig(
         runId,
         executable: "/usr/bin/claude",
         ...(tools === undefined ? {} : { tools }),
+        ...(resume === undefined ? {} : { resume }),
       }),
   };
 }

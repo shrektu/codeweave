@@ -1057,6 +1057,8 @@ function scriptedHandle(
 ): AgentHandle {
   return {
     accountId: ACCOUNT.id,
+    nativeSessionId: null,
+    resumed: false,
     runId: "run-1",
     subscribe: (listener) => {
       listeners.add(listener);

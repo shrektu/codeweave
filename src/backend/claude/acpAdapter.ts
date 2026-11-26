@@ -6,9 +6,12 @@ import {
   client,
   methods,
   ndJsonStream,
+  type AgentCapabilities,
   type CancelNotification,
   type InitializeRequest,
   type InitializeResponse,
+  type LoadSessionRequest,
+  type LoadSessionResponse,
   type NewSessionRequest,
   type NewSessionResponse,
   type PermissionOption as AcpPermissionOption,
@@ -16,6 +19,9 @@ import {
   type PromptResponse,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
+  type ResumeSessionRequest,
+  type ResumeSessionResponse,
+  type SessionConfigOption,
   type SessionUpdate,
   type SetSessionConfigOptionRequest,
   type SetSessionConfigOptionResponse,
@@ -69,6 +75,10 @@ export interface ClaudeAcpDeps {
 interface AcpPeer {
   initialize(params: InitializeRequest): Promise<InitializeResponse>;
   newSession(params: NewSessionRequest): Promise<NewSessionResponse>;
+  resumeSession(params: ResumeSessionRequest): Promise<ResumeSessionResponse>;
+  loadSession(
+    params: LoadSessionRequest,
+  ): Promise<LoadSessionResponse | undefined>;
   setSessionMode(params: SetSessionModeRequest): Promise<unknown>;
   setSessionConfigOption(
     params: SetSessionConfigOptionRequest,
@@ -143,6 +153,9 @@ function connect(stream: Stream, handlers: ClientHandlers): AcpPeer {
   return {
     initialize: (params) => agent.request(methods.agent.initialize, params),
     newSession: (params) => agent.request(methods.agent.session.new, params),
+    resumeSession: (params) =>
+      agent.request(methods.agent.session.resume, params),
+    loadSession: (params) => agent.request(methods.agent.session.load, params),
     setSessionMode: (params) =>
       agent.request(methods.agent.session.setMode, params),
     setSessionConfigOption: (params) =>
@@ -158,9 +171,17 @@ function toPermissionOption(
   return { optionId: option.optionId, name: option.name, kind: option.kind };
 }
 
+interface OpenedSession {
+  readonly sessionId: string;
+  readonly resumed: boolean;
+  readonly configOptions: readonly SessionConfigOption[] | null;
+}
+
 class ClaudeAcpSession implements AgentHandle {
   readonly accountId: string;
   readonly runId: string;
+  nativeSessionId: string | null = null;
+  resumed = false;
   private readonly agentProcess: AgentProcess;
   private readonly listeners = new Set<Listener>();
   private readonly pending = new Map<string, PendingPermission>();
@@ -175,6 +196,7 @@ class ClaudeAcpSession implements AgentHandle {
   private exited = false;
   private exitEmitted = false;
   private turn: Promise<void> | null = null;
+  private replaying = false;
 
   constructor(spec: AgentStartSpec, agentProcess: AgentProcess) {
     this.accountId = spec.account.id;
@@ -282,24 +304,117 @@ class ClaudeAcpSession implements AgentHandle {
   }
 
   private emitUpdate(update: SessionUpdate): void {
+    if (this.replaying) {
+      return;
+    }
     for (const event of this.mapUpdate.map(update)) {
       this.emit(event);
     }
   }
 
   private async negotiate(spec: AgentStartSpec): Promise<void> {
-    await this.peer.initialize({
+    const initialized = await this.peer.initialize({
       protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: {},
     });
-    const session = await this.peer.newSession(
-      buildNewSessionRequest(spec.cwd, spec.tools),
+    const opened = await this.openSession(
+      spec,
+      initialized.agentCapabilities ?? null,
     );
-    this.sessionId = session.sessionId;
-    this.selectedModel = modelValueOf(session.configOptions);
-    this.announcedModel = modelOf(session.configOptions);
+    this.sessionId = opened.sessionId;
+    this.nativeSessionId = opened.sessionId;
+    this.resumed = opened.resumed;
+    this.selectedModel = modelValueOf(opened.configOptions);
+    this.announcedModel = modelOf(opened.configOptions);
     if (spec.profile === PermissionProfile.bypass) {
       await this.setProfile(spec.profile);
+    }
+  }
+
+  private async openSession(
+    spec: AgentStartSpec,
+    capabilities: AgentCapabilities | null,
+  ): Promise<OpenedSession> {
+    const request = buildNewSessionRequest(spec.cwd, spec.tools);
+    const requested = spec.resume?.nativeSessionId;
+    if (requested !== undefined) {
+      const resumed = await this.resumeRequested(
+        requested,
+        spec,
+        request,
+        capabilities,
+      );
+      if (resumed !== null) {
+        return resumed;
+      }
+    }
+    const fresh = await this.peer.newSession(request);
+    return {
+      sessionId: fresh.sessionId,
+      resumed: false,
+      configOptions: fresh.configOptions ?? null,
+    };
+  }
+
+  private resumeRequested(
+    sessionId: string,
+    spec: AgentStartSpec,
+    request: NewSessionRequest,
+    capabilities: AgentCapabilities | null,
+  ): Promise<OpenedSession | null> {
+    if (capabilities?.sessionCapabilities?.resume != null) {
+      return this.tryResumeSession(sessionId, spec, request);
+    }
+    if (capabilities?.loadSession === true) {
+      return this.tryLoadSession(sessionId, spec, request);
+    }
+    return Promise.resolve(null);
+  }
+
+  private async tryResumeSession(
+    sessionId: string,
+    spec: AgentStartSpec,
+    request: NewSessionRequest,
+  ): Promise<OpenedSession | null> {
+    try {
+      const resumed = await this.peer.resumeSession({
+        sessionId,
+        cwd: spec.cwd,
+        mcpServers: request.mcpServers,
+      });
+      return {
+        sessionId,
+        resumed: true,
+        configOptions: resumed.configOptions ?? null,
+      };
+    } catch (error) {
+      console.warn(`session/resume failed: ${this.runId}`, error);
+      return null;
+    }
+  }
+
+  private async tryLoadSession(
+    sessionId: string,
+    spec: AgentStartSpec,
+    request: NewSessionRequest,
+  ): Promise<OpenedSession | null> {
+    this.replaying = true;
+    try {
+      const loaded = await this.peer.loadSession({
+        sessionId,
+        cwd: spec.cwd,
+        mcpServers: request.mcpServers,
+      });
+      return {
+        sessionId,
+        resumed: true,
+        configOptions: loaded?.configOptions ?? null,
+      };
+    } catch (error) {
+      console.warn(`session/load failed: ${this.runId}`, error);
+      return null;
+    } finally {
+      this.replaying = false;
     }
   }
 

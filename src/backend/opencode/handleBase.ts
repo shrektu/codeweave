@@ -56,6 +56,24 @@ export function isPermissionResponse(
   return PERMISSION_RESPONSES.includes(value);
 }
 
+export async function existingSessionId(
+  nativeSessionId: string | undefined,
+  watch: ProcessWatch,
+  exists: (sessionId: string) => Promise<boolean>,
+  runId: string,
+): Promise<string | null> {
+  if (nativeSessionId === undefined) {
+    return null;
+  }
+  try {
+    const present = await watch.untilExit(exists(nativeSessionId));
+    return present ? nativeSessionId : null;
+  } catch (error) {
+    console.warn(`opencode session resume check failed: ${runId}`, error);
+    return null;
+  }
+}
+
 export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -256,6 +274,8 @@ export abstract class OpencodeHandleBase<
 > implements AgentHandle {
   readonly accountId: string;
   readonly runId: string;
+  nativeSessionId: string | null = null;
+  resumed = false;
   protected readonly streamAbort = new AbortController();
   protected readonly wakeHooks: (() => void)[] = [];
   protected readonly hub: ListenerHub;

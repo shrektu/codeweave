@@ -20,6 +20,7 @@ export function fakeSessions(
     onViewChanged: () => () => undefined,
     isLive: () => false,
     isSettled: () => false,
+    nativeSessions: () => [],
     setAccounts: () => undefined,
     shutdown: () => Promise.resolve(),
     ...overrides,

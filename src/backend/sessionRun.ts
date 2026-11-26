@@ -52,7 +52,12 @@ import {
   type SwitchLogEntry,
 } from "../domain/types";
 import { IpcError, IpcErrorCode } from "../shared/protocol";
-import type { FlowRef, LimitView, SessionView } from "../shared/views";
+import type {
+  FlowRef,
+  LimitView,
+  NativeSessionRef,
+  SessionView,
+} from "../shared/views";
 
 import type { AccountReservations } from "./accountReservations";
 import {
@@ -91,6 +96,7 @@ interface RunSpec extends TurnRoutingSpec {
   readonly flowRef: FlowRef | null;
   readonly tools: AgentToolAccess | null;
   readonly preamble: string | null;
+  readonly resume?: readonly NativeSessionRef[];
 }
 
 const INACTIVE_PHASES: readonly RotationPhase["phase"][] = [
@@ -165,6 +171,7 @@ export class SessionRun {
   private currentPrompt: CurrentPrompt = NO_PROMPT;
   private readonly limits = new Map<string, LimitView>();
   private readonly handles = new Map<string, AgentHandle>();
+  private readonly nativeByAccount = new Map<string, string>();
   private readonly retired = new WeakSet<AgentHandle>();
   private readonly briefed = new WeakSet<AgentHandle>();
   private readonly deciding = new Set<string>();
@@ -195,6 +202,9 @@ export class SessionRun {
     this.createdAt = resume?.createdAt ?? deps.now();
     this.state = resume?.state ?? INITIAL_SESSION_STATE;
     this.resumeContext = resume?.contextPackage ?? null;
+    (resume?.nativeSessions ?? []).forEach((entry) => {
+      this.nativeByAccount.set(entry.accountId, entry.nativeSessionId);
+    });
     this.leaseMode = leaseMode;
     this.reserved = reserved;
     this.loginFailures = loginFailures;
@@ -294,6 +304,19 @@ export class SessionRun {
     return this.secretMasker().mask(text);
   }
 
+  nativeSessions(): readonly NativeSessionRef[] {
+    const ids = new Map(this.nativeByAccount);
+    this.handles.forEach((handle) => {
+      if (handle.nativeSessionId !== null) {
+        ids.set(handle.accountId, handle.nativeSessionId);
+      }
+    });
+    return [...ids].map(([accountId, nativeSessionId]) => ({
+      accountId,
+      nativeSessionId,
+    }));
+  }
+
   private maskedText(error: unknown): string {
     return this.maskText(errorText(error));
   }
@@ -323,8 +346,7 @@ export class SessionRun {
       this.maskText(text),
     );
     this.currentPrompt = begun.prompt;
-    const prefix = this.resumeContext;
-    this.resumeContext = null;
+    const prefix = this.current?.resumed === true ? null : this.resumeContext;
     void this.userTurn(phase.accountId, text, prefix);
   }
 
@@ -425,6 +447,7 @@ export class SessionRun {
   private async startAdapter(account: Account): Promise<AgentStartResult> {
     const settings = await this.deps.store.readSettings();
     const runId = this.deps.newRunId();
+    const nativeSessionId = this.nativeByAccount.get(account.id);
     this.deps.leaseModes.set(runId, this.leaseMode);
     try {
       return await this.deps.adapter.start({
@@ -437,6 +460,9 @@ export class SessionRun {
           configuredExecutable(settings, account.provider),
         ),
         ...(this.spec.tools === null ? {} : { tools: this.spec.tools }),
+        ...(nativeSessionId === undefined
+          ? {}
+          : { resume: { nativeSessionId } }),
       });
     } finally {
       this.deps.leaseModes.clear(runId);
@@ -445,6 +471,9 @@ export class SessionRun {
 
   private register(handle: AgentHandle): void {
     this.handles.set(handle.accountId, handle);
+    if (handle.nativeSessionId !== null) {
+      this.nativeByAccount.set(handle.accountId, handle.nativeSessionId);
+    }
     this.state = resetServedState(this.state);
     this.current = handle;
     handle.subscribe((event) => {
@@ -466,6 +495,9 @@ export class SessionRun {
     const handle = this.handles.get(accountId);
     if (handle === undefined) {
       return { ok: true };
+    }
+    if (handle.nativeSessionId !== null) {
+      this.nativeByAccount.set(accountId, handle.nativeSessionId);
     }
     const result = await this.haltHandle(handle);
     if (result.ok) {
@@ -551,6 +583,7 @@ export class SessionRun {
     const { model } = routed;
     try {
       await handle.prompt(this.briefedText(handle, text, prefix), { model });
+      this.resumeContext = null;
     } catch (error) {
       console.error(`prompt failed on ${accountId}: ${this.maskedText(error)}`);
       this.onEvent(handle, {

@@ -18,6 +18,7 @@ import { SessionScope } from "../events";
 import {
   OpencodeHandleBase,
   agentFor,
+  existingSessionId,
   messageOf,
   rateLimitEvents,
   turnEnd,
@@ -85,9 +86,17 @@ export class OpencodeV2Handle extends OpencodeHandleBase<
     await watch.untilExit(client.warmUp());
     await removeKeyFile(files);
     this.lastAgent = agentFor(this.profile);
-    this.sessionId = await watch.untilExit(
-      client.createSession(this.lastAgent),
+    const resumedId = await existingSessionId(
+      spec.resume?.nativeSessionId,
+      watch,
+      (sessionId) => client.sessionExists(sessionId),
+      this.runId,
     );
+    this.sessionId =
+      resumedId ??
+      (await watch.untilExit(client.createSession(this.lastAgent)));
+    this.nativeSessionId = this.sessionId;
+    this.resumed = resumedId !== null;
     const contextLimits = new Map<string, number>();
     void client
       .models()

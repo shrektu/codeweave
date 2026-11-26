@@ -228,6 +228,7 @@ export function makeStoredSession(
     toolCalls: [],
     turns: [],
     lastTurn: null,
+    nativeSessions: [],
     ...overrides,
   };
 }

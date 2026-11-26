@@ -205,6 +205,8 @@ function fakeHandle(
   const stopped = new AbortController();
   const handle: FakeHandle = {
     accountId: ACCOUNT.id,
+    nativeSessionId: null,
+    resumed: false,
     runId: RUN_ID,
     prompts: [],
     cancels: 0,

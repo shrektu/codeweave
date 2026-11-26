@@ -21,7 +21,11 @@ import type {
 } from "../shared/views";
 
 import { SESSION_TITLE_MAX_CHARS } from "../domain/constants";
-import { buildResumeSeed, createSessionHistory } from "./sessionHistory";
+import {
+  buildResumeSeed,
+  createSessionHistory,
+  type SessionHistory,
+} from "./sessionHistory";
 
 interface FsHold {
   readonly match: string;
@@ -117,9 +121,9 @@ it("history_record_coalesces_rapid_views", async () => {
     },
   });
 
-  history.record(view({ messages: [message("first")] }));
-  history.record(view({ messages: [message("second")] }));
-  history.record(view({ messages: [message("third")] }));
+  recordView(history, view({ messages: [message("first")] }));
+  recordView(history, view({ messages: [message("second")] }));
+  recordView(history, view({ messages: [message("third")] }));
   await history.flush();
 
   const stored = await storedIn(dir, SESSION_ID);
@@ -137,7 +141,7 @@ it("history_flushes_pending_writes", async () => {
   });
   const huge = "x".repeat(2_000_000);
 
-  history.record(view({ messages: [message(huge)] }));
+  recordView(history, view({ messages: [message(huge)] }));
   await history.flush();
 
   const stored = await storedIn(dir, SESSION_ID);
@@ -155,7 +159,7 @@ it("history_list_skips_corrupt_file", async () => {
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, `${CORRUPT_ID}.meta.json`), "{not json");
 
-  history.record(view());
+  recordView(history, view());
   await history.flush();
 
   const entries = await history.list();
@@ -188,7 +192,7 @@ it("history_skips_session_without_prompts", async () => {
     broadcast: () => undefined,
   });
 
-  history.record(view({ prompts: [] }));
+  recordView(history, view({ prompts: [] }));
   await history.flush();
 
   expect(await readdir(dir)).toEqual([]);
@@ -202,14 +206,16 @@ it("title_truncated_to_first_line", async () => {
     broadcast: () => undefined,
   });
 
-  history.record(
+  recordView(
+    history,
     view({ prompts: [{ seq: 0, text: "first line\nsecond line" }] }),
   );
   await history.flush();
   const entries = await history.list();
   expect(entries[0]?.title).toBe("first line");
 
-  history.record(
+  recordView(
+    history,
     view({ prompts: [{ seq: 0, text: "y".repeat(TITLE_LONG_CHARS) }] }),
   );
   await history.flush();
@@ -225,10 +231,10 @@ it("history_keeps_the_archived_flag_on_later_writes", async () => {
     broadcast: () => undefined,
   });
 
-  history.record(view());
+  recordView(history, view());
   await history.flush();
   await history.setArchived(SESSION_ID, true);
-  history.record(view({ messages: [message("after archive")] }));
+  recordView(history, view({ messages: [message("after archive")] }));
   await history.flush();
 
   const entries = await history.list();
@@ -244,7 +250,8 @@ it("build_resume_seed_continues_after_the_stored_max_seq", async () => {
     now: () => NOW,
     broadcast: () => undefined,
   });
-  history.record(
+  recordView(
+    history,
     view({
       messages: [message("reply")],
       turns: [
@@ -303,9 +310,9 @@ it("history_write_failure_does_not_hang", async () => {
   };
   fsHolds.hold = hold;
   try {
-    history.record(view({ messages: [message("first")] }));
+    recordView(history, view({ messages: [message("first")] }));
     await hold.entered.promise;
-    history.record(view({ messages: [message("second")] }));
+    recordView(history, view({ messages: [message("second")] }));
   } finally {
     fsHolds.hold = undefined;
     hold.release.resolve(undefined);
@@ -337,7 +344,7 @@ it("archive_waits_only_for_its_own_session", async () => {
     now: () => NOW,
     broadcast: () => undefined,
   });
-  history.record(view());
+  recordView(history, view());
   await history.flush();
 
   const hold: FsHold = {
@@ -347,7 +354,7 @@ it("archive_waits_only_for_its_own_session", async () => {
   };
   fsHolds.hold = hold;
   try {
-    history.record(view({ id: OTHER_ID }));
+    recordView(history, view({ id: OTHER_ID }));
     await hold.entered.promise;
 
     await withTimeout(history.setArchived(SESSION_ID, true));
@@ -365,12 +372,13 @@ it("archive_flag_survives_concurrent_record", async () => {
     now: () => NOW,
     broadcast: () => undefined,
   });
-  history.record(view());
+  recordView(history, view());
   await history.flush();
 
   const archiving = history.setArchived(SESSION_ID, true);
   Array.from({ length: 8 }, (_, index) => {
-    history.record(
+    recordView(
+      history,
       view({ messages: [message(`concurrent-${String(index)}`)] }),
     );
   });
@@ -379,4 +387,50 @@ it("archive_flag_survives_concurrent_record", async () => {
 
   expect((await metaIn(dir, SESSION_ID)).archived).toBe(true);
   expect((await storedIn(dir, SESSION_ID)).archived).toBe(true);
+});
+
+function recordView(history: SessionHistory, content: SessionView): void {
+  history.record(content, []);
+}
+
+it("stored_file_without_native_sessions_still_loads", async () => {
+  const dir = await tempDir();
+  const history = createSessionHistory({
+    dir,
+    now: () => NOW,
+    broadcast: () => undefined,
+  });
+  recordView(history, view());
+  await history.flush();
+  const file = join(dir, `${SESSION_ID}.json`);
+  const raw = JSON.parse(await readFile(file, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  delete raw.nativeSessions;
+  await writeFile(file, JSON.stringify(raw));
+
+  const loaded = await history.get(SESSION_ID);
+
+  expect(loaded?.nativeSessions).toEqual([]);
+});
+
+it("native_ids_merged_on_record", async () => {
+  const dir = await tempDir();
+  const history = createSessionHistory({
+    dir,
+    now: () => NOW,
+    broadcast: () => undefined,
+  });
+
+  history.record(view(), [{ accountId: "acc-a", nativeSessionId: "a1" }]);
+  await history.flush();
+  history.record(view(), [{ accountId: "acc-b", nativeSessionId: "b1" }]);
+  await history.flush();
+
+  const stored = await storedIn(dir, SESSION_ID);
+  expect(stored.nativeSessions).toEqual([
+    { accountId: "acc-a", nativeSessionId: "a1" },
+    { accountId: "acc-b", nativeSessionId: "b1" },
+  ]);
 });

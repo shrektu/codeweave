@@ -466,3 +466,27 @@ describe("agy adapter fast result waits for the init workspace check", () => {
     });
   });
 });
+
+describe("agy adapter native resume", () => {
+  it("agy_resume_uses_context_package_only", async () => {
+    const rig = await createAgyRig();
+
+    const result = await rig.start(undefined, "run-1", undefined, {
+      nativeSessionId: "agy-native-1",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.handle.resumed).toBe(false);
+    expect(result.handle.nativeSessionId).toBeNull();
+    expect(rig.container.agySpawns()[0]?.conversation).toBeNull();
+
+    rig.container.scriptTurn(replyTurn("conv-live", "ok"));
+    await result.handle.prompt("go", { model: null });
+
+    expect(result.handle.nativeSessionId).toBeNull();
+    await result.handle.stop(0);
+  });
+});

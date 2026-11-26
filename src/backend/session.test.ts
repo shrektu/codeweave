@@ -105,6 +105,8 @@ function fakeHandle(
   const listeners = new Set<(event: AgentEvent) => void>();
   return {
     accountId: spec.account.id,
+    nativeSessionId: null,
+    resumed: false,
     runId: spec.runId,
     subscribe: (listener) => {
       options.onSubscribe?.(spec.account.id);

@@ -53,6 +53,7 @@ const PERMISSIONS_ROUTE = /^\/session\/([^/]+)\/permissions\/([^/]+)$/;
 const MESSAGES_ROUTE = /^\/session\/([^/]+)\/message$/;
 const MESSAGES_ROUTE_RESULT: Route = { kind: "messages" };
 const SESSION_ROUTE = /^\/session\/([^/]+)\/(prompt_async|abort)$/;
+const SESSION_BY_ID_ROUTE = /^\/session\/([^/]+)$/;
 
 export type ToolStepStatus = "pending" | "running" | "completed" | "error";
 
@@ -275,6 +276,7 @@ type Route =
         | "unknown";
     }
   | { readonly kind: "prompt" | "abort" }
+  | { readonly kind: "session"; readonly sessionId: string }
   | { readonly kind: "permission"; readonly match: RegExpExecArray };
 
 const UNKNOWN_ROUTE: Route = { kind: "unknown" };
@@ -301,15 +303,24 @@ function postRouteOf(path: string): Route {
 
 function routeOf(method: string, path: string): Route {
   if (method === "GET") {
-    return MESSAGES_ROUTE.test(path)
-      ? MESSAGES_ROUTE_RESULT
-      : (GET_ROUTES.get(path) ?? UNKNOWN_ROUTE);
+    const mapped = GET_ROUTES.get(path);
+    if (mapped !== undefined) {
+      return mapped;
+    }
+    if (MESSAGES_ROUTE.test(path)) {
+      return MESSAGES_ROUTE_RESULT;
+    }
+    const session = SESSION_BY_ID_ROUTE.exec(path);
+    return session === null
+      ? UNKNOWN_ROUTE
+      : { kind: "session", sessionId: session[1] ?? "" };
   }
   return method === "POST" ? postRouteOf(path) : UNKNOWN_ROUTE;
 }
 
 export class FakeOpencodeServer {
   providers: unknown = { providers: [], default: {} };
+  knownSessionIds: readonly string[] = [OPENCODE_SESSION_ID];
   assistantModel: AssistantModel | null = null;
   readonly requests: RecordedRequest[] = [];
   readonly replies: PermissionReply[] = [];
@@ -500,6 +511,13 @@ export class FakeOpencodeServer {
       case "create":
         sendJson(response, { id: OPENCODE_SESSION_ID });
         return;
+      case "session":
+        if (this.knownSessionIds.includes(route.sessionId)) {
+          sendJson(response, { id: route.sessionId });
+        } else {
+          response.writeHead(404).end();
+        }
+        return;
       case "prompt":
         if (this.silentPrompts > 0) {
           this.silentPrompts -= 1;
@@ -678,6 +696,7 @@ export interface FakeOpencodeConfig extends BaseContainerConfig {
   delayedRoutes?: ReadonlyMap<Route["kind"], number>;
   providers?: unknown;
   assistantModel?: AssistantModel;
+  knownSessionIds?: readonly string[];
 }
 
 const StartupConfigSchema = z.looseObject({
@@ -722,6 +741,9 @@ export class ScriptedOpencodeContainer extends ScriptedContainerBase<
     }
     if (this.config.assistantModel !== undefined) {
       server.assistantModel = this.config.assistantModel;
+    }
+    if (this.config.knownSessionIds !== undefined) {
+      server.knownSessionIds = this.config.knownSessionIds;
     }
     this.config.stalledRoutes?.forEach((kind) => {
       server.stall(kind);

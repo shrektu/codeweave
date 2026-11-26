@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import type {
   AgentHandle,
+  AgentResumeSpec,
   AgentStartResult,
   AgentStartSpec,
   AgentToolAccess,
@@ -56,6 +57,7 @@ export type RateLimitRead =
 
 export interface FakeCodexConfig {
   loggedIn?: boolean;
+  resumedThreadIds?: readonly string[];
   rateLimitReads?: readonly RateLimitRead[];
   stderrText?: string;
   threadStartError?: { code: number; message: string };
@@ -113,6 +115,7 @@ const THREAD_ID = "thr-1";
 const FIRST_SERVER_REQUEST_ID = 1000;
 const CODEX_HOME = "/home/jane/.codex-main";
 const METHOD_NOT_FOUND = -32601;
+const RPC_CODE_THREAD_NOT_FOUND = -32600;
 
 const IncomingSchema = z.looseObject({
   id: z.union([z.number(), z.string()]).optional(),
@@ -316,7 +319,7 @@ export class FakeCodexAppServer {
     }
     this.received.push({ method: message.method, params: message.params });
     if (message.id !== undefined) {
-      this.onRequest(message.id, message.method);
+      this.onRequest(message.id, message.method, message.params);
     }
   }
 
@@ -338,7 +341,11 @@ export class FakeCodexAppServer {
     pending.resolve();
   }
 
-  private onRequest(id: number | string, method: string): void {
+  private onRequest(
+    id: number | string,
+    method: string,
+    params: unknown,
+  ): void {
     switch (method) {
       case "initialize":
         this.reply(id, {
@@ -354,32 +361,14 @@ export class FakeCodexAppServer {
       case "account/rateLimits/read":
         this.answerRateLimitRead(id);
         return;
+      case "thread/resume":
+        this.answerThreadResume(id, params);
+        return;
       case "thread/start":
-        if (this.config.stderrText !== undefined) {
-          this.contained.stderr.write(this.config.stderrText);
-        }
-        if (this.config.threadStartError !== undefined) {
-          const { code, message } = this.config.threadStartError;
-          this.replyError(id, code, message);
-          return;
-        }
-        this.reply(id, {
-          thread: { id: THREAD_ID, status: { type: "idle" } },
-          ...(this.config.threadModel === undefined
-            ? {}
-            : { model: this.config.threadModel, modelProvider: "openai" }),
-        });
+        this.answerThreadStart(id);
         return;
       case "turn/start":
-        if (this.config.turnStartHang === true) {
-          return;
-        }
-        if (this.config.turnStartError !== undefined) {
-          const { code, message } = this.config.turnStartError;
-          this.replyError(id, code, message);
-          return;
-        }
-        this.startTurn(id);
+        this.answerTurnStart(id);
         return;
       case "turn/interrupt":
         if (this.config.interruptHang === true) {
@@ -391,6 +380,55 @@ export class FakeCodexAppServer {
       default:
         this.replyError(id, METHOD_NOT_FOUND, "Method not found");
     }
+  }
+
+  private answerTurnStart(id: number | string): void {
+    if (this.config.turnStartHang === true) {
+      return;
+    }
+    if (this.config.turnStartError !== undefined) {
+      const { code, message } = this.config.turnStartError;
+      this.replyError(id, code, message);
+      return;
+    }
+    this.startTurn(id);
+  }
+
+  private answerThreadStart(id: number | string): void {
+    if (this.config.stderrText !== undefined) {
+      this.contained.stderr.write(this.config.stderrText);
+    }
+    if (this.config.threadStartError !== undefined) {
+      const { code, message } = this.config.threadStartError;
+      this.replyError(id, code, message);
+      return;
+    }
+    this.reply(id, this.threadResponse(THREAD_ID));
+  }
+
+  private answerThreadResume(id: number | string, params: unknown): void {
+    const threadId =
+      typeof params === "object" &&
+      params !== null &&
+      "threadId" in params &&
+      typeof params.threadId === "string"
+        ? params.threadId
+        : "";
+    const known = this.config.resumedThreadIds ?? [THREAD_ID];
+    if (!known.includes(threadId)) {
+      this.replyError(id, RPC_CODE_THREAD_NOT_FOUND, "thread not found");
+      return;
+    }
+    this.reply(id, this.threadResponse(threadId));
+  }
+
+  private threadResponse(threadId: string): Json {
+    return {
+      thread: { id: threadId, status: { type: "idle" } },
+      ...(this.config.threadModel === undefined
+        ? {}
+        : { model: this.config.threadModel, modelProvider: "openai" }),
+    };
   }
 
   private accountResponse(): Json {
@@ -631,6 +669,7 @@ export interface CodexRig {
     profile?: PermissionProfile,
     runId?: string,
     tools?: AgentToolAccess,
+    resume?: AgentResumeSpec,
   ): Promise<AgentStartResult>;
 }
 
@@ -660,8 +699,8 @@ export async function createCodexRig(
   return {
     container,
     cwd,
-    start: (profile = PermissionProfile.ask, runId = "run-1", tools) =>
-      adapter.start(specFor(cwd, profile, runId, tools)),
+    start: (profile = PermissionProfile.ask, runId = "run-1", tools, resume) =>
+      adapter.start(specFor(cwd, profile, runId, tools, resume)),
   };
 }
 
@@ -670,6 +709,7 @@ export function specFor(
   profile: PermissionProfile,
   runId: string,
   tools?: AgentToolAccess,
+  resume?: AgentResumeSpec,
 ): AgentStartSpec {
   return {
     account: CODEX_RIG_ACCOUNT,
@@ -678,6 +718,7 @@ export function specFor(
     runId,
     executable: CODEX_RIG_EXECUTABLE,
     ...(tools === undefined ? {} : { tools }),
+    ...(resume === undefined ? {} : { resume }),
   };
 }
 

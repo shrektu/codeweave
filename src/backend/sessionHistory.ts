@@ -19,6 +19,7 @@ import {
   SessionHistoryEntrySchema,
   StoredSessionSchema,
   type FileDiffView,
+  type NativeSessionRef,
   type PromptView,
   type SessionHistoryEntry,
   type SessionView,
@@ -57,7 +58,7 @@ export interface SessionHistoryDeps {
 }
 
 export interface SessionHistory {
-  record(view: SessionView): void;
+  record(view: SessionView, nativeSessions: readonly NativeSessionRef[]): void;
   list(): Promise<SessionHistoryEntry[]>;
   get(id: string): Promise<StoredSession | null>;
   setArchived(id: string, archived: boolean): Promise<SessionHistoryEntry>;
@@ -84,6 +85,22 @@ function entryOf(parsed: z.infer<typeof EntryFileSchema>): SessionHistoryEntry {
     updatedAt: parsed.updatedAt,
     archived: parsed.archived,
   };
+}
+
+function mergeNativeSessions(
+  stored: readonly NativeSessionRef[],
+  current: readonly NativeSessionRef[],
+): NativeSessionRef[] {
+  const merged = new Map(
+    stored.map((entry) => [entry.accountId, entry.nativeSessionId]),
+  );
+  current.forEach((entry) => {
+    merged.set(entry.accountId, entry.nativeSessionId);
+  });
+  return [...merged].map(([accountId, nativeSessionId]) => ({
+    accountId,
+    nativeSessionId,
+  }));
 }
 
 function titleOf(prompts: readonly PromptView[]): string {
@@ -145,6 +162,7 @@ export function buildResumeSeed(
     id: stored.id,
     createdAt: stored.createdAt,
     state,
+    nativeSessions: stored.nativeSessions,
     contextPackage: buildContextPackage({
       reason: ContextPackageReason.resume,
       userPrompts: stored.prompts.map((prompt) => prompt.text),
@@ -159,7 +177,13 @@ export function buildResumeSeed(
 class SessionHistoryImpl implements SessionHistory {
   private readonly deps: SessionHistoryDeps;
   private readonly mutex = new KeyedMutex();
-  private readonly pending = new Map<string, SessionView>();
+  private readonly pending = new Map<
+    string,
+    {
+      readonly view: SessionView;
+      readonly nativeSessions: readonly NativeSessionRef[];
+    }
+  >();
   private readonly draining = new Set<string>();
   private readonly active = new Set<Promise<unknown>>();
 
@@ -167,11 +191,11 @@ class SessionHistoryImpl implements SessionHistory {
     this.deps = deps;
   }
 
-  record(view: SessionView): void {
+  record(view: SessionView, nativeSessions: readonly NativeSessionRef[]): void {
     if (view.prompts.length === 0) {
       return;
     }
-    this.pending.set(view.id, view);
+    this.pending.set(view.id, { view, nativeSessions });
     this.scheduleDrain(view.id);
   }
 
@@ -315,19 +339,22 @@ class SessionHistoryImpl implements SessionHistory {
   }
 
   private async drain(id: string): Promise<void> {
-    let view = this.pending.get(id);
-    while (view !== undefined) {
+    let entry = this.pending.get(id);
+    while (entry !== undefined) {
       this.pending.delete(id);
       try {
-        await this.writeView(view);
+        await this.writeView(entry.view, entry.nativeSessions);
       } catch (error) {
         console.error(`failed to write the session history of ${id}`, error);
       }
-      view = this.pending.get(id);
+      entry = this.pending.get(id);
     }
   }
 
-  private async writeView(view: SessionView): Promise<void> {
+  private async writeView(
+    view: SessionView,
+    nativeSessions: readonly NativeSessionRef[],
+  ): Promise<void> {
     const existing = await readValidated(
       this.metaPath(view.id),
       EntryFileSchema,
@@ -340,6 +367,20 @@ class SessionHistoryImpl implements SessionHistory {
         );
         return null;
       });
+    const previous = await readValidated(
+      this.transcriptPath(view.id),
+      StoredFileSchema,
+    ).catch((error: unknown) => {
+      console.error(
+        `failed to read the stored transcript of ${view.id}`,
+        error,
+      );
+      return null;
+    });
+    const native = mergeNativeSessions(
+      previous?.nativeSessions ?? [],
+      nativeSessions,
+    );
     const now = this.deps.now();
     const entry: SessionHistoryEntry = {
       id: view.id,
@@ -368,6 +409,7 @@ class SessionHistoryImpl implements SessionHistory {
       toolCalls: view.toolCalls,
       turns: view.turns,
       lastTurn: view.lastTurn,
+      nativeSessions: native,
     };
     await this.writeTranscript(stored);
     await this.writeMeta(entry);

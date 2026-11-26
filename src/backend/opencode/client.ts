@@ -66,6 +66,7 @@ export function promptBody(
 export interface OpencodeClient {
   warmUp(): Promise<void>;
   createSession(): Promise<string>;
+  sessionExists(sessionId: string): Promise<boolean>;
   sessionStatus(): Promise<ReadonlyMap<string, { readonly type: string }>>;
   latestMessageId(sessionId: string): Promise<string | null>;
   promptAsync(request: PromptRequest): Promise<void>;
@@ -189,6 +190,20 @@ export function createOpencodeClient(
         body: {},
       });
       return SessionResponseSchema.parse(await response.json()).id;
+    },
+    async sessionExists(sessionId) {
+      try {
+        await sendAndDiscard({
+          method: "GET",
+          path: sessionPath(sessionId),
+        });
+        return true;
+      } catch (error) {
+        if (error instanceof OpencodeHttpError) {
+          return false;
+        }
+        throw error;
+      }
     },
     async sessionStatus() {
       const response = await send({

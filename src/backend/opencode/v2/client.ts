@@ -34,6 +34,7 @@ export interface OpencodeV2Client {
   warmUp(): Promise<void>;
   models(): Promise<V2Model[]>;
   createSession(agent: OpencodeAgent): Promise<string>;
+  sessionExists(sessionId: string): Promise<boolean>;
   prompt(sessionId: string, text: string): Promise<void>;
   switchAgent(sessionId: string, agent: OpencodeAgent): Promise<void>;
   switchModel(sessionId: string, model: V2ModelRef): Promise<void>;
@@ -156,6 +157,21 @@ export function createOpencodeV2Client(
         body: { location: { directory: options.directory }, agent },
       });
       return SessionCreatedResponseSchema.parse(body).data.id;
+    },
+    async sessionExists(sessionId) {
+      try {
+        await sendAndDiscard(send, {
+          method: "GET",
+          path: sessionPath(sessionId),
+          query: { [QUERY_LOCATION_DIRECTORY]: options.directory },
+        });
+        return true;
+      } catch (error) {
+        if (error instanceof OpencodeHttpError) {
+          return false;
+        }
+        throw error;
+      }
     },
     async isActive(sessionId) {
       const body = await sendForJson(send, {

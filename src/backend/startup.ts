@@ -713,10 +713,10 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     homeDir: deps.homeDir,
     resolveFolder,
     protectedPaths: protectedPathsNow,
-    onMainView: (view) => {
+    onMainView: (view, nativeSessions) => {
       editedFiles.observeMain(view);
       if (view !== null) {
-        history.record(view);
+        history.record(view, nativeSessions);
       }
     },
     onMainClosed: (sessionId) => {

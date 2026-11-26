@@ -15,7 +15,7 @@ import {
   type WorktreeState,
 } from "../domain/types";
 import { IpcError, IpcErrorCode, type ParamsMap } from "../shared/protocol";
-import type { SessionView } from "../shared/views";
+import type { NativeSessionRef, SessionView } from "../shared/views";
 
 import type { AccountReservations } from "./accountReservations";
 import {
@@ -73,6 +73,7 @@ export interface ResumeSeed {
   readonly id: string;
   readonly createdAt: number;
   readonly state: SessionState;
+  readonly nativeSessions: readonly NativeSessionRef[];
   readonly contextPackage: string;
 }
 
@@ -99,6 +100,7 @@ export interface SessionService {
   onViewChanged(listener: (view: SessionView | null) => void): () => void;
   isLive(): boolean;
   isSettled(): boolean;
+  nativeSessions(): readonly NativeSessionRef[];
   setAccounts(accounts: readonly Account[]): void;
   shutdown(): Promise<void>;
 }
@@ -168,6 +170,34 @@ interface RunWiring {
   readonly onRuntimeSettled: () => void;
 }
 
+function nativeResumeOf(
+  resume: ResumeSeed | undefined,
+  accountId: string,
+): { readonly nativeSessionId: string } | undefined {
+  const nativeSessionId = resume?.nativeSessions.find(
+    (entry) => entry.accountId === accountId,
+  )?.nativeSessionId;
+  return nativeSessionId === undefined ? undefined : { nativeSessionId };
+}
+
+function resumableAccount(
+  deps: SessionServiceDeps,
+  wiring: RunWiring,
+  accounts: readonly Account[],
+  resume: ResumeSeed | undefined,
+): Account | null {
+  if (resume === undefined) {
+    return null;
+  }
+  return (
+    accounts.find(
+      (account) =>
+        nativeResumeOf(resume, account.id) !== undefined &&
+        canStartWith(deps, wiring, account),
+    ) ?? null
+  );
+}
+
 function canStartWith(
   deps: SessionServiceDeps,
   wiring: RunWiring,
@@ -199,12 +229,14 @@ async function createRun(
     throw new IpcError(IpcErrorCode.CONFLICT, NO_USABLE_ACCOUNT_MESSAGE);
   }
   const accounts = rotationPool(provider, registered);
-  const initial = accounts.find((account) =>
-    canStartWith(deps, wiring, account),
-  );
+  const resumeAccount = resumableAccount(deps, wiring, accounts, params.resume);
+  const initial =
+    resumeAccount ??
+    accounts.find((account) => canStartWith(deps, wiring, account));
   if (initial === undefined) {
     throw new IpcError(IpcErrorCode.CONFLICT, NO_USABLE_ACCOUNT_MESSAGE);
   }
+  const resumeSpecs = params.resume?.nativeSessions;
   const settings = await deps.store.readSettings();
   const run = new SessionRun({
     deps,
@@ -218,6 +250,9 @@ async function createRun(
       defaultTaskClass: settings.defaultTaskClass,
       tools: params.tools ?? null,
       preamble: params.preamble ?? null,
+      ...(resumeSpecs === undefined || resumeSpecs.length === 0
+        ? {}
+        : { resume: resumeSpecs }),
     },
     provider,
     registered,
@@ -438,6 +473,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     onViewChanged: views.listen,
     isLive: () => pending !== null || (run?.isLive() ?? false),
     isSettled: () => run?.isSettled() ?? false,
+    nativeSessions: () => run?.nativeSessions() ?? [],
     answerPermission: (requestId, optionId) => {
       requireRun().answerPermission(requestId, optionId);
     },

@@ -157,6 +157,8 @@ export interface BackendRigOptions {
     typeof ScriptedAcpContainer
   >[0];
   readonly claudeProbeConfig?: FakeAcpConfig;
+  readonly claudeConfig?: FakeAcpConfig;
+  readonly codexConfig?: FakeCodexConfig;
   readonly claudeProbeText?: string;
   readonly claudeProbeScripts?: readonly (readonly ScriptStep[])[];
   readonly probeStopResultsByHome?: Readonly<
@@ -481,7 +483,9 @@ export async function createBackendRig(
     await store.writeAccounts(options.accounts);
   }
   const container = new ScriptedAcpContainer(options.stopResults);
+  Object.assign(container.config, options.claudeConfig);
   const codexContainer = new ScriptedCodexContainer();
+  Object.assign(codexContainer.config, options.codexConfig);
   const opencodeContainer = new ScriptedOpencodeContainer([]);
   Object.assign(opencodeContainer.config, options.opencodeConfig);
   const opencodeV2Container = new ScriptedOpencodeV2Container([]);

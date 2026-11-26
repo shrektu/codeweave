@@ -10,6 +10,10 @@ export interface AgentToolAccess {
   readonly toolNames: readonly string[];
 }
 
+export interface AgentResumeSpec {
+  readonly nativeSessionId: string;
+}
+
 export interface AgentStartSpec {
   readonly account: Account;
   readonly cwd: string;
@@ -17,6 +21,7 @@ export interface AgentStartSpec {
   readonly runId: string;
   readonly executable: string;
   readonly tools?: AgentToolAccess;
+  readonly resume?: AgentResumeSpec;
 }
 
 export const AgentStartFailure = {
@@ -34,6 +39,8 @@ export interface TurnOptions {
 export interface AgentHandle {
   readonly accountId: string;
   readonly runId: string;
+  readonly nativeSessionId: string | null;
+  readonly resumed: boolean;
   subscribe(listener: (event: AgentEvent) => void): () => void;
   prompt(text: string, options: TurnOptions): Promise<void>;
   answerPermission(requestId: string, optionId: string): void;

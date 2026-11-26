@@ -259,6 +259,12 @@ export const SessionHistoryEntrySchema = z.strictObject({
 });
 export type SessionHistoryEntry = z.infer<typeof SessionHistoryEntrySchema>;
 
+export const NativeSessionRefSchema = z.strictObject({
+  accountId: z.string(),
+  nativeSessionId: z.string(),
+});
+export type NativeSessionRef = z.infer<typeof NativeSessionRefSchema>;
+
 export const StoredSessionSchema = z.strictObject({
   version: z.int(),
   id: z.string(),
@@ -276,6 +282,7 @@ export const StoredSessionSchema = z.strictObject({
   toolCalls: z.array(ToolCallViewSchema),
   turns: z.array(TurnRouteViewSchema),
   lastTurn: LastTurnViewSchema.nullable(),
+  nativeSessions: z.array(NativeSessionRefSchema).default([]),
 });
 export type StoredSession = z.infer<typeof StoredSessionSchema>;
 
