@@ -31,6 +31,7 @@ import {
   type AgyIsolation,
   type ChatProxy,
 } from "./agyRotationFixture";
+import { firstReadyWindow } from "./appWindow";
 import { OPENCODE_KEY_B } from "./opencodeRotationFixture";
 import {
   ROTATION_COMMAND,
@@ -125,10 +126,7 @@ test("agy_ui_rotates_gemini_to_opencode_after_quota", async () => {
   try {
     const setup = await prepare(cleanup);
     const { repo, gemini, proxy } = setup;
-    const page = await setup.app.firstWindow();
-    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-      "Connected",
-    );
+    const page = await firstReadyWindow(setup.app);
 
     await addAccounts(page, setup);
     await chooseProfile(page, UNATTENDED_PROFILE);

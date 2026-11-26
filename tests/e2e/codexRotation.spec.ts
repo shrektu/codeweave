@@ -10,6 +10,7 @@ import {
 import { PermissionProfile } from "../../src/domain/types";
 import { startResponsesMock } from "../fakes/responsesMock";
 
+import { firstReadyWindow } from "./appWindow";
 import {
   CODEX_ROTATION_SCENARIOS,
   assertWorkspaceIsolated,
@@ -101,10 +102,7 @@ test("codex_rotation_ui_shows_switch_and_exhausted_account", async () => {
       dialog.showOpenDialog = () =>
         Promise.resolve({ canceled: false, filePaths: [repo] });
     }, workspace.repo);
-    const page = await app.firstWindow();
-    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-      "Connected",
-    );
+    const page = await firstReadyWindow(app);
 
     await page.getByRole("button", { name: "Choose folder…" }).click();
     await page.getByPlaceholder("Describe the task").fill(ROTATION_PROMPT);

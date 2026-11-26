@@ -298,9 +298,6 @@ async function runLoop(
   const mock = await startMock(workspace, reviewerGate);
   cleanup.add(() => mock.close());
   const page = await launchFlowApp(workspace, mock.url, cleanup);
-  await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-    "Connected",
-  );
   await startSession(page);
   const timeline = page.getByRole("region", { name: "Orchestrator timeline" });
   await inspectNodeSession(page, timeline);
@@ -395,9 +392,6 @@ async function runNoFolderLoop(
     { ...workspace, repo: workspace.workspace },
     mock.url,
     cleanup,
-  );
-  await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-    "Connected",
   );
   await page.getByRole("checkbox", { name: "Orchestrate" }).check();
   await page.getByRole("textbox", { name: "Task" }).fill(NO_FOLDER_TASK);

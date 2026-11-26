@@ -5,6 +5,7 @@ import { _electron as electron, expect, test } from "@playwright/test";
 import { PermissionProfile } from "../../src/domain/types";
 import { startAnthropicMock } from "../fakes/anthropicMock";
 
+import { firstReadyWindow } from "./appWindow";
 import {
   ROTATION_COMMAND,
   ROTATION_PROMPT,
@@ -49,10 +50,7 @@ test("rotation_ui_shows_switch_after_card_click", async () => {
       dialog.showOpenDialog = () =>
         Promise.resolve({ canceled: false, filePaths: [repo] });
     }, workspace.repo);
-    const page = await app.firstWindow();
-    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-      "Connected",
-    );
+    const page = await firstReadyWindow(app);
 
     await page.getByRole("button", { name: "Choose folder…" }).click();
     await page.getByPlaceholder("Describe the task").fill(ROTATION_PROMPT);

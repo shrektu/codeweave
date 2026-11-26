@@ -10,6 +10,7 @@ import { createJsonStore } from "../../src/backend/storage";
 import { PermissionProfile, ProviderId } from "../../src/domain/types";
 import { userTexts, type MessagesBody } from "../fakes/anthropicMock";
 
+import { firstReadyWindow } from "./appWindow";
 import {
   KEY_A,
   account,
@@ -112,7 +113,7 @@ export async function launchFlowApp(
     },
   });
   cleanup.add(() => app.close());
-  const page = await app.firstWindow();
+  const page = await firstReadyWindow(app);
   await app.evaluate(
     ({ dialog, BrowserWindow }, { repo, width, height }) => {
       dialog.showOpenDialog = () =>

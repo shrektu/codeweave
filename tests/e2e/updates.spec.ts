@@ -7,6 +7,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { _electron as electron, expect, test } from "@playwright/test";
 import type { ElectronApplication } from "@playwright/test";
 
+import { firstReadyWindow } from "./appWindow";
+
 const ROOT_DIR = join(import.meta.dirname, "..", "..");
 const USER_DATA_DIR_ENV = "CODEWEAVE_USER_DATA_DIR";
 const TEST_FEED_ENV = "CODEWEAVE_TEST_UPDATE_FEED";
@@ -109,7 +111,7 @@ test("update_banner_shows_the_version_announced_by_the_feed", async () => {
   const feed = await startFeed();
   try {
     await withApp({ feed }, async (app) => {
-      const page = await app.firstWindow();
+      const page = await firstReadyWindow(app);
 
       await expect(page.getByText(BANNER_TEXT)).toBeVisible();
       await expect(
@@ -126,7 +128,7 @@ test("update_banner_visible_in_narrow_window", async () => {
   const feed = await startFeed();
   try {
     await withApp({ feed }, async (app) => {
-      const page = await app.firstWindow();
+      const page = await firstReadyWindow(app);
       await page.setViewportSize(NARROW_WINDOW);
       await page.waitForFunction(
         (width) => window.innerWidth <= width,
@@ -150,10 +152,7 @@ test("update_checks_off_make_no_request_and_show_no_banner", async () => {
   const feed = await startFeed();
   try {
     await withApp({ feed, settings: SETTINGS_WITH_CHECK_OFF }, async (app) => {
-      const page = await app.firstWindow();
-      await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-        "Connected",
-      );
+      const page = await firstReadyWindow(app);
 
       await delay(QUIET_PERIOD_MS);
 

@@ -68,9 +68,6 @@ test("flow_run_shows_live_states_hands_off_and_finishes_on_approval", async () =
     });
     cleanup.add(() => mock.close());
     const page = await launchFlowApp(workspace, mock.url, cleanup);
-    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-      "Connected",
-    );
 
     await page.getByRole("tab", { name: "Flow" }).click();
     await page.getByRole("button", { name: "Choose folder…" }).click();

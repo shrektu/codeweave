@@ -13,6 +13,7 @@ import {
 } from "../fakes/anthropicMock";
 import { TurnKind, type MockTurn } from "../fakes/mockTurn";
 
+import { firstReadyWindow } from "./appWindow";
 import { ROOT_DIR } from "./flowRunFixture";
 import { anthropicTranscript } from "./orchestratorScript";
 import {
@@ -91,10 +92,7 @@ test("no_folder_start_runs_in_the_default_workspace_without_permission_cards", a
       },
     });
     cleanup.add(() => app.close());
-    const page = await app.firstWindow();
-    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-      "Connected",
-    );
+    const page = await firstReadyWindow(app);
 
     await page.getByRole("textbox", { name: "Task" }).fill(TASK);
     await page.getByRole("button", { name: "Start", exact: true }).click();

@@ -35,9 +35,6 @@ test("library_flow_is_listed_and_runs_without_project_definitions", async () => 
     });
     cleanup.add(() => mock.close());
     const page = await launchFlowApp(workspace, mock.url, cleanup);
-    await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-      "Connected",
-    );
 
     await page.getByRole("tab", { name: "Agents" }).click();
     const agents = page.getByRole("list", { name: "Agents" });

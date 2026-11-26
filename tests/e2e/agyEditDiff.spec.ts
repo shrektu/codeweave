@@ -16,6 +16,7 @@ import {
   stubFolderDialog,
   writeAgySettings,
 } from "./agyRotationFixture";
+import { firstReadyWindow } from "./appWindow";
 import {
   REPO_SEED_FILE,
   WORKSPACE_PREFIX,
@@ -75,10 +76,7 @@ async function prepare(cleanup: CleanupStack): Promise<{
   const app = await launchApp(root, userData, isolation);
   cleanup.add(() => app.close());
   await stubFolderDialog(app, repo);
-  const page = await app.firstWindow();
-  await expect(page.getByRole("status", { name: "Backend" })).toHaveText(
-    "Connected",
-  );
+  const page = await firstReadyWindow(app);
   await page.getByRole("button", { name: "Accounts", exact: true }).click();
   await addGeminiAccount(page, isolation.geminiDir);
   await page.getByRole("button", { name: "Close" }).click();
