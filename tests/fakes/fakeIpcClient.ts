@@ -41,6 +41,8 @@ import type {
   ModelCatalog,
   PermissionView,
   PromptView,
+  RestorePlanView,
+  RewindResultView,
   SessionHistoryEntry,
   SessionView,
   SettingsView,
@@ -190,6 +192,18 @@ export function makeMessage(overrides: Partial<MessageView> = {}): MessageView {
 
 export function makePrompt(overrides: Partial<PromptView> = {}): PromptView {
   return { seq: 0, text: "Do the task", ...overrides };
+}
+
+export function makeRestorePlan(
+  overrides: Partial<RestorePlanView> = {},
+): RestorePlanView {
+  return { sessionId: "sess-1", promptSeq: 0, files: [], ...overrides };
+}
+
+export function makeRewindResult(
+  overrides: Partial<RewindResultView> = {},
+): RewindResultView {
+  return { promptText: "", report: null, session: null, ...overrides };
 }
 
 export function makeHistoryEntry(

@@ -5,6 +5,7 @@ import { Icon } from "./Icon";
 
 export interface DialogProps {
   onClose: () => void;
+  closeDisabled?: boolean;
 }
 
 interface DialogFrameProps extends DialogProps {
@@ -15,6 +16,7 @@ interface DialogFrameProps extends DialogProps {
 export function Dialog({
   title,
   onClose,
+  closeDisabled = false,
   children,
 }: DialogFrameProps): JSX.Element {
   const titleId = useId();
@@ -36,7 +38,9 @@ export function Dialog({
       onCancel={(event) => {
         event.stopPropagation();
         event.preventDefault();
-        onClose();
+        if (!closeDisabled) {
+          onClose();
+        }
       }}
     >
       <header className="dialog-header">
@@ -48,6 +52,7 @@ export function Dialog({
           className="icon-btn"
           aria-label="Close"
           title="Close"
+          disabled={closeDisabled}
           onClick={onClose}
         >
           <Icon icon={X} />
