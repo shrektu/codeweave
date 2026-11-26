@@ -42,6 +42,7 @@ import {
   AGENT_STOP_GRACE_MS,
   AGY_BINARY,
   API_KEYS_FILE,
+  ATTACHMENTS_DIR,
   CLAUDE_BINARY,
   CHECKPOINT_MAX_SESSION_BYTES,
   CHECKPOINTS_DIR,
@@ -51,6 +52,7 @@ import {
   PROBE_TIMEOUT_MS,
   SESSIONS_DIR,
 } from "./constants";
+import { createAttachmentStore } from "./attachmentStore";
 import { createCheckpointRecorder } from "./checkpointRecorder";
 import { createCheckpointStore } from "./checkpointStore";
 import { buildAgentEnv } from "./env";
@@ -696,6 +698,9 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     maxSessionBytes: CHECKPOINT_MAX_SESSION_BYTES,
     protectedPaths: protectedPathsNow,
   });
+  const attachments = createAttachmentStore({
+    dir: join(userData, ATTACHMENTS_DIR),
+  });
   const checkpointRecorder = createCheckpointRecorder({
     store: checkpoints,
     ownerOf: (runId) =>
@@ -727,6 +732,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     secrets: createSecretSource(keyStore),
     homeDir: deps.homeDir,
     resolveFolder,
+    attachments,
     protectedPaths: protectedPathsNow,
     onMainView: (view, nativeSessions) => {
       editedFiles.observeMain(view);
@@ -793,6 +799,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     postUpdaterConfig,
     editedFiles,
     checkpoints,
+    attachments,
   });
   await postStoredUpdaterConfig(store, postUpdaterConfig);
   probes.start();

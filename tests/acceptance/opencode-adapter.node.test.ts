@@ -1,4 +1,4 @@
-import { readdir, stat } from "node:fs/promises";
+import { readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -9,6 +9,7 @@ import {
   type AgentHandle,
 } from "../../src/backend/agentAdapter";
 import { PROCESS_EXITED_MESSAGE } from "../../src/backend/constants";
+import { ImageMimeType } from "../../src/domain/attachments";
 import type { AgentEvent } from "../../src/domain/events";
 import { createRateLimitDetector } from "../../src/domain/rateLimit";
 import { ApiProviderId } from "../../src/domain/apiProviders";
@@ -1468,5 +1469,34 @@ describe("opencode adapter: request timeouts", () => {
     expect(rig.container.contained[0]?.stopCalls).toHaveLength(1);
     expect(await runDirEntries(rig)).toEqual([]);
     await turn;
+  });
+});
+
+describe("opencode adapter: images", () => {
+  it("v1_prompt_carries_a_file_part_data_url", async () => {
+    const rig = await createOpencodeRig();
+    const started = await startOpencodeHandle(rig);
+    const path = join(rig.cwd, "photo.png");
+    const bytes = Buffer.from("png-bytes");
+    await writeFile(path, bytes);
+    opencodeServerOf(rig).enqueue([{ type: "idle" }]);
+
+    await started.handle.prompt("look", {
+      model: null,
+      images: [{ path, mimeType: ImageMimeType.png, name: "photo.png" }],
+    });
+
+    const [request] = opencodeServerOf(rig).requestsTo("POST", PROMPT_PATH);
+    expect(request?.body).toMatchObject({
+      parts: [
+        { type: "text", text: "look" },
+        {
+          type: "file",
+          mime: ImageMimeType.png,
+          filename: "photo.png",
+          url: `data:${ImageMimeType.png};base64,${bytes.toString("base64")}`,
+        },
+      ],
+    });
   });
 });

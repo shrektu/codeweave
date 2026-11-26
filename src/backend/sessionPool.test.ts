@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fakeAttachmentStore } from "../../tests/fakes/fakeAttachmentStore";
 
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -170,6 +171,7 @@ async function compose(options: ComposeOptions = {}): Promise<Composition> {
     resolveFolder: (requested) => Promise.resolve(requested ?? "/home/u"),
     protectedPaths: () => Promise.resolve([]),
     leaseModes: createLeaseModes(),
+    attachments: fakeAttachmentStore(),
   });
   pools.push(pool);
   return { pool, cwd, broadcast, stops };
@@ -418,6 +420,7 @@ it("pool_reports_main_and_run_views_to_observers", async () => {
     resolveFolder: (requested) => Promise.resolve(requested ?? cwd),
     protectedPaths: () => Promise.resolve([]),
     leaseModes: createLeaseModes(),
+    attachments: fakeAttachmentStore(),
     onMainView: (view) => {
       mainViews.push(view);
     },
@@ -541,6 +544,7 @@ it("settle_ended_stops_lingering_agents", async () => {
     resolveFolder: (requested) => Promise.resolve(requested ?? "/home/u"),
     protectedPaths: () => Promise.resolve([]),
     leaseModes: createLeaseModes(),
+    attachments: fakeAttachmentStore(),
   });
   pools.push(pool);
   const service = pool.createMain();

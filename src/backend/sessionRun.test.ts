@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fakeAttachmentStore } from "../../tests/fakes/fakeAttachmentStore";
 
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -102,7 +103,39 @@ function createHandle(
   };
 }
 
-async function openRig(): Promise<Rig> {
+function serviceOn(
+  store: ReturnType<typeof createJsonStore>,
+  adapter: AgentAdapter,
+  inspectWorktree: (dir: string) => Promise<{ isRepo: false; cwd: string }>,
+  attachments: ReturnType<typeof fakeAttachmentStore>,
+): SessionService {
+  return createSessionService({
+    adapter,
+    store,
+    broadcast: () => undefined,
+    publishView: () => undefined,
+    reserved: createAccountReservations(),
+    leaseModes: createLeaseModes(),
+    now: () => 1_700_000_000_000,
+    schedule: () => () => undefined,
+    inspectWorktree,
+    newRunId: () => "run-1",
+    resolveExecutable: () => "/usr/bin/claude",
+    stopGraceMs: 10,
+    containerStatus: { available: true, message: null },
+    externalRuntime: () => null,
+    beforeLaunch: () => Promise.resolve(),
+    isBlocked: () => false,
+    hasKey: () => true,
+    secrets: () => [],
+    homeDir: "/home/u",
+    resolveFolder: (requested) => Promise.resolve(requested ?? "/home/u"),
+    protectedPaths: () => Promise.resolve([]),
+    attachments,
+  });
+}
+
+async function openRig(attachments = fakeAttachmentStore()): Promise<Rig> {
   const userData = await mkdtemp(join(tmpdir(), "codeweave-run-user-"));
   const cwd = await mkdtemp(join(tmpdir(), "codeweave-run-cwd-"));
   tempDirs.push(userData, cwd);
@@ -117,32 +150,15 @@ async function openRig(): Promise<Rig> {
   const adapter: AgentAdapter = {
     start: () => Promise.resolve({ ok: true, handle }),
   };
-  const service = createSessionService({
-    adapter,
+  const service = serviceOn(
     store,
-    broadcast: () => undefined,
-    publishView: () => undefined,
-    reserved: createAccountReservations(),
-    leaseModes: createLeaseModes(),
-    now: () => 1_700_000_000_000,
-    schedule: () => () => undefined,
-    inspectWorktree: async (dir) => {
+    adapter,
+    async (dir) => {
       await worktree.promise;
       return { isRepo: false, cwd: dir };
     },
-    newRunId: () => "run-1",
-    resolveExecutable: () => "/usr/bin/claude",
-    stopGraceMs: 10,
-    containerStatus: { available: true, message: null },
-    externalRuntime: () => null,
-    beforeLaunch: () => Promise.resolve(),
-    isBlocked: () => false,
-    hasKey: () => true,
-    secrets: () => [],
-    homeDir: "/home/u",
-    resolveFolder: (requested) => Promise.resolve(requested ?? "/home/u"),
-    protectedPaths: () => Promise.resolve([]),
-  });
+    attachments,
+  );
   services.push(service);
   return {
     service,
@@ -356,6 +372,7 @@ async function openToolRig(options: ToolRigOptions = {}): Promise<ToolRig> {
     homeDir: "/home/u",
     resolveFolder: (requested) => Promise.resolve(requested ?? "/home/u"),
     protectedPaths: () => Promise.resolve([]),
+    attachments: fakeAttachmentStore(),
   });
   services.push(service);
   return { service, cwd, specs, prompts, attempts, nativeIds };
@@ -498,7 +515,7 @@ function resumeSeed(): ResumeSeed {
     createdAt: RESUME_CREATED_AT,
     state: {
       ...INITIAL_SESSION_STATE,
-      prompts: [{ seq: 0, text: "old goal" }],
+      prompts: [{ seq: 0, text: "old goal", attachments: [] }],
       messages: [{ id: null, text: "old reply", seq: 1 }],
       nextSeq: 2,
     },
@@ -536,8 +553,8 @@ it("resumed_seq_continues_after_stored_max", async () => {
   expect(view?.id).toBe(RESUME_ID);
   expect(view?.createdAt).toBe(RESUME_CREATED_AT);
   expect(view?.prompts).toEqual([
-    { seq: 0, text: "old goal" },
-    { seq: 2, text: "first" },
+    { seq: 0, text: "old goal", attachments: [] },
+    { seq: 2, text: "first", attachments: [] },
   ]);
   expect(view?.messages).toEqual([{ id: null, text: "old reply", seq: 1 }]);
 });
@@ -628,4 +645,75 @@ it("resume_package_survives_failed_first_prompt", async () => {
     `PACKAGE${PREAMBLE_GAP}second`,
   ]);
   expect(rig.prompts[ACCOUNT.id]).toEqual([`PACKAGE${PREAMBLE_GAP}second`]);
+});
+
+const CLAIMED_ATTACHMENT = {
+  id: "a".repeat(64),
+  name: "photo.png",
+  mimeType: "image/png" as const,
+  bytes: 10,
+};
+
+function deferredAttachmentStore(): {
+  readonly store: ReturnType<typeof fakeAttachmentStore>;
+  readonly entered: Promise<undefined>;
+  readonly claim: PromiseWithResolvers<string>;
+} {
+  const entered = Promise.withResolvers<undefined>();
+  const claim = Promise.withResolvers<string>();
+  return {
+    store: fakeAttachmentStore({
+      claim: () => {
+        entered.resolve(undefined);
+        return claim.promise;
+      },
+    }),
+    entered: entered.promise,
+    claim,
+  };
+}
+
+it("concurrent_prompt_during_image_claim_is_rejected_as_busy", async () => {
+  const deferred = deferredAttachmentStore();
+  const rig = await openRig(deferred.store);
+  await rig.service.start({ cwd: rig.cwd, profile: PermissionProfile.ask });
+
+  const first = rig.service.prompt("one", {
+    attachments: [CLAIMED_ATTACHMENT],
+  });
+  await deferred.entered;
+
+  expect(rig.service.view()?.turnInFlight).toBe(true);
+  await expect(rig.service.prompt("two")).rejects.toMatchObject({
+    code: "SESSION_BUSY",
+  });
+
+  deferred.claim.resolve("/tmp/photo.png");
+  await first;
+  await rig.untilPrompted();
+  rig.finishTurn();
+  await settled(() => {
+    expect(rig.service.view()?.turnInFlight).toBe(false);
+  });
+  expect(rig.service.view()?.prompts.map((prompt) => prompt.text)).toEqual([
+    "one",
+  ]);
+});
+
+it("stop_during_image_claim_records_no_prompt", async () => {
+  const deferred = deferredAttachmentStore();
+  const rig = await openRig(deferred.store);
+  await rig.service.start({ cwd: rig.cwd, profile: PermissionProfile.ask });
+
+  const first = rig.service.prompt("one", {
+    attachments: [CLAIMED_ATTACHMENT],
+  });
+  await deferred.entered;
+  expect(rig.service.view()?.turnInFlight).toBe(true);
+  await rig.service.stop();
+
+  deferred.claim.resolve("/tmp/photo.png");
+
+  await expect(first).rejects.toMatchObject({ code: "SESSION_BUSY" });
+  expect(rig.service.view()?.prompts).toEqual([]);
 });

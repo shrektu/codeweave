@@ -100,7 +100,8 @@ function view(overrides: Partial<SessionView> = {}): SessionView {
     contextUsage: null,
     turns: [],
     orchestrate: false,
-    prompts: [{ seq: 0, text: "Do the task" }],
+    imageInput: true,
+    prompts: [{ seq: 0, text: "Do the task", attachments: [] }],
     ...overrides,
   };
 }
@@ -212,7 +213,9 @@ it("title_truncated_to_first_line", async () => {
 
   recordView(
     history,
-    view({ prompts: [{ seq: 0, text: "first line\nsecond line" }] }),
+    view({
+      prompts: [{ seq: 0, text: "first line\nsecond line", attachments: [] }],
+    }),
   );
   await history.flush();
   const entries = await history.list();
@@ -220,7 +223,11 @@ it("title_truncated_to_first_line", async () => {
 
   recordView(
     history,
-    view({ prompts: [{ seq: 0, text: "y".repeat(TITLE_LONG_CHARS) }] }),
+    view({
+      prompts: [
+        { seq: 0, text: "y".repeat(TITLE_LONG_CHARS), attachments: [] },
+      ],
+    }),
   );
   await history.flush();
   const [long] = await history.list();
@@ -280,7 +287,9 @@ it("build_resume_seed_continues_after_the_stored_max_seq", async () => {
   expect(seed.id).toBe(SESSION_ID);
   expect(seed.createdAt).toBe(NOW);
   expect(seed.state.nextSeq).toBe(2);
-  expect(seed.state.prompts).toEqual([{ seq: 0, text: "Do the task" }]);
+  expect(seed.state.prompts).toEqual([
+    { seq: 0, text: "Do the task", attachments: [] },
+  ]);
   expect(seed.contextPackage).toContain("Do the task");
   expect(seed.contextPackage).toContain("reply");
 });
@@ -433,8 +442,8 @@ it("truncate drops seqs at and after the prompt and clears native sessions", asy
   history.record(
     view({
       prompts: [
-        { seq: 0, text: "first" },
-        { seq: 2, text: "second" },
+        { seq: 0, text: "first", attachments: [] },
+        { seq: 2, text: "second", attachments: [] },
       ],
       messages: [message("reply")],
       toolCalls: [toolCall(3)],
@@ -461,6 +470,37 @@ it("truncate drops seqs at and after the prompt and clears native sessions", asy
   });
 });
 
+it("truncate_keeps_attachments_of_kept_prompts", async () => {
+  const dir = await tempDir();
+  const history = createSessionHistory({
+    dir,
+    now: () => NOW,
+    broadcast: () => undefined,
+  });
+  const attachment = {
+    id: "a".repeat(64),
+    name: "photo.png",
+    mimeType: "image/png" as const,
+    bytes: 10,
+  };
+  history.record(
+    view({
+      prompts: [
+        { seq: 0, text: "first", attachments: [attachment] },
+        { seq: 2, text: "second", attachments: [] },
+      ],
+    }),
+    [],
+  );
+  await history.flush();
+
+  const truncated = await history.truncate(SESSION_ID, 2);
+
+  expect(truncated?.prompts).toEqual([
+    { seq: 0, text: "first", attachments: [attachment] },
+  ]);
+});
+
 it("truncate to the first prompt keeps the title", async () => {
   const dir = await tempDir();
   const history = createSessionHistory({
@@ -471,8 +511,8 @@ it("truncate to the first prompt keeps the title", async () => {
   history.record(
     view({
       prompts: [
-        { seq: 0, text: "first title" },
-        { seq: 2, text: "second title" },
+        { seq: 0, text: "first title", attachments: [] },
+        { seq: 2, text: "second title", attachments: [] },
       ],
     }),
     [],
@@ -494,14 +534,17 @@ it("truncate drops a pending record of the same session", async () => {
     now: () => NOW,
     broadcast: () => undefined,
   });
-  history.record(view({ prompts: [{ seq: 0, text: "first" }] }), []);
+  history.record(
+    view({ prompts: [{ seq: 0, text: "first", attachments: [] }] }),
+    [],
+  );
   await history.flush();
 
   history.record(
     view({
       prompts: [
-        { seq: 0, text: "first" },
-        { seq: 2, text: "second" },
+        { seq: 0, text: "first", attachments: [] },
+        { seq: 2, text: "second", attachments: [] },
       ],
     }),
     [],

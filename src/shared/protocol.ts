@@ -1,6 +1,12 @@
 import { z } from "zod";
 
 import { ApiAuth } from "../domain/apiProviders";
+import {
+  ATTACHMENT_BASE64_MAX_CHARS,
+  ATTACHMENT_ID_PATTERN,
+  IMAGE_MAX_PER_PROMPT,
+  ImageMimeType,
+} from "../domain/attachments";
 import { RewindMode } from "../domain/checkpoints";
 import { MIN_SECRET_LENGTH } from "../domain/constants";
 import { FlowDecision } from "../domain/flowRun";
@@ -29,6 +35,7 @@ import { VaultStatusSchema } from "./vault";
 import {
   AccountViewSchema,
   ApiAccountSchema,
+  AttachmentViewSchema,
   FlowRefSchema,
   FlowRunViewSchema,
   FlowsListSchema,
@@ -143,6 +150,19 @@ export const ParamsSchemas = {
     text: NonBlankString,
     taskClass: TaskClassSchema.optional(),
     model: ModelChoiceSchema.optional(),
+    attachments: z
+      .array(AttachmentViewSchema)
+      .max(IMAGE_MAX_PER_PROMPT)
+      .optional(),
+  }),
+  "attachments/stage": z.strictObject({
+    name: z.string().min(1).max(255),
+    mimeType: z.enum(ImageMimeType),
+    dataBase64: z.string().max(ATTACHMENT_BASE64_MAX_CHARS),
+  }),
+  "attachments/get": z.strictObject({
+    sessionId: z.uuid().optional(),
+    id: z.string().regex(ATTACHMENT_ID_PATTERN),
   }),
   "session/stop": SessionIdParamsSchema,
   "session/close": SessionIdParamsSchema,
@@ -314,6 +334,8 @@ export const RequestSchema = z.discriminatedUnion("method", [
   requestSchema("sessions/snapshot"),
   requestSchema("session/start"),
   requestSchema("session/prompt"),
+  requestSchema("attachments/stage"),
+  requestSchema("attachments/get"),
   requestSchema("session/stop"),
   requestSchema("session/close"),
   requestSchema("session/resume"),
@@ -366,6 +388,11 @@ const resultSchemaDefinitions = {
   "sessions/snapshot": SnapshotSchema,
   "session/start": SessionViewSchema,
   "session/prompt": z.strictObject({ accepted: z.literal(true) }),
+  "attachments/stage": AttachmentViewSchema,
+  "attachments/get": z.strictObject({
+    mimeType: z.enum(ImageMimeType),
+    dataBase64: z.string(),
+  }),
   "session/stop": z.strictObject({ stopped: z.boolean() }),
   "session/close": z.strictObject({ closed: z.literal(true) }),
   "session/resume": SessionViewSchema,

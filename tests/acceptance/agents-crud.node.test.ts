@@ -27,6 +27,7 @@ import {
   fakeSessions,
   fakeTerminals,
 } from "../fakes/fakeSessions";
+import { fakeAttachmentStore } from "../fakes/fakeAttachmentStore";
 import { fakeCheckpointStore } from "../fakes/fakeCheckpointStore";
 import { projectRoots } from "../fakes/definitionRoots";
 import { fakeOrchestrator } from "../fakes/fakeOrchestrator";
@@ -156,6 +157,7 @@ function handlersFor(cwd: string): ReturnType<typeof createHandlers> {
     sessions: fakeSessionPool(),
     history: fakeSessionHistory(),
     checkpoints: fakeCheckpointStore(),
+    attachments: fakeAttachmentStore(),
     inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),
     flowRuns: fakeFlowRuns(),
     orchestrator: fakeOrchestrator(),
@@ -841,6 +843,7 @@ const RUNNING_VIEW: SessionView = {
   contextUsage: null,
   turns: [],
   orchestrate: false,
+  imageInput: true,
   prompts: [],
 };
 

@@ -192,6 +192,7 @@ it("focused_run_is_ignored_when_the_main_session_is_not_a_live_orchestrator", ()
     makeSession({
       id: "main",
       orchestrate: true,
+      imageInput: true,
       phase: { phase: "failed", reason: "crashed", runningAccountId: null },
     }),
     makeSession({ id: "main", orchestrate: false }),
@@ -431,14 +432,17 @@ const RESUME_FAILURE = {
 it("resume_failure_visibility_follows_session_and_prompts", () => {
   const failed = makeSession({
     id: "sess-1",
-    prompts: [{ seq: 0, text: "first" }],
+    prompts: [{ seq: 0, text: "first", attachments: [] }],
   });
-  const other = makeSession({ id: "sess-2", prompts: [{ seq: 0, text: "x" }] });
+  const other = makeSession({
+    id: "sess-2",
+    prompts: [{ seq: 0, text: "x", attachments: [] }],
+  });
   const advanced = makeSession({
     id: "sess-1",
     prompts: [
-      { seq: 0, text: "first" },
-      { seq: 2, text: "second" },
+      { seq: 0, text: "first", attachments: [] },
+      { seq: 2, text: "second", attachments: [] },
     ],
   });
 

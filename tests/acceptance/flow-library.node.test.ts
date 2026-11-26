@@ -64,6 +64,7 @@ const RUNNING_VIEW: SessionView = {
   contextUsage: null,
   turns: [],
   orchestrate: false,
+  imageInput: true,
   prompts: [],
 };
 

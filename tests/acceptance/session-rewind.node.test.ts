@@ -92,8 +92,8 @@ async function seedStoredSession(
     orchestrate: false,
     archived: false,
     prompts: [
-      { seq: 0, text: "keep" },
-      { seq: 2, text: "cut" },
+      { seq: 0, text: "keep", attachments: [] },
+      { seq: 2, text: "cut", attachments: [] },
     ],
     messages: [],
     toolCalls: [],

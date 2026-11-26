@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fakeAttachmentStore } from "../../tests/fakes/fakeAttachmentStore";
 
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -193,6 +194,7 @@ async function setup(options: SetupOptions): Promise<Setup> {
     },
     reserved: createAccountReservations(),
     leaseModes: createLeaseModes(),
+    attachments: fakeAttachmentStore(),
     now: () => NOW_MS,
     schedule: () => () => undefined,
     inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),

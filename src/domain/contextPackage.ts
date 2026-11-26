@@ -2,6 +2,11 @@ import { DEFAULT_HANDOFF_CHARS, SIDE_EFFECT_PATTERNS } from "./constants";
 import type { TurnLogEntry } from "./sessionReducer";
 import type { WorktreeState } from "./types";
 
+export interface PromptSummary {
+  readonly text: string;
+  readonly attachments: readonly { readonly name: string }[];
+}
+
 export const ContextPackageReason = {
   rotation: "rotation",
   resume: "resume",
@@ -57,6 +62,13 @@ function describeEntry(entry: TurnLogEntry, maxChars: number): string {
     );
   }
   return lines.join("\n");
+}
+
+export function promptText(prompt: PromptSummary): string {
+  const names = prompt.attachments.map((attachment) => attachment.name);
+  return names.length === 0
+    ? prompt.text
+    : `${prompt.text}\n[images: ${names.join(", ")}]`;
 }
 
 function goalSection(prompts: readonly string[]): string {

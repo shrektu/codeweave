@@ -10,6 +10,7 @@ import {
 import {
   buildContextPackage,
   ContextPackageReason,
+  promptText,
 } from "../domain/contextPackage";
 import type { FileDiff } from "../domain/events";
 import type { SessionState, ToolCallEntry } from "../domain/sessionReducer";
@@ -166,7 +167,7 @@ export function buildResumeSeed(
     nativeSessions: stored.nativeSessions,
     contextPackage: buildContextPackage({
       reason: ContextPackageReason.resume,
-      userPrompts: stored.prompts.map((prompt) => prompt.text),
+      userPrompts: stored.prompts.map(promptText),
       lastReply: stored.messages.at(-1)?.text ?? null,
       interruptedTurn: toolCalls.filter((tool) => tool.seq > lastPromptSeq),
       worktree,

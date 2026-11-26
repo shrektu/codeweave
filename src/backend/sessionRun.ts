@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { PROVIDER_IMAGE_INPUT } from "../domain/attachments";
 import {
   DEFAULT_MAX_RESULT_CHARS,
   NO_MESSAGE_KEY,
@@ -8,6 +9,7 @@ import {
 import {
   buildContextPackage,
   ContextPackageReason,
+  promptText,
 } from "../domain/contextPackage";
 import type { AgentEvent } from "../domain/events";
 import { mergeLimitWindows, type LimitWindow } from "../domain/limitWindows";
@@ -51,8 +53,10 @@ import {
   type Account,
   type SwitchLogEntry,
 } from "../domain/types";
+import { PROVIDER_DISPLAY_NAMES } from "../shared/constants";
 import { IpcError, IpcErrorCode } from "../shared/protocol";
 import type {
+  AttachmentView,
   FlowRef,
   LimitView,
   NativeSessionRef,
@@ -66,6 +70,7 @@ import {
   type AgentHandle,
   type AgentToolAccess,
   type AgentStartResult,
+  type PromptImage,
 } from "./agentAdapter";
 import { createInFlight } from "./inFlight";
 import { PROCESS_EXITED_MESSAGE, SESSION_CLOSED_MESSAGE } from "./constants";
@@ -180,6 +185,7 @@ export class SessionRun {
   private current: AgentHandle | null = null;
   private detector: RateLimitDetector | null = null;
   private activeTurns = 0;
+  private claiming = false;
   private failure: string | null = null;
   private closed = false;
   private worktreeRoot: Promise<string> | null = null;
@@ -255,7 +261,7 @@ export class SessionRun {
       phase: this.phase(),
       state: this.state,
       limits: [...this.limits.values()],
-      turnInFlight: this.activeTurns > 0,
+      turnInFlight: this.activeTurns > 0 || this.claiming,
       flowRef: this.spec.flowRef,
       orchestrate: this.spec.tools !== null,
       hiddenRequestIds: this.deciding,
@@ -277,7 +283,8 @@ export class SessionRun {
   }
 
   isSettled(): boolean {
-    const idle = this.activeTurns === 0 && this.launching.size() === 0;
+    const idle =
+      this.activeTurns === 0 && !this.claiming && this.launching.size() === 0;
     return idle && this.phase().phase === "running" && !this.controller.busy();
   }
 
@@ -327,27 +334,77 @@ export class SessionRun {
     this.controller.setAccounts(this.accounts);
   }
 
-  prompt(text: string, overrides: PromptOverrides = {}): void {
+  async prompt(text: string, overrides: PromptOverrides = {}): Promise<void> {
     const phase = this.phase();
     if (
       phase.phase !== "running" ||
       this.activeTurns > 0 ||
+      this.claiming ||
       this.controller.busy()
     ) {
+      throw this.busyError();
+    }
+    const attachments = overrides.attachments ?? [];
+    const provider = this.providerOf(phase.accountId);
+    if (attachments.length > 0 && !PROVIDER_IMAGE_INPUT[provider]) {
       throw new IpcError(
-        IpcErrorCode.SESSION_BUSY,
-        "The session cannot take a prompt right now",
+        IpcErrorCode.VALIDATION,
+        `${PROVIDER_DISPLAY_NAMES[provider]} does not accept images`,
       );
     }
-    const begun = beginPrompt(this.state, overrides);
-    this.state = recordPrompt(
-      begun.state,
-      begun.prompt.seq,
-      this.maskText(text),
+    this.claiming = true;
+    this.publish();
+    try {
+      const images =
+        attachments.length === 0 ? [] : await this.claimImages(attachments);
+      const current = this.phase();
+      if (
+        this.closed ||
+        current.phase !== "running" ||
+        current.accountId !== phase.accountId
+      ) {
+        throw this.busyError();
+      }
+      const begun = beginPrompt(this.state, overrides);
+      this.state = recordPrompt(
+        begun.state,
+        begun.prompt.seq,
+        this.maskText(text),
+        attachments,
+      );
+      this.currentPrompt = begun.prompt;
+      const prefix = this.current?.resumed === true ? null : this.resumeContext;
+      void this.userTurn(current.accountId, text, prefix, images);
+    } finally {
+      this.claiming = false;
+      this.publish();
+    }
+  }
+
+  private busyError(): IpcError {
+    return new IpcError(
+      IpcErrorCode.SESSION_BUSY,
+      "The session cannot take a prompt right now",
     );
-    this.currentPrompt = begun.prompt;
-    const prefix = this.current?.resumed === true ? null : this.resumeContext;
-    void this.userTurn(phase.accountId, text, prefix);
+  }
+
+  private providerOf(accountId: string): ProviderId {
+    return (
+      this.accounts.find((account) => account.id === accountId)?.provider ??
+      this.provider
+    );
+  }
+
+  private claimImages(
+    attachments: readonly AttachmentView[],
+  ): Promise<PromptImage[]> {
+    return Promise.all(
+      attachments.map(async (attachment) => ({
+        path: await this.deps.attachments.claim(this.id, attachment),
+        mimeType: attachment.mimeType,
+        name: attachment.name,
+      })),
+    );
   }
 
   answerPermission(requestId: string, optionId: string): void {
@@ -526,7 +583,7 @@ export class SessionRun {
     const { turnLog, previousTurnLog } = this.state;
     return buildContextPackage({
       reason: ContextPackageReason.rotation,
-      userPrompts: this.state.prompts.map((prompt) => prompt.text),
+      userPrompts: this.state.prompts.map(promptText),
       lastReply: null,
       interruptedTurn: turnLog.length > 0 ? turnLog : previousTurnLog,
       worktree,
@@ -545,10 +602,11 @@ export class SessionRun {
     accountId: string,
     text: string,
     prefix: string | null,
+    images: readonly PromptImage[] = [],
   ): Promise<void> {
     this.activeTurns += 1;
     try {
-      const outcome = await this.runTurn(accountId, text, prefix);
+      const outcome = await this.runTurn(accountId, text, prefix, images);
       await this.controller.onTurnSettled(accountId, outcome);
     } catch (error) {
       console.error(`turn failed on ${accountId}: ${this.maskedText(error)}`);
@@ -563,6 +621,7 @@ export class SessionRun {
     accountId: string,
     text: string,
     prefix: string | null = null,
+    images: readonly PromptImage[] = [],
   ): Promise<TurnOutcome> {
     const handle = this.current;
     if (this.closed || handle?.accountId !== accountId) {
@@ -582,7 +641,10 @@ export class SessionRun {
     this.state = routed.state;
     const { model } = routed;
     try {
-      await handle.prompt(this.briefedText(handle, text, prefix), { model });
+      await handle.prompt(this.briefedText(handle, text, prefix), {
+        model,
+        ...(images.length === 0 ? {} : { images }),
+      });
       this.resumeContext = null;
     } catch (error) {
       console.error(`prompt failed on ${accountId}: ${this.maskedText(error)}`);

@@ -200,7 +200,7 @@ export async function readValidated<T>(
 
 export async function writeAtomic(
   file: string,
-  content: string,
+  content: string | Uint8Array,
   options?: { readonly mode: number },
 ): Promise<void> {
   const temp = `${file}.${randomUUID()}${TEMP_FILE_SUFFIX}`;

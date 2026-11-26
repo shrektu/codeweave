@@ -14,6 +14,7 @@ import {
   UnknownPermissionError,
   type AgentHandle,
   type AgentStartSpec,
+  type PromptImage,
   type TurnOptions,
 } from "../agentAdapter";
 import type { AgentProcess } from "../agentProcesses";
@@ -307,6 +308,7 @@ export abstract class OpencodeHandleBase<
     turn: Turn,
     text: string,
     model: string | null,
+    images: readonly PromptImage[] | undefined,
   ): Promise<void>;
   protected abstract interruptQuietly(): Promise<void>;
   protected abstract needsCancelFallback(turn: Turn): boolean;
@@ -324,7 +326,7 @@ export abstract class OpencodeHandleBase<
     this.turn = turn;
     try {
       if (await this.ensureIdle(turn)) {
-        await this.sendPrompt(turn, text, options.model);
+        await this.sendPrompt(turn, text, options.model, options.images);
       }
       await turn.done.promise;
     } finally {

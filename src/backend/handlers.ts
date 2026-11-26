@@ -6,6 +6,7 @@ import type { SessionView } from "../shared/views";
 import { createAccountsService, type AccountsService } from "./accountsService";
 import type { ConnectionRegistry } from "./connections";
 import { createAgent, deleteAgent, saveAgent } from "./agents";
+import type { AttachmentStore } from "./attachmentStore";
 import type { CheckpointStore } from "./checkpointStore";
 import { FLOW_RUNNING_MESSAGE } from "./constants";
 import { createDefinitionRoots } from "./definitionLibrary";
@@ -48,6 +49,7 @@ export interface HandlerDeps {
   postUpdaterConfig: PostUpdaterConfig;
   editedFiles: EditedFilesTracker;
   checkpoints: CheckpointStore;
+  attachments: AttachmentStore;
 }
 
 const SESSION_NOT_FOUND_MESSAGE = "Session not found";
@@ -87,6 +89,7 @@ export function createHandlers({
   postUpdaterConfig,
   editedFiles,
   checkpoints,
+  attachments,
 }: HandlerDeps): IpcHandlers {
   const accounts = createAccountsService({
     store,
@@ -231,6 +234,8 @@ export function createHandlers({
       await requireMain(sessions, sessionId).prompt(text, overrides);
       return { accepted: true };
     },
+    "attachments/stage": (params) => attachments.stage(params),
+    "attachments/get": ({ sessionId, id }) => attachments.read(sessionId, id),
     "session/stop": async ({ sessionId }) => {
       const service = requireMain(sessions, sessionId);
       const live = service.isLive();

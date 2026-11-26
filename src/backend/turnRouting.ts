@@ -12,7 +12,7 @@ import type { ParamsMap } from "../shared/protocol";
 
 export type PromptOverrides = Pick<
   ParamsMap["session/prompt"],
-  "taskClass" | "model"
+  "taskClass" | "model" | "attachments"
 >;
 
 export interface TurnRoutingSpec {

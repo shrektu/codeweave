@@ -27,8 +27,8 @@ const SESSION_ID = "11111111-1111-4111-8111-111111111111";
 const RUN_ID = "run-1";
 const MAX_SESSION_BYTES = 1024 * 1024;
 const PROMPTS: PromptView[] = [
-  { seq: 1, text: "first" },
-  { seq: 5, text: "second" },
+  { seq: 1, text: "first", attachments: [] },
+  { seq: 5, text: "second", attachments: [] },
 ];
 
 let dir = "";
@@ -102,6 +102,7 @@ function makeView(overrides: Partial<SessionView> = {}): SessionView {
     contextUsage: null,
     turns: [],
     orchestrate: false,
+    imageInput: true,
     prompts: [],
     ...overrides,
   };

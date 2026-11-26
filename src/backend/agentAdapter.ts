@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+
+import type { ImageMimeType } from "../domain/attachments";
 import type { AgentEvent } from "../domain/events";
 import type { Account, PermissionProfile } from "../domain/types";
 
@@ -32,8 +35,33 @@ export const AgentStartFailure = {
 export type AgentStartFailure =
   (typeof AgentStartFailure)[keyof typeof AgentStartFailure];
 
+export interface PromptImage {
+  readonly path: string;
+  readonly mimeType: ImageMimeType;
+  readonly name: string;
+}
+
+export interface PromptImageData {
+  readonly mimeType: ImageMimeType;
+  readonly name: string;
+  readonly dataBase64: string;
+}
+
+export async function readPromptImages(
+  images: readonly PromptImage[] | undefined,
+): Promise<PromptImageData[]> {
+  return Promise.all(
+    (images ?? []).map(async (image) => ({
+      mimeType: image.mimeType,
+      name: image.name,
+      dataBase64: (await readFile(image.path)).toString("base64"),
+    })),
+  );
+}
+
 export interface TurnOptions {
   readonly model: string | null;
+  readonly images?: readonly PromptImage[];
 }
 
 export interface AgentHandle {

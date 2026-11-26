@@ -6,6 +6,7 @@ import {
   ApiProviderId,
   TRAINING_UNKNOWN,
 } from "../domain/apiProviders";
+import { ATTACHMENT_ID_PATTERN, ImageMimeType } from "../domain/attachments";
 import { RestoreAction, RestoreSkipReason } from "../domain/checkpoints";
 import { DiffOmission, FileChange } from "../domain/events";
 import {
@@ -171,9 +172,18 @@ export const MessageViewSchema = z.strictObject({
 });
 export type MessageView = z.infer<typeof MessageViewSchema>;
 
+export const AttachmentViewSchema = z.strictObject({
+  id: z.string().regex(ATTACHMENT_ID_PATTERN),
+  name: z.string().min(1).max(255),
+  mimeType: z.enum(ImageMimeType),
+  bytes: z.int().positive(),
+});
+export type AttachmentView = z.infer<typeof AttachmentViewSchema>;
+
 export const PromptViewSchema = z.strictObject({
   seq: z.int(),
   text: z.string(),
+  attachments: z.array(AttachmentViewSchema).default([]),
 });
 export type PromptView = z.infer<typeof PromptViewSchema>;
 
@@ -267,6 +277,7 @@ export const SessionViewSchema = z.strictObject({
   contextUsage: ContextUsageViewSchema.nullable(),
   turns: z.array(TurnRouteViewSchema),
   orchestrate: z.boolean(),
+  imageInput: z.boolean(),
   prompts: z.array(PromptViewSchema),
 });
 export type SessionView = z.infer<typeof SessionViewSchema>;

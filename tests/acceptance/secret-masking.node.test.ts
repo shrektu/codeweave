@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fakeAttachmentStore } from "../fakes/fakeAttachmentStore";
 
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -263,6 +264,7 @@ async function opencodeSession(
     homeDir: "/home/u",
     resolveFolder: (requested) => Promise.resolve(requested ?? "/home/u"),
     protectedPaths: () => Promise.resolve([]),
+    attachments: fakeAttachmentStore(),
   });
   services.push(service);
   return { service, cwd };

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   EventSchema,
+  ParamsSchemas,
   RequestSchema,
   ResponseSchema,
   ShutdownMessageSchema,
@@ -994,4 +995,31 @@ it.each<[string, Record<string, unknown>]>([
   expect(
     RequestSchema.safeParse({ v: 7, id: "req-1", method, params }).success,
   ).toBe(false);
+});
+
+const ATTACHMENT = {
+  id: "a".repeat(64),
+  name: "photo.png",
+  mimeType: "image/png",
+  bytes: 10,
+};
+
+it("session_prompt_rejects_more_than_ten_attachments", () => {
+  const parsed = ParamsSchemas["session/prompt"].safeParse({
+    sessionId: "s-1",
+    text: "hi",
+    attachments: Array.from({ length: 11 }, () => ATTACHMENT),
+  });
+
+  expect(parsed.success).toBe(false);
+});
+
+it("session_prompt_accepts_ten_attachments", () => {
+  const parsed = ParamsSchemas["session/prompt"].safeParse({
+    sessionId: "s-1",
+    text: "hi",
+    attachments: Array.from({ length: 10 }, () => ATTACHMENT),
+  });
+
+  expect(parsed.success).toBe(true);
 });

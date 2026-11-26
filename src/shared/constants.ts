@@ -9,6 +9,13 @@ export const EXECUTABLE_SETTING_LABELS: Readonly<Record<ProviderId, string>> = {
   [ProviderId.gemini]: "Gemini executable (agy)",
 };
 
+export const PROVIDER_DISPLAY_NAMES: Readonly<Record<ProviderId, string>> = {
+  [ProviderId.claude]: "Claude",
+  [ProviderId.codex]: "Codex",
+  [ProviderId.gemini]: "Gemini",
+  [ProviderId.opencode]: "OpenCode",
+};
+
 export const OPENCODE_ACCOUNT_DATA_DIR = "data";
 
 export const OPENCODE_DATA_SUBDIR = "opencode";

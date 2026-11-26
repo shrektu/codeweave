@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fakeAttachmentStore } from "../fakes/fakeAttachmentStore";
 
 import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -164,6 +165,7 @@ async function failingPromptService(
     homeDir: "/home/u",
     resolveFolder: (requested) => Promise.resolve(requested ?? cwd),
     protectedPaths: () => Promise.resolve([]),
+    attachments: fakeAttachmentStore(),
   });
 }
 
@@ -196,7 +198,7 @@ async function storeSession(
     profile: PermissionProfile.ask,
     orchestrate: false,
     archived: false,
-    prompts: [{ seq: 0, text: OLD_GOAL }],
+    prompts: [{ seq: 0, text: OLD_GOAL, attachments: [] }],
     messages: [],
     toolCalls: [],
     turns: [],

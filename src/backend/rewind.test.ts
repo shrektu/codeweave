@@ -19,8 +19,8 @@ import {
 } from "./rewind";
 
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";
-const FIRST_PROMPT: PromptView = { seq: 0, text: "first" };
-const SECOND_PROMPT: PromptView = { seq: 2, text: "second" };
+const FIRST_PROMPT: PromptView = { seq: 0, text: "first", attachments: [] };
+const SECOND_PROMPT: PromptView = { seq: 2, text: "second", attachments: [] };
 const PROMPTS: readonly PromptView[] = [FIRST_PROMPT, SECOND_PROMPT];
 const EMPTY_REPORT: RestoreReportView = {
   restored: [],
@@ -50,6 +50,7 @@ function view(overrides: Partial<SessionView> = {}): SessionView {
     contextUsage: null,
     turns: [],
     orchestrate: false,
+    imageInput: true,
     prompts: [...PROMPTS],
     ...overrides,
   };
@@ -284,7 +285,7 @@ it("rewind rejects while an orchestrator child run is open", async () => {
 });
 
 it("rewind folds to the last kept prompt, not N-1", async () => {
-  const cutPrompt: PromptView = { seq: 5, text: "cut" };
+  const cutPrompt: PromptView = { seq: 5, text: "cut", attachments: [] };
   const runtime = harness({
     stored: storedSession({ prompts: [FIRST_PROMPT, cutPrompt] }),
     truncated: storedSession({ prompts: [FIRST_PROMPT] }),

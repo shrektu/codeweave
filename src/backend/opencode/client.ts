@@ -1,3 +1,5 @@
+import type { PromptImageData } from "../agentAdapter";
+
 import {
   ACCEPT_EVENT_STREAM,
   CONTENT_TYPE_JSON,
@@ -51,13 +53,26 @@ export interface PromptRequest {
   readonly text: string;
   readonly agent: OpencodeAgent;
   readonly model: PromptModel | null;
+  readonly images?: readonly PromptImageData[];
+}
+
+function filePart(image: PromptImageData): Readonly<Record<string, string>> {
+  return {
+    type: "file",
+    mime: image.mimeType,
+    filename: image.name,
+    url: `data:${image.mimeType};base64,${image.dataBase64}`,
+  };
 }
 
 export function promptBody(
   request: PromptRequest,
 ): Readonly<Record<string, unknown>> {
   return {
-    parts: [{ type: "text", text: request.text }],
+    parts: [
+      { type: "text", text: request.text },
+      ...(request.images ?? []).map(filePart),
+    ],
     agent: request.agent,
     ...(request.model === null ? {} : { model: request.model }),
   };

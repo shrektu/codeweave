@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 
 import { createAgentProcesses } from "../../src/backend/agentProcesses";
+import { fakeAttachmentStore } from "../fakes/fakeAttachmentStore";
 import { createClaudeAcpAdapter } from "../../src/backend/claude/acpAdapter";
 import { createLeaseModes } from "../../src/backend/leaseModes";
 import {
@@ -81,6 +82,7 @@ async function compose(): Promise<Composition> {
     secrets: () => [],
     homeDir: "/home/u",
     resolveFolder: (requested) => Promise.resolve(requested ?? "/home/u"),
+    attachments: fakeAttachmentStore(),
     protectedPaths: () => Promise.resolve([]),
     leaseModes,
   });

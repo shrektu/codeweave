@@ -13,6 +13,8 @@ export function fakeHandlers(
     "sessions/snapshot": unavailable,
     "session/start": unavailable,
     "session/prompt": unavailable,
+    "attachments/stage": unavailable,
+    "attachments/get": unavailable,
     "session/stop": unavailable,
     "session/close": unavailable,
     "session/resume": unavailable,

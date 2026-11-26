@@ -17,6 +17,7 @@ import {
   fakeSessions,
   fakeTerminals,
 } from "../fakes/fakeSessions";
+import { fakeAttachmentStore } from "../fakes/fakeAttachmentStore";
 import { fakeCheckpointStore } from "../fakes/fakeCheckpointStore";
 import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
@@ -51,6 +52,7 @@ function sessionIn(cwd: string | undefined): SessionView {
     contextUsage: null,
     turns: [],
     orchestrate: false,
+    imageInput: true,
     prompts: [],
   };
 }
@@ -70,6 +72,7 @@ async function rig(): Promise<{
     broadcast,
     history: fakeSessionHistory(),
     checkpoints: fakeCheckpointStore(),
+    attachments: fakeAttachmentStore(),
     inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),
     flowRuns: fakeFlowRuns(),
     orchestrator: fakeOrchestrator(),

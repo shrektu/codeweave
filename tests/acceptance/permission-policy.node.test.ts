@@ -8,6 +8,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fakeAttachmentStore } from "../fakes/fakeAttachmentStore";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -1151,6 +1152,7 @@ function createRigService(
         join(home, ".config", "*", "auth*"),
         join(home, ".config", "codeweave"),
       ]),
+    attachments: fakeAttachmentStore(),
   });
 }
 
