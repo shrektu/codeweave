@@ -11,6 +11,7 @@ import type { CheckpointStore } from "./checkpointStore";
 import { FLOW_RUNNING_MESSAGE } from "./constants";
 import { createDefinitionRoots } from "./definitionLibrary";
 import type { EditedFilesTracker } from "./editedFiles";
+import type { FileCompletion } from "./fileCompletion";
 import { listFlows, saveFlow } from "./flows";
 import type { FlowRunService } from "./flowRuns";
 import type { IpcHandlers } from "./ipcServer";
@@ -50,6 +51,7 @@ export interface HandlerDeps {
   editedFiles: EditedFilesTracker;
   checkpoints: CheckpointStore;
   attachments: AttachmentStore;
+  files: FileCompletion;
 }
 
 const SESSION_NOT_FOUND_MESSAGE = "Session not found";
@@ -90,6 +92,7 @@ export function createHandlers({
   editedFiles,
   checkpoints,
   attachments,
+  files,
 }: HandlerDeps): IpcHandlers {
   const accounts = createAccountsService({
     store,
@@ -236,6 +239,9 @@ export function createHandlers({
     },
     "attachments/stage": (params) => attachments.stage(params),
     "attachments/get": ({ sessionId, id }) => attachments.read(sessionId, id),
+    "files/complete": async ({ cwd, query }) => ({
+      items: await files.complete(cwd, query),
+    }),
     "session/stop": async ({ sessionId }) => {
       const service = requireMain(sessions, sessionId);
       const live = service.isLive();

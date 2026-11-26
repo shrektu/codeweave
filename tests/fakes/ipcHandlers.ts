@@ -15,6 +15,7 @@ export function fakeHandlers(
     "session/prompt": unavailable,
     "attachments/stage": unavailable,
     "attachments/get": unavailable,
+    "files/complete": unavailable,
     "session/stop": unavailable,
     "session/close": unavailable,
     "session/resume": unavailable,

@@ -172,6 +172,9 @@ const VALID_REQUESTS: [string, unknown][] = [
   ["settings/set", { defaultWorkspace: null }],
   ["settings/set", { terminalShell: "/bin/zsh" }],
   ["settings/set", { terminalShell: null }],
+  ["files/complete", { cwd: "/work", query: "src" }],
+  ["files/complete", { query: "" }],
+  ["files/complete", { query: "src/backend/" }],
   ["terminal/open", { cwd: "/work", cols: 2, rows: 1 }],
   ["terminal/open", { cwd: "/work", cols: 1000, rows: 500 }],
   ["terminal/input", { id: "t", data: "x" }],
@@ -1022,4 +1025,20 @@ it("session_prompt_accepts_ten_attachments", () => {
   });
 
   expect(parsed.success).toBe(true);
+});
+
+it("files_complete_accepts_a_query_at_the_limit", () => {
+  const parsed = ParamsSchemas["files/complete"].safeParse({
+    query: "x".repeat(256),
+  });
+
+  expect(parsed.success).toBe(true);
+});
+
+it("files_complete_rejects_a_query_over_the_limit", () => {
+  const parsed = ParamsSchemas["files/complete"].safeParse({
+    query: "x".repeat(257),
+  });
+
+  expect(parsed.success).toBe(false);
 });

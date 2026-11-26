@@ -35,6 +35,7 @@ import { IpcErrorCode } from "../../src/shared/protocol";
 import type { AttachmentView } from "../../src/shared/views";
 import { fakeAttachmentStore } from "../fakes/fakeAttachmentStore";
 import { fakeCheckpointStore } from "../fakes/fakeCheckpointStore";
+import { fakeFileCompletion } from "../fakes/fakeFileCompletion";
 import { fakeOrchestrator } from "../fakes/fakeOrchestrator";
 import {
   fakeFlowRuns,
@@ -411,6 +412,7 @@ async function handlerRig(attachments: AttachmentStore): Promise<HandlerRig> {
     history: fakeSessionHistory(),
     checkpoints: fakeCheckpointStore(),
     attachments,
+    files: fakeFileCompletion(),
     inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),
     flowRuns: fakeFlowRuns(),
     orchestrator: fakeOrchestrator(),

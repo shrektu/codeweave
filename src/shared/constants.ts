@@ -32,6 +32,16 @@ export const TERMINAL_MAX_ROWS = 500;
 
 export const TERMINAL_INPUT_MAX_CHARS = 65_536;
 
+export const FILE_COMPLETION_LIMIT = 50;
+
+export const FILE_QUERY_MAX_LENGTH = 256;
+
+export const FILE_INDEX_TTL_MS = 5000;
+
+export const FILE_INDEX_GIT_TIMEOUT_MS = 3000;
+
+export const FILE_INDEX_CACHE_MAX_ENTRIES = 8;
+
 export const PORT_CHANNEL = "codeweave:port";
 
 export const CONNECT_MESSAGE_TYPE = "connect";

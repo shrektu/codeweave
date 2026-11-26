@@ -8,6 +8,7 @@ import { INITIAL_SESSION_STATE, reduceSession } from "../domain/sessionReducer";
 import {
   AgentViewSchema,
   ApiAccountSchema,
+  FileCompletionItemSchema,
   FlowRunViewSchema,
   FlowsListSchema,
   FlowViewSchema,
@@ -457,4 +458,20 @@ it("old_prompts_without_attachments_still_parse", () => {
     text: "old",
     attachments: [],
   });
+});
+
+it("file_completion_item_schema_accepts_files_and_dirs", () => {
+  expect(
+    FileCompletionItemSchema.safeParse({ path: "src/a.ts", kind: "file" })
+      .success,
+  ).toBe(true);
+  expect(
+    FileCompletionItemSchema.safeParse({ path: "src", kind: "dir" }).success,
+  ).toBe(true);
+  expect(
+    FileCompletionItemSchema.safeParse({ path: "src", kind: "folder" }).success,
+  ).toBe(false);
+  expect(FileCompletionItemSchema.safeParse({ path: "src" }).success).toBe(
+    false,
+  );
 });

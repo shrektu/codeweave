@@ -29,6 +29,7 @@ import {
 } from "../fakes/fakeSessions";
 import { fakeAttachmentStore } from "../fakes/fakeAttachmentStore";
 import { fakeCheckpointStore } from "../fakes/fakeCheckpointStore";
+import { fakeFileCompletion } from "../fakes/fakeFileCompletion";
 import { projectRoots } from "../fakes/definitionRoots";
 import { fakeOrchestrator } from "../fakes/fakeOrchestrator";
 import { fakeSecrets } from "../fakes/fakeVault";
@@ -158,6 +159,7 @@ function handlersFor(cwd: string): ReturnType<typeof createHandlers> {
     history: fakeSessionHistory(),
     checkpoints: fakeCheckpointStore(),
     attachments: fakeAttachmentStore(),
+    files: fakeFileCompletion(),
     inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),
     flowRuns: fakeFlowRuns(),
     orchestrator: fakeOrchestrator(),

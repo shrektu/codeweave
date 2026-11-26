@@ -23,6 +23,8 @@ import {
 
 import {
   CONNECT_MESSAGE_TYPE,
+  FILE_COMPLETION_LIMIT,
+  FILE_QUERY_MAX_LENGTH,
   SHUTDOWN_DONE_MESSAGE_TYPE,
   SHUTDOWN_MESSAGE_TYPE,
   TERMINAL_INPUT_MAX_CHARS,
@@ -36,6 +38,7 @@ import {
   AccountViewSchema,
   ApiAccountSchema,
   AttachmentViewSchema,
+  FileCompletionItemSchema,
   FlowRefSchema,
   FlowRunViewSchema,
   FlowsListSchema,
@@ -163,6 +166,10 @@ export const ParamsSchemas = {
   "attachments/get": z.strictObject({
     sessionId: z.uuid().optional(),
     id: z.string().regex(ATTACHMENT_ID_PATTERN),
+  }),
+  "files/complete": z.strictObject({
+    cwd: z.string().min(1).optional(),
+    query: z.string().max(FILE_QUERY_MAX_LENGTH),
   }),
   "session/stop": SessionIdParamsSchema,
   "session/close": SessionIdParamsSchema,
@@ -336,6 +343,7 @@ export const RequestSchema = z.discriminatedUnion("method", [
   requestSchema("session/prompt"),
   requestSchema("attachments/stage"),
   requestSchema("attachments/get"),
+  requestSchema("files/complete"),
   requestSchema("session/stop"),
   requestSchema("session/close"),
   requestSchema("session/resume"),
@@ -392,6 +400,9 @@ const resultSchemaDefinitions = {
   "attachments/get": z.strictObject({
     mimeType: z.enum(ImageMimeType),
     dataBase64: z.string(),
+  }),
+  "files/complete": z.strictObject({
+    items: z.array(FileCompletionItemSchema).max(FILE_COMPLETION_LIMIT),
   }),
   "session/stop": z.strictObject({ stopped: z.boolean() }),
   "session/close": z.strictObject({ closed: z.literal(true) }),

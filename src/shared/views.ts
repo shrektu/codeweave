@@ -180,6 +180,15 @@ export const AttachmentViewSchema = z.strictObject({
 });
 export type AttachmentView = z.infer<typeof AttachmentViewSchema>;
 
+export const FileKind = z.enum(["file", "dir"]);
+export type FileKind = z.infer<typeof FileKind>;
+
+export const FileCompletionItemSchema = z.strictObject({
+  path: z.string(),
+  kind: FileKind,
+});
+export type FileCompletionItem = z.infer<typeof FileCompletionItemSchema>;
+
 export const PromptViewSchema = z.strictObject({
   seq: z.int(),
   text: z.string(),

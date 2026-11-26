@@ -48,6 +48,7 @@ import {
   CHECKPOINTS_DIR,
   CODEX_BINARY,
   CONTAINER_UNAVAILABLE_MESSAGE,
+  GIT_BINARY,
   PROBE_RUN_ID_PREFIX,
   PROBE_TIMEOUT_MS,
   SESSIONS_DIR,
@@ -60,6 +61,7 @@ import { resolveExecutable } from "./executable";
 import { execText } from "./exec";
 import { createDefinitionRoots } from "./definitionLibrary";
 import { createEditedFilesTracker } from "./editedFiles";
+import { createFileCompletion } from "./fileCompletion";
 import { listFlows } from "./flows";
 import { createFlowRunService, type FlowRunService } from "./flowRuns";
 import type { FlowToolServer } from "./flowTools/server";
@@ -701,6 +703,13 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
   const attachments = createAttachmentStore({
     dir: join(userData, ATTACHMENTS_DIR),
   });
+  const files = createFileCompletion({
+    git: (cwd, args, timeoutMs) =>
+      execText(GIT_BINARY, ["-C", cwd, ...args], { timeoutMs }),
+    homeDir: deps.homeDir,
+    protectedPaths: protectedPathsNow,
+    now: deps.now,
+  });
   const checkpointRecorder = createCheckpointRecorder({
     store: checkpoints,
     ownerOf: (runId) =>
@@ -800,6 +809,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     editedFiles,
     checkpoints,
     attachments,
+    files,
   });
   await postStoredUpdaterConfig(store, postUpdaterConfig);
   probes.start();

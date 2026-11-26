@@ -15,6 +15,7 @@ import {
 } from "../fakes/fakeSessions";
 import { fakeAttachmentStore } from "../fakes/fakeAttachmentStore";
 import { fakeCheckpointStore } from "../fakes/fakeCheckpointStore";
+import { fakeFileCompletion } from "../fakes/fakeFileCompletion";
 import { fakeOrchestrator } from "../fakes/fakeOrchestrator";
 import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
@@ -53,6 +54,7 @@ it("switch_log_list_skips_malformed_lines", async () => {
     history: fakeSessionHistory(),
     checkpoints: fakeCheckpointStore(),
     attachments: fakeAttachmentStore(),
+    files: fakeFileCompletion(),
     inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),
     flowRuns: fakeFlowRuns(),
     orchestrator: fakeOrchestrator(),
