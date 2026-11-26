@@ -6,6 +6,7 @@ import {
   ApiProviderId,
   TRAINING_UNKNOWN,
 } from "../domain/apiProviders";
+import { RestoreAction, RestoreSkipReason } from "../domain/checkpoints";
 import { DiffOmission, FileChange } from "../domain/events";
 import {
   DecisionReason,
@@ -128,6 +129,29 @@ export const SessionEditsViewSchema = z.strictObject({
 });
 export type SessionEditsView = z.infer<typeof SessionEditsViewSchema>;
 
+export const RestorePlanFileViewSchema = z.strictObject({
+  path: z.string(),
+  action: z.enum(RestoreAction),
+  skip: z.enum(RestoreSkipReason).nullable(),
+});
+export type RestorePlanFileView = z.infer<typeof RestorePlanFileViewSchema>;
+
+export const RestorePlanViewSchema = z.strictObject({
+  sessionId: NonEmptyString,
+  promptSeq: z.int(),
+  files: z.array(RestorePlanFileViewSchema),
+});
+export type RestorePlanView = z.infer<typeof RestorePlanViewSchema>;
+
+export const RestoreReportViewSchema = z.strictObject({
+  restored: z.array(z.string()),
+  deleted: z.array(z.string()),
+  skipped: z.array(
+    z.strictObject({ path: z.string(), reason: z.enum(RestoreSkipReason) }),
+  ),
+});
+export type RestoreReportView = z.infer<typeof RestoreReportViewSchema>;
+
 export const ToolCallViewSchema = z.strictObject({
   toolCallId: z.string(),
   title: z.string(),
@@ -246,6 +270,13 @@ export const SessionViewSchema = z.strictObject({
   prompts: z.array(PromptViewSchema),
 });
 export type SessionView = z.infer<typeof SessionViewSchema>;
+
+export const RewindResultViewSchema = z.strictObject({
+  promptText: z.string(),
+  report: RestoreReportViewSchema.nullable(),
+  session: SessionViewSchema.nullable(),
+});
+export type RewindResultView = z.infer<typeof RewindResultViewSchema>;
 
 export const SessionHistoryEntrySchema = z.strictObject({
   id: z.string(),

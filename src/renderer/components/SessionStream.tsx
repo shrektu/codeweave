@@ -1,6 +1,7 @@
-import { ArrowUp } from "lucide-react";
-import { useEffect, useState, type JSX } from "react";
+import { ArrowUp, RotateCcw } from "lucide-react";
+import { useEffect, useRef, useState, type JSX } from "react";
 
+import { RewindMode } from "../../domain/checkpoints";
 import { ProviderId } from "../../domain/types";
 import type {
   AccountView,
@@ -11,6 +12,7 @@ import type {
   PermissionView,
   PromptView,
   RotationPhaseView,
+  RewindResultView,
   SessionView,
   ToolCallView,
   TurnRouteView,
@@ -41,14 +43,21 @@ import { Markdown } from "../markdown/Markdown";
 
 import { Composer } from "./Composer";
 import { ContextMeter } from "./ContextMeter";
+import { Icon, ICON_SIZE_SMALL_PX } from "./Icon";
 import { PathField } from "./PathField";
 import { PermissionCard } from "./PermissionCard";
+import {
+  REWIND_STRINGS,
+  RewindDialog,
+  rewindReportSummary,
+} from "./RewindDialog";
 import { ToolCard } from "./ToolCard";
 
 const IDENTITY_SEPARATOR = " · ";
 const NO_ACCOUNT_LABEL = "—";
 
 interface UnsentDraft {
+  readonly id: number;
   readonly sessionId: string | null;
   readonly text: string;
 }
@@ -65,6 +74,8 @@ interface StartDraft {
   readonly setTask: (task: string) => void;
   readonly unsent: UnsentDraft | null;
   readonly setUnsent: (unsent: UnsentDraft | null) => void;
+  readonly saveUnsent: (sessionId: string | null, text: string) => void;
+  readonly clearUnsent: () => void;
   readonly start: AsyncAction;
 }
 
@@ -75,7 +86,9 @@ interface SessionBodyProps {
   accounts: readonly AccountView[];
   historyOnly: boolean;
   promptError: string | null;
+  reportSummary: string | null;
   onResumeFailure: (text: string, message: string) => void;
+  onRewind: (prompt: PromptView) => void;
 }
 
 function phaseText(
@@ -160,10 +173,12 @@ function StreamEntry({
   item,
   sessionId,
   runId,
+  onRewind,
 }: {
   item: StreamItem;
   sessionId: string;
   runId: string | null;
+  onRewind: ((prompt: PromptView) => void) | undefined;
 }): JSX.Element {
   switch (item.kind) {
     case "turn":
@@ -172,6 +187,19 @@ function StreamEntry({
       return (
         <li className="card msg prompt" aria-label="You">
           <Markdown text={item.prompt.text} />
+          {onRewind !== undefined && (
+            <button
+              type="button"
+              className="prompt-rewind"
+              aria-label={REWIND_STRINGS.rewindButton}
+              title={REWIND_STRINGS.rewindButton}
+              onClick={() => {
+                onRewind(item.prompt);
+              }}
+            >
+              <Icon icon={RotateCcw} size={ICON_SIZE_SMALL_PX} />
+            </button>
+          )}
         </li>
       );
     case "message":
@@ -243,7 +271,7 @@ function TaskStart({
   orchestrating,
 }: TaskStartProps): JSX.Element {
   const { client, store, state } = useApp();
-  const { task, setTask, setUnsent, start } = draft;
+  const { task, setTask, setUnsent, saveUnsent, start } = draft;
   const workspace = state.snapshot?.settings.defaultWorkspaceResolved;
 
   const startWithTask = (): void => {
@@ -263,7 +291,7 @@ function TaskStart({
           text,
         });
       } catch (error: unknown) {
-        setUnsent({ sessionId, text });
+        saveUnsent(sessionId, text);
         throw error;
       }
       setTask("");
@@ -472,13 +500,17 @@ function SessionIdentity({
 
 function ResumeComposer({
   sessionId,
+  initialText,
+  onSent,
   onFailure,
 }: {
   sessionId: string;
+  initialText: string;
+  onSent: () => void;
   onFailure: (text: string, message: string) => void;
 }): JSX.Element {
   const { client } = useApp();
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
   const send = useAsyncAction();
   const ready = !send.pending && text.trim() !== "";
 
@@ -497,6 +529,7 @@ function ResumeComposer({
     });
     if (sent) {
       setText("");
+      onSent();
     }
   };
 
@@ -540,12 +573,20 @@ function SessionBody({
   accounts,
   historyOnly,
   promptError,
+  reportSummary,
   onResumeFailure,
+  onRewind,
 }: SessionBodyProps): JSX.Element {
   const { client } = useApp();
   const stop = useAsyncAction();
   const live = isSessionLive(session);
   const unsentText = unsentTextFor(draft.unsent, session.id);
+  const unsentId =
+    draft.unsent !== null &&
+    (draft.unsent.sessionId === null || draft.unsent.sessionId === session.id)
+      ? draft.unsent.id
+      : 0;
+  const rewindable = runId === null && !session.turnInFlight;
   const requestStop = (): Promise<unknown> =>
     runId === null
       ? client.request("session/stop", { sessionId: session.id })
@@ -584,20 +625,29 @@ function SessionBody({
             item={item}
             sessionId={session.id}
             runId={runId}
+            onRewind={rewindable ? onRewind : undefined}
           />
         ))}
       </ul>
+      {reportSummary !== null && <p role="status">{reportSummary}</p>}
       {!live && !historyOnly && <StartPrompt draft={draft} />}
       {live && draft.start.error !== null && (
         <p className="error">{draft.start.error}</p>
       )}
       {promptError !== null && <p className="error">{promptError}</p>}
       {historyOnly ? (
-        <ResumeComposer sessionId={session.id} onFailure={onResumeFailure} />
+        <ResumeComposer
+          key={`${session.id}:${String(unsentId)}`}
+          sessionId={session.id}
+          initialText={unsentText}
+          onSent={draft.clearUnsent}
+          onFailure={onResumeFailure}
+        />
       ) : (
         <Composer
-          key={`${session.id}:${unsentText}`}
+          key={`${session.id}:${String(unsentId)}`}
           initialText={unsentText}
+          onSent={draft.clearUnsent}
         />
       )}
     </>
@@ -629,11 +679,32 @@ function failureStillLive(failure: ResumeFailure, state: AppState): boolean {
   return live && state.activeSessionId === failure.sessionId;
 }
 
+interface RewindTarget {
+  readonly sessionId: string;
+  readonly prompt: PromptView;
+}
+
+interface RewindNotice {
+  readonly sessionId: string;
+  readonly text: string;
+}
+
 export function SessionStream(): JSX.Element {
   const { state, store } = useApp();
   const [task, setTask] = useState("");
   const start = useAsyncAction();
   const [unsent, setUnsent] = useState<UnsentDraft | null>(null);
+  const [rewinding, setRewinding] = useState<RewindTarget | null>(null);
+  const [rewindNotice, setRewindNotice] = useState<RewindNotice | null>(null);
+  const draftSeq = useRef(0);
+  const saveUnsent = (sessionId: string | null, text: string): void => {
+    draftSeq.current += 1;
+    setUnsent({ id: draftSeq.current, sessionId, text });
+  };
+  const clearUnsent = (): void => {
+    setUnsent(null);
+    setRewindNotice(null);
+  };
   const [resumeFailure, setResumeFailure] = useState<ResumeFailure | null>(
     null,
   );
@@ -659,11 +730,22 @@ export function SessionStream(): JSX.Element {
   useEffect(
     () =>
       store.subscribe(() => {
-        setResumeFailure((current) => {
-          if (current === null) {
-            return current;
+        const current = store.getState();
+        setRewindNotice((notice) =>
+          notice !== null && notice.sessionId !== current.activeSessionId
+            ? null
+            : notice,
+        );
+        setRewinding((target) =>
+          target !== null && target.sessionId !== current.activeSessionId
+            ? null
+            : target,
+        );
+        setResumeFailure((failure) => {
+          if (failure === null) {
+            return failure;
           }
-          return failureStillLive(current, store.getState()) ? current : null;
+          return failureStillLive(failure, current) ? failure : null;
         });
       }),
     [store],
@@ -685,6 +767,8 @@ export function SessionStream(): JSX.Element {
     setTask,
     unsent: staleResumeUnsent ? null : unsent,
     setUnsent,
+    saveUnsent,
+    clearUnsent,
     start,
   };
   const focusedRun = focusedRunOf(
@@ -693,6 +777,29 @@ export function SessionStream(): JSX.Element {
     state.focusedRunId,
   );
   const bannerRun = focusedRun?.runId === shown.runId ? focusedRun : null;
+  const reportSummary =
+    rewindNotice !== null &&
+    session !== null &&
+    rewindNotice.sessionId === session.id
+      ? rewindNotice.text
+      : null;
+  const handleRewound = (result: RewindResultView, mode: RewindMode): void => {
+    const sessionId = rewinding?.sessionId;
+    if (sessionId === undefined) {
+      return;
+    }
+    setRewindNotice(
+      result.report === null
+        ? null
+        : {
+            sessionId,
+            text: rewindReportSummary(result.report),
+          },
+    );
+    if (mode !== RewindMode.files) {
+      saveUnsent(sessionId, result.promptText);
+    }
+  };
 
   return (
     <section className="glass panel" aria-label="Session">
@@ -716,14 +823,28 @@ export function SessionStream(): JSX.Element {
               ? resumeFailure.message
               : null
           }
+          reportSummary={reportSummary}
+          onRewind={(prompt) => {
+            setRewinding({ sessionId: session.id, prompt });
+          }}
           onResumeFailure={(text, message) => {
-            setUnsent({ sessionId: session.id, text });
+            saveUnsent(session.id, text);
             setResumeFailure({
               sessionId: session.id,
               message,
               promptCount: session.prompts.length,
             });
           }}
+        />
+      )}
+      {rewinding !== null && (
+        <RewindDialog
+          sessionId={rewinding.sessionId}
+          prompt={rewinding.prompt}
+          onClose={() => {
+            setRewinding(null);
+          }}
+          onRewound={handleRewound}
         />
       )}
     </section>

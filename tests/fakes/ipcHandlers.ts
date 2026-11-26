@@ -16,6 +16,8 @@ export function fakeHandlers(
     "session/stop": unavailable,
     "session/close": unavailable,
     "session/resume": unavailable,
+    "session/rewindPreview": unavailable,
+    "session/rewind": unavailable,
     "history/list": unavailable,
     "history/get": unavailable,
     "history/archive": unavailable,

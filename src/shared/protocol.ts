@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { ApiAuth } from "../domain/apiProviders";
+import { RewindMode } from "../domain/checkpoints";
 import { MIN_SECRET_LENGTH } from "../domain/constants";
 import { FlowDecision } from "../domain/flowRun";
 import { AgentSchema, FlowSchema } from "../domain/flows";
@@ -32,6 +33,8 @@ import {
   FlowRunViewSchema,
   FlowsListSchema,
   ModelCatalogSchema,
+  RestorePlanViewSchema,
+  RewindResultViewSchema,
   SessionEditsViewSchema,
   SessionHistoryEntrySchema,
   SessionViewSchema,
@@ -144,6 +147,16 @@ export const ParamsSchemas = {
   "session/stop": SessionIdParamsSchema,
   "session/close": SessionIdParamsSchema,
   "session/resume": z.strictObject({ sessionId: z.uuid() }),
+  "session/rewindPreview": z.strictObject({
+    sessionId: z.uuid(),
+    promptSeq: z.int().nonnegative(),
+  }),
+  "session/rewind": z.strictObject({
+    sessionId: z.uuid(),
+    promptSeq: z.int().nonnegative(),
+    mode: z.enum(RewindMode),
+    overwrite: z.array(NonEmptyString),
+  }),
   "history/list": EmptyParamsSchema,
   "history/get": z.strictObject({ sessionId: z.uuid() }),
   "history/archive": z.strictObject({
@@ -304,6 +317,8 @@ export const RequestSchema = z.discriminatedUnion("method", [
   requestSchema("session/stop"),
   requestSchema("session/close"),
   requestSchema("session/resume"),
+  requestSchema("session/rewindPreview"),
+  requestSchema("session/rewind"),
   requestSchema("history/list"),
   requestSchema("history/get"),
   requestSchema("history/archive"),
@@ -354,6 +369,8 @@ const resultSchemaDefinitions = {
   "session/stop": z.strictObject({ stopped: z.boolean() }),
   "session/close": z.strictObject({ closed: z.literal(true) }),
   "session/resume": SessionViewSchema,
+  "session/rewindPreview": RestorePlanViewSchema,
+  "session/rewind": RewindResultViewSchema,
   "history/list": z.strictObject({
     entries: z.array(SessionHistoryEntrySchema),
   }),

@@ -16,6 +16,7 @@ import {
   fakeSessionPool,
   fakeTerminals,
 } from "../fakes/fakeSessions";
+import { fakeCheckpointStore } from "../fakes/fakeCheckpointStore";
 import { fakeOrchestrator } from "../fakes/fakeOrchestrator";
 import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
@@ -353,6 +354,7 @@ it("flows_list_handler_delegates_to_listFlows", async () => {
     broadcast: vi.fn(),
     sessions: fakeSessionPool(),
     history: fakeSessionHistory(),
+    checkpoints: fakeCheckpointStore(),
     inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),
     flowRuns: fakeFlowRuns(),
     orchestrator: fakeOrchestrator(),

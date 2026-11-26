@@ -112,13 +112,18 @@ function RoutingControls({
 
 interface ComposerProps {
   readonly initialText?: string;
+  readonly onSent?: () => void;
 }
 
-export function Composer({ initialText = "" }: ComposerProps): JSX.Element {
+export function Composer({
+  initialText = "",
+  onSent = () => undefined,
+}: ComposerProps): JSX.Element {
   const { state } = useApp();
   return (
     <SessionComposer
       initialText={initialText}
+      onSent={onSent}
       key={
         shownSessionOf(
           state.snapshot,
@@ -153,8 +158,10 @@ function SendButton({
 
 function SessionComposer({
   initialText,
+  onSent,
 }: {
   initialText: string;
+  onSent: () => void;
 }): JSX.Element {
   const { client, state } = useApp();
   const [text, setText] = useState(initialText);
@@ -186,6 +193,7 @@ function SessionComposer({
     const sent = await send.run(() => client.request("session/prompt", params));
     if (sent) {
       setText("");
+      onSent();
     }
   };
 

@@ -63,6 +63,7 @@ export function fakeSessionHistory(
     get: () => Promise.resolve(null),
     setArchived: () => Promise.reject(new Error("not available in this test")),
     setArchivedIfPresent: () => Promise.resolve(),
+    truncate: () => Promise.resolve(null),
     flush: () => Promise.resolve(),
     ...overrides,
   };
