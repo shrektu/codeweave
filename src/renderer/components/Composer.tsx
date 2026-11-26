@@ -1,14 +1,22 @@
 import { ArrowUp } from "lucide-react";
-import { useId, useState, type JSX, type KeyboardEvent } from "react";
+import { useId, useState, type JSX } from "react";
 
 import { parseTaskClass, TASK_CLASS_ORDER } from "../../domain/taskClass";
+import { ProviderId } from "../../domain/types";
 import type { ParamsMap } from "../../shared/protocol";
-import type { AccountView, SessionView } from "../../shared/views";
-import { shownSessionOf } from "../format";
+import type {
+  AccountView,
+  AttachmentView,
+  SessionView,
+} from "../../shared/views";
+import { canSendAttachments } from "../attachments";
+import { PROVIDER_LABELS, shownSessionOf } from "../format";
 import { modelSuggestions, TASK_CLASS_LABELS } from "../routingText";
 import { useApp } from "../services";
 import type { AppState } from "../store";
 import { useAsyncAction } from "../useAsyncAction";
+
+import { PromptInput } from "./PromptInput";
 
 type PromptParams = ParamsMap["session/prompt"];
 
@@ -43,6 +51,7 @@ function promptParams(
   account: AccountView | null,
   classValue: string,
   model: string,
+  attachments: readonly AttachmentView[],
 ): PromptParams {
   const taskClass = parseTaskClass(classValue);
   const trimmed = model.trim();
@@ -50,6 +59,7 @@ function promptParams(
     sessionId,
     text,
     ...(taskClass === null ? {} : { taskClass }),
+    ...(attachments.length === 0 ? {} : { attachments: [...attachments] }),
     ...(trimmed === ""
       ? {}
       : {
@@ -112,17 +122,20 @@ function RoutingControls({
 
 interface ComposerProps {
   readonly initialText?: string;
+  readonly initialAttachments?: readonly AttachmentView[];
   readonly onSent?: () => void;
 }
 
 export function Composer({
   initialText = "",
+  initialAttachments = [],
   onSent = () => undefined,
 }: ComposerProps): JSX.Element {
   const { state } = useApp();
   return (
     <SessionComposer
       initialText={initialText}
+      initialAttachments={initialAttachments}
       onSent={onSent}
       key={
         shownSessionOf(
@@ -158,13 +171,19 @@ function SendButton({
 
 function SessionComposer({
   initialText,
+  initialAttachments,
   onSent,
 }: {
   initialText: string;
+  initialAttachments: readonly AttachmentView[];
   onSent: () => void;
 }): JSX.Element {
   const { client, state } = useApp();
   const [text, setText] = useState(initialText);
+  const [attachments, setAttachments] =
+    useState<readonly AttachmentView[]>(initialAttachments);
+  const [generation, setGeneration] = useState(0);
+  const [staging, setStaging] = useState(false);
   const [classValue, setClassValue] = useState(AUTO_CLASS_VALUE);
   const [model, setModel] = useState("");
   const send = useAsyncAction();
@@ -175,11 +194,23 @@ function SessionComposer({
   );
   const account = runningAccount(session, state.snapshot?.accounts ?? []);
   const suggestions = modelSuggestions(account);
+  const imageInput = session?.imageInput ?? true;
+  const providerLabel =
+    session === null
+      ? PROVIDER_LABELS[ProviderId.claude]
+      : PROVIDER_LABELS[session.activeProvider];
+  const attachmentsAllowed = canSendAttachments(attachments, imageInput);
   const enabled =
     runId === null && canCompose(state.connection, session, send.pending);
 
   const submit = async (): Promise<void> => {
-    if (!enabled || session === null || text.trim() === "") {
+    if (
+      !enabled ||
+      !attachmentsAllowed ||
+      staging ||
+      session === null ||
+      text.trim() === ""
+    ) {
       return;
     }
     const params = promptParams(
@@ -189,31 +220,34 @@ function SessionComposer({
       account,
       classValue,
       model,
+      attachments,
     );
     const sent = await send.run(() => client.request("session/prompt", params));
     if (sent) {
       setText("");
+      setAttachments([]);
+      setGeneration((current) => current + 1);
       onSent();
-    }
-  };
-
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      void submit();
     }
   };
 
   return (
     <div className="composer">
-      <textarea
-        placeholder="Describe the task"
+      <PromptInput
         value={text}
-        disabled={!enabled}
-        onChange={(event) => {
-          setText(event.target.value);
+        onChange={setText}
+        onSubmit={() => {
+          void submit();
         }}
-        onKeyDown={onKeyDown}
+        placeholder="Describe the task"
+        disabled={!enabled}
+        cwd={session?.cwd}
+        attachments={attachments}
+        onAttachmentsChange={setAttachments}
+        generation={generation}
+        onPendingChange={setStaging}
+        imageInput={imageInput}
+        providerLabel={providerLabel}
       />
       <RoutingControls
         classValue={classValue}
@@ -224,7 +258,9 @@ function SessionComposer({
       />
       {send.error !== null && <p className="error">{send.error}</p>}
       <SendButton
-        disabled={!enabled || text.trim() === ""}
+        disabled={
+          !enabled || !attachmentsAllowed || staging || text.trim() === ""
+        }
         onSend={() => {
           void submit();
         }}

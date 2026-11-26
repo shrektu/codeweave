@@ -1,10 +1,12 @@
 import { ArrowUp, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState, type JSX } from "react";
 
+import { PROVIDER_IMAGE_INPUT } from "../../domain/attachments";
 import { RewindMode } from "../../domain/checkpoints";
 import { ProviderId } from "../../domain/types";
 import type {
   AccountView,
+  AttachmentView,
   FlowRef,
   FlowRunView,
   FlowsList,
@@ -17,6 +19,7 @@ import type {
   ToolCallView,
   TurnRouteView,
 } from "../../shared/views";
+import { canSendAttachments } from "../attachments";
 import {
   accountLabel,
   focusedRunOf,
@@ -46,6 +49,8 @@ import { ContextMeter } from "./ContextMeter";
 import { Icon, ICON_SIZE_SMALL_PX } from "./Icon";
 import { PathField } from "./PathField";
 import { PermissionCard } from "./PermissionCard";
+import { AttachmentThumbnail } from "./AttachmentThumbnail";
+import { PromptInput } from "./PromptInput";
 import {
   REWIND_STRINGS,
   RewindDialog,
@@ -60,13 +65,32 @@ interface UnsentDraft {
   readonly id: number;
   readonly sessionId: string | null;
   readonly text: string;
+  readonly attachments: readonly AttachmentView[];
+}
+
+function unsentBelongsTo(
+  unsent: UnsentDraft | null,
+  sessionId: string,
+): boolean {
+  return (
+    unsent !== null &&
+    (unsent.sessionId === null || unsent.sessionId === sessionId)
+  );
 }
 
 function unsentTextFor(unsent: UnsentDraft | null, sessionId: string): string {
-  const belongs =
-    unsent !== null &&
-    (unsent.sessionId === null || unsent.sessionId === sessionId);
-  return belongs ? unsent.text : "";
+  return unsentBelongsTo(unsent, sessionId) && unsent !== null
+    ? unsent.text
+    : "";
+}
+
+function unsentAttachmentsFor(
+  unsent: UnsentDraft | null,
+  sessionId: string,
+): readonly AttachmentView[] {
+  return unsentBelongsTo(unsent, sessionId) && unsent !== null
+    ? unsent.attachments
+    : [];
 }
 
 interface StartDraft {
@@ -74,7 +98,11 @@ interface StartDraft {
   readonly setTask: (task: string) => void;
   readonly unsent: UnsentDraft | null;
   readonly setUnsent: (unsent: UnsentDraft | null) => void;
-  readonly saveUnsent: (sessionId: string | null, text: string) => void;
+  readonly saveUnsent: (
+    sessionId: string | null,
+    text: string,
+    attachments: readonly AttachmentView[],
+  ) => void;
   readonly clearUnsent: () => void;
   readonly start: AsyncAction;
 }
@@ -87,7 +115,11 @@ interface SessionBodyProps {
   historyOnly: boolean;
   promptError: string | null;
   reportSummary: string | null;
-  onResumeFailure: (text: string, message: string) => void;
+  onResumeFailure: (
+    text: string,
+    message: string,
+    attachments: readonly AttachmentView[],
+  ) => void;
   onRewind: (prompt: PromptView) => void;
 }
 
@@ -187,6 +219,18 @@ function StreamEntry({
       return (
         <li className="card msg prompt" aria-label="You">
           <Markdown text={item.prompt.text} />
+          {item.prompt.attachments.length > 0 && (
+            <ul className="prompt-attachments">
+              {item.prompt.attachments.map((attachment) => (
+                <li key={attachment.id}>
+                  <AttachmentThumbnail
+                    attachment={attachment}
+                    sessionId={sessionId}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
           {onRewind !== undefined && (
             <button
               type="button"
@@ -259,22 +303,47 @@ function distinctProviders(
   );
 }
 
+function defaultProviderOf(
+  accounts: readonly AccountView[],
+): SelectableProvider | undefined {
+  const ordered = accounts.toSorted(
+    (left, right) =>
+      left.order - right.order || left.id.localeCompare(right.id),
+  );
+  const first = ordered.at(0);
+  return first !== undefined && isSelectable(first.provider)
+    ? first.provider
+    : undefined;
+}
+
 interface TaskStartProps {
   readonly draft: StartDraft;
   readonly provider: SelectableProvider | undefined;
   readonly orchestrating: boolean;
+  readonly providerLabel: string;
+  readonly imageInput: boolean;
 }
 
 function TaskStart({
   draft,
   provider,
   orchestrating,
+  providerLabel,
+  imageInput,
 }: TaskStartProps): JSX.Element {
   const { client, store, state } = useApp();
   const { task, setTask, setUnsent, saveUnsent, start } = draft;
+  const [attachments, setAttachments] = useState<readonly AttachmentView[]>([]);
+  const [generation, setGeneration] = useState(0);
+  const [staging, setStaging] = useState(false);
   const workspace = state.snapshot?.settings.defaultWorkspaceResolved;
+  const attachmentsAllowed = canSendAttachments(attachments, imageInput);
+  const startBlocked = start.pending || staging;
 
   const startWithTask = (): void => {
+    if (staging) {
+      return;
+    }
     const text = task.trim();
     setUnsent(null);
     void start.run(async () => {
@@ -289,29 +358,40 @@ function TaskStart({
         await client.request("session/prompt", {
           sessionId: started.id,
           text,
+          ...(attachments.length === 0
+            ? {}
+            : { attachments: [...attachments] }),
         });
       } catch (error: unknown) {
-        saveUnsent(sessionId, text);
+        saveUnsent(sessionId, text, attachments);
         throw error;
       }
       setTask("");
+      setAttachments([]);
+      setGeneration((current) => current + 1);
     });
   };
 
   return (
     <>
-      <textarea
-        aria-label="Task"
+      <PromptInput
+        ariaLabel="Task"
         placeholder="What should the agent do?"
         value={task}
-        onChange={(event) => {
-          setTask(event.target.value);
-        }}
+        onChange={setTask}
+        disabled={start.pending}
+        cwd={workspace}
+        attachments={attachments}
+        onAttachmentsChange={setAttachments}
+        generation={generation}
+        onPendingChange={setStaging}
+        imageInput={imageInput}
+        providerLabel={providerLabel}
       />
       <button
         type="button"
         className="btn pri"
-        disabled={start.pending || task.trim() === ""}
+        disabled={startBlocked || task.trim() === "" || !attachmentsAllowed}
         onClick={startWithTask}
       >
         Start
@@ -333,6 +413,14 @@ function StartPrompt({ draft }: { draft: StartDraft }): JSX.Element {
   const [orchestrate, setOrchestrate] = useState(false);
   const providers = distinctProviders(state.snapshot?.accounts ?? []);
   const provider = providers.find((id) => id === picked) ?? providers[0];
+  const startProvider =
+    provider ?? defaultProviderOf(state.snapshot?.accounts ?? []);
+  const imageInput =
+    startProvider === undefined ? true : PROVIDER_IMAGE_INPUT[startProvider];
+  const providerLabel =
+    startProvider === undefined
+      ? PROVIDER_LABELS[ProviderId.claude]
+      : PROVIDER_LABELS[startProvider];
   const orchestrateBlocked = provider === ProviderId.gemini;
   const orchestrating = orchestrate && !orchestrateBlocked;
 
@@ -422,6 +510,8 @@ function StartPrompt({ draft }: { draft: StartDraft }): JSX.Element {
         draft={draft}
         provider={provider}
         orchestrating={orchestrating}
+        providerLabel={providerLabel}
+        imageInput={imageInput}
       />
       <PathField
         value={null}
@@ -500,19 +590,36 @@ function SessionIdentity({
 
 function ResumeComposer({
   sessionId,
+  cwd,
+  provider,
   initialText,
+  initialAttachments,
   onSent,
   onFailure,
 }: {
   sessionId: string;
+  cwd: string;
+  provider: ProviderId;
   initialText: string;
+  initialAttachments: readonly AttachmentView[];
   onSent: () => void;
-  onFailure: (text: string, message: string) => void;
+  onFailure: (
+    text: string,
+    message: string,
+    attachments: readonly AttachmentView[],
+  ) => void;
 }): JSX.Element {
   const { client } = useApp();
   const [text, setText] = useState(initialText);
+  const [attachments, setAttachments] =
+    useState<readonly AttachmentView[]>(initialAttachments);
+  const [generation, setGeneration] = useState(0);
+  const [staging, setStaging] = useState(false);
   const send = useAsyncAction();
-  const ready = !send.pending && text.trim() !== "";
+  const imageInput = PROVIDER_IMAGE_INPUT[provider];
+  const attachmentsAllowed = canSendAttachments(attachments, imageInput);
+  const ready =
+    !send.pending && !staging && text.trim() !== "" && attachmentsAllowed;
 
   const submit = async (): Promise<void> => {
     if (!ready) {
@@ -521,33 +628,43 @@ function ResumeComposer({
     const sent = await send.run(async () => {
       await client.request("session/resume", { sessionId });
       try {
-        await client.request("session/prompt", { sessionId, text });
+        await client.request("session/prompt", {
+          sessionId,
+          text,
+          ...(attachments.length === 0
+            ? {}
+            : { attachments: [...attachments] }),
+        });
       } catch (error: unknown) {
-        onFailure(text, errorMessage(error));
+        onFailure(text, errorMessage(error), attachments);
         throw error;
       }
     });
     if (sent) {
       setText("");
+      setAttachments([]);
+      setGeneration((current) => current + 1);
       onSent();
     }
   };
 
   return (
     <div className="composer">
-      <textarea
-        placeholder="Describe the task"
+      <PromptInput
         value={text}
+        onChange={setText}
+        onSubmit={() => {
+          void submit();
+        }}
+        placeholder="Describe the task"
         disabled={send.pending}
-        onChange={(event) => {
-          setText(event.target.value);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault();
-            void submit();
-          }
-        }}
+        cwd={cwd}
+        attachments={attachments}
+        onAttachmentsChange={setAttachments}
+        generation={generation}
+        onPendingChange={setStaging}
+        imageInput={imageInput}
+        providerLabel={PROVIDER_LABELS[provider]}
       />
       {send.error !== null && <p className="error">{send.error}</p>}
       <button
@@ -581,6 +698,7 @@ function SessionBody({
   const stop = useAsyncAction();
   const live = isSessionLive(session);
   const unsentText = unsentTextFor(draft.unsent, session.id);
+  const unsentAttachments = unsentAttachmentsFor(draft.unsent, session.id);
   const unsentId =
     draft.unsent !== null &&
     (draft.unsent.sessionId === null || draft.unsent.sessionId === session.id)
@@ -639,7 +757,10 @@ function SessionBody({
         <ResumeComposer
           key={`${session.id}:${String(unsentId)}`}
           sessionId={session.id}
+          cwd={session.cwd}
+          provider={session.activeProvider}
           initialText={unsentText}
+          initialAttachments={unsentAttachments}
           onSent={draft.clearUnsent}
           onFailure={onResumeFailure}
         />
@@ -647,6 +768,7 @@ function SessionBody({
         <Composer
           key={`${session.id}:${String(unsentId)}`}
           initialText={unsentText}
+          initialAttachments={unsentAttachments}
           onSent={draft.clearUnsent}
         />
       )}
@@ -697,9 +819,13 @@ export function SessionStream(): JSX.Element {
   const [rewinding, setRewinding] = useState<RewindTarget | null>(null);
   const [rewindNotice, setRewindNotice] = useState<RewindNotice | null>(null);
   const draftSeq = useRef(0);
-  const saveUnsent = (sessionId: string | null, text: string): void => {
+  const saveUnsent = (
+    sessionId: string | null,
+    text: string,
+    attachments: readonly AttachmentView[],
+  ): void => {
     draftSeq.current += 1;
-    setUnsent({ id: draftSeq.current, sessionId, text });
+    setUnsent({ id: draftSeq.current, sessionId, text, attachments });
   };
   const clearUnsent = (): void => {
     setUnsent(null);
@@ -797,7 +923,7 @@ export function SessionStream(): JSX.Element {
           },
     );
     if (mode !== RewindMode.files) {
-      saveUnsent(sessionId, result.promptText);
+      saveUnsent(sessionId, result.promptText, []);
     }
   };
 
@@ -827,8 +953,8 @@ export function SessionStream(): JSX.Element {
           onRewind={(prompt) => {
             setRewinding({ sessionId: session.id, prompt });
           }}
-          onResumeFailure={(text, message) => {
-            saveUnsent(session.id, text);
+          onResumeFailure={(text, message, attachments) => {
+            saveUnsent(session.id, text, attachments);
             setResumeFailure({
               sessionId: session.id,
               message,
