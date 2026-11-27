@@ -7,6 +7,7 @@ import { createJsonStore } from "../../src/backend/storage";
 import type { TerminalService } from "../../src/backend/terminal/service";
 import { IpcError } from "../../src/shared/protocol";
 import type { SessionView } from "../../src/shared/views";
+import { emptyUsageLedger } from "../../src/domain/usageLedger";
 import { createTerminalRig, type TerminalRig } from "../fakes/fakeTerminal";
 import {
   fakeFlowRuns,
@@ -53,6 +54,7 @@ function sessionIn(cwd: string): SessionView {
     flowRef: null,
     currentModel: null,
     contextUsage: null,
+    usage: emptyUsageLedger(),
     turns: [],
     orchestrate: false,
     imageInput: true,

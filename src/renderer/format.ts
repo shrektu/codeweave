@@ -2,6 +2,7 @@ import { ApiAuth, ApiProviderId } from "../domain/apiProviders";
 import { PROVIDER_IMAGE_INPUT } from "../domain/attachments";
 import { isRunOpen } from "../domain/flowState";
 import { LimitPeriod } from "../domain/limitWindows";
+import { emptyUsageLedger } from "../domain/usageLedger";
 import {
   DefinitionSource,
   LimitAvailability,
@@ -113,6 +114,7 @@ export function storedSessionView(stored: StoredSession): SessionView {
     flowRef: null,
     currentModel: null,
     contextUsage: null,
+    usage: emptyUsageLedger(),
     turns: [...stored.turns],
     orchestrate: stored.orchestrate,
     imageInput: PROVIDER_IMAGE_INPUT[stored.provider],

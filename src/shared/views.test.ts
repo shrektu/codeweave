@@ -16,6 +16,7 @@ import {
   SessionViewSchema,
   SettingsViewSchema,
   ToolCallViewSchema,
+  UsageLedgerViewSchema,
 } from "./views";
 
 const BASE_TOOL = {
@@ -477,4 +478,27 @@ it("file_completion_item_schema_accepts_files_and_dirs", () => {
   expect(FileCompletionItemSchema.safeParse({ path: "src" }).success).toBe(
     false,
   );
+});
+
+it("stored_usage_without_reporters_loads", () => {
+  const stored = {
+    base: {
+      tokens: {
+        input: 5,
+        output: 1,
+        cacheRead: 0,
+        cacheWrite: 0,
+        reasoning: 0,
+      },
+      costs: { USD: 0.5 },
+      tokensReported: true,
+      costReported: true,
+    },
+    sources: {},
+  };
+
+  const parsed = UsageLedgerViewSchema.parse(stored);
+
+  expect(parsed.reporters).toEqual({});
+  expect(parsed.base.costs).toEqual({ USD: 0.5 });
 });

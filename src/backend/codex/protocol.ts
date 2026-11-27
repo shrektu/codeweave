@@ -58,6 +58,7 @@ const TokenUsageBreakdownSchema = z.looseObject({
   totalTokens: z.number(),
   inputTokens: z.number().optional(),
   cachedInputTokens: z.number().optional(),
+  cacheWriteInputTokens: z.number().optional(),
   outputTokens: z.number().optional(),
   reasoningOutputTokens: z.number().optional(),
 });

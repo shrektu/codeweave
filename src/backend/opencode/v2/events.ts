@@ -6,8 +6,12 @@ import { contextUsageOf } from "../../../domain/contextUsage";
 import {
   DiffOmission,
   FileChange,
+  UsageReportMode,
   type AgentEvent,
+  type TokenCounts,
 } from "../../../domain/events";
+import { ProviderId } from "../../../domain/types";
+import { OPENCODE_COST_CURRENCY } from "../../../domain/constants";
 import { DEFAULT_TOOL_KIND } from "../../constants";
 import {
   TITLE_EDIT_FILE,
@@ -370,7 +374,28 @@ export function createV2EventMapper(
         tokens.cache.write;
       const limitTokens = lastModel === null ? null : contextLimitOf(lastModel);
       const usage = contextUsageOf(usedTokens, limitTokens);
-      return usage === null ? [] : [{ type: "context_usage", usage }];
+      const events: AgentEvent[] = [];
+      if (usage !== null) {
+        events.push({ type: "context_usage", usage });
+      }
+      if (event.data.cost !== undefined) {
+        const tokens: TokenCounts = {
+          input: event.data.tokens.input,
+          output: event.data.tokens.output,
+          cacheRead: event.data.tokens.cache.read,
+          cacheWrite: event.data.tokens.cache.write,
+          reasoning: event.data.tokens.reasoning,
+        };
+        events.push({
+          type: "usage_report",
+          provider: ProviderId.opencode,
+          key: event.data.sessionID,
+          mode: UsageReportMode.delta,
+          tokens,
+          cost: { amount: event.data.cost, currency: OPENCODE_COST_CURRENCY },
+        });
+      }
+      return events;
     }
     if (event.type !== OpencodeV2EventType.stepStarted) {
       return [...mapText(event), ...toolMapper.map(event)];

@@ -30,6 +30,7 @@ import {
 } from "../../src/backend/checkpointStore";
 import type { CheckpointEntry } from "../../src/backend/checkpointPlan";
 import { PermissionProfile, ProviderId } from "../../src/domain/types";
+import { emptyUsageLedger } from "../../src/domain/usageLedger";
 import type {
   FileDiffView,
   SessionView,
@@ -164,6 +165,7 @@ function makeView(overrides: Partial<SessionView> = {}): SessionView {
     flowRef: null,
     currentModel: null,
     contextUsage: null,
+    usage: emptyUsageLedger(),
     turns: [],
     orchestrate: false,
     imageInput: true,

@@ -8,6 +8,7 @@ import {
   agent,
   methods,
   type AgentContext,
+  type Cost,
   type InitializeResponse,
   type LoadSessionRequest,
   type NewSessionRequest,
@@ -26,6 +27,7 @@ import {
   type ToolCallStatus,
   type ToolKind,
 } from "@agentclientprotocol/sdk";
+import type { Usage } from "@agentclientprotocol/sdk/unstable";
 
 import type {
   AgentHandle,
@@ -110,6 +112,7 @@ export type NotificationStep =
   | {
       readonly type: "usage_update";
       readonly meta?: Readonly<Record<string, unknown>>;
+      readonly cost?: Cost;
     };
 
 export type ScriptStep =
@@ -118,7 +121,11 @@ export type ScriptStep =
   | { readonly type: "ext_notification"; readonly method: string }
   | { readonly type: "unknown_update" }
   | { readonly type: "client_request"; readonly method: string }
-  | { readonly type: "end"; readonly stopReason: StopReason }
+  | {
+      readonly type: "end";
+      readonly stopReason: StopReason;
+      readonly usage?: Usage;
+    }
   | ({ readonly type: "fail" } & FakeRpcFailure)
   | { readonly type: "hang" }
   | {
@@ -198,6 +205,8 @@ function toError(failure: FakeRpcFailure): RequestError {
   return new RequestError(failure.code, failure.message, failure.data);
 }
 
+type PromptResult = PromptResponse & { readonly usage?: Usage | null };
+
 function toolCallUpdate(
   step: Extract<NotificationStep, { type: "tool_call_update" }>,
 ): SessionUpdate {
@@ -246,6 +255,7 @@ function toUpdate(step: NotificationStep): SessionUpdate {
         sessionUpdate: "usage_update",
         used: 1,
         size: 100,
+        ...(step.cost === undefined ? {} : { cost: step.cost }),
         ...(step.meta === undefined ? {} : { _meta: { ...step.meta } }),
       };
   }
@@ -368,7 +378,7 @@ export class FakeAcpAgent {
       })
       .onRequest(
         methods.agent.session.prompt,
-        async ({ params, client }): Promise<PromptResponse> => {
+        async ({ params, client }): Promise<PromptResult> => {
           this.cancelSignal = Promise.withResolvers<null>();
           this.callOrder.push("prompt");
           for (const block of params.prompt) {
@@ -401,21 +411,24 @@ export class FakeAcpAgent {
   private async runStep(
     peer: AgentContext,
     step: ScriptStep,
-  ): Promise<PromptResponse | undefined> {
+  ): Promise<PromptResult | undefined> {
     switch (step.type) {
       case "permission":
         return Promise.race([
           this.askPermission(peer, step).then(() => undefined),
-          this.cancelSignal.promise.then((): PromptResponse => ({
+          this.cancelSignal.promise.then((): PromptResult => ({
             stopReason: "cancelled",
           })),
         ]);
       case "end":
-        return { stopReason: step.stopReason };
+        return {
+          stopReason: step.stopReason,
+          ...(step.usage === undefined ? {} : { usage: step.usage }),
+        };
       case "fail":
         throw toError(step);
       case "hang":
-        return new Promise<PromptResponse>(() => undefined);
+        return new Promise<PromptResult>(() => undefined);
       case "write_file":
         await writeFile(join(this.sessionCwd(), step.path), step.content);
         return undefined;
@@ -611,8 +624,9 @@ export async function createRig(
 export async function startHandle(
   rig: AcpRig,
   profile: PermissionProfile = PermissionProfile.ask,
+  runId = "run-1",
 ): Promise<{ handle: AgentHandle; events: AgentEvent[] }> {
-  const result = await rig.start(profile);
+  const result = await rig.start(profile, runId);
   if (!result.ok) {
     throw new Error(`start failed: ${result.reason}: ${result.message}`);
   }

@@ -75,9 +75,24 @@ interface PendingPermission {
   readonly settled: () => void;
 }
 
+export interface V2Tokens {
+  readonly input: number;
+  readonly output: number;
+  readonly reasoning: number;
+  readonly cache: {
+    readonly read: number;
+    readonly write: number;
+  };
+}
+
 export type OpencodeV2Step =
   | { readonly type: "started" }
   | { readonly type: "step"; readonly model: string }
+  | {
+      readonly type: "step_ended";
+      readonly tokens: V2Tokens;
+      readonly cost?: number;
+    }
   | {
       readonly type: "text";
       readonly messageId: string;
@@ -314,6 +329,7 @@ function lifecycleEvent(
       type:
         | "started"
         | "step"
+        | "step_ended"
         | "child_session"
         | "retry"
         | "succeeded"
@@ -350,6 +366,12 @@ function lifecycleEvent(
         assistantMessageID: ASSISTANT_MESSAGE_ID,
         agent: STEP_AGENT,
         model: { id: step.model, providerID: STEP_PROVIDER_ID },
+      });
+    case "step_ended":
+      return envelope("session.step.ended", {
+        ...ownSession(),
+        tokens: step.tokens,
+        ...(step.cost === undefined ? {} : { cost: step.cost }),
       });
     case "child_session":
       return envelope("session.created", {

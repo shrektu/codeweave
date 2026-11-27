@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ApiAuth, ApiProviderId } from "../domain/apiProviders";
 import { ProviderId } from "../domain/types";
+import { emptyUsageLedger } from "../domain/usageLedger";
 import type { AccountView, SessionView, TurnRouteView } from "../shared/views";
 
 import {
@@ -129,6 +130,7 @@ function sessionOf(overrides: Partial<SessionView>): SessionView {
     flowRef: null,
     currentModel: null,
     contextUsage: null,
+    usage: emptyUsageLedger(),
     turns: [],
     orchestrate: false,
     imageInput: true,

@@ -2,6 +2,7 @@ import { expect, it, vi, type Mock } from "vitest";
 
 import { RewindMode } from "../domain/checkpoints";
 import { PermissionProfile, ProviderId } from "../domain/types";
+import { emptyUsageLedger } from "../domain/usageLedger";
 import { IpcErrorCode, type ParamsMap } from "../shared/protocol";
 import type {
   PromptView,
@@ -48,6 +49,7 @@ function view(overrides: Partial<SessionView> = {}): SessionView {
     flowRef: null,
     currentModel: null,
     contextUsage: null,
+    usage: emptyUsageLedger(),
     turns: [],
     orchestrate: false,
     imageInput: true,
@@ -75,6 +77,7 @@ function storedSession(overrides: Partial<StoredSession> = {}): StoredSession {
     toolCalls: [],
     turns: [],
     lastTurn: null,
+    usage: emptyUsageLedger(),
     nativeSessions: [],
     ...overrides,
   };

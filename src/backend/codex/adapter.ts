@@ -3,9 +3,9 @@ import { randomUUID } from "node:crypto";
 import type { z } from "zod";
 
 import { contextUsageOf } from "../../domain/contextUsage";
-import type { AgentEvent } from "../../domain/events";
+import { UsageReportMode, type AgentEvent } from "../../domain/events";
 import { ERROR_KIND_RATE_LIMIT } from "../../domain/constants";
-import type { PermissionProfile } from "../../domain/types";
+import { ProviderId, type PermissionProfile } from "../../domain/types";
 import {
   AgentStartFailure,
   InvalidOptionError,
@@ -589,6 +589,26 @@ class CodexAppServerSession implements AgentHandle {
     if (usage !== null) {
       this.emit({ type: "context_usage", usage });
     }
+    const totals = parsed.tokenUsage.total;
+    if (totals.inputTokens === undefined || totals.outputTokens === undefined) {
+      return;
+    }
+    const cached = totals.cachedInputTokens ?? 0;
+    const reasoning = totals.reasoningOutputTokens ?? 0;
+    this.emit({
+      type: "usage_report",
+      provider: ProviderId.codex,
+      key: parsed.threadId,
+      mode: UsageReportMode.cumulative,
+      tokens: {
+        input: Math.max(totals.inputTokens - cached, 0),
+        output: Math.max(totals.outputTokens - reasoning, 0),
+        cacheRead: cached,
+        cacheWrite: totals.cacheWriteInputTokens ?? 0,
+        reasoning,
+      },
+      cost: null,
+    });
   }
 
   private onNotification(method: string, params: unknown): void {

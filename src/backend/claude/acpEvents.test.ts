@@ -9,7 +9,9 @@ import {
   isAuthError,
   mapPromptError,
   mapSessionUpdate,
+  turnUsageEvent,
 } from "./acpEvents";
+import { ProviderId } from "../../domain/types";
 
 type Update = SessionNotification["update"];
 
@@ -370,6 +372,66 @@ describe("mapSessionUpdate rate limit", () => {
     expect(mapSessionUpdate(usage({ other: { status: "rejected" } }))).toEqual(
       contextOnly,
     );
+  });
+});
+
+describe("mapSessionUpdate usage cost", () => {
+  it("usage_update_cost_maps_to_cumulative_usage_report", () => {
+    const mapper = createAcpEventMapper(() => "acc-a:session-1");
+
+    const events = mapper.map({
+      sessionUpdate: "usage_update",
+      used: 1,
+      size: 10,
+      cost: { amount: 0.5, currency: "USD" },
+    });
+
+    expect(events).toEqual([
+      {
+        type: "context_usage",
+        usage: { usedTokens: 1, limitTokens: 10 },
+      },
+      {
+        type: "usage_report",
+        provider: ProviderId.claude,
+        key: "acc-a:session-1",
+        mode: "cumulative",
+        tokens: null,
+        cost: { amount: 0.5, currency: "USD" },
+      },
+    ]);
+  });
+
+  it("turn_usage_maps_to_a_delta_usage_report", () => {
+    expect(
+      turnUsageEvent(
+        {
+          totalTokens: 174,
+          inputTokens: 100,
+          outputTokens: 20,
+          thoughtTokens: 5,
+          cachedReadTokens: 10,
+          cachedWriteTokens: 2,
+        },
+        "acc-a:session-1",
+      ),
+    ).toEqual([
+      {
+        type: "usage_report",
+        provider: ProviderId.claude,
+        key: "acc-a:session-1",
+        mode: "delta",
+        tokens: {
+          input: 100,
+          output: 20,
+          cacheRead: 10,
+          cacheWrite: 2,
+          reasoning: 5,
+        },
+        cost: null,
+      },
+    ]);
+    expect(turnUsageEvent(null, "acc-a:session-1")).toEqual([]);
   });
 });
 

@@ -17,6 +17,7 @@ import { createFlowRunService } from "../../src/backend/flowRuns";
 import { createHandlers } from "../../src/backend/handlers";
 import { createJsonStore } from "../../src/backend/storage";
 import type { AgentDefinition, FlowDefinition } from "../../src/domain/flows";
+import { emptyUsageLedger } from "../../src/domain/usageLedger";
 import { IpcErrorCode, type ParamsMap } from "../../src/shared/protocol";
 import type { AgentView, FlowsList, SessionView } from "../../src/shared/views";
 import {
@@ -845,6 +846,7 @@ const RUNNING_VIEW: SessionView = {
   flowRef: { flowId: "solo", nodeId: "build" },
   currentModel: null,
   contextUsage: null,
+  usage: emptyUsageLedger(),
   turns: [],
   orchestrate: false,
   imageInput: true,

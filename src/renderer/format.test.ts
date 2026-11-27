@@ -6,6 +6,7 @@ import {
   makeSnapshot,
 } from "../../tests/fakes/fakeIpcClient";
 import type { StoredSession } from "../shared/views";
+import { emptyUsageLedger } from "../domain/usageLedger";
 
 import {
   accountLabel,
@@ -475,6 +476,7 @@ it("stored_history_view_cannot_compact", () => {
     toolCalls: [],
     turns: [],
     lastTurn: null,
+    usage: emptyUsageLedger(),
     nativeSessions: [],
   };
 

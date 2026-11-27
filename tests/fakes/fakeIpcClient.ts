@@ -3,6 +3,7 @@ import { createElement, type ReactElement } from "react";
 
 import { ApiProviderId } from "../../src/domain/apiProviders";
 import { TaskClass } from "../../src/domain/taskClass";
+import { emptyUsageLedger } from "../../src/domain/usageLedger";
 import {
   DefinitionSource,
   EdgeKind,
@@ -242,6 +243,7 @@ export function makeStoredSession(
     toolCalls: [],
     turns: [],
     lastTurn: null,
+    usage: emptyUsageLedger(),
     nativeSessions: [],
     ...overrides,
   };
@@ -284,6 +286,7 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
     flowRef: null,
     currentModel: null,
     contextUsage: null,
+    usage: emptyUsageLedger(),
     turns: [],
     orchestrate: false,
     imageInput: true,

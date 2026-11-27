@@ -16,6 +16,8 @@ import {
   type SessionState,
   type TurnRouteEntry,
 } from "./sessionReducer";
+import { usageTotalsOf } from "./usageLedger";
+import { ProviderId } from "./types";
 
 function reduceAll(events: readonly AgentEvent[]): SessionState {
   return events.reduce(reduceSession, INITIAL_SESSION_STATE);
@@ -526,6 +528,41 @@ describe("session reducer: turn routes", () => {
 
     expect(reset.currentModel).toBeNull();
     expect(reset.contextUsage).toBeNull();
+  });
+
+  it("reset_served_state_keeps_usage", () => {
+    const withUsage = reduceAll([
+      {
+        type: "usage_report",
+        provider: ProviderId.claude,
+        key: "acc-a:session",
+        mode: "cumulative",
+        tokens: {
+          input: 100,
+          output: 20,
+          cacheRead: 10,
+          cacheWrite: 2,
+          reasoning: 5,
+        },
+        cost: { amount: 0.5, currency: "USD" },
+      },
+    ]);
+
+    const reset = resetServedState(withUsage);
+
+    expect(reset.contextUsage).toBeNull();
+    expect(usageTotalsOf(reset.usage)).toEqual({
+      tokens: {
+        input: 100,
+        output: 20,
+        cacheRead: 10,
+        cacheWrite: 2,
+        reasoning: 5,
+      },
+      costs: { USD: 0.5 },
+      tokensReported: true,
+      costReported: true,
+    });
   });
 });
 

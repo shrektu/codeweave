@@ -15,6 +15,11 @@ import {
 } from "./permissionRecords";
 import type { RouteSource } from "./routing";
 import type { TaskClass } from "./taskClass";
+import {
+  applyUsageReport,
+  emptyUsageLedger,
+  type UsageLedger,
+} from "./usageLedger";
 
 export interface TurnLogEntry {
   readonly toolCallId: string;
@@ -68,6 +73,7 @@ export interface SessionState {
   readonly lastTurn: LastTurn | null;
   readonly currentModel: string | null;
   readonly contextUsage: ContextUsage | null;
+  readonly usage: UsageLedger;
   readonly nextSeq: number;
 }
 
@@ -82,6 +88,7 @@ export const INITIAL_SESSION_STATE: SessionState = {
   lastTurn: null,
   currentModel: null,
   contextUsage: null,
+  usage: emptyUsageLedger(),
   nextSeq: 0,
 };
 
@@ -336,6 +343,8 @@ export function reduceSession(
       return settlePermission(state, event);
     case "context_usage":
       return { ...state, contextUsage: event.usage };
+    case "usage_report":
+      return { ...state, usage: applyUsageReport(state.usage, event) };
     case "rate_limit":
     case "api_retry":
       return state;

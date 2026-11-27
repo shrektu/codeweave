@@ -98,6 +98,7 @@ export function toSessionView(input: SessionViewInput): SessionView {
     currentModel: state.currentModel,
     contextUsage:
       state.contextUsage === null ? null : { ...state.contextUsage },
+    usage: state.usage,
     turns: state.turns.map((turn) => ({ ...turn })),
     orchestrate: input.orchestrate,
     imageInput: PROVIDER_IMAGE_INPUT[activeProvider],

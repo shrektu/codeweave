@@ -14,6 +14,7 @@ import {
 } from "../../src/backend/constants";
 import type { RewindMode } from "../../src/domain/checkpoints";
 import { PermissionProfile, ProviderId } from "../../src/domain/types";
+import { emptyUsageLedger } from "../../src/domain/usageLedger";
 import { IpcErrorCode } from "../../src/shared/protocol";
 import { FlowRunViewSchema, type StoredSession } from "../../src/shared/views";
 import {
@@ -99,6 +100,7 @@ async function seedStoredSession(
     toolCalls: [],
     turns: [],
     lastTurn: null,
+    usage: emptyUsageLedger(),
     nativeSessions: [],
   };
   await writeFile(join(sessions, `${sessionId}.json`), JSON.stringify(stored));
