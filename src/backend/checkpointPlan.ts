@@ -2,7 +2,10 @@ import { applyPatch, parsePatch, reversePatch } from "diff";
 import { z } from "zod";
 
 import { RestoreAction, RestoreSkipReason } from "../domain/checkpoints";
+import { FileChange } from "../domain/events";
 import type { RestorePlanFileView, RestorePlanView } from "../shared/views";
+
+import { SnapshotStampSchema } from "./fileSnapshot";
 
 export const BlobRefSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("missing") }),
@@ -25,6 +28,10 @@ export const CheckpointEntrySchema = z.strictObject({
   before: BlobRefSchema,
   after: BlobRefSchema,
   order: z.int(),
+  change: z.enum(FileChange).optional(),
+  patch: z.string().optional(),
+  lateReadOf: z.string().optional(),
+  afterStamp: SnapshotStampSchema.optional(),
 });
 export type CheckpointEntry = z.infer<typeof CheckpointEntrySchema>;
 

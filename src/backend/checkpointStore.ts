@@ -43,6 +43,8 @@ import {
   readFileSnapshot,
   SnapshotKind,
   type FileSnapshot,
+  type SnapshotStamp,
+  type StampedSnapshot,
 } from "./fileSnapshot";
 import { isInside } from "./flows";
 import { KeyedMutex } from "./keyedMutex";
@@ -54,6 +56,7 @@ const INVALID_SESSION_ID_MESSAGE = "Invalid session id";
 const JSON_INDENT = 2;
 const HASH_ALGORITHM = "sha256";
 const EMPTY_TEXT = "";
+const NANOSECONDS_PER_SECOND = 1_000_000_000n;
 
 const CheckpointIndexSchema = z.strictObject({
   version: z.literal(STORAGE_VERSION),
@@ -72,7 +75,8 @@ export interface CheckpointEdit {
   readonly editKey: string;
   readonly promptSeq: number;
   readonly diff: FileDiffView;
-  readonly after: Promise<FileSnapshot>;
+  readonly after: Promise<StampedSnapshot>;
+  readonly lateReadOf?: string;
 }
 
 export interface CheckpointStore {
@@ -115,6 +119,161 @@ function omissionReason(omitted: DiffOmission): RestoreSkipReason {
 
 function evictedRef(): BlobRef {
   return { kind: "unknown", reason: RestoreSkipReason.evicted };
+}
+
+function patchMismatchRef(): BlobRef {
+  return { kind: "unknown", reason: RestoreSkipReason.patchMismatch };
+}
+
+interface CorrectedRefs {
+  readonly before: BlobRef;
+  readonly after: BlobRef;
+}
+
+function isEvictedEntry(entry: CheckpointEntry): boolean {
+  return (
+    (entry.before.kind === "unknown" &&
+      entry.before.reason === RestoreSkipReason.evicted) ||
+    (entry.after.kind === "unknown" &&
+      entry.after.reason === RestoreSkipReason.evicted)
+  );
+}
+
+function keepsMissingBefore(entry: CheckpointEntry): boolean {
+  if (entry.change !== undefined) {
+    return entry.change === FileChange.created;
+  }
+  return entry.before.kind === "missing";
+}
+
+function linkedEntries(
+  entries: readonly CheckpointEntry[],
+  path: string,
+  firstKey: string,
+): readonly CheckpointEntry[] {
+  const byKey = new Map<string, CheckpointEntry>();
+  for (const entry of entries) {
+    if (entry.path === path) {
+      byKey.set(entry.editKey, entry);
+    }
+  }
+  const chain: CheckpointEntry[] = [];
+  const seen = new Set<string>();
+  let key: string | undefined = firstKey;
+  while (key !== undefined && !seen.has(key)) {
+    const entry = byKey.get(key);
+    if (entry === undefined || isEvictedEntry(entry)) {
+      break;
+    }
+    chain.push(entry);
+    seen.add(key);
+    key = entry.lateReadOf;
+  }
+  return chain;
+}
+
+function stampsEqual(a: SnapshotStamp, b: SnapshotStamp): boolean {
+  return a.ino === b.ino && a.size === b.size && a.mtimeNs === b.mtimeNs;
+}
+
+function hasFineMtime(stamp: SnapshotStamp): boolean {
+  return BigInt(stamp.mtimeNs) % NANOSECONDS_PER_SECOND !== 0n;
+}
+
+function inferredLateReadOf(
+  entries: readonly CheckpointEntry[],
+  path: string,
+  after: BlobRef,
+  stamp: SnapshotStamp | undefined,
+): string | undefined {
+  if (after.kind !== "stored" || stamp === undefined) {
+    return undefined;
+  }
+  const latest = latestEntryFor(entries, path);
+  if (
+    latest?.after.kind !== "stored" ||
+    latest.after.hash !== after.hash ||
+    latest.afterStamp === undefined ||
+    !stampsEqual(latest.afterStamp, stamp) ||
+    !hasFineMtime(stamp)
+  ) {
+    return undefined;
+  }
+  return latest.editKey;
+}
+
+async function correctedChain(
+  sessionDir: string,
+  chain: readonly CheckpointEntry[],
+  edit: CheckpointEdit,
+  afterText: string,
+): Promise<ReadonlyMap<number, CorrectedRefs>> {
+  const corrected = new Map<number, CorrectedRefs>();
+  let text = afterText;
+  let newerPatch = "patch" in edit.diff ? edit.diff.patch : undefined;
+  for (const entry of chain) {
+    const next =
+      newerPatch === undefined ? null : reverseApply(newerPatch, text);
+    if (next === null) {
+      break;
+    }
+    text = next;
+    let before: BlobRef | null;
+    if (keepsMissingBefore(entry)) {
+      before = { kind: "missing" };
+    } else {
+      const beforeText =
+        entry.patch === undefined ? null : reverseApply(entry.patch, text);
+      before =
+        beforeText === null ? null : await storeText(sessionDir, beforeText);
+    }
+    if (before === null) {
+      break;
+    }
+    corrected.set(entry.order, {
+      before,
+      after: await storeText(sessionDir, text),
+    });
+    newerPatch = entry.patch;
+  }
+  return corrected;
+}
+
+async function correctLateReads(
+  sessionDir: string,
+  entries: readonly CheckpointEntry[],
+  edit: CheckpointEdit,
+  after: BlobRef,
+  lateReadOf: string | undefined,
+): Promise<readonly CheckpointEntry[]> {
+  if (after.kind !== "stored" || lateReadOf === undefined) {
+    return entries;
+  }
+  const chain = linkedEntries(entries, edit.diff.path, lateReadOf);
+  if (chain.length === 0) {
+    return entries;
+  }
+  const afterText = await readBlobText(sessionDir, after.hash);
+  const corrected = await correctedChain(sessionDir, chain, edit, afterText);
+  const uncorrected = new Set(
+    chain
+      .filter((entry) => !corrected.has(entry.order))
+      .map((entry) => entry.order),
+  );
+  return entries.map((entry) => {
+    if (uncorrected.has(entry.order)) {
+      return {
+        ...entry,
+        before: patchMismatchRef(),
+        after: patchMismatchRef(),
+      };
+    }
+    const fixed = corrected.get(entry.order);
+    if (fixed === undefined) {
+      return entry;
+    }
+    return { ...entry, before: fixed.before, after: fixed.after };
+  });
 }
 
 async function fileExists(file: string): Promise<boolean> {
@@ -308,10 +467,12 @@ async function readBlobText(sessionDir: string, hash: string): Promise<string> {
 }
 
 type SettledSnapshot =
-  | { readonly ok: true; readonly snapshot: FileSnapshot }
+  | { readonly ok: true; readonly snapshot: StampedSnapshot }
   | { readonly ok: false; readonly error: unknown };
 
-function settleAfter(after: Promise<FileSnapshot>): Promise<SettledSnapshot> {
+function settleAfter(
+  after: Promise<StampedSnapshot>,
+): Promise<SettledSnapshot> {
   return after
     .then((snapshot): SettledSnapshot => ({ ok: true, snapshot }))
     .catch((error: unknown): SettledSnapshot => ({ ok: false, error }));
@@ -336,13 +497,29 @@ async function recordStep(
     return;
   }
   const afterSnapshot = settled.snapshot;
-  const after = await storeSnapshot(sessionDir, afterSnapshot);
+  const after = await storeSnapshot(sessionDir, afterSnapshot.snapshot);
+  const lateReadOf =
+    edit.lateReadOf ??
+    inferredLateReadOf(
+      index.entries,
+      edit.diff.path,
+      after,
+      afterSnapshot.stamp,
+    );
+  const entries = await correctLateReads(
+    sessionDir,
+    index.entries,
+    edit,
+    after,
+    lateReadOf,
+  );
   const before = await computeBefore(
     sessionDir,
     edit,
-    afterSnapshot,
-    index.entries,
+    afterSnapshot.snapshot,
+    entries,
   );
+  const patch = "patch" in edit.diff ? edit.diff.patch : undefined;
   const entry: CheckpointEntry = {
     editKey: edit.editKey,
     promptSeq: edit.promptSeq,
@@ -350,9 +527,15 @@ async function recordStep(
     before,
     after,
     order: index.nextOrder,
+    change: edit.diff.change,
+    ...(patch === undefined ? {} : { patch }),
+    ...(lateReadOf === undefined ? {} : { lateReadOf }),
+    ...(afterSnapshot.stamp === undefined
+      ? {}
+      : { afterStamp: afterSnapshot.stamp }),
   };
-  const entries = [...index.entries, entry];
-  const evicted = evictOldest(entries, maxSessionBytes);
+  const entriesWithNew = [...entries, entry];
+  const evicted = evictOldest(entriesWithNew, maxSessionBytes);
   await writeIndex(sessionDir, {
     version: STORAGE_VERSION,
     nextOrder: index.nextOrder + 1,

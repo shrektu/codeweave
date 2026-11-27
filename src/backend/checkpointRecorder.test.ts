@@ -20,7 +20,11 @@ import {
 } from "./checkpointStore";
 import type { CheckpointEntry } from "./checkpointPlan";
 import { computeFileDiff } from "./fileDiff";
-import { SnapshotKind, type FileSnapshot } from "./fileSnapshot";
+import {
+  SnapshotKind,
+  type FileSnapshot,
+  type StampedSnapshot,
+} from "./fileSnapshot";
 import { settled } from "../../tests/fakes/settle";
 
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";
@@ -55,6 +59,10 @@ function snapshotOf(text: string | null): FileSnapshot {
   return text === null
     ? { kind: SnapshotKind.missing }
     : { kind: SnapshotKind.text, text };
+}
+
+function stampedOf(text: string | null): StampedSnapshot {
+  return { snapshot: snapshotOf(text) };
 }
 
 function diffOf(
@@ -231,7 +239,113 @@ it("the after snapshot is read when the edit is observed, not when the record ru
   await writeText(a, "v2\n");
   release.resolve(undefined);
 
-  expect(observed).toEqual({ kind: SnapshotKind.text, text: "v1\n" });
+  expect(observed.snapshot).toMatchObject({
+    kind: SnapshotKind.text,
+    text: "v1\n",
+  });
+});
+
+it("edit_observed_while_previous_read_pending_links_late_read", () => {
+  const a = join(work, "a.txt");
+  const read = Promise.withResolvers<StampedSnapshot>();
+  const edits: CheckpointEdit[] = [];
+  const recorder = createCheckpointRecorder({
+    store: {
+      record: (_sessionId: string, edit: CheckpointEdit): Promise<void> => {
+        edits.push(edit);
+        return Promise.resolve();
+      },
+    },
+    ownerOf: () => null,
+    readSnapshot: () => read.promise,
+  });
+
+  recorder.observeMain(makeView({ prompts: PROMPTS }));
+  recorder.observeMain(
+    makeView({
+      prompts: PROMPTS,
+      toolCalls: [
+        makeToolCall({
+          toolCallId: "tc-1",
+          seq: 3,
+          diffs: [diffOf(a, "v0\n", "v1\n")],
+        }),
+      ],
+    }),
+  );
+  recorder.observeMain(
+    makeView({
+      prompts: PROMPTS,
+      toolCalls: [
+        makeToolCall({
+          toolCallId: "tc-1",
+          seq: 3,
+          diffs: [diffOf(a, "v0\n", "v1\n")],
+        }),
+        makeToolCall({
+          toolCallId: "tc-2",
+          seq: 4,
+          diffs: [diffOf(a, "v1\n", "v2\n")],
+        }),
+      ],
+    }),
+  );
+
+  expect(edits).toHaveLength(2);
+  expect(edits[0]?.lateReadOf).toBeUndefined();
+  expect(edits[1]?.lateReadOf).toBe(edits[0]?.editKey);
+});
+
+it("edit_observed_after_previous_read_settled_has_no_link", async () => {
+  const a = join(work, "a.txt");
+  const read = Promise.withResolvers<StampedSnapshot>();
+  const edits: CheckpointEdit[] = [];
+  const recorder = createCheckpointRecorder({
+    store: {
+      record: (_sessionId: string, edit: CheckpointEdit): Promise<void> => {
+        edits.push(edit);
+        return Promise.resolve();
+      },
+    },
+    ownerOf: () => null,
+    readSnapshot: () => read.promise,
+  });
+
+  recorder.observeMain(makeView({ prompts: PROMPTS }));
+  recorder.observeMain(
+    makeView({
+      prompts: PROMPTS,
+      toolCalls: [
+        makeToolCall({
+          toolCallId: "tc-1",
+          seq: 3,
+          diffs: [diffOf(a, "v0\n", "v1\n")],
+        }),
+      ],
+    }),
+  );
+  read.resolve(stampedOf("v1\n"));
+  await read.promise.then(() => undefined);
+  recorder.observeMain(
+    makeView({
+      prompts: PROMPTS,
+      toolCalls: [
+        makeToolCall({
+          toolCallId: "tc-1",
+          seq: 3,
+          diffs: [diffOf(a, "v0\n", "v1\n")],
+        }),
+        makeToolCall({
+          toolCallId: "tc-2",
+          seq: 4,
+          diffs: [diffOf(a, "v1\n", "v2\n")],
+        }),
+      ],
+    }),
+  );
+
+  expect(edits).toHaveLength(2);
+  expect(edits[1]?.lateReadOf).toBeUndefined();
 });
 
 it("relative edit paths resolve against the session cwd", async () => {

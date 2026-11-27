@@ -17,9 +17,10 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { computeFileDiff } from "../../src/backend/fileDiff";
 import {
-  readFileSnapshot,
+  readStampedSnapshot,
   SnapshotKind,
   type FileSnapshot,
+  type StampedSnapshot,
 } from "../../src/backend/fileSnapshot";
 import { createCheckpointRecorder } from "../../src/backend/checkpointRecorder";
 import {
@@ -35,30 +36,6 @@ import type {
   ToolCallView,
 } from "../../src/shared/views";
 import { settled } from "../fakes/settle";
-
-interface FsGate {
-  readonly match: string;
-  readonly entered: PromiseWithResolvers<undefined>;
-  readonly release: PromiseWithResolvers<undefined>;
-}
-
-const fsGate = vi.hoisted(() => ({ gate: undefined as FsGate | undefined }));
-
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs/promises")>();
-  return {
-    ...actual,
-    rename: async (from: string, to: string): Promise<void> => {
-      const gate = fsGate.gate;
-      if (gate !== undefined && to.includes(gate.match)) {
-        fsGate.gate = undefined;
-        gate.entered.resolve(undefined);
-        await gate.release.promise;
-      }
-      await actual.rename(from, to);
-    },
-  };
-});
 
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";
 const MAX_SESSION_BYTES = 1024 * 1024;
@@ -91,6 +68,10 @@ function snapshotOf(text: string | null): FileSnapshot {
     : { kind: SnapshotKind.text, text };
 }
 
+function stampedOf(text: string | null): StampedSnapshot {
+  return { snapshot: snapshotOf(text) };
+}
+
 function diffOf(
   path: string,
   before: string | null,
@@ -114,7 +95,7 @@ async function recordEdit(
 ): Promise<void> {
   await target.record(SESSION_ID, {
     ...edit,
-    after: readFileSnapshot(edit.diff.path),
+    after: readStampedSnapshot(edit.diff.path),
   });
 }
 
@@ -128,16 +109,6 @@ async function exists(path: string): Promise<boolean> {
     }
     throw error;
   }
-}
-
-function gateRenames(match: string): FsGate {
-  const gate = {
-    match,
-    entered: Promise.withResolvers<undefined>(),
-    release: Promise.withResolvers<undefined>(),
-  };
-  fsGate.gate = gate;
-  return gate;
 }
 
 async function recordedEntries(
@@ -331,24 +302,18 @@ it("a slow record does not bake a later edit into the earlier before", async () 
   const b = join(work, "b.txt");
   await writeText(a, "v0\n");
   await writeText(b, "b1\n");
-  const gate = gateRenames(SESSION_ID);
-  const blocking = store.record(SESSION_ID, {
-    editKey: "slow",
-    promptSeq: 0,
-    diff: diffOf(b, null, "b1\n"),
-    after: Promise.resolve(snapshotOf("b1\n")),
-  });
-  await gate.entered.promise;
-
-  const recordCalls: string[] = [];
+  const gate = Promise.withResolvers<undefined>();
+  let gated = true;
   const recorder = createCheckpointRecorder({
-    store: {
-      record: (sessionId, edit): Promise<void> => {
-        recordCalls.push(edit.editKey);
-        return store.record(sessionId, edit);
-      },
-    },
+    store,
     ownerOf: () => null,
+    readSnapshot: (path) => {
+      if (path === a && gated) {
+        gated = false;
+        return gate.promise.then(() => readStampedSnapshot(path));
+      }
+      return readStampedSnapshot(path);
+    },
   });
   recorder.observeMain(makeView());
 
@@ -356,9 +321,56 @@ it("a slow record does not bake a later edit into the earlier before", async () 
   recorder.observeMain(
     makeView({ toolCalls: [diffCall("tc-1", a, "v0\n", "v1\n")] }),
   );
-  await settled(() => {
-    expect(recordCalls).toHaveLength(1);
+  recorder.observeMain(
+    makeView({
+      toolCalls: [
+        makeToolCall({ toolCallId: "tc-b", diffs: [diffOf(b, null, "b1\n")] }),
+      ],
+    }),
+  );
+  await writeText(a, "v2\n");
+  recorder.observeMain(
+    makeView({
+      toolCalls: [
+        diffCall("tc-1", a, "v0\n", "v1\n"),
+        makeToolCall({
+          toolCallId: "tc-b",
+          diffs: [diffOf(b, null, "b1\n")],
+        }),
+        diffCall("tc-2", a, "v1\n", "v2\n"),
+      ],
+    }),
+  );
+
+  gate.resolve(undefined);
+  await recordedEntries(3);
+
+  await store.restore(SESSION_ID, 0, []);
+  expect(await readFile(a, "utf8")).toBe("v0\n");
+});
+
+it("late_after_read_same_hunk_restores_original", async () => {
+  const a = join(work, "a.txt");
+  await writeText(a, "v0\n");
+  const gate = Promise.withResolvers<undefined>();
+  let gated = true;
+  const recorder = createCheckpointRecorder({
+    store,
+    ownerOf: () => null,
+    readSnapshot: (path) => {
+      if (path === a && gated) {
+        gated = false;
+        return gate.promise.then(() => readStampedSnapshot(path));
+      }
+      return readStampedSnapshot(path);
+    },
   });
+  recorder.observeMain(makeView());
+
+  await writeText(a, "v1\n");
+  recorder.observeMain(
+    makeView({ toolCalls: [diffCall("tc-1", a, "v0\n", "v1\n")] }),
+  );
   await writeText(a, "v2\n");
   recorder.observeMain(
     makeView({
@@ -368,13 +380,220 @@ it("a slow record does not bake a later edit into the earlier before", async () 
       ],
     }),
   );
-  await settled(() => {
-    expect(recordCalls).toHaveLength(2);
-  });
 
-  gate.release.resolve(undefined);
-  await blocking;
+  gate.resolve(undefined);
+  await recordedEntries(2);
+
+  await store.restore(SESSION_ID, 0, []);
+  expect(await readFile(a, "utf8")).toBe("v0\n");
+});
+
+it("late_after_read_different_hunks_restores_original", async () => {
+  const a = join(work, "a.txt");
+  const original = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n";
+  const first = "ONE\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n";
+  const final = "ONE\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nNINE\n";
+  await writeText(a, original);
+  const gate = Promise.withResolvers<undefined>();
+  let gated = true;
+  const recorder = createCheckpointRecorder({
+    store,
+    ownerOf: () => null,
+    readSnapshot: (path) => {
+      if (path === a && gated) {
+        gated = false;
+        return gate.promise.then(() => readStampedSnapshot(path));
+      }
+      return readStampedSnapshot(path);
+    },
+  });
+  recorder.observeMain(makeView());
+
+  await writeText(a, first);
+  recorder.observeMain(
+    makeView({ toolCalls: [diffCall("tc-1", a, original, first)] }),
+  );
+  await writeText(a, final);
+  recorder.observeMain(
+    makeView({
+      toolCalls: [
+        diffCall("tc-1", a, original, first),
+        diffCall("tc-2", a, first, final),
+      ],
+    }),
+  );
+
+  gate.resolve(undefined);
+  await recordedEntries(2);
+
+  await store.restore(SESSION_ID, 0, []);
+  expect(await readFile(a, "utf8")).toBe(original);
+});
+
+it("later_edit_restoring_same_content_keeps_earlier_entry", async () => {
+  const a = join(work, "a.txt");
+  const x0 = "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n";
+  const x1 = "A\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n";
+  const user = "A\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\nUSER\n";
+  await writeText(a, x1);
+  const recorder = createCheckpointRecorder({
+    store,
+    ownerOf: () => null,
+  });
+  recorder.observeMain(makeView());
+  recorder.observeMain(makeView({ toolCalls: [diffCall("tc-1", a, x0, x1)] }));
+  await recordedEntries(1);
+
+  await writeText(a, user);
+  await writeText(a, x1);
+  recorder.observeMain(
+    makeView({
+      toolCalls: [diffCall("tc-1", a, x0, x1), diffCall("tc-2", a, user, x1)],
+    }),
+  );
+  await recordedEntries(2);
+
+  await store.restore(SESSION_ID, 0, []);
+  expect(await readFile(a, "utf8")).toBe(x0);
+});
+
+it("user_revert_then_same_agent_edit_keeps_earlier_restore", async () => {
+  const a = join(work, "a.txt");
+  const x0 = "one\ntwo\n";
+  const x1 = "ONE\ntwo\n";
+  await writeText(a, x1);
+  const recorder = createCheckpointRecorder({
+    store,
+    ownerOf: () => null,
+  });
+  recorder.observeMain(makeView());
+  recorder.observeMain(makeView({ toolCalls: [diffCall("tc-1", a, x0, x1)] }));
+  await recordedEntries(1);
+
+  await writeText(a, x0);
+  await writeText(a, x1);
+  recorder.observeMain(
+    makeView({
+      toolCalls: [diffCall("tc-1", a, x0, x1), diffCall("tc-2", a, x0, x1)],
+    }),
+  );
+  await recordedEntries(2);
+
+  const report = await store.restore(SESSION_ID, 0, []);
+  expect(report.skipped).toEqual([]);
+  expect(await readFile(a, "utf8")).toBe(x0);
+});
+
+it("three_late_reads_in_one_view_restore_original", async () => {
+  const a = join(work, "a.txt");
+  const x0 =
+    "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n";
+  const x1 =
+    "A\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n";
+  const x2 =
+    "A\n2\n3\n4\n5\n6\n7\n8\n9\n10\nB\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n";
+  const x3 =
+    "A\n2\n3\n4\n5\n6\n7\n8\n9\n10\nB\n12\n13\n14\n15\n16\n17\n18\n19\n20\nC\n";
+  const gate = Promise.withResolvers<undefined>();
+  const recorder = createCheckpointRecorder({
+    store,
+    ownerOf: () => null,
+    readSnapshot: (path) =>
+      path === a
+        ? gate.promise.then(() => readStampedSnapshot(path))
+        : readStampedSnapshot(path),
+  });
+  recorder.observeMain(makeView());
+  await writeText(a, x3);
+  recorder.observeMain(
+    makeView({
+      toolCalls: [
+        diffCall("tc-1", a, x0, x1),
+        diffCall("tc-2", a, x1, x2),
+        diffCall("tc-3", a, x2, x3),
+      ],
+    }),
+  );
+  gate.resolve(undefined);
   await recordedEntries(3);
+
+  await store.restore(SESSION_ID, 0, []);
+  expect(await readFile(a, "utf8")).toBe(x0);
+});
+
+it("three_late_reads_overlapping_hunks_recover_on_third_record", async () => {
+  const a = join(work, "a.txt");
+  const x0 =
+    "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n";
+  const x1 =
+    "A\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n";
+  const x2 =
+    "A\n2\n3\n4\n5\n6\n7\n8\n9\n10\nB\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n";
+  const x3 =
+    "A\n2\n3\n4\n5\n6\n7\n8\n9\n10\nB\nC\n13\n14\n15\n16\n17\n18\n19\n20\n21\n";
+  const gate = Promise.withResolvers<undefined>();
+  const recorder = createCheckpointRecorder({
+    store,
+    ownerOf: () => null,
+    readSnapshot: (path) =>
+      path === a
+        ? gate.promise.then(() => readStampedSnapshot(path))
+        : readStampedSnapshot(path),
+  });
+  recorder.observeMain(makeView());
+  await writeText(a, x3);
+  recorder.observeMain(
+    makeView({
+      toolCalls: [
+        diffCall("tc-1", a, x0, x1),
+        diffCall("tc-2", a, x1, x2),
+        diffCall("tc-3", a, x2, x3),
+      ],
+    }),
+  );
+  gate.resolve(undefined);
+  await recordedEntries(3);
+
+  const report = await store.restore(SESSION_ID, 0, []);
+
+  expect(report.skipped).toEqual([]);
+  expect(await readFile(a, "utf8")).toBe(x0);
+});
+
+it("read_settled_before_next_completion_still_corrected", async () => {
+  const a = join(work, "a.txt");
+  await writeText(a, "v0\n");
+  const gate = Promise.withResolvers<undefined>();
+  let gated = true;
+  const recorder = createCheckpointRecorder({
+    store,
+    ownerOf: () => null,
+    readSnapshot: async (path) => {
+      if (path === a && gated) {
+        gated = false;
+        await gate.promise;
+      }
+      return readStampedSnapshot(path);
+    },
+  });
+  recorder.observeMain(makeView());
+  await writeText(a, "v1\n");
+  recorder.observeMain(
+    makeView({ toolCalls: [diffCall("tc-1", a, "v0\n", "v1\n")] }),
+  );
+  await writeText(a, "v2\n");
+  gate.resolve(undefined);
+  await recordedEntries(1);
+
+  recorder.observeMain(
+    makeView({
+      toolCalls: [
+        diffCall("tc-1", a, "v0\n", "v1\n"),
+        diffCall("tc-2", a, "v1\n", "v2\n"),
+      ],
+    }),
+  );
+  await recordedEntries(2);
 
   await store.restore(SESSION_ID, 0, []);
   expect(await readFile(a, "utf8")).toBe("v0\n");
@@ -555,7 +774,7 @@ it("a record whose read is still pending is applied before a rewind's restore", 
   const a = join(work, "a.txt");
   await writeText(a, "v0\n");
   await writeText(a, "v1\n");
-  const after = Promise.withResolvers<FileSnapshot>();
+  const after = Promise.withResolvers<StampedSnapshot>();
   const pending = store.record(SESSION_ID, {
     editKey: "e-1",
     promptSeq: 1,
@@ -563,7 +782,7 @@ it("a record whose read is still pending is applied before a rewind's restore", 
     after: after.promise,
   });
   const restoring = store.restore(SESSION_ID, 1, []);
-  after.resolve(snapshotOf("v1\n"));
+  after.resolve(stampedOf("v1\n"));
   await pending;
   const report = await restoring;
 

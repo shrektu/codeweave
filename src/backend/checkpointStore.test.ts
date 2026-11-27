@@ -8,6 +8,7 @@ import {
   rm,
   stat,
   symlink,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -27,15 +28,19 @@ import {
   CHECKPOINT_BLOBS_DIR,
   CHECKPOINT_INDEX_FILE,
   DIFF_MAX_FILE_BYTES,
+  STORAGE_VERSION,
 } from "./constants";
 import { computeFileDiff } from "./fileDiff";
 import {
-  readFileSnapshot,
+  readStampedSnapshot,
   SnapshotKind,
   type FileSnapshot,
+  type SnapshotStamp,
+  type StampedSnapshot,
 } from "./fileSnapshot";
 
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";
+const SECOND_SESSION_ID = "22222222-2222-4222-8222-222222222222";
 const DEFAULT_MAX_BYTES = 1024 * 1024;
 const SCRIPT_MODE = 0o755;
 const PERMISSION_MASK = 0o777;
@@ -65,6 +70,16 @@ function snapshotOf(text: string | null): FileSnapshot {
   return text === null
     ? { kind: SnapshotKind.missing }
     : { kind: SnapshotKind.text, text };
+}
+
+function stampedOf(
+  text: string | null,
+  stamp?: SnapshotStamp,
+): StampedSnapshot {
+  return {
+    snapshot: snapshotOf(text),
+    ...(stamp === undefined ? {} : { stamp }),
+  };
 }
 
 function diffOf(
@@ -102,7 +117,7 @@ async function recordEdit(
 ): Promise<void> {
   await target.record(SESSION_ID, {
     ...edit,
-    after: readFileSnapshot(edit.diff.path),
+    after: readStampedSnapshot(edit.diff.path),
   });
 }
 
@@ -321,7 +336,7 @@ it("invalid session id is rejected", async () => {
       editKey: "e-1",
       promptSeq: 1,
       diff: omittedDiff(a, DiffOmission.notReported),
-      after: Promise.resolve({ kind: SnapshotKind.missing }),
+      after: Promise.resolve(stampedOf(null)),
     }),
   ).rejects.toThrow("Invalid session id");
   await expect(store.entries("../../escape")).rejects.toThrow(
@@ -682,11 +697,528 @@ it.skipIf(process.platform === "win32")(
   },
 );
 
+it("late_after_read_same_hunk_restores_original", async () => {
+  const a = join(work, "a.txt");
+  await writeText(a, "v2\n");
+  await store.record(SESSION_ID, {
+    editKey: "e-1",
+    promptSeq: 1,
+    diff: diffOf(a, "v0\n", "v1\n"),
+    after: Promise.resolve(stampedOf("v2\n")),
+  });
+  await store.record(SESSION_ID, {
+    editKey: "e-2",
+    promptSeq: 2,
+    diff: diffOf(a, "v1\n", "v2\n"),
+    after: Promise.resolve(stampedOf("v2\n")),
+    lateReadOf: "e-1",
+  });
+
+  await store.restore(SESSION_ID, 0, []);
+  expect(await readText(a)).toBe("v0\n");
+
+  await writeText(a, "v2\n");
+  await store.record(SECOND_SESSION_ID, {
+    editKey: "e-1",
+    promptSeq: 1,
+    diff: diffOf(a, "v0\n", "v1\n"),
+    after: Promise.resolve(stampedOf("v2\n")),
+  });
+  await store.record(SECOND_SESSION_ID, {
+    editKey: "e-2",
+    promptSeq: 2,
+    diff: diffOf(a, "v1\n", "v2\n"),
+    after: Promise.resolve(stampedOf("v2\n")),
+    lateReadOf: "e-1",
+  });
+
+  await store.restore(SECOND_SESSION_ID, 2, []);
+  expect(await readText(a)).toBe("v1\n");
+  await store.restore(SECOND_SESSION_ID, 0, []);
+  expect(await readText(a)).toBe("v0\n");
+});
+
+it("late_after_read_different_hunks_restores_original", async () => {
+  const a = join(work, "a.txt");
+  const original = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n";
+  const first = "ONE\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n";
+  const final = "ONE\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nNINE\n";
+  await writeText(a, final);
+  await store.record(SESSION_ID, {
+    editKey: "e-1",
+    promptSeq: 1,
+    diff: diffOf(a, original, first),
+    after: Promise.resolve(stampedOf(final)),
+  });
+  await store.record(SESSION_ID, {
+    editKey: "e-2",
+    promptSeq: 2,
+    diff: diffOf(a, first, final),
+    after: Promise.resolve(stampedOf(final)),
+    lateReadOf: "e-1",
+  });
+
+  await store.restore(SESSION_ID, 0, []);
+  expect(await readText(a)).toBe(original);
+});
+
+it("late_after_read_uncorrectable_marks_unknown", async () => {
+  const a = join(work, "a.txt");
+  const original = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n";
+  const first = "ONE\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n";
+  const final = "ONE\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nNINE\n";
+  await writeText(a, final);
+  await store.record(SESSION_ID, {
+    editKey: "e-1",
+    promptSeq: 1,
+    diff: diffOf(a, original, first),
+    after: Promise.resolve(stampedOf(final)),
+  });
+  await store.record(SESSION_ID, {
+    editKey: "e-2",
+    promptSeq: 2,
+    diff: omittedDiff(a, DiffOmission.notReported),
+    after: Promise.resolve(stampedOf(final)),
+    lateReadOf: "e-1",
+  });
+
+  const entries = await store.entries(SESSION_ID);
+  expect(entries[0]?.before).toEqual({
+    kind: "unknown",
+    reason: "patch_mismatch",
+  });
+  expect(entries[0]?.after).toEqual({
+    kind: "unknown",
+    reason: "patch_mismatch",
+  });
+
+  const plan = await store.plan(SESSION_ID, 0);
+  expect(plan.files).toEqual([
+    { path: a, action: "none", skip: "patch_mismatch" },
+  ]);
+  const report = await store.restore(SESSION_ID, 0, []);
+  expect(await readText(a)).toBe(final);
+  expect(report.skipped).toEqual([{ path: a, reason: "patch_mismatch" }]);
+});
+
+it("user_edit_between_agent_edits_is_not_treated_as_late_read", async () => {
+  const a = join(work, "a.txt");
+  const original = "one\norig\nthree\n";
+  const agent = "one\nAGENT\nthree\n";
+  const user = "one\nUSER\nthree\n";
+  const final = "one\nFINAL\nthree\n";
+  await writeText(a, original);
+  await writeText(a, agent);
+  await recordEdit(store, {
+    editKey: "e-1",
+    promptSeq: 1,
+    diff: diffOf(a, original, agent),
+  });
+  const recorded = await store.entries(SESSION_ID);
+
+  await writeText(a, user);
+  await writeText(a, final);
+  await recordEdit(store, {
+    editKey: "e-2",
+    promptSeq: 2,
+    diff: diffOf(a, user, final),
+  });
+
+  const entries = await store.entries(SESSION_ID);
+  expect(entries[0]).toEqual(recorded[0]);
+  expect(entries[0]?.after).not.toEqual(entries[1]?.after);
+  await store.restore(SESSION_ID, 1, []);
+  expect(await readText(a)).toBe(original);
+});
+
+it("old_index_without_entry_patch_still_parses", async () => {
+  const sessionDir = join(dir, "checkpoints", SESSION_ID);
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(
+    join(sessionDir, CHECKPOINT_INDEX_FILE),
+    JSON.stringify({
+      version: STORAGE_VERSION,
+      nextOrder: 1,
+      entries: [
+        {
+          editKey: "e-1",
+          promptSeq: 1,
+          path: join(work, "a.txt"),
+          before: { kind: "missing" },
+          after: { kind: "missing" },
+          order: 0,
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  const entries = await store.entries(SESSION_ID);
+  expect(entries).toHaveLength(1);
+  expect(entries[0]?.change).toBeUndefined();
+  expect(entries[0]?.patch).toBeUndefined();
+  expect(entries[0]?.lateReadOf).toBeUndefined();
+});
+
+it("late_after_read_corrected_blobs_survive_garbage_collection", async () => {
+  const a = join(work, "a.txt");
+  const original = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n";
+  const first = "ONE\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n";
+  const final = "ONE\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nNINE\n";
+  await writeText(a, final);
+  await store.record(SESSION_ID, {
+    editKey: "e-1",
+    promptSeq: 1,
+    diff: diffOf(a, original, first),
+    after: Promise.resolve(stampedOf(final)),
+  });
+  await store.record(SESSION_ID, {
+    editKey: "e-2",
+    promptSeq: 2,
+    diff: diffOf(a, first, final),
+    after: Promise.resolve(stampedOf(final)),
+    lateReadOf: "e-1",
+  });
+
+  const referenced = new Set<string>();
+  for (const entry of await store.entries(SESSION_ID)) {
+    for (const ref of [entry.before, entry.after]) {
+      if (ref.kind === "stored") {
+        referenced.add(ref.hash);
+      }
+    }
+  }
+  expect(new Set(await blobsOf(SESSION_ID))).toEqual(referenced);
+
+  await store.restore(SESSION_ID, 0, []);
+  expect(await readText(a)).toBe(original);
+});
+
+it("late_after_read_created_file_keeps_missing_before", async () => {
+  const a = join(work, "a.txt");
+  const first = "v1\n";
+  const final = "v1\nv2\n";
+  await writeText(a, final);
+  await store.record(SESSION_ID, {
+    editKey: "e-1",
+    promptSeq: 1,
+    diff: diffOf(a, null, first),
+    after: Promise.resolve(stampedOf(final)),
+  });
+  await store.record(SESSION_ID, {
+    editKey: "e-2",
+    promptSeq: 2,
+    diff: diffOf(a, first, final),
+    after: Promise.resolve(stampedOf(final)),
+    lateReadOf: "e-1",
+  });
+
+  const entries = await store.entries(SESSION_ID);
+  expect(entries[0]?.before).toEqual({ kind: "missing" });
+  expect(entries[0]?.after).toEqual(entries[1]?.before);
+
+  await store.restore(SESSION_ID, 0, []);
+  await expect(readText(a)).rejects.toThrow();
+});
+
+it("empty_file_edit_in_late_chain_restores_empty_file", async () => {
+  const a = join(work, "a.txt");
+  await writeText(a, "");
+  await store.record(SESSION_ID, {
+    editKey: "e-1",
+    promptSeq: 1,
+    diff: diffOf(a, "", "v1\n"),
+    after: Promise.resolve(stampedOf("v2\n")),
+  });
+  await store.record(SESSION_ID, {
+    editKey: "e-2",
+    promptSeq: 2,
+    diff: diffOf(a, "v1\n", "v2\n"),
+    after: Promise.resolve(stampedOf("v2\n")),
+    lateReadOf: "e-1",
+  });
+  await writeText(a, "v2\n");
+
+  await store.restore(SESSION_ID, 0, []);
+  expect(await readText(a)).toBe("");
+});
+
+it("late_after_read_corrected_refs_count_towards_eviction", async () => {
+  const small = createCheckpointStore({
+    dir: join(dir, "small-late"),
+    maxSessionBytes: 8,
+    protectedPaths: () => Promise.resolve([]),
+  });
+  const a = join(work, "a.txt");
+  await writeText(a, "v2\n");
+  await small.record(SESSION_ID, {
+    editKey: "e-1",
+    promptSeq: 1,
+    diff: diffOf(a, "v0\n", "v1\n"),
+    after: Promise.resolve(stampedOf("v2\n")),
+  });
+  await small.record(SESSION_ID, {
+    editKey: "e-2",
+    promptSeq: 2,
+    diff: diffOf(a, "v1\n", "v2\n"),
+    after: Promise.resolve(stampedOf("v2\n")),
+    lateReadOf: "e-1",
+  });
+
+  const entries = await small.entries(SESSION_ID);
+  expect(entries[0]?.before).toEqual({ kind: "unknown", reason: "evicted" });
+  expect(entries[0]?.after).toEqual({ kind: "unknown", reason: "evicted" });
+  expect(entries[1]?.before).toMatchObject({ kind: "stored" });
+});
+
+it("later_edit_restoring_same_content_keeps_earlier_entry", async () => {
+  const a = join(work, "a.txt");
+  const x0 = "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n";
+  const x1 = "A\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n";
+  const user = "A\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\nUSER\n";
+  await writeText(a, x1);
+  await store.record(SESSION_ID, {
+    editKey: "e-1",
+    promptSeq: 1,
+    diff: diffOf(a, x0, x1),
+    after: Promise.resolve(stampedOf(x1)),
+  });
+  await writeText(a, user);
+  await writeText(a, x1);
+  await store.record(SESSION_ID, {
+    editKey: "e-2",
+    promptSeq: 2,
+    diff: diffOf(a, user, x1),
+    after: Promise.resolve(stampedOf(x1)),
+  });
+
+  const entries = await store.entries(SESSION_ID);
+  expect(entries[0]?.before).toMatchObject({ kind: "stored" });
+  await store.restore(SESSION_ID, 0, []);
+  expect(await readText(a)).toBe(x0);
+});
+
+it("user_revert_then_same_agent_edit_keeps_earlier_restore", async () => {
+  const a = join(work, "a.txt");
+  const x0 = "one\ntwo\n";
+  const x1 = "ONE\ntwo\n";
+  await writeText(a, x1);
+  await store.record(SESSION_ID, {
+    editKey: "e-1",
+    promptSeq: 1,
+    diff: diffOf(a, x0, x1),
+    after: Promise.resolve(stampedOf(x1)),
+  });
+  await writeText(a, x0);
+  await writeText(a, x1);
+  await store.record(SESSION_ID, {
+    editKey: "e-2",
+    promptSeq: 2,
+    diff: diffOf(a, x0, x1),
+    after: Promise.resolve(stampedOf(x1)),
+  });
+
+  const report = await store.restore(SESSION_ID, 1, []);
+  expect(report.skipped).toEqual([]);
+  expect(await readText(a)).toBe(x0);
+});
+
+it("three_late_reads_in_one_view_restore_original", async () => {
+  const a = join(work, "a.txt");
+  const x0 =
+    "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n";
+  const x1 =
+    "A\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n";
+  const x2 =
+    "A\n2\n3\n4\n5\n6\n7\n8\n9\n10\nB\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n";
+  const x3 =
+    "A\n2\n3\n4\n5\n6\n7\n8\n9\n10\nB\n12\n13\n14\n15\n16\n17\n18\n19\n20\nC\n";
+  await writeText(a, x3);
+  await store.record(SESSION_ID, {
+    editKey: "e-1",
+    promptSeq: 1,
+    diff: diffOf(a, x0, x1),
+    after: Promise.resolve(stampedOf(x3)),
+  });
+  await store.record(SESSION_ID, {
+    editKey: "e-2",
+    promptSeq: 2,
+    diff: diffOf(a, x1, x2),
+    after: Promise.resolve(stampedOf(x3)),
+    lateReadOf: "e-1",
+  });
+  await store.record(SESSION_ID, {
+    editKey: "e-3",
+    promptSeq: 3,
+    diff: diffOf(a, x2, x3),
+    after: Promise.resolve(stampedOf(x3)),
+    lateReadOf: "e-2",
+  });
+
+  await store.restore(SESSION_ID, 0, []);
+  expect(await readText(a)).toBe(x0);
+});
+
+it("three_late_reads_overlapping_hunks_recover_on_third_record", async () => {
+  const a = join(work, "a.txt");
+  const x0 =
+    "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n";
+  const x1 =
+    "A\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n";
+  const x2 =
+    "A\n2\n3\n4\n5\n6\n7\n8\n9\n10\nB\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n";
+  const x3 =
+    "A\n2\n3\n4\n5\n6\n7\n8\n9\n10\nB\nC\n13\n14\n15\n16\n17\n18\n19\n20\n21\n";
+  await writeText(a, x3);
+  await store.record(SESSION_ID, {
+    editKey: "e-1",
+    promptSeq: 1,
+    diff: diffOf(a, x0, x1),
+    after: Promise.resolve(stampedOf(x3)),
+  });
+  await store.record(SESSION_ID, {
+    editKey: "e-2",
+    promptSeq: 2,
+    diff: diffOf(a, x1, x2),
+    after: Promise.resolve(stampedOf(x3)),
+    lateReadOf: "e-1",
+  });
+  await store.record(SESSION_ID, {
+    editKey: "e-3",
+    promptSeq: 2,
+    diff: diffOf(a, x2, x3),
+    after: Promise.resolve(stampedOf(x3)),
+    lateReadOf: "e-2",
+  });
+
+  const report = await store.restore(SESSION_ID, 0, []);
+
+  expect(report.skipped).toEqual([]);
+  expect(await readText(a)).toBe(x0);
+});
+
+it("read_settled_before_next_completion_still_corrected", async () => {
+  const a = join(work, "a.txt");
+  const stamp: SnapshotStamp = { ino: "42", size: "3", mtimeNs: "1000" };
+  await writeText(a, "v2\n");
+  await store.record(SESSION_ID, {
+    editKey: "e-1",
+    promptSeq: 1,
+    diff: diffOf(a, "v0\n", "v1\n"),
+    after: Promise.resolve(stampedOf("v2\n", stamp)),
+  });
+  await store.record(SESSION_ID, {
+    editKey: "e-2",
+    promptSeq: 2,
+    diff: diffOf(a, "v1\n", "v2\n"),
+    after: Promise.resolve(stampedOf("v2\n", stamp)),
+  });
+
+  await store.restore(SESSION_ID, 0, []);
+  expect(await readText(a)).toBe("v0\n");
+});
+
+it("same_content_new_write_is_not_inferred_late", async () => {
+  const a = join(work, "a.txt");
+  const x0 = "one\ntwo\n";
+  const x1 = "ONE\ntwo\n";
+  const user = "ONE\nUSER\n";
+  const firstStamp: SnapshotStamp = { ino: "42", size: "8", mtimeNs: "1000" };
+  const secondStamp: SnapshotStamp = { ino: "42", size: "8", mtimeNs: "2000" };
+  await writeText(a, x1);
+  await store.record(SESSION_ID, {
+    editKey: "e-1",
+    promptSeq: 1,
+    diff: diffOf(a, x0, x1),
+    after: Promise.resolve(stampedOf(x1, firstStamp)),
+  });
+  const recorded = await store.entries(SESSION_ID);
+  await writeText(a, user);
+  await writeText(a, x1);
+  await store.record(SESSION_ID, {
+    editKey: "e-2",
+    promptSeq: 2,
+    diff: diffOf(a, user, x1),
+    after: Promise.resolve(stampedOf(x1, secondStamp)),
+  });
+
+  const entries = await store.entries(SESSION_ID);
+  expect(entries[0]).toEqual(recorded[0]);
+  await store.restore(SESSION_ID, 0, []);
+  expect(await readText(a)).toBe(x0);
+});
+
+it("old_entries_without_stamp_are_not_inferred", async () => {
+  const a = join(work, "a.txt");
+  const x0 = "one\ntwo\n";
+  const x1 = "ONE\ntwo\n";
+  const user = "ONE\nUSER\n";
+  const stamp: SnapshotStamp = { ino: "42", size: "8", mtimeNs: "1000" };
+  await writeText(a, x1);
+  await store.record(SESSION_ID, {
+    editKey: "e-1",
+    promptSeq: 1,
+    diff: diffOf(a, x0, x1),
+    after: Promise.resolve(stampedOf(x1)),
+  });
+  const recorded = await store.entries(SESSION_ID);
+  await writeText(a, user);
+  await writeText(a, x1);
+  await store.record(SESSION_ID, {
+    editKey: "e-2",
+    promptSeq: 2,
+    diff: diffOf(a, user, x1),
+    after: Promise.resolve(stampedOf(x1, stamp)),
+  });
+
+  const entries = await store.entries(SESSION_ID);
+  expect(entries[0]).toEqual(recorded[0]);
+  await store.restore(SESSION_ID, 0, []);
+  expect(await readText(a)).toBe(x0);
+});
+
+it("coarse_mtime_stamp_does_not_infer_link", async () => {
+  const a = join(work, "a.txt");
+  const x0 =
+    "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n";
+  const x1 =
+    "A\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n";
+  const user =
+    "A\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\nU\n";
+  await writeText(a, x1);
+  const coarse = new Date(
+    Math.floor((await stat(a)).mtime.getTime() / 1000) * 1000,
+  );
+  await utimes(a, coarse, coarse);
+  await recordEdit(store, {
+    editKey: "e-1",
+    promptSeq: 1,
+    diff: diffOf(a, x0, x1),
+  });
+  const recorded = await store.entries(SESSION_ID);
+  expect(BigInt(recorded[0]?.afterStamp?.mtimeNs ?? "1") % 1_000_000_000n).toBe(
+    0n,
+  );
+
+  await writeText(a, user);
+  await writeText(a, x1);
+  await utimes(a, coarse, coarse);
+  await recordEdit(store, {
+    editKey: "e-2",
+    promptSeq: 2,
+    diff: diffOf(a, user, x1),
+  });
+
+  const report = await store.restore(SESSION_ID, 1, []);
+  expect(report.skipped).toEqual([]);
+  expect(await readText(a)).toBe(x0);
+});
+
 it("records keep observation order when reads finish out of order", async () => {
   const a = join(work, "a.txt");
   await writeText(a, "v2\n");
-  const firstAfter = Promise.withResolvers<FileSnapshot>();
-  const secondAfter = Promise.withResolvers<FileSnapshot>();
+  const firstAfter = Promise.withResolvers<StampedSnapshot>();
+  const secondAfter = Promise.withResolvers<StampedSnapshot>();
   const first = store.record(SESSION_ID, {
     editKey: "e-1",
     promptSeq: 1,
@@ -699,8 +1231,8 @@ it("records keep observation order when reads finish out of order", async () => 
     diff: diffOf(a, "v1\n", "v2\n"),
     after: secondAfter.promise,
   });
-  secondAfter.resolve(snapshotOf("v2\n"));
-  firstAfter.resolve(snapshotOf("v1\n"));
+  secondAfter.resolve(stampedOf("v2\n"));
+  firstAfter.resolve(stampedOf("v1\n"));
   await Promise.all([first, second]);
 
   const entries = await store.entries(SESSION_ID);
@@ -739,7 +1271,7 @@ it("an unreadable edited file does not crash the backend", async () => {
   const unhandled = vi.fn();
   const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
   process.on("unhandledRejection", unhandled);
-  const slow = Promise.withResolvers<FileSnapshot>();
+  const slow = Promise.withResolvers<StampedSnapshot>();
   try {
     const blocking = store.record(SESSION_ID, {
       editKey: "slow",
@@ -762,7 +1294,7 @@ it("an unreadable edited file does not crash the backend", async () => {
     await new Promise((resolve) => setImmediate(resolve));
     expect(unhandled).not.toHaveBeenCalled();
 
-    slow.resolve(snapshotOf("v0\n"));
+    slow.resolve(stampedOf("v0\n"));
     await Promise.all([blocking, fresh, duplicate]);
 
     expect(unhandled).not.toHaveBeenCalled();
