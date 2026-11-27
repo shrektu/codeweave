@@ -1,5 +1,6 @@
 import { ApiAuth, ApiProviderId } from "../domain/apiProviders";
 import { PROVIDER_IMAGE_INPUT } from "../domain/attachments";
+import type { TokenCounts } from "../domain/events";
 import { isRunOpen } from "../domain/flowState";
 import { LimitPeriod } from "../domain/limitWindows";
 import { emptyUsageLedger } from "../domain/usageLedger";
@@ -20,6 +21,7 @@ import type {
   Snapshot,
   StoredSession,
 } from "../shared/views";
+import { USAGE_SUMMARY_STRINGS } from "./components/usageSummaryStrings";
 
 const ENDED_PHASES: readonly RotationPhaseView["phase"][] = [
   "stopped",
@@ -216,7 +218,46 @@ const COMPACT_TOKENS = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
 });
+const COST_FRACTION_DIGITS = {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 4,
+} as const;
+const COST_AMOUNT = new Intl.NumberFormat("en-US", COST_FRACTION_DIGITS);
+const USD_CURRENCY = "USD";
+const CURRENCY_SEPARATOR = " + ";
 const PERCENT_FULL = 100;
+
+function compareCurrencyCodes(
+  left: readonly [string, number],
+  right: readonly [string, number],
+): number {
+  if (left[0] === right[0]) {
+    return 0;
+  }
+  return left[0] < right[0] ? -1 : 1;
+}
+
+export function usageCostText(costs: Readonly<Record<string, number>>): string {
+  return Object.entries(costs)
+    .toSorted(compareCurrencyCodes)
+    .map(([currency, amount]) => {
+      const formatted = COST_AMOUNT.format(amount);
+      return currency === USD_CURRENCY
+        ? `$${formatted}`
+        : `${formatted} ${currency}`;
+    })
+    .join(CURRENCY_SEPARATOR);
+}
+
+export function usageTokensText(tokens: TokenCounts): string {
+  const total =
+    tokens.input +
+    tokens.output +
+    tokens.cacheRead +
+    tokens.cacheWrite +
+    tokens.reasoning;
+  return USAGE_SUMMARY_STRINGS.tokensTotal(COMPACT_TOKENS.format(total));
+}
 
 export function contextUsageText(usage: ContextUsageView | null): string {
   if (usage === null) {

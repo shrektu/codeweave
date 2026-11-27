@@ -26,6 +26,7 @@ import {
   limitPercent,
   limitWindowLabel,
   nodeModelOf,
+  usageCostText,
 } from "./format";
 
 const STOPPED_MAIN = makeSession({ id: "main", phase: { phase: "stopped" } });
@@ -481,4 +482,16 @@ it("stored_history_view_cannot_compact", () => {
   };
 
   expect(storedSessionView(stored).canCompact).toBe(false);
+});
+
+it("usd_cost_has_two_to_four_decimals", () => {
+  expect(usageCostText({ USD: 0.5 })).toBe("$0.50");
+  expect(usageCostText({ USD: 1.23456 })).toBe("$1.2346");
+});
+
+it("non_usd_currency_is_suffixed", () => {
+  expect(usageCostText({ credits: 12.5 })).toBe("12.50 credits");
+  expect(usageCostText({ USD: 0.5, credits: 12.5 })).toBe(
+    "$0.50 + 12.50 credits",
+  );
 });
