@@ -20,6 +20,7 @@ import {
 import { fakeAttachmentStore } from "../fakes/fakeAttachmentStore";
 import { fakeCheckpointStore } from "../fakes/fakeCheckpointStore";
 import { fakeFileCompletion } from "../fakes/fakeFileCompletion";
+import { fakeSlashCommands } from "../fakes/fakeSlashCommands";
 import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
 
@@ -75,6 +76,7 @@ async function rig(): Promise<{
     checkpoints: fakeCheckpointStore(),
     attachments: fakeAttachmentStore(),
     files: fakeFileCompletion(),
+    commands: fakeSlashCommands(),
     inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),
     flowRuns: fakeFlowRuns(),
     orchestrator: fakeOrchestrator(),

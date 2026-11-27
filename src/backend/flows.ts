@@ -41,7 +41,7 @@ const FORBIDDEN_NAME_CHARS = ["/", "\\", "\0"] as const;
 
 type DefinitionDir = keyof typeof DEFINITION_LABELS;
 
-function isMarkdownName(name: string): boolean {
+export function isMarkdownName(name: string): boolean {
   return name.endsWith(MARKDOWN_EXTENSION);
 }
 
@@ -108,7 +108,7 @@ export function isMissing(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
-function failure(
+export function failure(
   file: string,
   source: DefinitionSource,
   error: unknown,
@@ -116,7 +116,7 @@ function failure(
   return { file, source, messages: [errorText(error)] };
 }
 
-async function unreadableRoot(root: string): Promise<unknown> {
+export async function unreadableRoot(root: string): Promise<unknown> {
   try {
     return (await stat(root)).isDirectory()
       ? null
@@ -324,7 +324,10 @@ async function realpathOrNull(path: string): Promise<string | null> {
   }
 }
 
-async function sameDirectory(first: string, second: string): Promise<boolean> {
+export async function sameDirectory(
+  first: string,
+  second: string,
+): Promise<boolean> {
   const [firstPath, secondPath] = await Promise.all([
     realpathOrNull(first),
     realpathOrNull(second),

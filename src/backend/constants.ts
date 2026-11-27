@@ -244,6 +244,10 @@ export const AUTHORIZATION_HEADER = "Authorization";
 export const BEARER_SCHEME = "Bearer";
 
 export const DEFINITION_LIBRARY_DIR_NAME = "library";
+export const PROMPTS_DIR = "prompts";
+export const SKILLS_DIR = "skills";
+export const SKILL_FILE_NAME = "SKILL.md";
+export const SLASH_COMMAND_MAX_BYTES = 64 * 1024;
 export const FLOW_BRANCH_PREFIX = "codeweave/";
 export const FLOW_WORKTREE_INFIX = "-cw-";
 export const FLOW_RUN_SHORT_ID_LENGTH = 8;

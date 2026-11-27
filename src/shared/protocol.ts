@@ -49,6 +49,7 @@ import {
   SessionHistoryEntrySchema,
   SessionViewSchema,
   SettingsViewSchema,
+  SlashCommandsListSchema,
   SnapshotSchema,
   StoredSessionSchema,
   SwitchLogEntryViewSchema,
@@ -246,6 +247,7 @@ export const ParamsSchemas = {
   "settings/set": SettingsPatchSchema,
   "switchLog/list": EmptyParamsSchema,
   "flows/list": z.strictObject({ cwd: NonEmptyString.optional() }),
+  "commands/list": z.strictObject({ cwd: NonEmptyString.optional() }),
   "flows/save": z
     .strictObject({
       cwd: NonEmptyString.optional(),
@@ -363,6 +365,7 @@ export const RequestSchema = z.discriminatedUnion("method", [
   requestSchema("settings/set"),
   requestSchema("switchLog/list"),
   requestSchema("flows/list"),
+  requestSchema("commands/list"),
   requestSchema("flows/save"),
   requestSchema("agents/create"),
   requestSchema("agents/save"),
@@ -427,6 +430,7 @@ const resultSchemaDefinitions = {
     entries: z.array(SwitchLogEntryViewSchema),
   }),
   "flows/list": FlowsListSchema,
+  "commands/list": SlashCommandsListSchema,
   "flows/save": FlowsListSchema,
   "agents/create": FlowsListSchema,
   "agents/save": FlowsListSchema,

@@ -122,6 +122,7 @@ import {
   toUpdaterConfigMessage,
   type PostUpdaterConfig,
 } from "./settingsService";
+import { createSlashCommandLibrary } from "./slashCommands";
 import { createJsonStore, type JsonStore } from "./storage";
 import { createPtyLauncher, type PtyLauncherFactory } from "./terminal/pty";
 import {
@@ -761,6 +762,10 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
   });
   const terminals = createTerminals(deps, container, store, lockKeyResolver);
   const definitionRoots = createDefinitionRoots({ store, userData });
+  const commands = createSlashCommandLibrary({
+    definitionRoots,
+    protectedPaths: protectedPathsNow,
+  });
   const listProjectFlows = async (cwd?: string): Promise<FlowsList> =>
     listFlows(await definitionRoots(cwd));
   const flowRuns = createFlowRunService({
@@ -810,6 +815,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     checkpoints,
     attachments,
     files,
+    commands,
   });
   await postStoredUpdaterConfig(store, postUpdaterConfig);
   probes.start();

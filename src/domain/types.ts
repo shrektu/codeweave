@@ -60,6 +60,13 @@ export const DefinitionSource = {
 export type DefinitionSource =
   (typeof DefinitionSource)[keyof typeof DefinitionSource];
 
+export const SlashCommandKind = {
+  prompt: "prompt",
+  skill: "skill",
+} as const;
+export type SlashCommandKind =
+  (typeof SlashCommandKind)[keyof typeof SlashCommandKind];
+
 export const FlowRunOrigin = {
   user: "user",
   orchestrator: "orchestrator",

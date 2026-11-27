@@ -37,6 +37,7 @@ export function fakeHandlers(
     "settings/set": unavailable,
     "switchLog/list": unavailable,
     "flows/list": unavailable,
+    "commands/list": unavailable,
     "flows/save": unavailable,
     "agents/create": unavailable,
     "agents/save": unavailable,
