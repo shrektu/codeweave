@@ -1,4 +1,5 @@
 import { ApiAuth, ApiProviderId } from "../domain/apiProviders";
+import { PROVIDER_IMAGE_INPUT } from "../domain/attachments";
 import { isRunOpen } from "../domain/flowState";
 import { LimitPeriod } from "../domain/limitWindows";
 import {
@@ -114,6 +115,7 @@ export function storedSessionView(stored: StoredSession): SessionView {
     contextUsage: null,
     turns: [...stored.turns],
     orchestrate: stored.orchestrate,
+    imageInput: PROVIDER_IMAGE_INPUT[stored.provider],
     prompts: [...stored.prompts],
   };
 }

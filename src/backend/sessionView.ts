@@ -1,3 +1,4 @@
+import { PROVIDER_IMAGE_INPUT } from "../domain/attachments";
 import type { RotationPhase } from "../domain/rotation";
 import type { SessionState, ToolCallEntry } from "../domain/sessionReducer";
 import type { Account, PermissionProfile, ProviderId } from "../domain/types";
@@ -73,6 +74,9 @@ function pendingPermissions(input: SessionViewInput): PermissionView[] {
 export function toSessionView(input: SessionViewInput): SessionView {
   const { state } = input;
   const activeAccountId = activeAccountOf(input.phase);
+  const activeProvider =
+    input.accounts.find((account) => account.id === activeAccountId)
+      ?.provider ?? input.provider;
   return {
     id: input.id,
     createdAt: input.createdAt,
@@ -82,9 +86,7 @@ export function toSessionView(input: SessionViewInput): SessionView {
     profile: input.profile,
     phase: input.phase,
     activeAccountId,
-    activeProvider:
-      input.accounts.find((account) => account.id === activeAccountId)
-        ?.provider ?? input.provider,
+    activeProvider,
     messages: state.messages.map((message) => ({ ...message })),
     toolCalls: state.toolCalls.map(toToolCallView),
     permissions: pendingPermissions(input),
@@ -97,6 +99,10 @@ export function toSessionView(input: SessionViewInput): SessionView {
       state.contextUsage === null ? null : { ...state.contextUsage },
     turns: state.turns.map((turn) => ({ ...turn })),
     orchestrate: input.orchestrate,
-    prompts: state.prompts.map((prompt) => ({ ...prompt })),
+    imageInput: PROVIDER_IMAGE_INPUT[activeProvider],
+    prompts: state.prompts.map((prompt) => ({
+      ...prompt,
+      attachments: [...prompt.attachments],
+    })),
   };
 }

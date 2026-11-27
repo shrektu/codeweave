@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   EventSchema,
+  ParamsSchemas,
   RequestSchema,
   ResponseSchema,
   ShutdownMessageSchema,
@@ -171,6 +172,9 @@ const VALID_REQUESTS: [string, unknown][] = [
   ["settings/set", { defaultWorkspace: null }],
   ["settings/set", { terminalShell: "/bin/zsh" }],
   ["settings/set", { terminalShell: null }],
+  ["files/complete", { cwd: "/work", query: "src" }],
+  ["files/complete", { query: "" }],
+  ["files/complete", { query: "src/backend/" }],
   ["terminal/open", { cwd: "/work", cols: 2, rows: 1 }],
   ["terminal/open", { cwd: "/work", cols: 1000, rows: 500 }],
   ["terminal/input", { id: "t", data: "x" }],
@@ -994,4 +998,47 @@ it.each<[string, Record<string, unknown>]>([
   expect(
     RequestSchema.safeParse({ v: 7, id: "req-1", method, params }).success,
   ).toBe(false);
+});
+
+const ATTACHMENT = {
+  id: "a".repeat(64),
+  name: "photo.png",
+  mimeType: "image/png",
+  bytes: 10,
+};
+
+it("session_prompt_rejects_more_than_ten_attachments", () => {
+  const parsed = ParamsSchemas["session/prompt"].safeParse({
+    sessionId: "s-1",
+    text: "hi",
+    attachments: Array.from({ length: 11 }, () => ATTACHMENT),
+  });
+
+  expect(parsed.success).toBe(false);
+});
+
+it("session_prompt_accepts_ten_attachments", () => {
+  const parsed = ParamsSchemas["session/prompt"].safeParse({
+    sessionId: "s-1",
+    text: "hi",
+    attachments: Array.from({ length: 10 }, () => ATTACHMENT),
+  });
+
+  expect(parsed.success).toBe(true);
+});
+
+it("files_complete_accepts_a_query_at_the_limit", () => {
+  const parsed = ParamsSchemas["files/complete"].safeParse({
+    query: "x".repeat(256),
+  });
+
+  expect(parsed.success).toBe(true);
+});
+
+it("files_complete_rejects_a_query_over_the_limit", () => {
+  const parsed = ParamsSchemas["files/complete"].safeParse({
+    query: "x".repeat(257),
+  });
+
+  expect(parsed.success).toBe(false);
 });

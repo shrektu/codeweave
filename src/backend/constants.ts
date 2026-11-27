@@ -106,6 +106,7 @@ export const SWITCH_LOG_FILE = "switch-log.jsonl";
 export const ACCOUNTS_DIR_NAME = "accounts";
 export const SESSIONS_DIR = "sessions";
 export const CHECKPOINTS_DIR = "checkpoints";
+export const ATTACHMENTS_DIR = "attachments";
 export const CHECKPOINT_INDEX_FILE = "index.json";
 export const CHECKPOINT_BLOBS_DIR = "blobs";
 export const CHECKPOINT_MAX_SESSION_BYTES = 100 * 1024 * 1024;

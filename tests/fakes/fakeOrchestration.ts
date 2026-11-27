@@ -41,6 +41,7 @@ export function sessionView(overrides: Partial<SessionView> = {}): SessionView {
     contextUsage: null,
     turns: [],
     orchestrate: true,
+    imageInput: true,
     prompts: [],
     ...overrides,
   };

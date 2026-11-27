@@ -42,15 +42,18 @@ import {
   AGENT_STOP_GRACE_MS,
   AGY_BINARY,
   API_KEYS_FILE,
+  ATTACHMENTS_DIR,
   CLAUDE_BINARY,
   CHECKPOINT_MAX_SESSION_BYTES,
   CHECKPOINTS_DIR,
   CODEX_BINARY,
   CONTAINER_UNAVAILABLE_MESSAGE,
+  GIT_BINARY,
   PROBE_RUN_ID_PREFIX,
   PROBE_TIMEOUT_MS,
   SESSIONS_DIR,
 } from "./constants";
+import { createAttachmentStore } from "./attachmentStore";
 import { createCheckpointRecorder } from "./checkpointRecorder";
 import { createCheckpointStore } from "./checkpointStore";
 import { buildAgentEnv } from "./env";
@@ -58,6 +61,7 @@ import { resolveExecutable } from "./executable";
 import { execText } from "./exec";
 import { createDefinitionRoots } from "./definitionLibrary";
 import { createEditedFilesTracker } from "./editedFiles";
+import { createFileCompletion } from "./fileCompletion";
 import { listFlows } from "./flows";
 import { createFlowRunService, type FlowRunService } from "./flowRuns";
 import type { FlowToolServer } from "./flowTools/server";
@@ -696,6 +700,16 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     maxSessionBytes: CHECKPOINT_MAX_SESSION_BYTES,
     protectedPaths: protectedPathsNow,
   });
+  const attachments = createAttachmentStore({
+    dir: join(userData, ATTACHMENTS_DIR),
+  });
+  const files = createFileCompletion({
+    git: (cwd, args, timeoutMs) =>
+      execText(GIT_BINARY, ["-C", cwd, ...args], { timeoutMs }),
+    homeDir: deps.homeDir,
+    protectedPaths: protectedPathsNow,
+    now: deps.now,
+  });
   const checkpointRecorder = createCheckpointRecorder({
     store: checkpoints,
     ownerOf: (runId) =>
@@ -727,6 +741,7 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     secrets: createSecretSource(keyStore),
     homeDir: deps.homeDir,
     resolveFolder,
+    attachments,
     protectedPaths: protectedPathsNow,
     onMainView: (view, nativeSessions) => {
       editedFiles.observeMain(view);
@@ -793,6 +808,8 @@ export async function startBackend(deps: BackendDeps): Promise<Backend> {
     postUpdaterConfig,
     editedFiles,
     checkpoints,
+    attachments,
+    files,
   });
   await postStoredUpdaterConfig(store, postUpdaterConfig);
   probes.start();

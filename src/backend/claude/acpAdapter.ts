@@ -38,6 +38,7 @@ import {
   UnknownPermissionError,
   type AgentAdapter,
   type AgentHandle,
+  readPromptImages,
   type AgentStartResult,
   type AgentStartSpec,
   type TurnOptions,
@@ -63,6 +64,8 @@ import {
 } from "./acpEvents";
 import { buildClaudeLaunch } from "./launch";
 import { buildNewSessionRequest } from "./toolAccess";
+
+const IMAGE_UNSUPPORTED_MESSAGE = "This Claude agent does not accept images";
 
 export interface ClaudeAcpDeps {
   readonly processes: AgentProcesses;
@@ -190,6 +193,7 @@ class ClaudeAcpSession implements AgentHandle {
   private readonly exitSignal: Promise<void>;
   private resolveExit: () => void = () => undefined;
   private sessionId = "";
+  private imageInput = false;
   private selectedModel: string | null = null;
   private announcedModel: string | null = null;
   private stderrText = "";
@@ -317,6 +321,8 @@ class ClaudeAcpSession implements AgentHandle {
       protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: {},
     });
+    this.imageInput =
+      initialized.agentCapabilities?.promptCapabilities?.image === true;
     const opened = await this.openSession(
       spec,
       initialized.agentCapabilities ?? null,
@@ -434,11 +440,20 @@ class ClaudeAcpSession implements AgentHandle {
   }
 
   private async runTurn(text: string, options: TurnOptions): Promise<void> {
+    const images = options.images ?? [];
+    if (images.length > 0 && !this.imageInput) {
+      throw new Error(IMAGE_UNSUPPORTED_MESSAGE);
+    }
+    const imageBlocks = (await readPromptImages(images)).map((image) => ({
+      type: "image" as const,
+      data: image.dataBase64,
+      mimeType: image.mimeType,
+    }));
     const response = this.selectModel(options.model)
       .then(() =>
         this.peer.prompt({
           sessionId: this.sessionId,
-          prompt: [{ type: "text", text }],
+          prompt: [{ type: "text", text }, ...imageBlocks],
         }),
       )
       .then((result): AgentEvent => ({

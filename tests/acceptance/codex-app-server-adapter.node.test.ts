@@ -1,7 +1,11 @@
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { PROCESS_EXITED_MESSAGE } from "../../src/backend/constants";
+import { ImageMimeType } from "../../src/domain/attachments";
 import type { AgentEvent } from "../../src/domain/events";
 import { createRateLimitDetector } from "../../src/domain/rateLimit";
 import { PermissionProfile } from "../../src/domain/types";
@@ -859,6 +863,29 @@ describe("codex app-server adapter: stream regressions", () => {
     expect(events.at(-1)).toMatchObject({
       type: "turn_error",
       message: PROCESS_EXITED_MESSAGE,
+    });
+  });
+});
+
+describe("codex app-server adapter: images", () => {
+  it("codex_turn_carries_local_image_items", async () => {
+    const rig = await createCodexRig();
+    const { handle } = await startCodexHandle(rig);
+    const path = join(rig.cwd, "photo.png");
+    await writeFile(path, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    serverOf(rig).enqueue([{ type: "complete", status: "completed" }]);
+
+    await handle.prompt("look", {
+      model: null,
+      images: [{ path, mimeType: ImageMimeType.png, name: "photo.png" }],
+    });
+
+    const params = serverOf(rig).paramsOf("turn/start").at(-1);
+    expect(params).toMatchObject({
+      input: [
+        { type: "text", text: "look" },
+        { type: "localImage", path },
+      ],
     });
   });
 });

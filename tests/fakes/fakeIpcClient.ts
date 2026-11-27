@@ -191,7 +191,7 @@ export function makeMessage(overrides: Partial<MessageView> = {}): MessageView {
 }
 
 export function makePrompt(overrides: Partial<PromptView> = {}): PromptView {
-  return { seq: 0, text: "Do the task", ...overrides };
+  return { seq: 0, text: "Do the task", attachments: [], ...overrides };
 }
 
 export function makeRestorePlan(
@@ -286,6 +286,7 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
     contextUsage: null,
     turns: [],
     orchestrate: false,
+    imageInput: true,
     prompts: [],
     createdAt: 0,
     ...overrides,

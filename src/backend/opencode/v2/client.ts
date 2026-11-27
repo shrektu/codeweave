@@ -1,3 +1,7 @@
+import { pathToFileURL } from "node:url";
+
+import type { PromptImage } from "../../agentAdapter";
+
 import {
   OpencodeHttpError,
   createSender,
@@ -35,7 +39,11 @@ export interface OpencodeV2Client {
   models(): Promise<V2Model[]>;
   createSession(agent: OpencodeAgent): Promise<string>;
   sessionExists(sessionId: string): Promise<boolean>;
-  prompt(sessionId: string, text: string): Promise<void>;
+  prompt(
+    sessionId: string,
+    text: string,
+    images?: readonly PromptImage[],
+  ): Promise<void>;
   switchAgent(sessionId: string, agent: OpencodeAgent): Promise<void>;
   switchModel(sessionId: string, model: V2ModelRef): Promise<void>;
   interrupt(sessionId: string): Promise<boolean>;
@@ -85,11 +93,20 @@ async function sendForJson(send: Send, input: RequestInput): Promise<unknown> {
 
 function createSessionActions(send: Send): SessionActions {
   return {
-    prompt: (sessionId, text) =>
+    prompt: (sessionId, text, images = []) =>
       sendAndDiscard(send, {
         method: "POST",
         path: sessionPath(sessionId, OpencodeV2Path.prompt),
-        body: { text },
+        body: {
+          text,
+          ...(images.length === 0
+            ? {}
+            : {
+                files: images.map((image) => ({
+                  uri: pathToFileURL(image.path).href,
+                })),
+              }),
+        },
       }),
     switchAgent: (sessionId, agent) =>
       sendAndDiscard(send, {

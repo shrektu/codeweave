@@ -9,6 +9,13 @@ export const EXECUTABLE_SETTING_LABELS: Readonly<Record<ProviderId, string>> = {
   [ProviderId.gemini]: "Gemini executable (agy)",
 };
 
+export const PROVIDER_DISPLAY_NAMES: Readonly<Record<ProviderId, string>> = {
+  [ProviderId.claude]: "Claude",
+  [ProviderId.codex]: "Codex",
+  [ProviderId.gemini]: "Gemini",
+  [ProviderId.opencode]: "OpenCode",
+};
+
 export const OPENCODE_ACCOUNT_DATA_DIR = "data";
 
 export const OPENCODE_DATA_SUBDIR = "opencode";
@@ -24,6 +31,16 @@ export const TERMINAL_MIN_ROWS = 1;
 export const TERMINAL_MAX_ROWS = 500;
 
 export const TERMINAL_INPUT_MAX_CHARS = 65_536;
+
+export const FILE_COMPLETION_LIMIT = 50;
+
+export const FILE_QUERY_MAX_LENGTH = 256;
+
+export const FILE_INDEX_TTL_MS = 5000;
+
+export const FILE_INDEX_GIT_TIMEOUT_MS = 3000;
+
+export const FILE_INDEX_CACHE_MAX_ENTRIES = 8;
 
 export const PORT_CHANNEL = "codeweave:port";
 

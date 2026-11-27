@@ -1,4 +1,5 @@
 import type { ApiProviderId } from "./apiProviders";
+import type { AttachmentView } from "../shared/views";
 import { SYNTHETIC_MODEL_NAME } from "./constants";
 import type {
   AgentEvent,
@@ -38,6 +39,7 @@ export interface AssistantMessage {
 export interface UserPrompt {
   readonly seq: number;
   readonly text: string;
+  readonly attachments: readonly AttachmentView[];
 }
 
 export type LastTurn =
@@ -252,8 +254,12 @@ export function recordPrompt(
   state: SessionState,
   seq: number,
   text: string,
+  attachments: readonly AttachmentView[] = [],
 ): SessionState {
-  return { ...state, prompts: [...state.prompts, { seq, text }] };
+  return {
+    ...state,
+    prompts: [...state.prompts, { seq, text, attachments: [...attachments] }],
+  };
 }
 
 export function recordTurnRoute(

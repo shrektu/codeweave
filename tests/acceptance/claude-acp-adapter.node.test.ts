@@ -1,3 +1,6 @@
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -5,6 +8,7 @@ import {
   TurnInProgressError,
   UnknownPermissionError,
 } from "../../src/backend/agentAdapter";
+import { ImageMimeType } from "../../src/domain/attachments";
 import type { StopResult } from "../../src/backend/process/container";
 import { createRateLimitDetector } from "../../src/domain/rateLimit";
 import { PermissionProfile } from "../../src/domain/types";
@@ -982,5 +986,43 @@ describe("acp adapter: model reporting", () => {
       output: "Updated `/w/big.ts` (previous content too large to diff)",
       diffs: [{ path: "/w/big.ts", change: "modified", omitted: "too_large" }],
     });
+  });
+});
+
+describe("acp adapter: images", () => {
+  const PNG_BASE64 =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+  it("acp_prompt_carries_image_blocks", async () => {
+    const rig = await createRig();
+    rig.container.config.imageInput = true;
+    const { handle } = await startHandle(rig);
+    const path = join(rig.cwd, "photo.png");
+    await writeFile(path, Buffer.from(PNG_BASE64, "base64"));
+    agentOf(rig).enqueue([{ type: "end", stopReason: "end_turn" }]);
+
+    await handle.prompt("look", {
+      model: null,
+      images: [{ path, mimeType: ImageMimeType.png, name: "photo.png" }],
+    });
+
+    expect(agentOf(rig).prompts).toEqual(["look"]);
+    expect(agentOf(rig).promptImages).toEqual([
+      { data: PNG_BASE64, mimeType: ImageMimeType.png },
+    ]);
+  });
+
+  it("acp_rejects_images_without_agent_image_input", async () => {
+    const rig = await createRig();
+    const { handle } = await startHandle(rig);
+    const path = join(rig.cwd, "photo.png");
+    await writeFile(path, Buffer.from(PNG_BASE64, "base64"));
+
+    await expect(
+      handle.prompt("look", {
+        model: null,
+        images: [{ path, mimeType: ImageMimeType.png, name: "photo.png" }],
+      }),
+    ).rejects.toThrow("This Claude agent does not accept images");
   });
 });

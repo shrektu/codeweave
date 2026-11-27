@@ -43,6 +43,7 @@ function makeView(overrides: Partial<SessionView> = {}): SessionView {
     contextUsage: null,
     turns: [],
     orchestrate: false,
+    imageInput: true,
     prompts: [],
     ...overrides,
   };
@@ -116,6 +117,7 @@ it("collects_completed_edits_of_session_and_owned_runs", () => {
     makeView({
       id: "sess-1",
       orchestrate: true,
+      imageInput: true,
       toolCalls: [makeToolCall({ toolCallId: "tc-main", diffs: [MAIN_DIFF] })],
     }),
   );

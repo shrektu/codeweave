@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_HANDOFF_CHARS } from "./constants";
-import { buildContextPackage } from "./contextPackage";
+import { buildContextPackage, promptText } from "./contextPackage";
 import type { TurnLogEntry } from "./sessionReducer";
 import type { WorktreeState } from "./types";
 
@@ -198,4 +198,17 @@ describe("context package: reasons", () => {
 
     expect(text).toContain("[truncated, 5 more characters]");
   });
+});
+
+it("lists_image_names_under_the_prompt", () => {
+  const text = pack([], {
+    userPrompts: [
+      promptText({
+        text: "compare these",
+        attachments: [{ name: "a.png" }, { name: "b.jpg" }],
+      }),
+    ],
+  });
+
+  expect(text).toContain("1. compare these\n[images: a.png, b.jpg]");
 });

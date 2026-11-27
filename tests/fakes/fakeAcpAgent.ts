@@ -137,9 +137,15 @@ export interface FakeAcpConfig {
   stderrText?: string;
   resume?: boolean;
   loadSession?: boolean;
+  imageInput?: boolean;
   resumeError?: FakeRpcFailure;
   loadError?: FakeRpcFailure;
   replayed?: readonly NotificationStep[];
+}
+
+export interface FakePromptImage {
+  readonly data: string;
+  readonly mimeType: string;
 }
 
 export interface ConfigCall {
@@ -253,6 +259,7 @@ export class FakeAcpAgent {
   readonly configCalls: ConfigCall[] = [];
   readonly callOrder: string[] = [];
   readonly prompts: string[] = [];
+  readonly promptImages: FakePromptImage[] = [];
   readonly permissionOutcomes: RequestPermissionOutcome[] = [];
   readonly clientRequestErrorCodes: number[] = [];
   cancelCalls = 0;
@@ -276,6 +283,9 @@ export class FakeAcpAgent {
             ...(this.config.loadSession === true ? { loadSession: true } : {}),
             ...(this.config.resume === true
               ? { sessionCapabilities: { resume: {} } }
+              : {}),
+            ...(this.config.imageInput === true
+              ? { promptCapabilities: { image: true } }
               : {}),
           },
         };
@@ -364,6 +374,12 @@ export class FakeAcpAgent {
           for (const block of params.prompt) {
             if (block.type === "text") {
               this.prompts.push(block.text);
+            }
+            if (block.type === "image") {
+              this.promptImages.push({
+                data: block.data,
+                mimeType: block.mimeType,
+              });
             }
           }
           for (const step of this.scripts.shift() ?? DEFAULT_SCRIPT) {

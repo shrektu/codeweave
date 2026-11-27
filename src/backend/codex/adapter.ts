@@ -472,7 +472,7 @@ class CodexAppServerSession implements AgentHandle {
       const started = await this.untilExit(
         this.rpc.request(
           CodexMethod.turnStart,
-          this.turnParams(text, desired, options.model),
+          this.turnParams(text, desired, options),
           TurnStartResponseSchema,
         ),
       );
@@ -490,15 +490,19 @@ class CodexAppServerSession implements AgentHandle {
   private turnParams(
     text: string,
     desired: ProfilePolicy,
-    model: string | null,
+    options: TurnOptions,
   ): Readonly<Record<string, unknown>> {
     const changed =
       desired.approvalPolicy !== this.appliedPolicy.approvalPolicy ||
       desired.sandbox !== this.appliedPolicy.sandbox;
+    const images = (options.images ?? []).map((image) => ({
+      type: "localImage",
+      path: image.path,
+    }));
     return {
       threadId: this.threadId,
-      input: [{ type: "text", text }],
-      ...(model === null ? {} : { model }),
+      input: [{ type: "text", text }, ...images],
+      ...(options.model === null ? {} : { model: options.model }),
       ...(changed
         ? {
             approvalPolicy: desired.approvalPolicy,

@@ -1,6 +1,7 @@
 import { API_PROVIDERS } from "../../domain/apiProviders";
 import { ERROR_KIND_RATE_LIMIT, MS_PER_SECOND } from "../../domain/constants";
 import type { AgentEvent } from "../../domain/events";
+import { readPromptImages, type PromptImage } from "../agentAdapter";
 import { withTimeout } from "../codex/handshake";
 
 import {
@@ -219,6 +220,7 @@ export class OpencodeHandle extends OpencodeHandleBase<
     turn: ActiveTurn,
     text: string,
     model: string | null,
+    images: readonly PromptImage[] | undefined,
   ): Promise<void> {
     if (this.interrupted(turn)) {
       this.endCancelled(turn);
@@ -239,6 +241,7 @@ export class OpencodeHandle extends OpencodeHandleBase<
         text,
         agent: agentFor(this.profile),
         model: this.promptModel(model),
+        images: await readPromptImages(images),
       });
     } catch (error) {
       if (error instanceof OpencodeHttpError) {

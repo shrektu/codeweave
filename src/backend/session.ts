@@ -18,6 +18,7 @@ import { IpcError, IpcErrorCode, type ParamsMap } from "../shared/protocol";
 import type { NativeSessionRef, SessionView } from "../shared/views";
 
 import type { AccountReservations } from "./accountReservations";
+import type { AttachmentStore } from "./attachmentStore";
 import {
   AgentStartFailure,
   type AgentAdapter,
@@ -67,6 +68,7 @@ export interface SessionServiceDeps {
   readonly protectedPaths: () => Promise<readonly string[]>;
   readonly homeDir: string;
   readonly resolveFolder: (requested: string | undefined) => Promise<string>;
+  readonly attachments: AttachmentStore;
 }
 
 export interface ResumeSeed {
@@ -456,8 +458,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       return view;
     },
     prompt: async (text, overrides) => {
-      requireRun().prompt(text, overrides);
-      return Promise.resolve();
+      await requireRun().prompt(text, overrides);
     },
     stop: async () => {
       await interruptStart();

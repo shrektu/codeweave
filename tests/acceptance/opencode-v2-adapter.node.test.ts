@@ -1,9 +1,11 @@
-import { readdir } from "node:fs/promises";
+import { readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { afterEach, expect, it, vi } from "vitest";
+import { pathToFileURL } from "node:url";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { UnknownPermissionError } from "../../src/backend/agentAdapter";
 import { PROCESS_EXITED_MESSAGE } from "../../src/backend/constants";
+import { ImageMimeType } from "../../src/domain/attachments";
 import { ConsoleLoginState } from "../../src/backend/opencode/consoleLogin";
 import type { OpencodeCredentials } from "../../src/backend/opencode/config";
 import type { AgentEvent } from "../../src/domain/events";
@@ -698,4 +700,28 @@ it("session_that_stays_busy_fails_the_turn", async () => {
 
   expect(server.requestsTo("POST", PROMPT_PATH)).toEqual([]);
   expect(events).toEqual([turnError(null, "OpenCode session is still busy")]);
+});
+
+describe("opencode v2 adapter: images", () => {
+  it("v2_prompt_carries_files_with_file_uris", async () => {
+    const rig = await createOpencodeV2Rig();
+    const started = await startOpencodeV2Handle(rig);
+    const path = join(rig.cwd, "photo.png");
+    await writeFile(path, Buffer.from("png-bytes"));
+    opencodeV2ServerOf(rig).enqueue([
+      { type: "started" },
+      { type: "succeeded" },
+    ]);
+
+    await started.handle.prompt("look", {
+      model: null,
+      images: [{ path, mimeType: ImageMimeType.png, name: "photo.png" }],
+    });
+
+    const [request] = opencodeV2ServerOf(rig).requestsTo("POST", PROMPT_PATH);
+    expect(request?.body).toEqual({
+      text: "look",
+      files: [{ uri: pathToFileURL(path).href }],
+    });
+  });
 });

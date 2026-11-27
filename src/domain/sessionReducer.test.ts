@@ -539,8 +539,8 @@ describe("session reducer: prompts", () => {
     expect(first.seq).toBe(0);
     expect(second.seq).toBe(1);
     expect(afterSecond.prompts).toEqual([
-      { seq: 0, text: "hello" },
-      { seq: 1, text: "again" },
+      { seq: 0, text: "hello", attachments: [] },
+      { seq: 1, text: "again", attachments: [] },
     ]);
     expect(afterSecond.nextSeq).toBe(2);
   });

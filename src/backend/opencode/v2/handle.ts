@@ -4,6 +4,7 @@ import {
 } from "../../../domain/constants";
 import type { AgentEvent } from "../../../domain/events";
 import type { EpochSeconds } from "../../../domain/types";
+import type { PromptImage } from "../../agentAdapter";
 import { withTimeout } from "../../codex/handshake";
 import { removeKeyFile } from "../config";
 import {
@@ -205,6 +206,7 @@ export class OpencodeV2Handle extends OpencodeHandleBase<
     turn: ActiveTurn,
     text: string,
     model: string | null,
+    images: readonly PromptImage[] | undefined,
   ): Promise<void> {
     if (!this.mayProceed(turn)) {
       return;
@@ -213,7 +215,7 @@ export class OpencodeV2Handle extends OpencodeHandleBase<
     this.mapper?.beginTurn();
     try {
       await this.applySelections(model);
-      await this.ctx.client.prompt(this.sessionId, text);
+      await this.ctx.client.prompt(this.sessionId, text, images);
       if (turn.cancelled) {
         await this.interruptQuietly();
       }

@@ -16,7 +16,9 @@ import {
   fakeSessions,
   fakeTerminals,
 } from "../fakes/fakeSessions";
+import { fakeAttachmentStore } from "../fakes/fakeAttachmentStore";
 import { fakeCheckpointStore } from "../fakes/fakeCheckpointStore";
+import { fakeFileCompletion } from "../fakes/fakeFileCompletion";
 import { fakeOrchestrator } from "../fakes/fakeOrchestrator";
 import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
@@ -52,6 +54,7 @@ function sessionIn(cwd: string): SessionView {
     contextUsage: null,
     turns: [],
     orchestrate: false,
+    imageInput: true,
     prompts: [],
   };
 }
@@ -69,6 +72,8 @@ async function handlersFor(
     broadcast: vi.fn(),
     history: fakeSessionHistory(),
     checkpoints: fakeCheckpointStore(),
+    attachments: fakeAttachmentStore(),
+    files: fakeFileCompletion(),
     inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),
     flowRuns: fakeFlowRuns(),
     orchestrator: fakeOrchestrator(),
