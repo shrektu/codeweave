@@ -22,6 +22,7 @@ export interface SessionViewInput {
   readonly state: SessionState;
   readonly limits: readonly LimitView[];
   readonly turnInFlight: boolean;
+  readonly canCompact: boolean;
   readonly flowRef: FlowRef | null;
   readonly orchestrate: boolean;
   readonly hiddenRequestIds: ReadonlySet<string>;
@@ -100,6 +101,7 @@ export function toSessionView(input: SessionViewInput): SessionView {
     turns: state.turns.map((turn) => ({ ...turn })),
     orchestrate: input.orchestrate,
     imageInput: PROVIDER_IMAGE_INPUT[activeProvider],
+    canCompact: input.canCompact,
     prompts: state.prompts.map((prompt) => ({
       ...prompt,
       attachments: [...prompt.attachments],

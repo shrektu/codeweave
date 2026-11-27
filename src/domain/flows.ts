@@ -71,6 +71,12 @@ function readFrontmatter(markdown: string): ParseResult<unknown> {
   }
 }
 
+export function formatIssues(issues: readonly z.core.$ZodIssue[]): string[] {
+  return issues.map(
+    (issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`,
+  );
+}
+
 function parseWith<T>(schema: z.ZodType<T>, markdown: string): ParseResult<T> {
   const frontmatter = readFrontmatter(markdown);
   if (!frontmatter.ok) {
@@ -80,12 +86,7 @@ function parseWith<T>(schema: z.ZodType<T>, markdown: string): ParseResult<T> {
   if (result.success) {
     return { ok: true, value: result.data };
   }
-  return {
-    ok: false,
-    errors: result.error.issues.map(
-      (issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`,
-    ),
-  };
+  return { ok: false, errors: formatIssues(result.error.issues) };
 }
 
 export function parseAgentFile(markdown: string): ParseResult<AgentDefinition> {

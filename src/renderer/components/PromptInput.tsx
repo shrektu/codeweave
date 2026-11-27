@@ -1,7 +1,8 @@
-import { useRef, type JSX } from "react";
+import { useRef, type JSX, type KeyboardEvent } from "react";
 
 import type { AttachmentView } from "../../shared/views";
 import { useApp } from "../services";
+import type { SlashBuiltin } from "../slashCommands";
 
 import {
   AttachmentChips,
@@ -10,9 +11,17 @@ import {
 } from "./PromptInputParts";
 import { PROMPT_INPUT_STRINGS } from "./promptInputStrings";
 import { useAttachmentStaging } from "./useAttachmentStaging";
-import { useMentionController } from "./usePromptMentions";
+import {
+  handleSubmitKey,
+  useCaretRestore,
+  useMentionController,
+  usePromptEditing,
+} from "./usePromptMentions";
+import { useSlashController } from "./useSlashMenu";
 
 export { PROMPT_INPUT_STRINGS };
+
+const EMPTY_BUILTINS: readonly SlashBuiltin[] = [];
 
 export interface PromptInputProps {
   readonly value: string;
@@ -31,6 +40,7 @@ export interface PromptInputProps {
   readonly onPendingChange: (pending: boolean) => void;
   readonly imageInput: boolean;
   readonly providerLabel: string;
+  readonly builtins?: readonly SlashBuiltin[] | undefined;
 }
 
 export function PromptInput({
@@ -48,17 +58,21 @@ export function PromptInput({
   onPendingChange,
   imageInput,
   providerLabel,
+  builtins = EMPTY_BUILTINS,
 }: PromptInputProps): JSX.Element {
   const { client } = useApp();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const mention = useMentionController({
+  const editing = usePromptEditing(onChange);
+  const mention = useMentionController({ client, cwd, value, editing });
+  const slash = useSlashController({
     client,
     cwd,
     value,
-    onChange,
-    onSubmit,
-    textareaRef,
+    editing,
+    builtins,
   });
+  useCaretRestore(textareaRef, editing.cursor);
+  const menu = slash.menu.listOpen ? slash.menu : mention.menu;
   const staging = useAttachmentStaging({
     client,
     attachments,
@@ -70,6 +84,19 @@ export function PromptInput({
     attachments.length > 0 && !imageInput
       ? PROMPT_INPUT_STRINGS.imagesUnsupported(providerLabel)
       : null;
+  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (slash.handleKey(event) || mention.handleKey(event)) {
+      return;
+    }
+    handleSubmitKey(event, onSubmit);
+  };
+  const clearDismissalsOutside = (
+    nextValue: string,
+    nextCaret: number,
+  ): void => {
+    mention.clearDismissalOutside(nextValue, nextCaret);
+    slash.clearDismissalOutside(nextValue, nextCaret);
+  };
   return (
     <div
       className={
@@ -81,8 +108,30 @@ export function PromptInput({
         placeholder={placeholder}
         ariaLabel={ariaLabel}
         disabled={disabled}
-        mention={mention}
+        menu={menu}
         textareaRef={textareaRef}
+        onChange={(event) => {
+          editing.onTextChange(event);
+          clearDismissalsOutside(
+            event.target.value,
+            event.target.selectionStart,
+          );
+        }}
+        onSelect={(event) => {
+          editing.onCaretMove(event);
+          clearDismissalsOutside(value, event.currentTarget.selectionStart);
+        }}
+        onKeyUp={(event) => {
+          editing.onArrowMove(event);
+          if (event.key.startsWith("Arrow")) {
+            clearDismissalsOutside(value, event.currentTarget.selectionStart);
+          }
+        }}
+        onKeyDown={onKeyDown}
+        onBlur={() => {
+          mention.menu.onDismiss();
+          slash.menu.onDismiss();
+        }}
         onPaste={staging.onPaste}
         onDragOver={staging.onDragOver}
         onDrop={staging.onDrop}

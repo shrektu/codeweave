@@ -156,6 +156,19 @@ describe("request timeouts", () => {
     expect(await outcomeOf(client.warmUp())).toBe("rejected");
   });
 
+  it("summarize_is_not_bound_by_the_short_request_timeout", async () => {
+    const client = clientWith(slowFetch(SLOW_RESPONSE_MS));
+
+    expect(
+      await outcomeOf(
+        client.summarize("ses_1", {
+          providerID: "groq",
+          modelID: "llama-3.3-70b",
+        }),
+      ),
+    ).toBe("resolved");
+  });
+
   it("event_stream_request_is_not_timed", async () => {
     const seen: AbortSignal[] = [];
     const caller = new AbortController();

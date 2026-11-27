@@ -4,15 +4,18 @@ import {
   fireEvent,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { useState, type JSX } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { ImageMimeType } from "../../domain/attachments";
+import { DefinitionSource } from "../../domain/types";
 import { thumbnailCache } from "../attachments";
 import type { AttachmentView, FileCompletionItem } from "../../shared/views";
 import {
   createFakeIpcClient,
+  makeSession,
   makeSnapshot,
   readyState,
   renderWithServices,
@@ -21,7 +24,9 @@ import {
 } from "../../../tests/fakes/fakeIpcClient";
 
 import { AttachmentThumbnail } from "./AttachmentThumbnail";
+import { Composer } from "./Composer";
 import { PromptInput } from "./PromptInput";
+import type { SlashBuiltin } from "../slashCommands";
 
 const PROMPT_PLACEHOLDER = "Describe the task";
 const PNG_BASE64 =
@@ -96,9 +101,11 @@ function stageImmediately(client: FakeIpcClient): void {
 function PromptHarness({
   initialAttachments = [],
   onSubmit,
+  builtins,
 }: {
   readonly initialAttachments?: readonly AttachmentView[];
   readonly onSubmit?: (() => void) | undefined;
+  readonly builtins?: readonly SlashBuiltin[] | undefined;
 }): JSX.Element {
   const [value, setValue] = useState("");
   const [attachments, setAttachments] =
@@ -119,6 +126,7 @@ function PromptHarness({
         onPendingChange={setPending}
         imageInput
         providerLabel="Claude"
+        builtins={builtins}
       />
       <button
         type="button"
@@ -331,4 +339,211 @@ it("thumbnail_survives_cache_eviction", () => {
 
   const survivor = screen.getByRole("img", { name: "survivor.png" });
   expect(survivor.getAttribute("src")).toBe(dataUrl);
+});
+
+const CLEAR_BUILTIN: SlashBuiltin = {
+  name: "clear",
+  description: "New session in this folder",
+  run: () => true,
+};
+
+const SLASH_LIST_LABEL = "Slash commands";
+
+function renderSlashHarness(
+  client: FakeIpcClient,
+  builtins: readonly SlashBuiltin[],
+): void {
+  renderWithServices(
+    <PromptHarness builtins={builtins} />,
+    client,
+    staticStore(readyState(makeSnapshot())),
+  );
+}
+
+function slashCommandRequests(client: FakeIpcClient): unknown[] {
+  return client.requests
+    .filter((request) => request.method === "commands/list")
+    .map((request) => request.params);
+}
+
+it("leading_whitespace_does_not_open_the_menu", () => {
+  const client = createFakeIpcClient();
+  renderSlashHarness(client, [CLEAR_BUILTIN]);
+
+  fireEvent.change(promptBox(), { target: { value: " /re" } });
+
+  expect(screen.queryByRole("listbox")).toBeNull();
+  expect(slashCommandRequests(client)).toEqual([]);
+});
+
+it("caret_after_the_first_space_closes_the_command_list", async () => {
+  const client = createFakeIpcClient();
+  renderSlashHarness(client, [CLEAR_BUILTIN]);
+  const box = promptBox();
+
+  fireEvent.change(box, { target: { value: "/re" } });
+  expect(
+    await screen.findByRole("listbox", { name: SLASH_LIST_LABEL }),
+  ).toBeTruthy();
+
+  fireEvent.change(box, { target: { value: "/re " } });
+  expect(screen.queryByRole("listbox")).toBeNull();
+});
+
+it("commands_list_failure_shows_builtins_only", async () => {
+  const client = createFakeIpcClient();
+  client.fail("commands/list", new Error("boom"));
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  renderSlashHarness(client, [CLEAR_BUILTIN]);
+
+  fireEvent.change(promptBox(), { target: { value: "/" } });
+
+  const list = await screen.findByRole("listbox", {
+    name: SLASH_LIST_LABEL,
+  });
+  expect(
+    within(list)
+      .getAllByRole("option")
+      .map((option) => option.getAttribute("aria-label")),
+  ).toEqual(["/clear"]);
+  expect(warn).toHaveBeenCalled();
+  warn.mockRestore();
+});
+
+it("menu_refetches_commands_each_time_it_opens", async () => {
+  const client = createFakeIpcClient();
+  client.respond("commands/list", { commands: [], errors: [] });
+  renderSlashHarness(client, [CLEAR_BUILTIN]);
+  const box = promptBox();
+
+  fireEvent.change(box, { target: { value: "/" } });
+  await screen.findByRole("listbox", { name: SLASH_LIST_LABEL });
+  expect(slashCommandRequests(client)).toHaveLength(1);
+
+  fireEvent.change(box, { target: { value: "" } });
+  expect(screen.queryByRole("listbox")).toBeNull();
+  fireEvent.change(box, { target: { value: "/" } });
+  await screen.findByRole("listbox", { name: SLASH_LIST_LABEL });
+
+  expect(slashCommandRequests(client)).toHaveLength(2);
+});
+
+it("empty_matches_and_errors_are_shown_as_status_lines", async () => {
+  const client = createFakeIpcClient();
+  client.respond("commands/list", {
+    commands: [],
+    errors: [
+      {
+        file: "prompts/broken.md",
+        source: DefinitionSource.project,
+        messages: ["bad frontmatter"],
+      },
+    ],
+  });
+  renderSlashHarness(client, [CLEAR_BUILTIN]);
+
+  fireEvent.change(promptBox(), { target: { value: "/zzz" } });
+
+  const list = await screen.findByRole("listbox", {
+    name: SLASH_LIST_LABEL,
+  });
+  expect(
+    within(list).getByText("No matching commands; sending passes text as-is"),
+  ).toBeTruthy();
+  expect(
+    within(list).getByText("1 command file could not be read and was skipped"),
+  ).toBeTruthy();
+  expect(within(list).queryAllByRole("option")).toHaveLength(0);
+});
+
+it("dismissed_bare_slash_reopens_after_retyping", async () => {
+  const client = createFakeIpcClient();
+  client.respond("commands/list", { commands: [], errors: [] });
+  renderSlashHarness(client, [CLEAR_BUILTIN]);
+  const box = promptBox();
+
+  fireEvent.change(box, { target: { value: "/" } });
+  await screen.findByRole("listbox", { name: SLASH_LIST_LABEL });
+  fireEvent.keyDown(box, { key: "Escape" });
+  expect(screen.queryByRole("listbox")).toBeNull();
+
+  fireEvent.change(box, { target: { value: "" } });
+  fireEvent.change(box, { target: { value: "hello" } });
+  fireEvent.change(box, { target: { value: "" } });
+  fireEvent.change(box, { target: { value: "/" } });
+
+  expect(
+    await screen.findByRole("listbox", { name: SLASH_LIST_LABEL }),
+  ).toBeTruthy();
+});
+
+it("enter_with_no_matching_command_submits", async () => {
+  const client = createFakeIpcClient();
+  client.respond("commands/list", { commands: [], errors: [] });
+  const onSubmit = vi.fn<() => void>();
+  renderWithServices(
+    <PromptHarness onSubmit={onSubmit} builtins={[]} />,
+    client,
+    staticStore(readyState(makeSnapshot())),
+  );
+  const box = promptBox();
+
+  fireEvent.change(box, { target: { value: "/foo" } });
+  await screen.findByRole("listbox", { name: SLASH_LIST_LABEL });
+  fireEvent.keyDown(box, { key: "Enter" });
+
+  expect(onSubmit).toHaveBeenCalledTimes(1);
+});
+
+it("failed_builtin_from_the_menu_keeps_the_text", async () => {
+  const client = createFakeIpcClient();
+  client.respond("commands/list", { commands: [], errors: [] });
+  const failing: SlashBuiltin = {
+    name: "clear",
+    description: "A command that fails",
+    run: () => Promise.resolve(false),
+  };
+  renderSlashHarness(client, [failing]);
+  const box = promptBox();
+
+  fireEvent.change(box, { target: { value: "/clear" } });
+  await screen.findByRole("option", { name: "/clear" });
+  fireEvent.keyDown(box, { key: "Enter" });
+
+  await waitFor(() => {
+    expect(box.value).toBe("/clear");
+  });
+});
+
+it("model_builtin_keeps_staged_attachments", async () => {
+  const client = createFakeIpcClient();
+  client.respond("attachments/get", {
+    mimeType: ImageMimeType.png,
+    dataBase64: PNG_BASE64,
+  });
+  const attachment = attachmentView("shot.png");
+  renderWithServices(
+    <Composer initialAttachments={[attachment]} />,
+    client,
+    staticStore(
+      readyState(
+        makeSnapshot({
+          sessions: [makeSession({ cwd: "/home/user/project" })],
+        }),
+      ),
+    ),
+  );
+  const box = promptBox();
+
+  fireEvent.change(box, { target: { value: "/model gpt-x" } });
+  fireEvent.keyDown(box, { key: "Enter" });
+
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText<HTMLInputElement>("Model override").value,
+    ).toBe("gpt-x");
+  });
+  expect(
+    screen.queryByRole("list", { name: "Attached images" }),
+  ).not.toBeNull();
 });

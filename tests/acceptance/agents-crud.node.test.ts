@@ -30,6 +30,7 @@ import {
 import { fakeAttachmentStore } from "../fakes/fakeAttachmentStore";
 import { fakeCheckpointStore } from "../fakes/fakeCheckpointStore";
 import { fakeFileCompletion } from "../fakes/fakeFileCompletion";
+import { fakeSlashCommands } from "../fakes/fakeSlashCommands";
 import { projectRoots } from "../fakes/definitionRoots";
 import { fakeOrchestrator } from "../fakes/fakeOrchestrator";
 import { fakeSecrets } from "../fakes/fakeVault";
@@ -160,6 +161,7 @@ function handlersFor(cwd: string): ReturnType<typeof createHandlers> {
     checkpoints: fakeCheckpointStore(),
     attachments: fakeAttachmentStore(),
     files: fakeFileCompletion(),
+    commands: fakeSlashCommands(),
     inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),
     flowRuns: fakeFlowRuns(),
     orchestrator: fakeOrchestrator(),
@@ -846,6 +848,7 @@ const RUNNING_VIEW: SessionView = {
   turns: [],
   orchestrate: false,
   imageInput: true,
+  canCompact: false,
   prompts: [],
 };
 

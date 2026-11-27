@@ -48,6 +48,8 @@ export const ThreadStartResponseSchema = z.looseObject({
   modelProvider: z.string().nullish(),
 });
 
+export const ThreadCompactStartResponseSchema = z.strictObject({});
+
 export const ModelReroutedParamsSchema = z.looseObject({
   toModel: z.string(),
 });
@@ -96,6 +98,10 @@ export const TurnSchema = z.looseObject({
 export type Turn = z.infer<typeof TurnSchema>;
 
 export const TurnStartResponseSchema = z.looseObject({ turn: TurnSchema });
+export const TurnStartedParamsSchema = z.looseObject({
+  threadId: z.string().optional(),
+  turn: TurnSchema,
+});
 export const TurnCompletedParamsSchema = z.looseObject({ turn: TurnSchema });
 export type TurnCompletedParams = z.infer<typeof TurnCompletedParamsSchema>;
 

@@ -112,6 +112,13 @@ const INACTIVE_PHASES: readonly RotationPhase["phase"][] = [
 const NEEDS_LOGIN: AccountRuntime = { status: "needs_login" };
 const PREAMBLE_SEPARATOR = "\n\n";
 const TOOL_TOKEN_LABEL = "flow tool token";
+const COMPACT_PROMPT_TEXT = "/compact";
+
+const TurnKind = {
+  prompt: "prompt",
+  compact: "compact",
+} as const;
+type TurnKind = (typeof TurnKind)[keyof typeof TurnKind];
 
 function textEventFor(key: string, text: string): AgentEvent {
   return key === NO_MESSAGE_KEY
@@ -186,6 +193,8 @@ export class SessionRun {
   private detector: RateLimitDetector | null = null;
   private activeTurns = 0;
   private claiming = false;
+  private compacting = false;
+  private compactionHandoff: string | null = null;
   private failure: string | null = null;
   private closed = false;
   private worktreeRoot: Promise<string> | null = null;
@@ -250,6 +259,7 @@ export class SessionRun {
   }
 
   view(): SessionView {
+    const phase = this.phase();
     return toSessionView({
       id: this.id,
       createdAt: this.createdAt,
@@ -258,10 +268,12 @@ export class SessionRun {
       provider: this.provider,
       accounts: this.registered,
       profile: this.spec.profile,
-      phase: this.phase(),
+      phase,
       state: this.state,
       limits: [...this.limits.values()],
       turnInFlight: this.activeTurns > 0 || this.claiming,
+      canCompact:
+        this.current?.compact !== undefined && phase.phase === "running",
       flowRef: this.spec.flowRef,
       orchestrate: this.spec.tools !== null,
       hiddenRequestIds: this.deciding,
@@ -353,6 +365,7 @@ export class SessionRun {
       );
     }
     this.claiming = true;
+    this.compacting = false;
     this.publish();
     try {
       const images =
@@ -373,12 +386,70 @@ export class SessionRun {
         attachments,
       );
       this.currentPrompt = begun.prompt;
-      const prefix = this.current?.resumed === true ? null : this.resumeContext;
+      const prefix = this.promptPrefix();
       void this.userTurn(current.accountId, text, prefix, images);
     } finally {
       this.claiming = false;
       this.publish();
     }
+  }
+
+  compact(): Promise<void> {
+    const phase = this.phase();
+    if (
+      phase.phase !== "running" ||
+      this.activeTurns > 0 ||
+      this.claiming ||
+      this.controller.busy()
+    ) {
+      throw this.busyError();
+    }
+    const provider = this.providerOf(phase.accountId);
+    if (this.current?.compact === undefined) {
+      throw new IpcError(
+        IpcErrorCode.VALIDATION,
+        `${PROVIDER_DISPLAY_NAMES[provider]} cannot compact the conversation`,
+      );
+    }
+    this.claiming = true;
+    this.publish();
+    try {
+      const current = this.phase();
+      if (
+        this.closed ||
+        current.phase !== "running" ||
+        current.accountId !== phase.accountId
+      ) {
+        throw this.busyError();
+      }
+      const begun = beginPrompt(this.state, {});
+      this.state = recordPrompt(
+        begun.state,
+        begun.prompt.seq,
+        this.maskText(COMPACT_PROMPT_TEXT),
+      );
+      this.currentPrompt = begun.prompt;
+      void this.userTurn(
+        current.accountId,
+        COMPACT_PROMPT_TEXT,
+        null,
+        [],
+        TurnKind.compact,
+      );
+    } finally {
+      this.claiming = false;
+      this.publish();
+    }
+    return Promise.resolve();
+  }
+
+  private promptPrefix(): string | null {
+    if (this.compactionHandoff !== null) {
+      return this.compactionHandoff;
+    }
+    return this.resumeContext === null || this.current?.resumed === true
+      ? null
+      : this.resumeContext;
   }
 
   private busyError(): IpcError {
@@ -433,6 +504,8 @@ export class SessionRun {
 
   async discard(): Promise<void> {
     this.closed = true;
+    this.compacting = false;
+    this.compactionHandoff = null;
     await this.launching.settled();
     await Promise.all(
       [...this.handles.keys()].map((accountId) =>
@@ -603,14 +676,22 @@ export class SessionRun {
     text: string,
     prefix: string | null,
     images: readonly PromptImage[] = [],
+    kind: TurnKind = TurnKind.prompt,
   ): Promise<void> {
     this.activeTurns += 1;
+    this.compacting = kind === TurnKind.compact;
     try {
-      const outcome = await this.runTurn(accountId, text, prefix, images);
+      const outcome = await this.runTurn(accountId, text, prefix, images, kind);
       await this.controller.onTurnSettled(accountId, outcome);
     } catch (error) {
       console.error(`turn failed on ${accountId}: ${this.maskedText(error)}`);
     } finally {
+      if (
+        kind !== TurnKind.compact ||
+        this.controller.phase().phase !== "waiting"
+      ) {
+        this.compacting = false;
+      }
       this.activeTurns -= 1;
       this.publish();
       this.onRuntimeSettled();
@@ -622,7 +703,13 @@ export class SessionRun {
     text: string,
     prefix: string | null = null,
     images: readonly PromptImage[] = [],
+    kind: TurnKind = TurnKind.prompt,
   ): Promise<TurnOutcome> {
+    if (kind === TurnKind.prompt && this.compacting) {
+      this.compactionHandoff = text;
+      this.compacting = false;
+      return { kind: "ok" };
+    }
     const handle = this.current;
     if (this.closed || handle?.accountId !== accountId) {
       return { kind: "failed", message: SESSION_CLOSED_MESSAGE };
@@ -641,11 +728,16 @@ export class SessionRun {
     this.state = routed.state;
     const { model } = routed;
     try {
-      await handle.prompt(this.briefedText(handle, text, prefix), {
-        model,
-        ...(images.length === 0 ? {} : { images }),
-      });
-      this.resumeContext = null;
+      if (kind === TurnKind.compact) {
+        await this.compactHandle(handle);
+      } else {
+        await handle.prompt(this.briefedText(handle, text, prefix), {
+          model,
+          ...(images.length === 0 ? {} : { images }),
+        });
+        this.resumeContext = null;
+        this.compactionHandoff = null;
+      }
     } catch (error) {
       console.error(`prompt failed on ${accountId}: ${this.maskedText(error)}`);
       this.onEvent(handle, {
@@ -663,6 +755,16 @@ export class SessionRun {
     }
     this.publish();
     return outcome;
+  }
+
+  private compactHandle(handle: AgentHandle): Promise<void> {
+    if (handle.compact === undefined) {
+      throw new IpcError(
+        IpcErrorCode.VALIDATION,
+        `${PROVIDER_DISPLAY_NAMES[this.providerOf(handle.accountId)]} cannot compact the conversation`,
+      );
+    }
+    return handle.compact();
   }
 
   private recordExhausted(

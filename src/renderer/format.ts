@@ -116,6 +116,7 @@ export function storedSessionView(stored: StoredSession): SessionView {
     turns: [...stored.turns],
     orchestrate: stored.orchestrate,
     imageInput: PROVIDER_IMAGE_INPUT[stored.provider],
+    canCompact: false,
     prompts: [...stored.prompts],
   };
 }
@@ -450,6 +451,10 @@ export function missingLimitText(account: AccountView): string {
 
 const PATH_SEPARATOR = /[\\/]/;
 const KEPT_PATH_SEGMENTS = 2;
+
+export function folderLabel(cwd: string): string {
+  return cwd.split(PATH_SEPARATOR).filter(Boolean).at(-1) ?? cwd;
+}
 
 export function compactPath(path: string): string {
   const segments = path.split(PATH_SEPARATOR).filter(Boolean);

@@ -39,7 +39,7 @@ const SESSION_PATH = "/api/session";
 const ACTIVE_PATH = "/api/session/active";
 const EVENT_PATH = "/api/event";
 const SESSION_ACTION_ROUTE =
-  /^\/api\/session\/([^/]+)\/(prompt|agent|model|interrupt)$/;
+  /^\/api\/session\/([^/]+)\/(prompt|agent|model|interrupt|compact)$/;
 const SESSION_BY_ID_ROUTE = /^\/api\/session\/([^/]+)$/;
 const PERMISSION_REPLY_ROUTE =
   /^\/api\/session\/([^/]+)\/permission\/([^/]+)\/reply$/;
@@ -129,6 +129,13 @@ export type OpencodeV2Step =
   | { readonly type: "succeeded" }
   | { readonly type: "failed"; readonly error: FakeV2Error }
   | { readonly type: "interrupted"; readonly reason: string }
+  | { readonly type: "compaction_started"; readonly reason?: string }
+  | { readonly type: "compaction_ended"; readonly reason?: string }
+  | {
+      readonly type: "compaction_failed";
+      readonly error: FakeV2Error;
+      readonly reason?: string;
+    }
   | { readonly type: "wait"; readonly ms: number }
   | { readonly type: "wait_interrupt" }
   | { readonly type: "hold" }
@@ -149,6 +156,10 @@ export interface V2WarmUp {
 const DEFAULT_SCRIPT: readonly OpencodeV2Step[] = [
   { type: "started" },
   { type: "succeeded" },
+];
+const DEFAULT_COMPACT_SCRIPT: readonly OpencodeV2Step[] = [
+  { type: "compaction_started" },
+  { type: "compaction_ended" },
 ];
 const DEFAULT_INTERRUPT_OUTCOME: readonly OpencodeV2Step[] = [
   { type: "interrupted", reason: "user" },
@@ -307,13 +318,32 @@ function lifecycleEvent(
         | "retry"
         | "succeeded"
         | "failed"
-        | "interrupted";
+        | "interrupted"
+        | "compaction_started"
+        | "compaction_ended"
+        | "compaction_failed";
     }
   >,
 ): Json {
   switch (step.type) {
     case "started":
       return envelope("session.execution.started", ownSession());
+    case "compaction_started":
+      return envelope("session.compaction.started", {
+        ...ownSession(),
+        ...(step.reason === undefined ? {} : { reason: step.reason }),
+      });
+    case "compaction_ended":
+      return envelope("session.compaction.ended", {
+        ...ownSession(),
+        ...(step.reason === undefined ? {} : { reason: step.reason }),
+      });
+    case "compaction_failed":
+      return envelope("session.compaction.failed", {
+        ...ownSession(),
+        error: step.error,
+        ...(step.reason === undefined ? {} : { reason: step.reason }),
+      });
     case "step":
       return envelope("session.step.started", {
         ...ownSession(),
@@ -556,6 +586,16 @@ export class FakeOpencodeV2Server implements ScriptedServer<OpencodeV2Step> {
   ): Promise<void> {
     if (action === "interrupt") {
       await this.interrupt(response);
+      return;
+    }
+    if (action === "compact") {
+      this.active = true;
+      sendJson(response, { data: {} });
+      void this.runTurn(this.scripts.shift() ?? DEFAULT_COMPACT_SCRIPT).finally(
+        () => {
+          this.active = false;
+        },
+      );
       return;
     }
     if (action !== "prompt") {

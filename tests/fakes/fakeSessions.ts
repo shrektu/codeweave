@@ -12,6 +12,7 @@ export function fakeSessions(
     view: () => null,
     start: () => Promise.reject(new Error("not available in this test")),
     prompt: () => Promise.reject(new Error("not available in this test")),
+    compact: () => Promise.reject(new Error("not available in this test")),
     stop: () => Promise.resolve(),
     answerPermission: () => undefined,
     isInUse: () => false,

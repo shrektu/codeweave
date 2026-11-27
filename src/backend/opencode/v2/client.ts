@@ -34,6 +34,8 @@ export interface V2ModelRef {
   readonly providerID: string;
 }
 
+const COMPACT_PATH = "compact";
+
 export interface OpencodeV2Client {
   warmUp(): Promise<void>;
   models(): Promise<V2Model[]>;
@@ -44,6 +46,7 @@ export interface OpencodeV2Client {
     text: string,
     images?: readonly PromptImage[],
   ): Promise<void>;
+  compact(sessionId: string): Promise<void>;
   switchAgent(sessionId: string, agent: OpencodeAgent): Promise<void>;
   switchModel(sessionId: string, model: V2ModelRef): Promise<void>;
   interrupt(sessionId: string): Promise<boolean>;
@@ -60,7 +63,12 @@ type Send = (input: RequestInput) => Promise<Response>;
 
 type SessionActions = Pick<
   OpencodeV2Client,
-  "prompt" | "switchAgent" | "switchModel" | "interrupt" | "replyPermission"
+  | "prompt"
+  | "compact"
+  | "switchAgent"
+  | "switchModel"
+  | "interrupt"
+  | "replyPermission"
 >;
 
 async function* typedEvents(
@@ -113,6 +121,12 @@ function createSessionActions(send: Send): SessionActions {
         method: "POST",
         path: sessionPath(sessionId, OpencodeV2Path.agent),
         body: { agent },
+      }),
+    compact: (sessionId) =>
+      sendAndDiscard(send, {
+        method: "POST",
+        path: sessionPath(sessionId, COMPACT_PATH),
+        body: {},
       }),
     switchModel: (sessionId, model) =>
       sendAndDiscard(send, {

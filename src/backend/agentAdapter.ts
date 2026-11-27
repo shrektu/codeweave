@@ -71,6 +71,7 @@ export interface AgentHandle {
   readonly resumed: boolean;
   subscribe(listener: (event: AgentEvent) => void): () => void;
   prompt(text: string, options: TurnOptions): Promise<void>;
+  compact?(): Promise<void>;
   answerPermission(requestId: string, optionId: string): void;
   setProfile(profile: PermissionProfile): Promise<void>;
   cancel(): Promise<void>;

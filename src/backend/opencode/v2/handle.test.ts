@@ -55,6 +55,7 @@ function createClient(
       calls.prompts.push(text);
       return calls.promptGate.current ?? Promise.resolve();
     },
+    compact: () => Promise.resolve(),
     switchAgent: () => Promise.resolve(),
     switchModel: () => Promise.resolve(),
     interrupt: (sessionId) => {
@@ -583,5 +584,43 @@ describe("opencode v2 handle native resume", () => {
     expect(rig.handle.resumed).toBe(false);
     expect(rig.handle.nativeSessionId).toBe(SESSION);
     expect(creates).toBe(1);
+  });
+});
+
+describe("auto compaction during a prompt", () => {
+  it("auto_compaction_during_a_prompt_does_not_end_the_turn", async () => {
+    const rig = await openRig();
+    const { turn } = await startedTurn(rig);
+
+    await rig.push("session.compaction.started", { ...OWN, reason: "auto" });
+    await rig.push("session.compaction.ended", { ...OWN, reason: "auto" });
+    await rig.push("session.text.delta", {
+      ...OWN,
+      assistantMessageID: "msg_auto",
+      ordinal: 0,
+      delta: "after compaction",
+    });
+    await rig.push("session.execution.succeeded", OWN);
+    await turn;
+
+    expect(rig.events).toEqual([
+      { type: "text", messageId: "msg_auto:0", text: "after compaction" },
+      { type: "turn_end", stopReason: "end_turn" },
+    ]);
+  });
+
+  it("auto_compaction_failure_during_a_prompt_does_not_fail_the_turn", async () => {
+    const rig = await openRig();
+    const { turn } = await startedTurn(rig);
+
+    await rig.push("session.compaction.failed", {
+      ...OWN,
+      reason: "overflow",
+      error: { type: "provider.quota", message: "auto compaction failed" },
+    });
+    await rig.push("session.execution.succeeded", OWN);
+    await turn;
+
+    expect(rig.events).toEqual([{ type: "turn_end", stopReason: "end_turn" }]);
   });
 });

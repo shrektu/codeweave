@@ -7,6 +7,7 @@ import type {
   SessionView,
 } from "../../shared/views";
 import {
+  folderLabel,
   formatLocalTime,
   isSessionLive,
   MS_PER_MINUTE,
@@ -24,17 +25,11 @@ export interface SidebarProps {
 const NO_FOLDER_LABEL = "No folder";
 const SAVED_LABEL = "Saved";
 const ARCHIVED_LABEL = "Archived";
-const PATH_SEPARATOR = /[\\/]/;
-
 function sessionLabel(session: SessionView): string {
   if (!session.explicitFolder) {
     return NO_FOLDER_LABEL;
   }
   return folderLabel(session.cwd);
-}
-
-function folderLabel(cwd: string): string {
-  return cwd.split(PATH_SEPARATOR).filter(Boolean).at(-1) ?? cwd;
 }
 
 interface SessionListItem {

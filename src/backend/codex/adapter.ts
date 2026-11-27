@@ -20,25 +20,19 @@ import {
 import type { AgentProcess, AgentProcesses } from "../agentProcesses";
 import {
   DEFAULT_STOP_GRACE_MS,
-  PROCESS_EXITED_MESSAGE,
   STDERR_TAIL_CHARS,
 } from "../constants";
 import type { StopResult } from "../process/container";
 
 import {
   APPROVALS_REVIEWER_USER,
-  CodexDecision,
   CodexMethod,
   CodexNotification,
-  CodexPermissionChoice,
-  CodexPermissionScope,
   CodexServerRequest,
   CodexTurnStatus,
   DEFAULT_RATE_LIMIT_READ_TIMEOUT_MS,
-  NEEDS_LOGIN_MESSAGE,
   RPC_CODE_INVALID_PARAMS,
   RPC_CODE_METHOD_NOT_FOUND,
-  RPC_CODE_PEER_CLOSED,
   RPC_MESSAGE_INVALID_PARAMS,
   RPC_MESSAGE_METHOD_NOT_FOUND,
   STOP_REASON_CANCELLED,
@@ -63,6 +57,20 @@ import {
   type ProfilePolicy,
   type RateLimitState,
 } from "./events";
+import {
+  CodexNeedsLoginError,
+  DECISION_ANSWERS,
+  ProcessExitedError,
+  exitedEvent,
+  isPeerClosed,
+  messageOf,
+  newActiveTurn,
+  permissionAnswers,
+  type ActiveTurn,
+  type ApprovalAnswers,
+  type PendingApproval,
+  type PermissionRequestEvent,
+} from "./approvals";
 import { openCodexAccount, withTimeout } from "./handshake";
 import { buildCodexLaunch } from "./launch";
 import {
@@ -76,12 +84,13 @@ import {
   ModelReroutedParamsSchema,
   PermissionsApprovalParamsSchema,
   RateLimitsReadResponseSchema,
+  ThreadCompactStartResponseSchema,
   ThreadStartResponseSchema,
   ThreadTokenUsageUpdatedParamsSchema,
   TurnCompletedParamsSchema,
+  TurnStartedParamsSchema,
   TurnStartResponseSchema,
   type Turn,
-  type TurnCompletedParams,
 } from "./protocol";
 import {
   CodexRpcError,
@@ -101,87 +110,6 @@ export interface CodexAdapterDeps {
 }
 
 type Listener = (event: AgentEvent) => void;
-type PermissionRequestEvent = Extract<
-  AgentEvent,
-  { type: "permission_request" }
->;
-
-interface ApprovalAnswers {
-  readonly resultFor: (optionId: string) => unknown;
-  readonly declined: unknown;
-}
-
-interface PendingApproval extends ApprovalAnswers {
-  readonly rpcId: RpcId;
-  readonly optionIds: ReadonlySet<string>;
-}
-
-interface ActiveTurn {
-  turnId: string | null;
-  readonly idReady: PromiseWithResolvers<string | null>;
-  readonly completed: PromiseWithResolvers<TurnCompletedParams>;
-}
-
-class ProcessExitedError extends Error {
-  constructor() {
-    super(PROCESS_EXITED_MESSAGE);
-    this.name = "ProcessExitedError";
-  }
-}
-
-class CodexNeedsLoginError extends Error {
-  constructor() {
-    super(NEEDS_LOGIN_MESSAGE);
-    this.name = "CodexNeedsLoginError";
-  }
-}
-
-const DECISION_ANSWERS: ApprovalAnswers = {
-  resultFor: (optionId) => ({ decision: optionId }),
-  declined: { decision: CodexDecision.decline },
-};
-
-const DENIED_PERMISSIONS = {
-  permissions: {},
-  scope: CodexPermissionScope.turn,
-};
-
-function permissionAnswers(
-  requested: Readonly<Record<string, unknown>>,
-): ApprovalAnswers {
-  return {
-    resultFor: (optionId) =>
-      optionId === CodexPermissionChoice.grant
-        ? { permissions: requested, scope: CodexPermissionScope.turn }
-        : DENIED_PERMISSIONS,
-    declined: DENIED_PERMISSIONS,
-  };
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function isPeerClosed(error: unknown): boolean {
-  return error instanceof CodexRpcError && error.code === RPC_CODE_PEER_CLOSED;
-}
-
-function exitedEvent(): AgentEvent {
-  return {
-    type: "turn_error",
-    errorKind: null,
-    rpcCode: null,
-    message: PROCESS_EXITED_MESSAGE,
-  };
-}
-
-function newActiveTurn(): ActiveTurn {
-  return {
-    turnId: null,
-    idReady: Promise.withResolvers<string | null>(),
-    completed: Promise.withResolvers<TurnCompletedParams>(),
-  };
-}
 
 class CodexAppServerSession implements AgentHandle {
   readonly accountId: string;
@@ -254,6 +182,17 @@ class CodexAppServerSession implements AgentHandle {
       throw new TurnInProgressError(this.runId);
     }
     const current = this.runTurn(text, options);
+    this.turn = current;
+    await current.finally(() => {
+      this.turn = this.turn === current ? null : this.turn;
+    });
+  }
+
+  async compact(): Promise<void> {
+    if (this.turn !== null) {
+      throw new TurnInProgressError(this.runId);
+    }
+    const current = this.runCompactTurn();
     this.turn = current;
     await current.finally(() => {
       this.turn = this.turn === current ? null : this.turn;
@@ -487,6 +426,36 @@ class CodexAppServerSession implements AgentHandle {
     }
   }
 
+  private async runCompactTurn(): Promise<void> {
+    this.announceRateLimits();
+    const active = newActiveTurn();
+    this.active = active;
+    const events = await this.driveCompact(active);
+    this.active = null;
+    this.cancelPending();
+    this.turn = null;
+    for (const event of events) {
+      this.emit(event);
+    }
+  }
+
+  private async driveCompact(active: ActiveTurn): Promise<AgentEvent[]> {
+    try {
+      await this.untilExit(
+        this.rpc.request(
+          CodexMethod.threadCompactStart,
+          { threadId: this.threadId },
+          ThreadCompactStartResponseSchema,
+        ),
+      );
+      const completed = await this.untilExit(active.completed.promise);
+      return await this.finishTurn(completed.turn);
+    } catch (error) {
+      active.idReady.resolve(null);
+      return [this.failureEvent(error)];
+    }
+  }
+
   private turnParams(
     text: string,
     desired: ProfilePolicy,
@@ -639,6 +608,9 @@ class CodexAppServerSession implements AgentHandle {
       case CodexNotification.agentMessageDelta:
         this.onAgentMessageDelta(params);
         return;
+      case CodexNotification.turnStarted:
+        this.onTurnStarted(params);
+        return;
       case CodexNotification.turnCompleted:
         this.onTurnCompleted(params);
         return;
@@ -709,6 +681,25 @@ class CodexAppServerSession implements AgentHandle {
     }
   }
 
+  private onTurnStarted(params: unknown): void {
+    const parsed = this.parse(
+      TurnStartedParamsSchema,
+      CodexNotification.turnStarted,
+      params,
+    );
+    const active = this.active;
+    if (parsed === null || active === null) {
+      return;
+    }
+    if (parsed.threadId !== undefined && parsed.threadId !== this.threadId) {
+      return;
+    }
+    if (active.turnId === null) {
+      active.turnId = parsed.turn.id;
+      active.idReady.resolve(parsed.turn.id);
+    }
+  }
+
   private onTurnCompleted(params: unknown): void {
     const parsed = this.parse(
       TurnCompletedParamsSchema,
@@ -721,6 +712,8 @@ class CodexAppServerSession implements AgentHandle {
       active !== null &&
       (active.turnId === null || active.turnId === parsed.turn.id)
     ) {
+      active.turnId ??= parsed.turn.id;
+      active.idReady.resolve(active.turnId);
       active.completed.resolve(parsed);
     }
   }

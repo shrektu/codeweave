@@ -31,7 +31,10 @@ import type { OpencodeV2Client, V2ModelRef } from "./client";
 import { OpencodeV2EventType } from "./constants";
 import { classifyExecutionError } from "./errors";
 import { createV2EventMapper, type OpencodeV2EventMapper } from "./events";
-import type { OpencodeV2Event } from "./protocol";
+import {
+  OpencodeV2CompactionEventType,
+  type OpencodeV2Event,
+} from "./protocol";
 
 type EventOf<T extends OpencodeV2Event["type"]> = Extract<
   OpencodeV2Event,
@@ -45,6 +48,7 @@ type TerminalEvent = EventOf<
 
 interface ActiveTurn extends BaseTurn {
   started: boolean;
+  compacting: boolean;
 }
 
 export interface OpencodeV2HandleInit extends HandleBaseInit {
@@ -126,6 +130,7 @@ export class OpencodeV2Handle extends OpencodeHandleBase<
       done: Promise.withResolvers<undefined>(),
       sent: false,
       started: false,
+      compacting: false,
       cancelled: false,
       terminal: false,
       settled: false,
@@ -224,6 +229,18 @@ export class OpencodeV2Handle extends OpencodeHandleBase<
     }
   }
 
+  protected override sendCompact(turn: ActiveTurn): Promise<void> {
+    if (!this.mayProceed(turn)) {
+      return Promise.resolve();
+    }
+    turn.compacting = true;
+    turn.sent = true;
+    this.mapper?.beginTurn();
+    return this.ctx.client.compact(this.sessionId).catch((error: unknown) => {
+      this.failTurn(turn, this.ctx.redact(messageOf(error)));
+    });
+  }
+
   private async applySelections(model: string | null): Promise<void> {
     const { client, defaultModel } = this.ctx;
     const agent = agentFor(this.profile);
@@ -268,6 +285,15 @@ export class OpencodeV2Handle extends OpencodeHandleBase<
       case OpencodeV2EventType.executionStarted:
         this.onStarted();
         return;
+      case OpencodeV2CompactionEventType.started:
+        this.onCompactionStarted();
+        return;
+      case OpencodeV2CompactionEventType.ended:
+        this.onCompactionEnded();
+        return;
+      case OpencodeV2CompactionEventType.failed:
+        this.onCompactionFailed(event);
+        return;
       case OpencodeV2EventType.retryScheduled:
         this.onRetry(event);
         return;
@@ -294,6 +320,45 @@ export class OpencodeV2Handle extends OpencodeHandleBase<
     if (turn?.sent === true && !turn.started) {
       turn.started = true;
     }
+  }
+
+  private onCompactionStarted(): void {
+    if (this.turn?.compacting === true) {
+      this.onStarted();
+    }
+  }
+
+  private onCompactionEnded(): void {
+    const turn = this.turn;
+    if (turn?.compacting !== true || !turn.sent || turn.terminal) {
+      return;
+    }
+    turn.terminal = true;
+    this.emit(turnEnd(false));
+    this.settle(turn);
+  }
+
+  private onCompactionFailed(
+    event: EventOf<typeof OpencodeV2CompactionEventType.failed>,
+  ): void {
+    const turn = this.turn;
+    if (turn?.compacting !== true || !turn.sent || turn.terminal) {
+      return;
+    }
+    turn.terminal = true;
+    const classified = classifyExecutionError(
+      event.data.error,
+      this.ctx.now(),
+      this.ctx.consoleLogin,
+    );
+    const cancelled = classified.aborted && (turn.cancelled || this.stopping);
+    const events = cancelled
+      ? [turnEnd(true)]
+      : this.errorEvents(classified, null);
+    events.forEach((agentEvent) => {
+      this.emit(agentEvent);
+    });
+    this.settle(turn);
   }
 
   private onPermission(

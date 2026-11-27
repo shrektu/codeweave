@@ -28,6 +28,7 @@ import {
   createSettingsService,
   type PostUpdaterConfig,
 } from "./settingsService";
+import type { SlashCommandLibrary } from "./slashCommands";
 import type { JsonStore } from "./storage";
 import type { TerminalService } from "./terminal/service";
 
@@ -52,6 +53,7 @@ export interface HandlerDeps {
   checkpoints: CheckpointStore;
   attachments: AttachmentStore;
   files: FileCompletion;
+  commands: SlashCommandLibrary;
 }
 
 const SESSION_NOT_FOUND_MESSAGE = "Session not found";
@@ -93,6 +95,7 @@ export function createHandlers({
   checkpoints,
   attachments,
   files,
+  commands,
 }: HandlerDeps): IpcHandlers {
   const accounts = createAccountsService({
     store,
@@ -237,6 +240,10 @@ export function createHandlers({
       await requireMain(sessions, sessionId).prompt(text, overrides);
       return { accepted: true };
     },
+    "session/compact": async ({ sessionId }) => {
+      await requireMain(sessions, sessionId).compact();
+      return { accepted: true };
+    },
     "attachments/stage": (params) => attachments.stage(params),
     "attachments/get": ({ sessionId, id }) => attachments.read(sessionId, id),
     "files/complete": async ({ cwd, query }) => ({
@@ -288,6 +295,7 @@ export function createHandlers({
     },
     "flows/save": async ({ cwd, ...params }) =>
       saveFlow(await definitionRoots(cwd), params),
+    "commands/list": ({ cwd }) => commands.list(cwd),
     "agents/create": async ({ cwd, ...params }) =>
       createAgent(await definitionRoots(cwd), params),
     "agents/save": async ({ cwd, ...params }) =>

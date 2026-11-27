@@ -19,6 +19,7 @@ import {
 import { fakeAttachmentStore } from "../fakes/fakeAttachmentStore";
 import { fakeCheckpointStore } from "../fakes/fakeCheckpointStore";
 import { fakeFileCompletion } from "../fakes/fakeFileCompletion";
+import { fakeSlashCommands } from "../fakes/fakeSlashCommands";
 import { fakeOrchestrator } from "../fakes/fakeOrchestrator";
 import { fakeSecrets } from "../fakes/fakeVault";
 import { makeTempDir } from "../fakes/processHelpers";
@@ -55,6 +56,7 @@ function sessionIn(cwd: string): SessionView {
     turns: [],
     orchestrate: false,
     imageInput: true,
+    canCompact: false,
     prompts: [],
   };
 }
@@ -74,6 +76,7 @@ async function handlersFor(
     checkpoints: fakeCheckpointStore(),
     attachments: fakeAttachmentStore(),
     files: fakeFileCompletion(),
+    commands: fakeSlashCommands(),
     inspectWorktree: (cwd) => Promise.resolve({ isRepo: false, cwd }),
     flowRuns: fakeFlowRuns(),
     orchestrator: fakeOrchestrator(),

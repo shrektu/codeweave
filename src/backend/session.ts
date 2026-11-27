@@ -94,6 +94,7 @@ export interface SessionService {
     options?: StartOptions,
   ): Promise<SessionView>;
   prompt(text: string, overrides?: PromptOverrides): Promise<void>;
+  compact(): Promise<void>;
   stop(): Promise<void>;
   answerPermission(requestId: string, optionId: string): void;
   isInUse(accountId: string): boolean;
@@ -459,6 +460,9 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     },
     prompt: async (text, overrides) => {
       await requireRun().prompt(text, overrides);
+    },
+    compact: async () => {
+      await requireRun().compact();
     },
     stop: async () => {
       await interruptStart();

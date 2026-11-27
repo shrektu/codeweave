@@ -101,6 +101,7 @@ function view(overrides: Partial<SessionView> = {}): SessionView {
     turns: [],
     orchestrate: false,
     imageInput: true,
+    canCompact: false,
     prompts: [{ seq: 0, text: "Do the task", attachments: [] }],
     ...overrides,
   };

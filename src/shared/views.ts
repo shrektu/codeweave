@@ -27,6 +27,7 @@ import {
   LimitAvailability,
   PermissionProfile,
   ProviderId,
+  SlashCommandKind,
   SwitchReason,
   TerminalStatus,
   UpdateChannel,
@@ -287,6 +288,7 @@ export const SessionViewSchema = z.strictObject({
   turns: z.array(TurnRouteViewSchema),
   orchestrate: z.boolean(),
   imageInput: z.boolean(),
+  canCompact: z.boolean(),
   prompts: z.array(PromptViewSchema),
 });
 export type SessionView = z.infer<typeof SessionViewSchema>;
@@ -401,6 +403,22 @@ export const FlowsListSchema = z.strictObject({
   }),
 });
 export type FlowsList = z.infer<typeof FlowsListSchema>;
+
+export const SlashCommandViewSchema = z.strictObject({
+  name: z.string(),
+  description: z.string(),
+  kind: z.enum(SlashCommandKind),
+  source: z.enum(DefinitionSource),
+  file: z.string(),
+  body: z.string(),
+});
+export type SlashCommandView = z.infer<typeof SlashCommandViewSchema>;
+
+export const SlashCommandsListSchema = z.strictObject({
+  commands: z.array(SlashCommandViewSchema),
+  errors: z.array(FlowFileErrorSchema),
+});
+export type SlashCommandsList = z.infer<typeof SlashCommandsListSchema>;
 
 export const FlowRunViewSchema = z.strictObject({
   runId: NonEmptyString,

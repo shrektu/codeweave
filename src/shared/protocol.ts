@@ -49,6 +49,7 @@ import {
   SessionHistoryEntrySchema,
   SessionViewSchema,
   SettingsViewSchema,
+  SlashCommandsListSchema,
   SnapshotSchema,
   StoredSessionSchema,
   SwitchLogEntryViewSchema,
@@ -158,6 +159,7 @@ export const ParamsSchemas = {
       .max(IMAGE_MAX_PER_PROMPT)
       .optional(),
   }),
+  "session/compact": SessionIdParamsSchema,
   "attachments/stage": z.strictObject({
     name: z.string().min(1).max(255),
     mimeType: z.enum(ImageMimeType),
@@ -246,6 +248,7 @@ export const ParamsSchemas = {
   "settings/set": SettingsPatchSchema,
   "switchLog/list": EmptyParamsSchema,
   "flows/list": z.strictObject({ cwd: NonEmptyString.optional() }),
+  "commands/list": z.strictObject({ cwd: NonEmptyString.optional() }),
   "flows/save": z
     .strictObject({
       cwd: NonEmptyString.optional(),
@@ -341,6 +344,7 @@ export const RequestSchema = z.discriminatedUnion("method", [
   requestSchema("sessions/snapshot"),
   requestSchema("session/start"),
   requestSchema("session/prompt"),
+  requestSchema("session/compact"),
   requestSchema("attachments/stage"),
   requestSchema("attachments/get"),
   requestSchema("files/complete"),
@@ -363,6 +367,7 @@ export const RequestSchema = z.discriminatedUnion("method", [
   requestSchema("settings/set"),
   requestSchema("switchLog/list"),
   requestSchema("flows/list"),
+  requestSchema("commands/list"),
   requestSchema("flows/save"),
   requestSchema("agents/create"),
   requestSchema("agents/save"),
@@ -396,6 +401,7 @@ const resultSchemaDefinitions = {
   "sessions/snapshot": SnapshotSchema,
   "session/start": SessionViewSchema,
   "session/prompt": z.strictObject({ accepted: z.literal(true) }),
+  "session/compact": z.strictObject({ accepted: z.literal(true) }),
   "attachments/stage": AttachmentViewSchema,
   "attachments/get": z.strictObject({
     mimeType: z.enum(ImageMimeType),
@@ -427,6 +433,7 @@ const resultSchemaDefinitions = {
     entries: z.array(SwitchLogEntryViewSchema),
   }),
   "flows/list": FlowsListSchema,
+  "commands/list": SlashCommandsListSchema,
   "flows/save": FlowsListSchema,
   "agents/create": FlowsListSchema,
   "agents/save": FlowsListSchema,

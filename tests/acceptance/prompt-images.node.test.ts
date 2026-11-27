@@ -36,6 +36,7 @@ import type { AttachmentView } from "../../src/shared/views";
 import { fakeAttachmentStore } from "../fakes/fakeAttachmentStore";
 import { fakeCheckpointStore } from "../fakes/fakeCheckpointStore";
 import { fakeFileCompletion } from "../fakes/fakeFileCompletion";
+import { fakeSlashCommands } from "../fakes/fakeSlashCommands";
 import { fakeOrchestrator } from "../fakes/fakeOrchestrator";
 import {
   fakeFlowRuns,
@@ -413,6 +414,7 @@ async function handlerRig(attachments: AttachmentStore): Promise<HandlerRig> {
     checkpoints: fakeCheckpointStore(),
     attachments,
     files: fakeFileCompletion(),
+    commands: fakeSlashCommands(),
     inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),
     flowRuns: fakeFlowRuns(),
     orchestrator: fakeOrchestrator(),

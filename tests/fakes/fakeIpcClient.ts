@@ -287,6 +287,7 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
     turns: [],
     orchestrate: false,
     imageInput: true,
+    canCompact: false,
     prompts: [],
     createdAt: 0,
     ...overrides,

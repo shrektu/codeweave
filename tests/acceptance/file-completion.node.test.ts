@@ -27,6 +27,7 @@ import { IpcErrorCode } from "../../src/shared/protocol";
 import type { FileCompletionItem } from "../../src/shared/views";
 import { fakeAttachmentStore } from "../fakes/fakeAttachmentStore";
 import { fakeCheckpointStore } from "../fakes/fakeCheckpointStore";
+import { fakeSlashCommands } from "../fakes/fakeSlashCommands";
 import {
   fakeFlowRuns,
   fakeProbes,
@@ -113,6 +114,7 @@ async function handlersFor(
     checkpoints: fakeCheckpointStore(),
     attachments: fakeAttachmentStore(),
     files,
+    commands: fakeSlashCommands(),
     inspectWorktree: (dir) => Promise.resolve({ isRepo: false, cwd: dir }),
     flowRuns: fakeFlowRuns(),
     orchestrator: fakeOrchestrator(),

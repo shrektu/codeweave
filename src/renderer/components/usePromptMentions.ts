@@ -13,6 +13,9 @@ import type { FileCompletionItem } from "../../shared/views";
 import type { IpcClient } from "../ipc";
 import { activeMention, applyMention } from "../mentions";
 
+import type { ListboxOption } from "./MentionListbox";
+import { PROMPT_INPUT_STRINGS } from "./promptInputStrings";
+
 interface CompletionResult {
   readonly key: string;
   readonly items: readonly FileCompletionItem[];
@@ -29,32 +32,46 @@ interface Selection {
   readonly index: number;
 }
 
-interface CursorRequest {
+export interface CursorRequest {
   readonly position: number;
   readonly revision: number;
 }
 
-interface MentionKeys {
+export interface ListKeys {
   readonly listOpen: boolean;
-  readonly items: readonly FileCompletionItem[];
-  readonly activeIndex: number;
+  readonly activeKey: string | null;
   readonly onMove: (delta: number) => void;
-  readonly onChoose: (item: FileCompletionItem) => void;
+  readonly onChoose: (key: string) => void;
   readonly onDismiss: () => void;
 }
 
-export interface MentionController {
+export interface PromptMenu {
   readonly listId: string;
   readonly listOpen: boolean;
-  readonly items: readonly FileCompletionItem[];
   readonly loading: boolean;
+  readonly label: string;
+  readonly emptyText: string;
+  readonly statusText: string | null;
+  readonly options: readonly ListboxOption[];
   readonly activeIndex: number;
-  readonly onChoose: (item: FileCompletionItem) => void;
-  readonly onChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
-  readonly onSelect: (event: SyntheticEvent<HTMLTextAreaElement>) => void;
-  readonly onKeyUp: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
-  readonly onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
-  readonly onBlur: () => void;
+  readonly onChoose: (key: string) => void;
+  readonly onDismiss: () => void;
+  readonly onMove: (delta: number) => void;
+}
+
+export interface PromptEditing {
+  readonly caret: number | null;
+  readonly cursor: CursorRequest;
+  readonly onTextChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
+  readonly onCaretMove: (event: SyntheticEvent<HTMLTextAreaElement>) => void;
+  readonly onArrowMove: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  readonly applyText: (text: string, caret: number) => void;
+}
+
+export interface MentionController {
+  readonly menu: PromptMenu;
+  readonly handleKey: (event: KeyboardEvent<HTMLTextAreaElement>) => boolean;
+  readonly clearDismissalOutside: (value: string, caret: number) => void;
 }
 
 const MENTION_DEBOUNCE_MS = 120;
@@ -64,23 +81,16 @@ interface CompletionQuery {
   readonly query: string;
 }
 
-interface EditingState {
-  readonly query: CompletionQuery | null;
-  readonly closedKey: string | null;
-  readonly cursor: CursorRequest;
-  readonly onTextChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
-  readonly onCaretMove: (event: SyntheticEvent<HTMLTextAreaElement>) => void;
-  readonly onArrowMove: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
-  readonly close: () => void;
-  readonly apply: (item: FileCompletionItem) => void;
-}
-
 const EMPTY_ITEMS: readonly FileCompletionItem[] = [];
 const EMPTY_COMPLETION: CompletionView = {
   items: EMPTY_ITEMS,
   loading: false,
   blocked: false,
 };
+
+function optionKeyOf(item: FileCompletionItem): string {
+  return `${item.kind}:${item.path}`;
+}
 
 function completionQueryOf(
   mention: ReturnType<typeof activeMention>,
@@ -169,7 +179,7 @@ function useMentionCompletion(
   };
 }
 
-function useCaretRestore(
+export function useCaretRestore(
   textareaRef: RefObject<HTMLTextAreaElement | null>,
   cursor: CursorRequest,
 ): void {
@@ -183,9 +193,9 @@ function useCaretRestore(
   }, [textareaRef, cursor]);
 }
 
-function handleMentionKey(
+export function handleListKey(
   event: KeyboardEvent<HTMLTextAreaElement>,
-  keys: MentionKeys,
+  keys: ListKeys,
 ): boolean {
   if (event.nativeEvent.isComposing || !keys.listOpen) {
     return false;
@@ -201,11 +211,11 @@ function handleMentionKey(
     return true;
   }
   if (event.key === "Enter" || event.key === "Tab") {
-    event.preventDefault();
-    const item = keys.items[keys.activeIndex];
-    if (item !== undefined) {
-      keys.onChoose(item);
+    if (keys.activeKey === null) {
+      return false;
     }
+    event.preventDefault();
+    keys.onChoose(keys.activeKey);
     return true;
   }
   if (event.key === "Escape") {
@@ -216,7 +226,7 @@ function handleMentionKey(
   return false;
 }
 
-function handleSubmitKey(
+export function handleSubmitKey(
   event: KeyboardEvent<HTMLTextAreaElement>,
   onSubmit: (() => void) | undefined,
 ): void {
@@ -232,38 +242,26 @@ function handleSubmitKey(
   onSubmit();
 }
 
-function useMentionEditing(
-  value: string,
+export function usePromptEditing(
   onChange: (value: string) => void,
-): EditingState {
+): PromptEditing {
   const [caret, setCaret] = useState<number | null>(null);
-  const [closedKey, setClosedKey] = useState<string | null>(null);
   const [cursor, setCursor] = useState<CursorRequest>({
     position: 0,
     revision: 0,
   });
-  const mention = activeMention(value, caret ?? value.length);
-  const query = completionQueryOf(mention);
-
-  const apply = (item: FileCompletionItem): void => {
-    if (mention === null) {
-      return;
-    }
-    const applied = applyMention(value, mention, item);
-    onChange(applied.text);
-    setCaret(applied.caret);
-    setCursor((current) => ({
-      position: applied.caret,
-      revision: current.revision + 1,
-    }));
-    setClosedKey(null);
-  };
 
   return {
-    query,
-    closedKey,
+    caret,
     cursor,
-    apply,
+    applyText: (text, position) => {
+      onChange(text);
+      setCaret(position);
+      setCursor((current) => ({
+        position,
+        revision: current.revision + 1,
+      }));
+    },
     onTextChange: (event) => {
       onChange(event.target.value);
       setCaret(event.target.selectionStart);
@@ -276,28 +274,25 @@ function useMentionEditing(
         setCaret(event.currentTarget.selectionStart);
       }
     },
-    close: () => {
-      setClosedKey(query?.key ?? null);
-    },
   };
 }
 
-function useSuggestionSelection(
-  query: CompletionQuery | null,
-  items: readonly FileCompletionItem[],
+export function useSuggestionSelection(
+  key: string | null,
+  count: number,
 ): { readonly activeIndex: number; readonly move: (delta: number) => void } {
   const [selection, setSelection] = useState<Selection | null>(null);
   const activeIndex =
-    selection !== null && selection.key === query?.key && items.length > 0
-      ? Math.min(selection.index, items.length - 1)
+    selection !== null && selection.key === key && count > 0
+      ? Math.min(selection.index, count - 1)
       : 0;
   const move = (delta: number): void => {
-    if (query === null || items.length === 0) {
+    if (key === null || count === 0) {
       return;
     }
     setSelection({
-      key: query.key,
-      index: (activeIndex + delta + items.length) % items.length,
+      key,
+      index: (activeIndex + delta + count) % count,
     });
   };
   return { activeIndex, move };
@@ -307,51 +302,74 @@ export function useMentionController({
   client,
   cwd,
   value,
-  onChange,
-  onSubmit,
-  textareaRef,
+  editing,
 }: {
   readonly client: IpcClient;
   readonly cwd: string | undefined;
   readonly value: string;
-  readonly onChange: (value: string) => void;
-  readonly onSubmit: (() => void) | undefined;
-  readonly textareaRef: RefObject<HTMLTextAreaElement | null>;
+  readonly editing: PromptEditing;
 }): MentionController {
   const listId = useId();
-  const editing = useMentionEditing(value, onChange);
-  const completion = useMentionCompletion(client, cwd, editing.query);
+  const [closedKey, setClosedKey] = useState<string | null>(null);
+  const mention = activeMention(value, editing.caret ?? value.length);
+  const query = completionQueryOf(mention);
+  const completion = useMentionCompletion(client, cwd, query);
   const listOpen =
-    editing.query !== null &&
-    editing.query.key !== editing.closedKey &&
-    !completion.blocked;
+    query !== null && query.key !== closedKey && !completion.blocked;
   const items = listOpen ? completion.items : EMPTY_ITEMS;
-  const { activeIndex, move } = useSuggestionSelection(editing.query, items);
-  useCaretRestore(textareaRef, editing.cursor);
+  const { activeIndex, move } = useSuggestionSelection(
+    query?.key ?? null,
+    items.length,
+  );
+  const options: readonly ListboxOption[] = items.map((item) => ({
+    key: optionKeyOf(item),
+    label: item.kind === "dir" ? `${item.path}/` : item.path,
+    description:
+      item.kind === "dir" ? PROMPT_INPUT_STRINGS.folderSuffixHint : undefined,
+  }));
+
+  const choose = (key: string): void => {
+    const item = items.find((candidate) => optionKeyOf(candidate) === key);
+    if (item === undefined || mention === null) {
+      return;
+    }
+    const applied = applyMention(value, mention, item);
+    editing.applyText(applied.text, applied.caret);
+    setClosedKey(null);
+  };
+
+  const dismiss = (): void => {
+    setClosedKey(query?.key ?? null);
+  };
+
+  const clearDismissalOutside = (nextValue: string, caret: number): void => {
+    if (activeMention(nextValue, caret) === null) {
+      setClosedKey(null);
+    }
+  };
 
   return {
-    listId,
-    listOpen,
-    items,
-    loading: listOpen && completion.loading,
-    activeIndex,
-    onChoose: editing.apply,
-    onBlur: editing.close,
-    onSelect: editing.onCaretMove,
-    onKeyUp: editing.onArrowMove,
-    onChange: editing.onTextChange,
-    onKeyDown: (event) => {
-      const handled = handleMentionKey(event, {
-        listOpen,
-        items,
-        activeIndex,
-        onMove: move,
-        onChoose: editing.apply,
-        onDismiss: editing.close,
-      });
-      if (!handled) {
-        handleSubmitKey(event, onSubmit);
-      }
+    menu: {
+      listId,
+      listOpen,
+      loading: listOpen && completion.loading,
+      label: PROMPT_INPUT_STRINGS.mentionListLabel,
+      emptyText: PROMPT_INPUT_STRINGS.mentionEmpty,
+      statusText: null,
+      options,
+      activeIndex,
+      onChoose: choose,
+      onDismiss: dismiss,
+      onMove: move,
     },
+    handleKey: (event) =>
+      handleListKey(event, {
+        listOpen,
+        activeKey: options[activeIndex]?.key ?? null,
+        onMove: move,
+        onChoose: choose,
+        onDismiss: dismiss,
+      }),
+    clearDismissalOutside,
   };
 }
