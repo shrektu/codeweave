@@ -515,6 +515,29 @@ pre.diff {
   color: var(--label);
 }
 
+.prompt-input-option-label {
+  display: block;
+}
+
+.prompt-input-option-description {
+  display: block;
+  color: var(--label-3);
+  font: var(--text-xs) var(--font-mono);
+}
+
+.prompt-input-option-tags {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.prompt-input-option-tag {
+  padding: 0 var(--space-1);
+  border: 1px solid var(--separator-strong);
+  border-radius: var(--radius-s);
+  color: var(--label-3);
+  font: var(--text-xs) var(--font-mono);
+}
+
 .prompt-input-status {
   padding: var(--space-1) var(--space-2);
   color: var(--label-3);

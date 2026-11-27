@@ -38,6 +38,7 @@ import {
 import { errorMessage } from "../errorMessage";
 import { sessionModelText, turnBadge } from "../routingText";
 import { useApp, useServices } from "../services";
+import { resolvePromptText } from "../slashCommands";
 import type { AppState } from "../store";
 import { useAsyncAction, type AsyncAction } from "../useAsyncAction";
 import { useRecentFolders } from "../useRecentFolders";
@@ -355,9 +356,10 @@ function TaskStart({
         });
         sessionId = started.id;
         store.activateSession(started.id);
+        const promptText = await resolvePromptText(client, workspace, text);
         await client.request("session/prompt", {
           sessionId: started.id,
-          text,
+          text: promptText,
           ...(attachments.length === 0
             ? {}
             : { attachments: [...attachments] }),
@@ -628,9 +630,10 @@ function ResumeComposer({
     const sent = await send.run(async () => {
       await client.request("session/resume", { sessionId });
       try {
+        const promptText = await resolvePromptText(client, cwd, text);
         await client.request("session/prompt", {
           sessionId,
-          text,
+          text: promptText,
           ...(attachments.length === 0
             ? {}
             : { attachments: [...attachments] }),
@@ -705,6 +708,13 @@ function SessionBody({
       ? draft.unsent.id
       : 0;
   const rewindable = runId === null && !session.turnInFlight;
+  const latestPrompt = session.prompts.at(-1);
+  const rewindLatest =
+    rewindable && latestPrompt !== undefined
+      ? (): void => {
+          onRewind(latestPrompt);
+        }
+      : undefined;
   const requestStop = (): Promise<unknown> =>
     runId === null
       ? client.request("session/stop", { sessionId: session.id })
@@ -770,6 +780,7 @@ function SessionBody({
           initialText={unsentText}
           initialAttachments={unsentAttachments}
           onSent={draft.clearUnsent}
+          onRewindLatest={rewindLatest}
         />
       )}
     </>
