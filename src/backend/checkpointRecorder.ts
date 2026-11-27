@@ -4,7 +4,7 @@ import type { PromptView, SessionView, ToolCallView } from "../shared/views";
 
 import type { CheckpointStore } from "./checkpointStore";
 import { editKey } from "./editedFiles";
-import { readFileSnapshot } from "./fileSnapshot";
+import { readStampedSnapshot, type StampedSnapshot } from "./fileSnapshot";
 
 const MAIN_SCOPE = "main";
 const RUN_SCOPE = "run";
@@ -21,6 +21,7 @@ export interface CheckpointRecorder {
 interface RecorderDeps {
   readonly store: Pick<CheckpointStore, "record">;
   readonly ownerOf: (runId: string) => string | null;
+  readonly readSnapshot?: (path: string) => Promise<StampedSnapshot>;
 }
 
 interface ObserveCallsInput {
@@ -38,6 +39,10 @@ function mainScope(sessionId: string): string {
 
 function runScope(runId: string): string {
   return `${RUN_SCOPE}${SCOPE_SEPARATOR}${runId}`;
+}
+
+function pendingReadKey(sessionId: string, path: string): string {
+  return `${sessionId}${SCOPE_SEPARATOR}${path}`;
 }
 
 function latestPromptSeq(prompts: readonly PromptView[]): number {
@@ -66,14 +71,17 @@ function promptSeqBefore(
 class Recorder implements CheckpointRecorder {
   private readonly store: Pick<CheckpointStore, "record">;
   private readonly ownerOf: (runId: string) => string | null;
+  private readonly readSnapshot: (path: string) => Promise<StampedSnapshot>;
   private readonly baselines = new Map<string, Set<string>>();
   private readonly recorded = new Map<string, Set<string>>();
   private readonly latestPrompts = new Map<string, number>();
   private readonly runOwners = new Map<string, string>();
+  private readonly pendingReads = new Map<string, string>();
 
   constructor(deps: RecorderDeps) {
     this.store = deps.store;
     this.ownerOf = deps.ownerOf;
+    this.readSnapshot = deps.readSnapshot ?? readStampedSnapshot;
   }
 
   observeMain(view: SessionView | null): void {
@@ -114,6 +122,12 @@ class Recorder implements CheckpointRecorder {
     this.latestPrompts.delete(sessionId);
     this.baselines.delete(mainScope(sessionId));
     this.recorded.delete(sessionId);
+    const prefix = `${sessionId}${SCOPE_SEPARATOR}`;
+    for (const key of this.pendingReads.keys()) {
+      if (key.startsWith(prefix)) {
+        this.pendingReads.delete(key);
+      }
+    }
     for (const [runId, owner] of this.runOwners) {
       if (owner === sessionId) {
         this.baselines.delete(runScope(runId));
@@ -171,12 +185,23 @@ class Recorder implements CheckpointRecorder {
         }
         keys.add(key);
         const path = resolve(input.cwd, diff.path);
+        const readKey = pendingReadKey(input.sessionId, path);
+        const previousKey = this.pendingReads.get(readKey);
+        this.pendingReads.set(readKey, key);
+        const read = this.readSnapshot(path);
+        const settle = (): void => {
+          if (this.pendingReads.get(readKey) === key) {
+            this.pendingReads.delete(readKey);
+          }
+        };
+        void read.then(settle).catch(settle);
         void this.store
           .record(input.sessionId, {
             editKey: key,
             promptSeq,
             diff: { ...diff, path },
-            after: readFileSnapshot(path),
+            after: read,
+            ...(previousKey === undefined ? {} : { lateReadOf: previousKey }),
           })
           .catch((error: unknown) => {
             keys.delete(key);

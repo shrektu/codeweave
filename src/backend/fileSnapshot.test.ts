@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { DIFF_MAX_FILE_BYTES } from "./constants";
-import { readFileSnapshot } from "./fileSnapshot";
+import { readFileSnapshot, readStampedSnapshot } from "./fileSnapshot";
 
 const FIFO_DEADLINE_MS = 2000;
 const SHORT_READ_BYTES = 4;
@@ -22,8 +22,10 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
   return {
     ...actual,
-    stat: (path: string): Promise<unknown> =>
-      fsHooks.stat === undefined ? actual.stat(path) : fsHooks.stat(path),
+    stat: (path: string, options?: { readonly bigint?: boolean }) =>
+      fsHooks.stat === undefined
+        ? actual.stat(path, options)
+        : fsHooks.stat(path),
     open: (path: string, flags: number): Promise<unknown> =>
       fsHooks.open === undefined
         ? actual.open(path, flags)
@@ -176,7 +178,9 @@ it("invalid_utf8_is_binary", async () => {
 it("directory_is_binary", async () => {
   await mkdir(join(dir, "sub"));
 
-  expect(await readFileSnapshot(join(dir, "sub"))).toEqual({ kind: "binary" });
+  expect(await readFileSnapshot(join(dir, "sub"))).toEqual({
+    kind: "binary",
+  });
 });
 
 it.skipIf(process.platform === "win32")("fifo_path_is_not_read", async () => {
@@ -211,4 +215,53 @@ it("bom_is_preserved", async () => {
     kind: "text",
     text: "﻿a",
   });
+});
+
+it("stamp_describes_the_read_file", async () => {
+  const file = join(dir, "stamped.txt");
+  await writeFile(file, "stamped\n");
+  const stats = await stat(file, { bigint: true });
+
+  const { stamp } = await readStampedSnapshot(file);
+
+  expect(stamp).toEqual({
+    ino: stats.ino.toString(),
+    size: stats.size.toString(),
+    mtimeNs: stats.mtimeNs.toString(),
+  });
+});
+
+it("write_between_stat_and_read_gives_no_stamp", async () => {
+  const file = join(dir, "swapped.txt");
+  await writeFile(file, "before\n");
+  let statCalls = 0;
+  fsHooks.open = async (path: string, flags: number) => {
+    const actual =
+      await vi.importActual<typeof import("node:fs/promises")>(
+        "node:fs/promises",
+      );
+    const handle = await actual.open(path, flags);
+    return {
+      read: (
+        buffer: Buffer,
+        offset: number,
+        length: number,
+        position: number,
+      ) => handle.read(buffer, offset, length, position),
+      stat: async () => {
+        const stats = await handle.stat({ bigint: true });
+        statCalls += 1;
+        if (statCalls === 1) {
+          await writeFile(file, "after\n");
+        }
+        return stats;
+      },
+      close: () => handle.close(),
+    };
+  };
+
+  const { snapshot, stamp } = await readStampedSnapshot(file);
+
+  expect(stamp).toBeUndefined();
+  expect(snapshot).toEqual({ kind: "text", text: "after\n" });
 });
