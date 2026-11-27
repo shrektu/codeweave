@@ -1,6 +1,12 @@
 import { resolve } from "node:path";
 
-import type { AgentEvent, ToolCallStatus } from "../../domain/events";
+import { OPENCODE_COST_CURRENCY } from "../../domain/constants";
+import {
+  UsageReportMode,
+  type AgentEvent,
+  type ToolCallStatus,
+} from "../../domain/events";
+import { ProviderId } from "../../domain/types";
 import {
   DEFAULT_TOOL_KIND,
   OPTION_KIND_ALLOW_ALWAYS,
@@ -47,6 +53,18 @@ interface MessageInfo {
   readonly role: string;
   readonly modelID?: string | undefined;
   readonly providerID?: string | undefined;
+  readonly cost?: number | null | undefined;
+  readonly tokens?: MessageTokens | null | undefined;
+}
+
+interface MessageTokens {
+  readonly input: number;
+  readonly output: number;
+  readonly reasoning: number;
+  readonly cache: {
+    readonly read: number;
+    readonly write: number;
+  };
 }
 
 export interface OpencodeEventMapper {
@@ -278,7 +296,44 @@ export function createEventMapper(
 
   function mapMessage(info: MessageInfo): AgentEvent[] {
     roles.set(info.id, info.role);
-    if (info.role !== OpencodeRole.assistant || info.modelID === undefined) {
+    if (info.role !== OpencodeRole.assistant) {
+      return [];
+    }
+    const usage = usageEvents(info);
+    return [...usage, ...modelEvents(info)];
+  }
+
+  function usageEvents(info: MessageInfo): AgentEvent[] {
+    const tokens =
+      info.tokens === null || info.tokens === undefined
+        ? null
+        : {
+            input: info.tokens.input,
+            output: info.tokens.output,
+            cacheRead: info.tokens.cache.read,
+            cacheWrite: info.tokens.cache.write,
+            reasoning: info.tokens.reasoning,
+          };
+    const cost =
+      typeof info.cost === "number"
+        ? { amount: info.cost, currency: OPENCODE_COST_CURRENCY }
+        : null;
+    return tokens === null && cost === null
+      ? []
+      : [
+          {
+            type: "usage_report",
+            provider: ProviderId.opencode,
+            key: info.id,
+            mode: UsageReportMode.cumulative,
+            tokens,
+            cost,
+          },
+        ];
+  }
+
+  function modelEvents(info: MessageInfo): AgentEvent[] {
+    if (info.modelID === undefined) {
       return [];
     }
     const model = servedModelName(info.providerID, info.modelID);

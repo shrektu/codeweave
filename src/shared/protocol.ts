@@ -130,6 +130,7 @@ const SettingsPatchSchema = z
     opencodeExecutable: z.string().nullable().optional(),
     terminalShell: z.string().nullable().optional(),
     updateCheck: z.boolean().optional(),
+    notifications: z.boolean().optional(),
     updateChannel: z.enum(UpdateChannel).optional(),
     defaultTaskClass: TaskClassSchema.optional(),
     definitionLibrary: z.string().nullable().optional(),

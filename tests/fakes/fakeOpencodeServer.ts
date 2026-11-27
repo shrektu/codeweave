@@ -67,6 +67,16 @@ export interface OpencodePermissionStep {
   readonly sessionId?: string;
 }
 
+export interface OpencodeTokens {
+  readonly input: number;
+  readonly output: number;
+  readonly reasoning: number;
+  readonly cache: {
+    readonly read: number;
+    readonly write: number;
+  };
+}
+
 interface PendingPermission {
   readonly sessionId: string;
   readonly settled: () => void;
@@ -109,6 +119,12 @@ export type OpencodeStep =
       readonly message: string;
       readonly statusCode?: number;
       readonly headers?: Readonly<Record<string, string>>;
+    }
+  | {
+      readonly type: "usage";
+      readonly messageId?: string;
+      readonly cost?: number;
+      readonly tokens?: OpencodeTokens;
     }
   | { readonly type: "idle" }
   | { readonly type: "raw"; readonly event: Json }
@@ -157,6 +173,7 @@ type EventStep = Exclude<
     type:
       | "permission"
       | "permissions"
+      | "usage"
       | "wait_abort"
       | "hang"
       | "wait"
@@ -677,6 +694,19 @@ export class FakeOpencodeServer {
         return;
       case "reject_prompt":
       case "slow_user_message":
+        return;
+      case "usage":
+        this.emit(
+          envelope("message.updated", {
+            info: {
+              id: step.messageId ?? ASSISTANT_MESSAGE_ID,
+              role: "assistant",
+              sessionID: OPENCODE_SESSION_ID,
+              ...(step.cost === undefined ? {} : { cost: step.cost }),
+              ...(step.tokens === undefined ? {} : { tokens: step.tokens }),
+            },
+          }),
+        );
         return;
       case "late_idle":
         this.sessionBusy = false;

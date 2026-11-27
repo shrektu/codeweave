@@ -1,4 +1,5 @@
 import { FlowRunStatus, type FlowDecision } from "../../src/domain/flowRun";
+import { emptyUsageLedger } from "../../src/domain/usageLedger";
 import {
   FlowPlacement,
   MergeStatus,
@@ -39,6 +40,7 @@ export function sessionView(overrides: Partial<SessionView> = {}): SessionView {
     flowRef: null,
     currentModel: null,
     contextUsage: null,
+    usage: emptyUsageLedger(),
     turns: [],
     orchestrate: true,
     imageInput: true,

@@ -8,6 +8,7 @@ import { createFlowRunService } from "../../src/backend/flowRuns";
 import { listFlows, saveFlow } from "../../src/backend/flows";
 import type { AgentDefinition, FlowDefinition } from "../../src/domain/flows";
 import type { DefinitionSource } from "../../src/domain/types";
+import { emptyUsageLedger } from "../../src/domain/usageLedger";
 import type { SessionView } from "../../src/shared/views";
 import { closeRigs, openRig } from "../fakes/backendRig";
 import { fakeSessions } from "../fakes/fakeSessions";
@@ -62,6 +63,7 @@ const RUNNING_VIEW: SessionView = {
   flowRef: { flowId: "ship", nodeId: "build" },
   currentModel: null,
   contextUsage: null,
+  usage: emptyUsageLedger(),
   turns: [],
   orchestrate: false,
   imageInput: true,

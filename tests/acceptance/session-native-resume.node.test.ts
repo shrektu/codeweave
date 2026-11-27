@@ -16,6 +16,7 @@ import {
 import { createJsonStore } from "../../src/backend/storage";
 import { INITIAL_SESSION_STATE } from "../../src/domain/sessionReducer";
 import { PermissionProfile, ProviderId } from "../../src/domain/types";
+import { emptyUsageLedger } from "../../src/domain/usageLedger";
 import type { StoredSession } from "../../src/shared/views";
 import type { AgentAdapter, AgentHandle } from "../../src/backend/agentAdapter";
 import {
@@ -203,6 +204,7 @@ async function storeSession(
     toolCalls: [],
     turns: [],
     lastTurn: null,
+    usage: emptyUsageLedger(),
     nativeSessions: [],
     ...overrides,
   };

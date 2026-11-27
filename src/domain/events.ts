@@ -1,4 +1,5 @@
 import type { LimitWindow } from "./limitWindows";
+import type { ProviderId } from "./types";
 
 export type ToolCallStatus = "pending" | "in_progress" | "completed" | "failed";
 
@@ -32,6 +33,26 @@ export interface ContextUsage {
   readonly usedTokens: number;
   readonly limitTokens: number | null;
 }
+
+export interface TokenCounts {
+  readonly input: number;
+  readonly output: number;
+  readonly cacheRead: number;
+  readonly cacheWrite: number;
+  readonly reasoning: number;
+}
+
+export interface UsageCost {
+  readonly amount: number;
+  readonly currency: string;
+}
+
+export const UsageReportMode = {
+  cumulative: "cumulative",
+  delta: "delta",
+} as const;
+export type UsageReportMode =
+  (typeof UsageReportMode)[keyof typeof UsageReportMode];
 
 export interface PermissionOption {
   readonly optionId: string;
@@ -89,6 +110,14 @@ export type AgentEvent =
   | { readonly type: "api_retry" }
   | { readonly type: "model"; readonly model: string }
   | { readonly type: "context_usage"; readonly usage: ContextUsage }
+  | {
+      readonly type: "usage_report";
+      readonly provider: ProviderId;
+      readonly key: string;
+      readonly mode: UsageReportMode;
+      readonly tokens: TokenCounts | null;
+      readonly cost: UsageCost | null;
+    }
   | { readonly type: "turn_end"; readonly stopReason: string }
   | {
       readonly type: "turn_error";

@@ -158,6 +158,7 @@ export function buildResumeSeed(
     lastTurn: stored.lastTurn,
     currentModel: null,
     contextUsage: null,
+    usage: stored.usage,
     nextSeq: nextSeqOf(stored),
   };
   return {
@@ -468,6 +469,7 @@ class SessionHistoryImpl implements SessionHistory {
       toolCalls: view.toolCalls,
       turns: view.turns,
       lastTurn: view.lastTurn,
+      usage: view.usage,
       nativeSessions: native,
     };
     await this.writeTranscript(stored);

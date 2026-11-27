@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { AgentEvent } from "../../domain/events";
 import { PermissionProfile } from "../../domain/types";
+import {
+  applyUsageReport,
+  emptyUsageLedger,
+  usageTotalsOf,
+} from "../../domain/usageLedger";
 import {
   DEFAULT_PERMISSION_OPTIONS,
   agentOf,
@@ -193,5 +199,44 @@ describe("acp adapter native resume", () => {
     await result.handle.prompt("go", { model: null });
 
     expect(texts).toEqual(["fresh reply"]);
+  });
+});
+
+describe("acp adapter usage cost", () => {
+  it("claude_cost_after_resume_is_added_not_replaced", async () => {
+    const first = await createRig();
+    const { handle: firstHandle, events: firstEvents } = await startHandle(
+      first,
+      PermissionProfile.ask,
+      "run-1",
+    );
+    agentOf(first).enqueue([
+      { type: "usage_update", cost: { amount: 0.05, currency: "USD" } },
+      { type: "end", stopReason: "end_turn" },
+    ]);
+    await firstHandle.prompt("first", { model: null });
+
+    const second = await createRig();
+    const { handle: secondHandle, events: secondEvents } = await startHandle(
+      second,
+      PermissionProfile.ask,
+      "run-2",
+    );
+    agentOf(second).enqueue([
+      { type: "usage_update", cost: { amount: 0.08, currency: "USD" } },
+      { type: "end", stopReason: "end_turn" },
+    ]);
+    await secondHandle.prompt("second", { model: null });
+
+    const reports = [...firstEvents, ...secondEvents].filter(
+      (event): event is Extract<AgentEvent, { type: "usage_report" }> =>
+        event.type === "usage_report",
+    );
+    const totals = usageTotalsOf(
+      reports.reduce(applyUsageReport, emptyUsageLedger()),
+    );
+
+    expect(reports).toHaveLength(2);
+    expect(totals.costs).toEqual({ USD: 0.13 });
   });
 });

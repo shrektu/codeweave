@@ -7,7 +7,7 @@ import {
 } from "../agentAdapter";
 import type { AgentEvent } from "../../domain/events";
 import { createRateLimitDetector } from "../../domain/rateLimit";
-import { PermissionProfile } from "../../domain/types";
+import { PermissionProfile, ProviderId } from "../../domain/types";
 import {
   CODEX_RIG_GRACE_MS,
   agentDelta,
@@ -689,6 +689,43 @@ describe("codex adapter context usage", () => {
       expect(events).toContainEqual({
         type: "context_usage",
         usage: { usedTokens: 8_000, limitTokens: null },
+      });
+    });
+  });
+  it("codex_cached_input_is_not_double_counted", async () => {
+    const rig = await createCodexRig();
+    const { events } = await startCodexHandle(rig);
+    pushTokenUsage(rig, {
+      threadId: "thr-1",
+      turnId: "turn-1",
+      tokenUsage: {
+        total: {
+          inputTokens: 1000,
+          cachedInputTokens: 300,
+          cacheWriteInputTokens: 50,
+          outputTokens: 200,
+          reasoningOutputTokens: 60,
+          totalTokens: 1260,
+        },
+        last: { totalTokens: 1260 },
+        modelContextWindow: 258_400,
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(events).toContainEqual({
+        type: "usage_report",
+        provider: ProviderId.codex,
+        key: "thr-1",
+        mode: "cumulative",
+        tokens: {
+          input: 700,
+          output: 140,
+          cacheRead: 300,
+          cacheWrite: 50,
+          reasoning: 60,
+        },
+        cost: null,
       });
     });
   });

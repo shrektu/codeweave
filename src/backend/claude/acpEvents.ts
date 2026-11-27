@@ -4,6 +4,7 @@ import type {
   ToolCallContent,
   ToolCallLocation,
 } from "@agentclientprotocol/sdk";
+import type { Usage } from "@agentclientprotocol/sdk/unstable";
 
 import {
   ERROR_KIND_AUTH_REQUIRED,
@@ -14,10 +15,12 @@ import { contextUsageOf } from "../../domain/contextUsage";
 import {
   DiffOmission,
   FileChange,
+  UsageReportMode,
   type AgentEvent,
   type FileDiff,
   type ToolCallStatus,
 } from "../../domain/events";
+import { ProviderId } from "../../domain/types";
 import {
   CLAUDE_MODEL_META_KEY,
   CLAUDE_RATE_LIMIT_META_KEY,
@@ -307,17 +310,63 @@ function mapContextUsage(
   return usage === null ? [] : [{ type: "context_usage", usage }];
 }
 
+function mapUsageCost(
+  update: Extract<SessionUpdate, { sessionUpdate: "usage_update" }>,
+  key: string,
+): AgentEvent[] {
+  const cost = update.cost;
+  return cost == null
+    ? []
+    : [
+        {
+          type: "usage_report",
+          provider: ProviderId.claude,
+          key,
+          mode: UsageReportMode.cumulative,
+          tokens: null,
+          cost: { amount: cost.amount, currency: cost.currency },
+        },
+      ];
+}
+
+export function turnUsageEvent(
+  usage: Usage | null | undefined,
+  key: string,
+): AgentEvent[] {
+  if (usage == null) {
+    return [];
+  }
+  return [
+    {
+      type: "usage_report",
+      provider: ProviderId.claude,
+      key,
+      mode: UsageReportMode.delta,
+      tokens: {
+        input: usage.inputTokens,
+        output: usage.outputTokens,
+        cacheRead: usage.cachedReadTokens ?? 0,
+        cacheWrite: usage.cachedWriteTokens ?? 0,
+        reasoning: usage.thoughtTokens ?? 0,
+      },
+      cost: null,
+    },
+  ];
+}
+
 function mapUsageUpdate(
   update: Extract<SessionUpdate, { sessionUpdate: "usage_update" }>,
+  key: string,
 ): AgentEvent[] {
   return [
     ...mapRateLimit(update._meta?.[CLAUDE_RATE_LIMIT_META_KEY]),
     ...mapModel(update._meta?.[CLAUDE_MODEL_META_KEY]),
     ...mapContextUsage(update),
+    ...mapUsageCost(update, key),
   ];
 }
 
-export function createAcpEventMapper(): {
+export function createAcpEventMapper(usageKey: () => string = () => ""): {
   map(update: SessionUpdate): AgentEvent[];
 } {
   const toolKinds = new Map<string, string>();
@@ -349,7 +398,7 @@ export function createAcpEventMapper(): {
           return mapToolCallUpdate(update, kind, locations);
         }
         case "usage_update":
-          return mapUsageUpdate(update);
+          return mapUsageUpdate(update, usageKey());
         case "config_option_update":
           return mapModel(modelOf(update.configOptions));
         default:

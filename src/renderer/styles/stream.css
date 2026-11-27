@@ -437,6 +437,56 @@ pre.diff {
   height: 6px;
 }
 
+.usage-summary {
+  position: relative;
+  display: inline-flex;
+  font: var(--text-xs) var(--font-mono);
+  color: var(--label-3);
+}
+
+.usage-summary summary {
+  cursor: pointer;
+}
+
+.usage-summary-body {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 1;
+  display: grid;
+  gap: var(--space-2);
+  min-width: 180px;
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--separator-strong);
+  border-radius: var(--radius-m);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-1);
+}
+
+.usage-summary dl {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.usage-summary dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.usage-summary dt,
+.usage-summary dd {
+  margin: 0;
+}
+
+.usage-summary .usage-summary-cost,
+.usage-summary .usage-summary-note {
+  margin: 0;
+  color: var(--label-2);
+}
+
 .flow-node-context {
   color: var(--label-3);
   font: var(--text-xs) / var(--leading) var(--font-mono);

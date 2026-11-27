@@ -15,6 +15,8 @@ export function makeCodeweaveApi(
     openLink: () => Promise.resolve(),
     platform: "linux",
     setThemeSource: () => Promise.resolve(),
+    notify: () => Promise.resolve(),
+    onNotificationClicked: () => () => undefined,
     ...overrides,
   };
 }

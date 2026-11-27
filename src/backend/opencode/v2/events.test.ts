@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { createV2EventMapper } from "./events";
 import { parseOpencodeV2Event, type OpencodeV2Event } from "./protocol";
+import { ProviderId } from "../../../domain/types";
 
 const OWN = "ses_own";
 const CHILD = "ses_child";
@@ -592,6 +593,45 @@ describe("v2 model events", () => {
       {
         type: "context_usage",
         usage: { usedTokens: 4250, limitTokens: 128_000 },
+      },
+    ]);
+  });
+
+  it("maps_step_ended_cost_to_a_delta_usage_report", () => {
+    const mapper = createV2EventMapper(OWN, CWD, () => 128_000);
+    mapper.map(stepStarted("m", "p"));
+
+    const mapped = mapper.map(
+      event("session.step.ended", {
+        sessionID: OWN,
+        tokens: {
+          input: 1000,
+          output: 200,
+          reasoning: 50,
+          cache: { read: 3000, write: 0 },
+        },
+        cost: 0.02,
+      }),
+    );
+
+    expect(mapped).toEqual([
+      {
+        type: "context_usage",
+        usage: { usedTokens: 4250, limitTokens: 128_000 },
+      },
+      {
+        type: "usage_report",
+        provider: ProviderId.opencode,
+        key: OWN,
+        mode: "delta",
+        tokens: {
+          input: 1000,
+          output: 200,
+          cacheRead: 3000,
+          cacheWrite: 0,
+          reasoning: 50,
+        },
+        cost: { amount: 0.02, currency: "USD" },
       },
     ]);
   });

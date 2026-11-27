@@ -58,6 +58,7 @@ import {
   rewindReportSummary,
 } from "./RewindDialog";
 import { ToolCard } from "./ToolCard";
+import { UsageSummary } from "./UsageSummary";
 
 const IDENTITY_SEPARATOR = " · ";
 const NO_ACCOUNT_LABEL = "—";
@@ -729,6 +730,7 @@ function SessionBody({
           usage={session.contextUsage}
           provider={session.activeProvider}
         />
+        <UsageSummary usage={session.usage} provider={session.activeProvider} />
         <span className="phase">
           {phaseText(session.phase, accounts, session.turnInFlight)}
         </span>

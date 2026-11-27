@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 
 import type { TaskClass } from "../domain/taskClass";
+import { emptyUsageLedger } from "../domain/usageLedger";
 import {
   EdgeKind,
   FlowRunOrigin,
@@ -72,6 +73,7 @@ const RUNNING_VIEW: SessionView = {
   flowRef: { flowId: "solo", nodeId: "build" },
   currentModel: null,
   contextUsage: null,
+  usage: emptyUsageLedger(),
   turns: [],
   orchestrate: false,
   imageInput: true,

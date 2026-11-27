@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 
 import { DiffOmission, FileChange } from "../domain/events";
 import { PermissionProfile, ProviderId } from "../domain/types";
+import { emptyUsageLedger } from "../domain/usageLedger";
 import type {
   SessionEditsView,
   SessionView,
@@ -41,6 +42,7 @@ function makeView(overrides: Partial<SessionView> = {}): SessionView {
     flowRef: null,
     currentModel: null,
     contextUsage: null,
+    usage: emptyUsageLedger(),
     turns: [],
     orchestrate: false,
     imageInput: true,

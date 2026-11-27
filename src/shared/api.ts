@@ -1,5 +1,7 @@
 import type { Appearance } from "../domain/types";
 
+import type { DesktopNotification, NotificationTarget } from "./notifications";
+
 export interface AvailableUpdate {
   version: string;
 }
@@ -20,6 +22,10 @@ export interface CodeweaveApi {
   openLink: (url: string) => Promise<void>;
   platform: string;
   setThemeSource: (appearance: Appearance) => Promise<void>;
+  notify: (notification: DesktopNotification) => Promise<void>;
+  onNotificationClicked: (
+    listener: (target: NotificationTarget) => void,
+  ) => () => void;
 }
 
 declare global {

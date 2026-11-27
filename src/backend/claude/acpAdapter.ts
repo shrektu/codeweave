@@ -28,6 +28,7 @@ import {
   type SetSessionModeRequest,
   type Stream,
 } from "@agentclientprotocol/sdk";
+import type { Usage } from "@agentclientprotocol/sdk/unstable";
 
 import type { AgentEvent } from "../../domain/events";
 import { PermissionProfile } from "../../domain/types";
@@ -61,6 +62,7 @@ import {
   mapPromptError,
   modelOf,
   modelValueOf,
+  turnUsageEvent,
 } from "./acpEvents";
 import { buildClaudeLaunch } from "./launch";
 import { buildNewSessionRequest } from "./toolAccess";
@@ -87,9 +89,11 @@ interface AcpPeer {
   setSessionConfigOption(
     params: SetSessionConfigOptionRequest,
   ): Promise<SetSessionConfigOptionResponse>;
-  prompt(params: PromptRequest): Promise<PromptResponse>;
+  prompt(params: PromptRequest): Promise<PromptResult>;
   cancel(params: CancelNotification): Promise<void>;
 }
+
+type PromptResult = PromptResponse & { readonly usage?: Usage | null };
 
 interface PendingPermission {
   readonly optionIds: ReadonlySet<string>;
@@ -189,7 +193,7 @@ class ClaudeAcpSession implements AgentHandle {
   private readonly agentProcess: AgentProcess;
   private readonly listeners = new Set<Listener>();
   private readonly pending = new Map<string, PendingPermission>();
-  private readonly mapUpdate = createAcpEventMapper();
+  private readonly mapUpdate = createAcpEventMapper(() => this.usageKey());
   private readonly peer: AcpPeer;
   private readonly exitSignal: Promise<void>;
   private resolveExit: () => void = () => undefined;
@@ -461,21 +465,29 @@ class ClaudeAcpSession implements AgentHandle {
           prompt: [{ type: "text", text }, ...imageBlocks],
         }),
       )
-      .then((result): AgentEvent => ({
-        type: "turn_end",
-        stopReason: result.stopReason,
-      }))
-      .catch((error: unknown): AgentEvent => mapPromptError(error));
-    const exited = this.exitSignal.then((): AgentEvent => ({
-      type: "turn_error",
-      errorKind: null,
-      rpcCode: null,
-      message: PROCESS_EXITED_MESSAGE,
-    }));
+      .then((result): AgentEvent[] => [
+        ...turnUsageEvent(result.usage, this.usageKey()),
+        { type: "turn_end", stopReason: result.stopReason },
+      ])
+      .catch((error: unknown): AgentEvent[] => [mapPromptError(error)]);
+    const exited = this.exitSignal.then((): AgentEvent[] => [
+      {
+        type: "turn_error",
+        errorKind: null,
+        rpcCode: null,
+        message: PROCESS_EXITED_MESSAGE,
+      },
+    ]);
     const terminal = await Promise.race([response, exited]);
     this.cancelPending();
     this.turn = null;
-    this.emit(terminal);
+    for (const event of terminal) {
+      this.emit(event);
+    }
+  }
+
+  private usageKey(): string {
+    return `${this.runId}:${this.sessionId}`;
   }
 
   private requestPermission(

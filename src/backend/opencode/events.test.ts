@@ -6,6 +6,7 @@ import type { AgentEvent } from "../../domain/events";
 
 import { createEventMapper } from "./events";
 import { parseOpencodeEvent, type OpencodeEvent } from "./protocol";
+import { ProviderId } from "../../domain/types";
 
 const SESSION = "ses_1";
 const CWD = "/work/repo";
@@ -135,6 +136,46 @@ describe("text parts", () => {
 
     expect(mapped).toEqual([
       { type: "text", messageId: "p_real", text: "answer" },
+    ]);
+  });
+});
+
+describe("message usage", () => {
+  it("assistant_message_cost_and_tokens_emit_one_cumulative_report", () => {
+    const mapper = createEventMapper(SESSION, CWD);
+
+    const mapped = mapper.map(
+      parsed("message.updated", {
+        info: {
+          id: ASSISTANT_MESSAGE,
+          role: "assistant",
+          sessionID: SESSION,
+          cost: 0.25,
+          tokens: {
+            input: 150,
+            output: 30,
+            reasoning: 8,
+            cache: { read: 20, write: 4 },
+          },
+        },
+      }),
+    );
+
+    expect(mapped).toEqual([
+      {
+        type: "usage_report",
+        provider: ProviderId.opencode,
+        key: ASSISTANT_MESSAGE,
+        mode: "cumulative",
+        tokens: {
+          input: 150,
+          output: 30,
+          cacheRead: 20,
+          cacheWrite: 4,
+          reasoning: 8,
+        },
+        cost: { amount: 0.25, currency: "USD" },
+      },
     ]);
   });
 });

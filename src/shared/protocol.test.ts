@@ -705,6 +705,7 @@ describe("EventSchema", () => {
     opencodeExecutable: null,
     terminalShell: null,
     updateCheck: true,
+    notifications: true,
     updateChannel: "stable",
     defaultTaskClass: "standard",
     definitionLibrary: null,

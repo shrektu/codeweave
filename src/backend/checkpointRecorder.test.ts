@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, expect, it } from "vitest";
 
 import { PermissionProfile, ProviderId } from "../domain/types";
+import { emptyUsageLedger } from "../domain/usageLedger";
 import type {
   FileDiffView,
   PromptView,
@@ -108,6 +109,7 @@ function makeView(overrides: Partial<SessionView> = {}): SessionView {
     flowRef: null,
     currentModel: null,
     contextUsage: null,
+    usage: emptyUsageLedger(),
     turns: [],
     orchestrate: false,
     imageInput: true,

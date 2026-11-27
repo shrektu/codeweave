@@ -91,6 +91,7 @@ import {
 } from "./useAgentEditor";
 import { useAsyncAction } from "./useAsyncAction";
 import { useBackendStatus, type BackendStatus } from "./useBackendStatus";
+import { useDesktopNotifications } from "./useDesktopNotifications";
 import { useElementSize } from "./useElementSize";
 import { useFlowsLoad, type FlowsSource } from "./useFlowsLoad";
 import { useGpuAccelerated } from "./useGpuAccelerated";
@@ -716,6 +717,10 @@ export function App(): JSX.Element {
   const openFlowTab = (): void => {
     setCentreTab("flow");
   };
+  useDesktopNotifications({
+    onOpenSession: openSessionTab,
+    onOpenFlow: openFlowTab,
+  });
   const activeSession = activeSessionOf(state.snapshot, state.activeSessionId);
   const orchestrating = activeSession?.orchestrate === true;
   const sessionId = activeSession?.id ?? null;

@@ -120,6 +120,7 @@ const StepEndedSchema = z.looseObject({
         write: z.number(),
       }),
     }),
+    cost: z.number().nonnegative().optional(),
   }),
 });
 

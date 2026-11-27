@@ -14,6 +14,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { PermissionProfile, ProviderId } from "../domain/types";
 import { RouteSource } from "../domain/routing";
 import { TaskClass } from "../domain/taskClass";
+import { emptyUsageLedger } from "../domain/usageLedger";
 import { IpcErrorCode } from "../shared/protocol";
 import type {
   MessageView,
@@ -98,6 +99,7 @@ function view(overrides: Partial<SessionView> = {}): SessionView {
     flowRef: null,
     currentModel: null,
     contextUsage: null,
+    usage: emptyUsageLedger(),
     turns: [],
     orchestrate: false,
     imageInput: true,

@@ -8,6 +8,7 @@ import type { IpcHandlers } from "../../src/backend/ipcServer";
 import { createJsonStore } from "../../src/backend/storage";
 import { IpcError } from "../../src/shared/protocol";
 import type { SessionView } from "../../src/shared/views";
+import { emptyUsageLedger } from "../../src/domain/usageLedger";
 import { fakeOrchestrator } from "../fakes/fakeOrchestrator";
 import {
   fakeFlowRuns,
@@ -52,6 +53,7 @@ function sessionIn(cwd: string | undefined): SessionView {
     flowRef: null,
     currentModel: null,
     contextUsage: null,
+    usage: emptyUsageLedger(),
     turns: [],
     orchestrate: false,
     imageInput: true,

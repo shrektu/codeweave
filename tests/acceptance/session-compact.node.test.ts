@@ -7,6 +7,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { SESSIONS_DIR, STORAGE_VERSION } from "../../src/backend/constants";
 import type { Account } from "../../src/domain/types";
 import { PermissionProfile, ProviderId } from "../../src/domain/types";
+import { emptyUsageLedger } from "../../src/domain/usageLedger";
 import { IpcErrorCode } from "../../src/shared/protocol";
 import type { StoredSession } from "../../src/shared/views";
 import {
@@ -339,6 +340,7 @@ async function storeHistorySession(
     toolCalls: [],
     turns: [],
     lastTurn: null,
+    usage: emptyUsageLedger(),
     nativeSessions,
   };
   await writeFile(join(dir, `${stored.id}.json`), JSON.stringify(stored));

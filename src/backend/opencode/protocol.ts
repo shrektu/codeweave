@@ -128,6 +128,16 @@ const SessionErrorSchema = z.looseObject({
   }),
 });
 
+const MessageTokensSchema = z.looseObject({
+  input: z.number(),
+  output: z.number(),
+  reasoning: z.number(),
+  cache: z.looseObject({
+    read: z.number(),
+    write: z.number(),
+  }),
+});
+
 const MessageUpdatedSchema = z.looseObject({
   type: z.literal(OpencodeEventType.messageUpdated),
   properties: z.looseObject({
@@ -137,6 +147,8 @@ const MessageUpdatedSchema = z.looseObject({
       sessionID: z.string().optional(),
       modelID: z.string().optional(),
       providerID: z.string().optional(),
+      cost: z.number().nonnegative().nullish(),
+      tokens: MessageTokensSchema.nullish(),
     }),
   }),
 });

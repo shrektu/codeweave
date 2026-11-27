@@ -17,6 +17,7 @@ import {
 } from "../domain/flowRun";
 import { RouteSource } from "../domain/routing";
 import { TaskClass, TaskClassSchema } from "../domain/taskClass";
+import { emptyUsageLedger } from "../domain/usageLedger";
 import {
   Appearance,
   DefinitionSource,
@@ -266,6 +267,35 @@ export const ContextUsageViewSchema = z.strictObject({
 });
 export type ContextUsageView = z.infer<typeof ContextUsageViewSchema>;
 
+const TokenCountsViewSchema = z.strictObject({
+  input: z.int().nonnegative(),
+  output: z.int().nonnegative(),
+  cacheRead: z.int().nonnegative(),
+  cacheWrite: z.int().nonnegative(),
+  reasoning: z.int().nonnegative(),
+});
+
+const UsageTotalsViewSchema = z.strictObject({
+  tokens: TokenCountsViewSchema,
+  costs: z.record(z.string(), z.number().nonnegative()),
+  tokensReported: z.boolean(),
+  costReported: z.boolean(),
+});
+
+const UsageReporterViewSchema = z.strictObject({
+  tokens: z.boolean(),
+  cost: z.boolean(),
+});
+
+export const UsageLedgerViewSchema = z.strictObject({
+  base: UsageTotalsViewSchema,
+  sources: z.record(z.string(), UsageTotalsViewSchema),
+  reporters: z
+    .partialRecord(z.enum(ProviderId), UsageReporterViewSchema)
+    .default({}),
+});
+export type UsageLedgerView = z.infer<typeof UsageLedgerViewSchema>;
+
 export const SessionViewSchema = z.strictObject({
   id: z.string(),
   createdAt: z.int().nonnegative(),
@@ -285,6 +315,7 @@ export const SessionViewSchema = z.strictObject({
   flowRef: FlowRefSchema.nullable(),
   currentModel: z.string().nullable(),
   contextUsage: ContextUsageViewSchema.nullable(),
+  usage: UsageLedgerViewSchema,
   turns: z.array(TurnRouteViewSchema),
   orchestrate: z.boolean(),
   imageInput: z.boolean(),
@@ -335,6 +366,7 @@ export const StoredSessionSchema = z.strictObject({
   toolCalls: z.array(ToolCallViewSchema),
   turns: z.array(TurnRouteViewSchema),
   lastTurn: LastTurnViewSchema.nullable(),
+  usage: UsageLedgerViewSchema.default(emptyUsageLedger()),
   nativeSessions: z.array(NativeSessionRefSchema).default([]),
 });
 export type StoredSession = z.infer<typeof StoredSessionSchema>;
@@ -471,6 +503,7 @@ export const SettingsViewSchema = z.strictObject({
   opencodeExecutable: z.string().nullable(),
   terminalShell: z.string().nullable(),
   updateCheck: z.boolean(),
+  notifications: z.boolean(),
   updateChannel: z.enum(UpdateChannel),
   defaultTaskClass: TaskClassSchema,
   definitionLibrary: z.string().nullable(),
