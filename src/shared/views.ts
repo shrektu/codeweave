@@ -288,6 +288,7 @@ export const SessionViewSchema = z.strictObject({
   turns: z.array(TurnRouteViewSchema),
   orchestrate: z.boolean(),
   imageInput: z.boolean(),
+  canCompact: z.boolean(),
   prompts: z.array(PromptViewSchema),
 });
 export type SessionView = z.infer<typeof SessionViewSchema>;

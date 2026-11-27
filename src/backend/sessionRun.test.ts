@@ -24,6 +24,7 @@ import {
   createSessionService,
   type ResumeSeed,
   type SessionService,
+  type SessionServiceDeps,
 } from "./session";
 import { createJsonStore } from "./storage";
 
@@ -241,11 +242,14 @@ const RATE_LIMITED: AgentEvent = {
 };
 
 interface ToolRigOptions {
+  readonly accounts?: readonly Account[];
   readonly events?: Readonly<Record<string, readonly AgentEvent[]>>;
+  readonly compactEvents?: Readonly<Record<string, readonly AgentEvent[]>>;
   readonly replayed?: Readonly<Record<string, readonly AgentEvent[]>>;
   readonly contextFailure?: Error;
   readonly startFailure?: string;
   readonly promptFailures?: number;
+  readonly schedule?: SessionServiceDeps["schedule"];
 }
 
 interface ToolRig {
@@ -253,6 +257,7 @@ interface ToolRig {
   readonly cwd: string;
   readonly specs: AgentStartSpec[];
   readonly prompts: Record<string, string[]>;
+  readonly compacts: string[];
   readonly attempts: string[];
   readonly nativeIds: Record<string, string | null>;
 }
@@ -260,8 +265,10 @@ interface ToolRig {
 function toolHandle(
   spec: AgentStartSpec,
   events: readonly AgentEvent[],
+  compactEvents: readonly AgentEvent[],
   replayed: readonly AgentEvent[],
   prompts: Record<string, string[]>,
+  compacts: string[],
   attempts: string[],
   failures: { count: number },
   nativeIds: Record<string, string | null>,
@@ -299,6 +306,15 @@ function toolHandle(
       }
       return Promise.resolve();
     },
+    compact: () => {
+      compacts.push(spec.account.id);
+      for (const event of compactEvents) {
+        listeners.forEach((listener) => {
+          listener(event);
+        });
+      }
+      return Promise.resolve();
+    },
     answerPermission: () => undefined,
     setProfile: () => Promise.resolve(),
     cancel: () => Promise.resolve(),
@@ -311,9 +327,10 @@ async function openToolRig(options: ToolRigOptions = {}): Promise<ToolRig> {
   const cwd = await mkdtemp(join(tmpdir(), "codeweave-tools-cwd-"));
   tempDirs.push(userData, cwd);
   const store = createJsonStore(userData);
-  await store.writeAccounts([ACCOUNT, ACCOUNT_B]);
+  await store.writeAccounts(options.accounts ?? [ACCOUNT, ACCOUNT_B]);
   const specs: AgentStartSpec[] = [];
   const prompts: Record<string, string[]> = {};
+  const compacts: string[] = [];
   const attempts: string[] = [];
   const failures = { count: options.promptFailures ?? 0 };
   const nativeIds: Record<string, string | null> = {};
@@ -328,8 +345,12 @@ async function openToolRig(options: ToolRigOptions = {}): Promise<ToolRig> {
               handle: toolHandle(
                 spec,
                 options.events?.[spec.account.id] ?? [],
+                options.compactEvents?.[spec.account.id] ??
+                  options.events?.[spec.account.id] ??
+                  [],
                 options.replayed?.[spec.account.id] ?? [],
                 prompts,
+                compacts,
                 attempts,
                 failures,
                 nativeIds,
@@ -352,7 +373,7 @@ async function openToolRig(options: ToolRigOptions = {}): Promise<ToolRig> {
     reserved: createAccountReservations(),
     leaseModes: createLeaseModes(),
     now: () => 1_700_000_000_000,
-    schedule: () => () => undefined,
+    schedule: options.schedule ?? (() => () => undefined),
     inspectWorktree: (dir) =>
       options.contextFailure === undefined
         ? Promise.resolve({ isRepo: false, cwd: dir })
@@ -375,7 +396,7 @@ async function openToolRig(options: ToolRigOptions = {}): Promise<ToolRig> {
     attachments: fakeAttachmentStore(),
   });
   services.push(service);
-  return { service, cwd, specs, prompts, attempts, nativeIds };
+  return { service, cwd, specs, prompts, compacts, attempts, nativeIds };
 }
 
 async function untilIdle(service: SessionService): Promise<void> {
@@ -716,4 +737,147 @@ it("stop_during_image_claim_records_no_prompt", async () => {
 
   await expect(first).rejects.toMatchObject({ code: "SESSION_BUSY" });
   expect(rig.service.view()?.prompts).toEqual([]);
+});
+
+it("compaction_is_not_replayed_on_rotation", async () => {
+  const rig = await openToolRig({ events: { [ACCOUNT.id]: [RATE_LIMITED] } });
+  await rig.service.start({ cwd: rig.cwd });
+
+  await rig.service.compact();
+  await untilIdle(rig.service);
+
+  expect(rig.compacts).toEqual([ACCOUNT.id]);
+  expect(rig.prompts[ACCOUNT_B.id]).toBeUndefined();
+
+  await rig.service.prompt("next");
+  await untilIdle(rig.service);
+  const [handoff] = rig.prompts[ACCOUNT_B.id] ?? [];
+  expect(rig.prompts[ACCOUNT_B.id]).toHaveLength(1);
+  expect(handoff?.startsWith("You are taking over")).toBe(true);
+  expect(handoff?.endsWith("next")).toBe(true);
+  expect(rig.prompts[ACCOUNT_B.id]).not.toEqual(["/compact"]);
+});
+
+it("rotation_during_compaction_keeps_the_context_for_the_next_prompt", async () => {
+  const rig = await openToolRig({ events: { [ACCOUNT.id]: [RATE_LIMITED] } });
+  await rig.service.start({ cwd: rig.cwd }, { resume: resumeSeed() });
+
+  await rig.service.compact();
+  await untilIdle(rig.service);
+  expect(rig.prompts[ACCOUNT_B.id]).toBeUndefined();
+
+  await rig.service.prompt("next");
+  await untilIdle(rig.service);
+  const [handoff] = rig.prompts[ACCOUNT_B.id] ?? [];
+  expect(rig.prompts[ACCOUNT_B.id]).toHaveLength(1);
+  expect(handoff).toContain("old goal");
+  expect(handoff?.endsWith("next")).toBe(true);
+});
+
+it("compaction_does_not_consume_resume_context", async () => {
+  const rig = await openToolRig();
+  await rig.service.start({ cwd: rig.cwd }, { resume: resumeSeed() });
+
+  await rig.service.compact();
+  await untilIdle(rig.service);
+  await rig.service.prompt("next");
+  await untilIdle(rig.service);
+
+  expect(rig.compacts).toEqual([ACCOUNT.id]);
+  expect(rig.prompts[ACCOUNT.id]).toEqual([`PACKAGE${PREAMBLE_GAP}next`]);
+  expect(rig.service.view()?.prompts.map((prompt) => prompt.text)).toEqual([
+    "old goal",
+    "/compact",
+    "next",
+  ]);
+});
+
+it("compaction_hand_off_to_resumed_account_keeps_context", async () => {
+  const rig = await openToolRig({
+    compactEvents: { [ACCOUNT.id]: [RATE_LIMITED] },
+  });
+  await rig.service.start(
+    { cwd: rig.cwd },
+    {
+      resume: {
+        ...resumeSeed(),
+        nativeSessions: [
+          { accountId: ACCOUNT.id, nativeSessionId: "native-a" },
+          { accountId: ACCOUNT_B.id, nativeSessionId: "native-b" },
+        ],
+      },
+    },
+  );
+
+  await rig.service.compact();
+  await untilIdle(rig.service);
+
+  expect(rig.specs.at(-1)?.resume).toEqual({ nativeSessionId: "native-b" });
+  expect(rig.prompts[ACCOUNT_B.id]).toBeUndefined();
+
+  await rig.service.prompt("next");
+  await untilIdle(rig.service);
+  const [handoff] = rig.prompts[ACCOUNT_B.id] ?? [];
+  expect(rig.prompts[ACCOUNT_B.id]).toHaveLength(1);
+  expect(handoff?.startsWith("You are taking over")).toBe(true);
+  expect(handoff).toContain("old goal");
+  expect(handoff?.endsWith("next")).toBe(true);
+});
+
+it("compaction_waiting_for_reset_sends_no_turn", async () => {
+  const scheduled: (() => void)[] = [];
+  const waits: number[] = [];
+  const rig = await openToolRig({
+    accounts: [ACCOUNT],
+    compactEvents: { [ACCOUNT.id]: [RATE_LIMITED] },
+    schedule: (at, run) => {
+      waits.push(at);
+      scheduled.push(run);
+      return () => undefined;
+    },
+  });
+  await rig.service.start({ cwd: rig.cwd });
+
+  await rig.service.compact();
+  await settled(() => {
+    expect(rig.service.view()?.phase.phase).toBe("waiting");
+  });
+  expect(waits).toHaveLength(1);
+  expect(rig.prompts[ACCOUNT.id]).toBeUndefined();
+
+  scheduled[0]?.();
+  await settled(() => {
+    const view = rig.service.view();
+    expect(view?.phase.phase).toBe("running");
+    expect(view?.turnInFlight).toBe(false);
+  });
+  expect(rig.prompts[ACCOUNT.id]).toBeUndefined();
+
+  await rig.service.prompt("next");
+  await untilIdle(rig.service);
+  const [handoff] = rig.prompts[ACCOUNT.id] ?? [];
+  expect(rig.prompts[ACCOUNT.id]).toHaveLength(1);
+  expect(handoff?.startsWith("You are taking over")).toBe(true);
+  expect(handoff?.endsWith("next")).toBe(true);
+});
+
+it("compaction_hand_off_replaces_stale_resume_context", async () => {
+  const rig = await openToolRig({
+    compactEvents: { [ACCOUNT.id]: [RATE_LIMITED] },
+  });
+  await rig.service.start({ cwd: rig.cwd }, { resume: resumeSeed() });
+
+  await rig.service.compact();
+  await untilIdle(rig.service);
+  expect(rig.prompts[ACCOUNT_B.id]).toBeUndefined();
+
+  await rig.service.prompt("next");
+  await untilIdle(rig.service);
+  const [handoff] = rig.prompts[ACCOUNT_B.id] ?? [];
+  expect(rig.prompts[ACCOUNT_B.id]).toHaveLength(1);
+  expect(handoff).not.toContain("PACKAGE");
+  expect(handoff?.match(/You are taking over a coding session/g)).toHaveLength(
+    1,
+  );
+  expect(handoff?.endsWith("next")).toBe(true);
 });

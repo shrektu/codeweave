@@ -48,6 +48,8 @@ export interface PromptModel {
   readonly modelID: string;
 }
 
+const SUMMARIZE_PATH = "summarize";
+
 export interface PromptRequest {
   readonly sessionId: string;
   readonly text: string;
@@ -85,6 +87,11 @@ export interface OpencodeClient {
   sessionStatus(): Promise<ReadonlyMap<string, { readonly type: string }>>;
   latestMessageId(sessionId: string): Promise<string | null>;
   promptAsync(request: PromptRequest): Promise<void>;
+  summarize(
+    sessionId: string,
+    model: PromptModel,
+    signal?: AbortSignal,
+  ): Promise<void>;
   abort(sessionId: string): Promise<void>;
   replyPermission(
     sessionId: string,
@@ -243,6 +250,14 @@ export function createOpencodeClient(
         method: "POST",
         path: sessionPath(request.sessionId, OpencodePath.promptAsync),
         body: promptBody(request),
+      }),
+    summarize: (sessionId, model, signal) =>
+      sendAndDiscard({
+        method: "POST",
+        path: sessionPath(sessionId, SUMMARIZE_PATH),
+        body: { providerID: model.providerID, modelID: model.modelID },
+        untimed: true,
+        ...(signal === undefined ? {} : { signal }),
       }),
     abort: (sessionId) =>
       sendAndDiscard({

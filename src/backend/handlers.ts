@@ -240,6 +240,10 @@ export function createHandlers({
       await requireMain(sessions, sessionId).prompt(text, overrides);
       return { accepted: true };
     },
+    "session/compact": async ({ sessionId }) => {
+      await requireMain(sessions, sessionId).compact();
+      return { accepted: true };
+    },
     "attachments/stage": (params) => attachments.stage(params),
     "attachments/get": ({ sessionId, id }) => attachments.read(sessionId, id),
     "files/complete": async ({ cwd, query }) => ({

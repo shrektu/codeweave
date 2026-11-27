@@ -51,6 +51,7 @@ function view(overrides: Partial<SessionView> = {}): SessionView {
     turns: [],
     orchestrate: false,
     imageInput: true,
+    canCompact: false,
     prompts: [...PROMPTS],
     ...overrides,
   };
@@ -84,6 +85,7 @@ function fakeSession(overrides: Partial<SessionService> = {}): SessionService {
     view: () => view(),
     start: () => Promise.resolve(view()),
     prompt: () => Promise.resolve(),
+    compact: () => Promise.resolve(),
     stop: () => Promise.resolve(),
     answerPermission: () => undefined,
     isInUse: () => false,

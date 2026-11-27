@@ -159,6 +159,7 @@ export const ParamsSchemas = {
       .max(IMAGE_MAX_PER_PROMPT)
       .optional(),
   }),
+  "session/compact": SessionIdParamsSchema,
   "attachments/stage": z.strictObject({
     name: z.string().min(1).max(255),
     mimeType: z.enum(ImageMimeType),
@@ -343,6 +344,7 @@ export const RequestSchema = z.discriminatedUnion("method", [
   requestSchema("sessions/snapshot"),
   requestSchema("session/start"),
   requestSchema("session/prompt"),
+  requestSchema("session/compact"),
   requestSchema("attachments/stage"),
   requestSchema("attachments/get"),
   requestSchema("files/complete"),
@@ -399,6 +401,7 @@ const resultSchemaDefinitions = {
   "sessions/snapshot": SnapshotSchema,
   "session/start": SessionViewSchema,
   "session/prompt": z.strictObject({ accepted: z.literal(true) }),
+  "session/compact": z.strictObject({ accepted: z.literal(true) }),
   "attachments/stage": AttachmentViewSchema,
   "attachments/get": z.strictObject({
     mimeType: z.enum(ImageMimeType),

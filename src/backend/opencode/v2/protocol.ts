@@ -42,6 +42,33 @@ export type ExecutionError = z.infer<typeof ExecutionErrorSchema>;
 
 const SESSION_SHAPE = { sessionID: z.string() };
 
+export const OpencodeV2CompactionEventType = {
+  started: "session.compaction.started",
+  delta: "session.compaction.delta",
+  ended: "session.compaction.ended",
+  failed: "session.compaction.failed",
+} as const;
+
+const CompactionStartedSchema = z.looseObject({
+  type: z.literal(OpencodeV2CompactionEventType.started),
+  data: z.looseObject(SESSION_SHAPE),
+});
+
+const CompactionDeltaSchema = z.looseObject({
+  type: z.literal(OpencodeV2CompactionEventType.delta),
+  data: z.looseObject({ ...SESSION_SHAPE, delta: z.string().optional() }),
+});
+
+const CompactionEndedSchema = z.looseObject({
+  type: z.literal(OpencodeV2CompactionEventType.ended),
+  data: z.looseObject(SESSION_SHAPE),
+});
+
+const CompactionFailedSchema = z.looseObject({
+  type: z.literal(OpencodeV2CompactionEventType.failed),
+  data: z.looseObject({ ...SESSION_SHAPE, error: ExecutionErrorSchema }),
+});
+
 const ServerConnectedSchema = z.looseObject({
   type: z.literal(OpencodeV2EventType.serverConnected),
   data: z.looseObject({}),
@@ -192,6 +219,10 @@ export const OpencodeV2EventSchema = z.discriminatedUnion("type", [
   ExecutionSucceededSchema,
   ExecutionFailedSchema,
   ExecutionInterruptedSchema,
+  CompactionStartedSchema,
+  CompactionDeltaSchema,
+  CompactionEndedSchema,
+  CompactionFailedSchema,
   StepStartedSchema,
   StepEndedSchema,
   TextDeltaSchema,

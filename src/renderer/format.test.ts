@@ -5,6 +5,7 @@ import {
   makeSession,
   makeSnapshot,
 } from "../../tests/fakes/fakeIpcClient";
+import type { StoredSession } from "../shared/views";
 
 import {
   accountLabel,
@@ -19,6 +20,7 @@ import {
   isStale,
   orchestratedRunsOf,
   shownSessionOf,
+  storedSessionView,
   resumeFailureVisible,
   limitPercent,
   limitWindowLabel,
@@ -193,6 +195,7 @@ it("focused_run_is_ignored_when_the_main_session_is_not_a_live_orchestrator", ()
       id: "main",
       orchestrate: true,
       imageInput: true,
+      canCompact: false,
       phase: { phase: "failed", reason: "crashed", runningAccountId: null },
     }),
     makeSession({ id: "main", orchestrate: false }),
@@ -452,4 +455,28 @@ it("resume_failure_visibility_follows_session_and_prompts", () => {
   expect(resumeFailureVisible(RESUME_FAILURE, null, "sess-1")).toBe(false);
   expect(resumeFailureVisible(RESUME_FAILURE, advanced, "sess-1")).toBe(false);
   expect(resumeFailureVisible(null, failed, "sess-1")).toBe(false);
+});
+
+it("stored_history_view_cannot_compact", () => {
+  const stored: StoredSession = {
+    version: 1,
+    id: "stored-1",
+    createdAt: 0,
+    updatedAt: 0,
+    title: "Old work",
+    cwd: "/work",
+    explicitFolder: true,
+    provider: "claude",
+    profile: "ask",
+    orchestrate: false,
+    archived: false,
+    prompts: [],
+    messages: [],
+    toolCalls: [],
+    turns: [],
+    lastTurn: null,
+    nativeSessions: [],
+  };
+
+  expect(storedSessionView(stored).canCompact).toBe(false);
 });

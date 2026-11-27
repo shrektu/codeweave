@@ -55,6 +55,7 @@ function sessionIn(cwd: string | undefined): SessionView {
     turns: [],
     orchestrate: false,
     imageInput: true,
+    canCompact: false,
     prompts: [],
   };
 }

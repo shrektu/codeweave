@@ -848,6 +848,7 @@ const RUNNING_VIEW: SessionView = {
   turns: [],
   orchestrate: false,
   imageInput: true,
+  canCompact: false,
   prompts: [],
 };
 

@@ -52,7 +52,7 @@ const PASSWORD_ENV = "OPENCODE_SERVER_PASSWORD";
 const PERMISSIONS_ROUTE = /^\/session\/([^/]+)\/permissions\/([^/]+)$/;
 const MESSAGES_ROUTE = /^\/session\/([^/]+)\/message$/;
 const MESSAGES_ROUTE_RESULT: Route = { kind: "messages" };
-const SESSION_ROUTE = /^\/session\/([^/]+)\/(prompt_async|abort)$/;
+const SESSION_ROUTE = /^\/session\/([^/]+)\/(prompt_async|abort|summarize)$/;
 const SESSION_BY_ID_ROUTE = /^\/session\/([^/]+)$/;
 
 export type ToolStepStatus = "pending" | "running" | "completed" | "error";
@@ -276,6 +276,7 @@ type Route =
         | "unknown";
     }
   | { readonly kind: "prompt" | "abort" }
+  | { readonly kind: "summarize" }
   | { readonly kind: "session"; readonly sessionId: string }
   | { readonly kind: "permission"; readonly match: RegExpExecArray };
 
@@ -294,7 +295,11 @@ function postRouteOf(path: string): Route {
     return { kind: "create" };
   }
   if (session !== null) {
-    return { kind: session[2] === "abort" ? "abort" : "prompt" };
+    const action = session[2];
+    if (action === "abort") {
+      return { kind: "abort" };
+    }
+    return action === "summarize" ? { kind: "summarize" } : { kind: "prompt" };
   }
   return permission === null
     ? UNKNOWN_ROUTE
@@ -534,6 +539,10 @@ export class FakeOpencodeServer {
         this.aborted.resolve(undefined);
         sendJson(response, true);
         return;
+      case "summarize":
+        sendJson(response, true);
+        void this.runCompact();
+        return;
       case "permission":
         if (this.recordReply(route.match, body)) {
           sendJson(response, true);
@@ -606,6 +615,11 @@ export class FakeOpencodeServer {
         reply,
       }),
     );
+  }
+
+  private async runCompact(): Promise<void> {
+    await new Promise((resolve) => setImmediate(resolve));
+    this.emit(eventFor({ type: "idle" }));
   }
 
   private async runTurn(

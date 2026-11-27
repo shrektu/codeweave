@@ -167,6 +167,7 @@ function makeView(overrides: Partial<SessionView> = {}): SessionView {
     turns: [],
     orchestrate: false,
     imageInput: true,
+    canCompact: false,
     prompts: [],
     ...overrides,
   };

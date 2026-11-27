@@ -43,6 +43,7 @@ const VALID_REQUESTS: [string, unknown][] = [
   ],
   ["session/start", { cwd: "/work", provider: "codex" }],
   ["session/prompt", { sessionId: "s-1", text: "hi" }],
+  ["session/compact", { sessionId: "s-1" }],
   [
     "session/prompt",
     {

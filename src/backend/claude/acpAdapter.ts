@@ -66,6 +66,7 @@ import { buildClaudeLaunch } from "./launch";
 import { buildNewSessionRequest } from "./toolAccess";
 
 const IMAGE_UNSUPPORTED_MESSAGE = "This Claude agent does not accept images";
+const COMPACT_COMMAND_TEXT = "/compact";
 
 export interface ClaudeAcpDeps {
   readonly processes: AgentProcesses;
@@ -265,6 +266,10 @@ class ClaudeAcpSession implements AgentHandle {
         this.turn = null;
       }
     }
+  }
+
+  compact(): Promise<void> {
+    return this.prompt(COMPACT_COMMAND_TEXT, { model: null });
   }
 
   answerPermission(requestId: string, optionId: string): void {

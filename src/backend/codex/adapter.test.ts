@@ -769,3 +769,54 @@ describe("codex adapter native resume", () => {
     }
   });
 });
+
+describe("codex adapter compaction", () => {
+  it("codex_compact_cancel_interrupts_the_announced_turn", async () => {
+    const rig = await createCodexRig();
+    const { handle, events } = await startCodexHandle(rig);
+    const server = serverOf(rig);
+    server.enqueue([{ type: "await_interrupt" }]);
+    if (handle.compact === undefined) {
+      expect.unreachable("codex handle cannot compact");
+    }
+
+    const turn = handle.compact();
+    await vi.waitFor(() => {
+      expect(server.methods()).toContain("thread/compact/start");
+    });
+    await handle.cancel();
+    await turn;
+
+    expect(server.paramsOf("turn/interrupt")).toEqual([
+      { threadId: "thr-1", turnId: server.currentTurnId },
+    ]);
+    expect(events.at(-1)).toEqual({
+      type: "turn_end",
+      stopReason: "cancelled",
+    });
+  });
+
+  it("codex_compact_request_error_settles_the_turn", async () => {
+    const rig = await createCodexRig();
+    rig.container.config.compactStartError = {
+      code: RPC_INVALID_REQUEST,
+      message: "cannot compact",
+    };
+    const { handle, events } = await startCodexHandle(rig);
+
+    if (handle.compact === undefined) {
+      expect.unreachable("codex handle cannot compact");
+    }
+    await handle.compact();
+
+    expect(events.at(-1)).toEqual({
+      type: "turn_error",
+      errorKind: null,
+      rpcCode: RPC_INVALID_REQUEST,
+      message: "cannot compact",
+    });
+    serverOf(rig).enqueue([{ type: "complete", status: "completed" }]);
+    await handle.prompt("next", { model: null });
+    expect(serverOf(rig).methods()).toContain("turn/start");
+  });
+});

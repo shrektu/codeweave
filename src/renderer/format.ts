@@ -116,6 +116,7 @@ export function storedSessionView(stored: StoredSession): SessionView {
     turns: [...stored.turns],
     orchestrate: stored.orchestrate,
     imageInput: PROVIDER_IMAGE_INPUT[stored.provider],
+    canCompact: false,
     prompts: [...stored.prompts],
   };
 }

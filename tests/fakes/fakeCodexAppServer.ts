@@ -61,6 +61,7 @@ export interface FakeCodexConfig {
   rateLimitReads?: readonly RateLimitRead[];
   stderrText?: string;
   threadStartError?: { code: number; message: string };
+  compactStartError?: { code: number; message: string };
   threadModel?: string;
   turnStartError?: { code: number; message: string };
   turnStartHang?: boolean;
@@ -367,6 +368,9 @@ export class FakeCodexAppServer {
       case "thread/start":
         this.answerThreadStart(id);
         return;
+      case "thread/compact/start":
+        this.answerThreadCompactStart(id);
+        return;
       case "turn/start":
         this.answerTurnStart(id);
         return;
@@ -404,6 +408,35 @@ export class FakeCodexAppServer {
       return;
     }
     this.reply(id, this.threadResponse(THREAD_ID));
+  }
+
+  private answerThreadCompactStart(id: number | string): void {
+    if (this.config.compactStartError !== undefined) {
+      const { code, message } = this.config.compactStartError;
+      this.replyError(id, code, message);
+      return;
+    }
+    this.turnCount += 1;
+    this.interrupt = Promise.withResolvers<null>();
+    this.reply(id, {});
+    this.send({
+      method: "turn/started",
+      params: {
+        threadId: THREAD_ID,
+        turn: turnPayload(this.currentTurnId, "inProgress", null),
+      },
+    });
+    const item = { id: "item-compact-1", type: "contextCompaction" };
+    this.send({ method: "item/started", params: this.ids({ item }) });
+    this.send({ method: "item/completed", params: this.ids({ item }) });
+    this.send({
+      method: "thread/compacted",
+      params: { threadId: THREAD_ID, turnId: this.currentTurnId },
+    });
+    const steps = this.scripts.shift() ?? DEFAULT_SCRIPT;
+    void this.runScript(steps).catch((error: unknown) => {
+      console.error("fake codex compact script failed", error);
+    });
   }
 
   private answerThreadResume(id: number | string, params: unknown): void {

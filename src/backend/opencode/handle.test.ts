@@ -2,10 +2,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FakeContained } from "../../../tests/fakes/fakeContainer";
 import type { AgentEvent } from "../../domain/events";
-import { PermissionProfile, ProviderId } from "../../domain/types";
+import {
+  PermissionProfile,
+  ProviderId,
+  type ApiAccount,
+} from "../../domain/types";
 import { UnknownPermissionError, type AgentResumeSpec } from "../agentAdapter";
 
-import { OpencodeHttpError, type OpencodeClient } from "./client";
+import {
+  OpencodeHttpError,
+  type OpencodeClient,
+  type PromptModel,
+} from "./client";
 import { OpencodeHandle } from "./handle";
 import { parseOpencodeEvent, type OpencodeEvent } from "./protocol";
 
@@ -21,6 +29,8 @@ interface Rig {
   readonly handle: OpencodeHandle;
   readonly events: AgentEvent[];
   readonly prompts: string[];
+  readonly summaries: { sessionId: string; model: PromptModel }[];
+  readonly summarizeGate: { current: Promise<void> | null };
   readonly aborts: string[];
   readonly replies: string[][];
   readonly promptFailures: Error[];
@@ -47,6 +57,8 @@ function trackedPromise(work: Promise<void>): { readonly done: () => boolean } {
 
 interface Sinks {
   readonly prompts: string[];
+  readonly summaries: { sessionId: string; model: PromptModel }[];
+  readonly summarizeGate: { current: Promise<void> | null };
   readonly aborts: string[];
   readonly replies: string[][];
   readonly promptFailures: Error[];
@@ -71,6 +83,10 @@ function createClient(
       return failure === undefined
         ? Promise.resolve()
         : Promise.reject(failure);
+    },
+    summarize: (sessionId, model) => {
+      sinks.summaries.push({ sessionId, model });
+      return sinks.summarizeGate.current ?? Promise.resolve();
     },
     abort: (sessionId) => {
       sinks.aborts.push(sessionId);
@@ -110,6 +126,7 @@ function parsedEvent(
 function createHandle(
   client: OpencodeClient,
   resume?: AgentResumeSpec,
+  api?: ApiAccount,
 ): OpencodeHandle {
   const contained = new FakeContained("run-1", []);
   return new OpencodeHandle({
@@ -120,6 +137,7 @@ function createHandle(
         label: "OpenCode",
         configDir: "/nonexistent/account",
         order: 0,
+        ...(api === undefined ? {} : { api }),
       },
       cwd: "/nonexistent/work",
       profile: PermissionProfile.ask,
@@ -150,7 +168,7 @@ function createHandle(
   });
 }
 
-async function openRig(): Promise<Rig> {
+async function openRig(api?: ApiAccount): Promise<Rig> {
   const { readable, writable } = new TransformStream<
     OpencodeEvent,
     OpencodeEvent
@@ -158,6 +176,8 @@ async function openRig(): Promise<Rig> {
   const writer = writable.getWriter();
   const sinks: Sinks = {
     prompts: [],
+    summaries: [],
+    summarizeGate: { current: null },
     aborts: [],
     replies: [],
     promptFailures: [],
@@ -166,7 +186,7 @@ async function openRig(): Promise<Rig> {
     serverFaults: { status: false, latest: false },
     latestMessage: { current: LATEST_MESSAGE },
   };
-  const handle = createHandle(createClient(readable, sinks));
+  const handle = createHandle(createClient(readable, sinks), undefined, api);
   const events: AgentEvent[] = [];
   handle.subscribe((event) => events.push(event));
   await handle.open();
@@ -841,6 +861,8 @@ describe("opencode handle native resume", () => {
   function resumeSinks(): Sinks {
     return {
       prompts: [],
+      summaries: [],
+      summarizeGate: { current: null },
       aborts: [],
       replies: [],
       promptFailures: [],
@@ -886,4 +908,48 @@ describe("opencode handle native resume", () => {
     expect(handle.nativeSessionId).toBe(SESSION);
     expect(creates()).toBe(1);
   });
+});
+
+describe("opencode compaction", () => {
+  it("opencode_v1_compact_without_a_known_model_is_a_turn_error", async () => {
+    const rig = await openRig();
+    rig.serverBusy.current = false;
+
+    await rig.handle.compact();
+
+    expect(rig.summaries).toEqual([]);
+    expect(rig.events.at(-1)).toEqual({
+      type: "turn_error",
+      errorKind: null,
+      rpcCode: null,
+      message: "OpenCode compaction needs a known model",
+    });
+  });
+});
+
+it("v1_summarize_longer_than_the_request_timeout_still_completes", async () => {
+  const rig = await openRig({
+    provider: "groq",
+    model: "llama-3.3-70b",
+    baseUrl: null,
+    rotation: true,
+    auth: "api_key",
+  });
+  rig.serverBusy.current = false;
+  const gate = Promise.withResolvers<undefined>();
+  rig.summarizeGate.current = gate.promise;
+  const turn = rig.handle.compact();
+  const tracked = trackedPromise(turn);
+
+  await flush();
+  await rig.push("session.idle", { sessionID: SESSION });
+  await flush();
+
+  expect(tracked.done()).toBe(true);
+  expect(rig.events.at(-1)).toEqual({
+    type: "turn_end",
+    stopReason: "end_turn",
+  });
+  gate.resolve(undefined);
+  await turn;
 });

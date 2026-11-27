@@ -310,6 +310,7 @@ export abstract class OpencodeHandleBase<
     model: string | null,
     images: readonly PromptImage[] | undefined,
   ): Promise<void>;
+  protected abstract sendCompact(turn: Turn): Promise<void>;
   protected abstract interruptQuietly(): Promise<void>;
   protected abstract needsCancelFallback(turn: Turn): boolean;
   protected abstract dispatch(event: Event): void;
@@ -319,6 +320,16 @@ export abstract class OpencodeHandleBase<
   }
 
   async prompt(text: string, options: TurnOptions): Promise<void> {
+    await this.runTurn((turn) =>
+      this.sendPrompt(turn, text, options.model, options.images),
+    );
+  }
+
+  async compact(): Promise<void> {
+    await this.runTurn((turn) => this.sendCompact(turn));
+  }
+
+  private async runTurn(send: (turn: Turn) => Promise<void>): Promise<void> {
     if (this.turn !== null) {
       throw new TurnInProgressError(this.runId);
     }
@@ -326,7 +337,7 @@ export abstract class OpencodeHandleBase<
     this.turn = turn;
     try {
       if (await this.ensureIdle(turn)) {
-        await this.sendPrompt(turn, text, options.model, options.images);
+        await send(turn);
       }
       await turn.done.promise;
     } finally {

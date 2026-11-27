@@ -5,11 +5,13 @@ export const CodexMethod = {
   rateLimitsRead: "account/rateLimits/read",
   threadStart: "thread/start",
   threadResume: "thread/resume",
+  threadCompactStart: "thread/compact/start",
   turnStart: "turn/start",
   turnInterrupt: "turn/interrupt",
 } as const;
 
 export const CodexNotification = {
+  turnStarted: "turn/started",
   turnCompleted: "turn/completed",
   error: "error",
   itemStarted: "item/started",

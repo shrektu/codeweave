@@ -34,6 +34,8 @@ import {
 } from "./handleBase";
 import type { OpencodeEvent, SessionErrorInfo } from "./protocol";
 
+const COMPACT_MODEL_UNKNOWN_MESSAGE = "OpenCode compaction needs a known model";
+
 type EventOf<T extends OpencodeEvent["type"]> = Extract<
   OpencodeEvent,
   { type: T }
@@ -84,6 +86,7 @@ export class OpencodeHandle extends OpencodeHandleBase<
   private busy = false;
   private staleBefore: { readonly after: string | null } | null = null;
   private lastMessageId: string | null = null;
+  private lastModelId: string | null = null;
   private mapper: OpencodeEventMapper | null = null;
 
   constructor(ctx: OpencodeHandleInit) {
@@ -216,6 +219,17 @@ export class OpencodeHandle extends OpencodeHandleBase<
         };
   }
 
+  private servedModel(): PromptModel | null {
+    const { api } = this.ctx.spec.account;
+    const modelId = this.lastModelId ?? api?.model ?? null;
+    return modelId === null || api === undefined
+      ? null
+      : {
+          providerID: API_PROVIDERS[api.provider].opencodeId,
+          modelID: modelId,
+        };
+  }
+
   protected override async sendPrompt(
     turn: ActiveTurn,
     text: string,
@@ -243,12 +257,44 @@ export class OpencodeHandle extends OpencodeHandleBase<
         model: this.promptModel(model),
         images: await readPromptImages(images),
       });
+      this.lastModelId = model ?? this.lastModelId;
     } catch (error) {
       if (error instanceof OpencodeHttpError) {
         this.busy = false;
       }
       this.failTurn(turn, this.ctx.redact(messageOf(error)));
     }
+  }
+
+  protected override sendCompact(turn: ActiveTurn): Promise<void> {
+    if (this.interrupted(turn)) {
+      this.endCancelled(turn);
+      return Promise.resolve();
+    }
+    if (this.unavailable !== null) {
+      this.failTurn(turn, this.unavailable);
+      return Promise.resolve();
+    }
+    const model = this.servedModel();
+    if (model === null) {
+      this.failTurn(turn, COMPACT_MODEL_UNKNOWN_MESSAGE);
+      return Promise.resolve();
+    }
+    turn.sent = true;
+    this.busy = true;
+    void this.ctx.client
+      .summarize(this.sessionId, model, this.streamAbort.signal)
+      .catch((error: unknown) => {
+        if (error instanceof OpencodeHttpError) {
+          this.busy = false;
+        }
+        if (turn.cancelled || this.stopping) {
+          this.endCancelled(turn);
+          return;
+        }
+        this.failTurn(turn, this.ctx.redact(messageOf(error)));
+      });
+    return Promise.resolve();
   }
 
   private onEvent(event: OpencodeEvent): void {

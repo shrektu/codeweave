@@ -70,6 +70,10 @@ class FakeMain implements SessionService {
     return Promise.resolve();
   }
 
+  compact(): Promise<void> {
+    return Promise.resolve();
+  }
+
   onViewChanged(listener: (view: SessionView | null) => void): () => void {
     this.listeners.add(listener);
     return () => {
