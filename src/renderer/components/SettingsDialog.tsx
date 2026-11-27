@@ -146,6 +146,24 @@ function RoutingFieldset({ settings, onPatch }: PatchProps): JSX.Element {
   );
 }
 
+function NotificationsFieldset({ settings, onPatch }: PatchProps): JSX.Element {
+  return (
+    <SettingsGroup title="Notifications">
+      <label className="group-row check-row">
+        <input
+          type="checkbox"
+          checked={settings.notifications}
+          onChange={(event) => {
+            onPatch({ notifications: event.target.checked });
+          }}
+        />
+        Show desktop notifications when an agent finishes or needs approval in
+        the background
+      </label>
+    </SettingsGroup>
+  );
+}
+
 function UpdatesFieldset({ settings, onPatch }: PatchProps): JSX.Element {
   return (
     <SettingsGroup title="Updates">
@@ -239,6 +257,7 @@ function SettingsForm({ settings }: { settings: SettingsView }): JSX.Element {
       <AppearanceFieldset settings={settings} onPatch={onPatch} />
       <EffectsFieldset settings={settings} onPatch={onPatch} />
       <RoutingFieldset settings={settings} onPatch={onPatch} />
+      <NotificationsFieldset settings={settings} onPatch={onPatch} />
       <UpdatesFieldset settings={settings} onPatch={onPatch} />
       <SettingsGroup title="Agent executables">
         <ExecutableField

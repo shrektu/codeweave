@@ -55,6 +55,7 @@ const SETTINGS_EVENT = {
     opencodeExecutable: null,
     terminalShell: null,
     updateCheck: true,
+    notifications: true,
     updateChannel: "stable",
     defaultTaskClass: "standard",
     definitionLibrary: null,

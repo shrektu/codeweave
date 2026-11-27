@@ -72,6 +72,7 @@ function settingsClient(
           ? current.terminalShell
           : patch.terminalShell,
       updateCheck: patch.updateCheck ?? current.updateCheck,
+      notifications: patch.notifications ?? current.notifications,
       updateChannel: patch.updateChannel ?? current.updateChannel,
       defaultTaskClass: patch.defaultTaskClass ?? current.defaultTaskClass,
       definitionLibrary:

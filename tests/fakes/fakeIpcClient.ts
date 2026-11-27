@@ -310,6 +310,7 @@ export function makeSettings(
     opencodeExecutable: null,
     terminalShell: null,
     updateCheck: true,
+    notifications: true,
     updateChannel: UpdateChannel.stable,
     defaultTaskClass: TaskClass.standard,
     definitionLibrary: null,

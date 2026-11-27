@@ -88,6 +88,12 @@ export const UPDATE_AVAILABLE_CHANNEL = "codeweave:update-available";
 
 export const SET_THEME_SOURCE_CHANNEL = "codeweave:set-theme-source";
 
+export const SHOW_NOTIFICATION_CHANNEL = "codeweave:show-notification";
+
+export const NOTIFICATION_CLICKED_CHANNEL = "codeweave:notification-clicked";
+
+export const STOP_REASON_CANCELLED = "cancelled";
+
 export const GET_GPU_ACCELERATED_CHANNEL = "codeweave:get-gpu-accelerated";
 
 export const GPU_ACCELERATED_CHANNEL = "codeweave:gpu-accelerated";

@@ -503,6 +503,7 @@ export const SettingsViewSchema = z.strictObject({
   opencodeExecutable: z.string().nullable(),
   terminalShell: z.string().nullable(),
   updateCheck: z.boolean(),
+  notifications: z.boolean(),
   updateChannel: z.enum(UpdateChannel),
   defaultTaskClass: TaskClassSchema,
   definitionLibrary: z.string().nullable(),

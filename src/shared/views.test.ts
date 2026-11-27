@@ -86,6 +86,7 @@ it("settings_view_schema_requires_the_recent_folders_list", () => {
     opencodeExecutable: null,
     terminalShell: null,
     updateCheck: true,
+    notifications: true,
     updateChannel: "stable",
     defaultTaskClass: "standard",
     definitionLibrary: null,

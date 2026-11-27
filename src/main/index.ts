@@ -9,6 +9,7 @@ import {
   ipcMain,
   MessageChannelMain,
   nativeTheme,
+  Notification,
   safeStorage,
   shell,
   utilityProcess,
@@ -31,6 +32,7 @@ import {
   PICK_FOLDER_CHANNEL,
   PORT_CHANNEL,
   SET_THEME_SOURCE_CHANNEL,
+  SHOW_NOTIFICATION_CHANNEL,
   UPDATE_AVAILABLE_CHANNEL,
 } from "../shared/constants";
 import { RUN_ID_ENV } from "../backend/constants";
@@ -40,6 +42,11 @@ import { UpdaterConfigMessageSchema } from "../shared/updates";
 import { VaultRequestSchema } from "../shared/vault";
 
 import { isAppUrl } from "./appUrl";
+import {
+  desktopNotificationOf,
+  showDesktopNotification,
+  type NotificationHandle,
+} from "./desktopNotifications";
 import { openFromApp } from "./externalLink";
 import {
   buildBackendArgs,
@@ -78,12 +85,31 @@ const TRANSPARENT_WINDOW_BACKGROUND = "#00000000";
 const WINDOW_WIDTH = 1440;
 const WINDOW_HEIGHT = 900;
 
+const liveNotifications = new Set<NotificationHandle>();
+
 const gpuStatusSource: GpuStatusSource = {
   compositingStatus: () => app.getGPUFeatureStatus().gpu_compositing,
   onInfoUpdate: (listener) => {
     app.on("gpu-info-update", listener);
   },
 };
+
+function electronHandle(notification: Notification): NotificationHandle {
+  return {
+    on: (event, listener) => {
+      if (event === "click") {
+        notification.on("click", listener);
+      } else if (event === "close") {
+        notification.on("close", listener);
+      } else {
+        notification.on("failed", listener);
+      }
+    },
+    show: () => {
+      notification.show();
+    },
+  };
+}
 
 function fromApp(event: IpcMainInvokeEvent): boolean {
   return isAppUrl(event.senderFrame?.url ?? "", rendererEntry());
@@ -300,6 +326,21 @@ if (app.requestSingleInstanceLock()) {
       const source = themeSourceOf(value);
       if (fromApp(event) && source !== null) {
         nativeTheme.themeSource = source;
+      }
+    });
+    ipcMain.handle(SHOW_NOTIFICATION_CHANNEL, (event, value: unknown): void => {
+      const notification = desktopNotificationOf(value);
+      const window = BrowserWindow.fromWebContents(event.sender);
+      if (fromApp(event) && notification !== null && window !== null) {
+        showDesktopNotification(
+          {
+            isSupported: () => Notification.isSupported(),
+            create: (options) => electronHandle(new Notification(options)),
+            live: liveNotifications,
+            window,
+          },
+          notification,
+        );
       }
     });
     ipcMain.handle(

@@ -119,7 +119,7 @@ export const WINDOWS_SHIM_PATTERN = /\.(?:cmd|bat)$/i;
 export const WINDOWS_PLATFORM: NodeJS.Platform = "win32";
 
 export const STOP_REASON_END_TURN = "end_turn";
-export const STOP_REASON_CANCELLED = "cancelled";
+export { STOP_REASON_CANCELLED } from "../../shared/constants";
 
 export const TITLE_RUN_COMMAND = "Run command";
 export const TITLE_EDIT_FILES = "Edit files";

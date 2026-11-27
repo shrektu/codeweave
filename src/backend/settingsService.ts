@@ -132,6 +132,7 @@ function toView(settings: SettingsFile, homeDir: string): SettingsView {
     opencodeExecutable: settings.opencodeExecutable,
     terminalShell: settings.terminalShell,
     updateCheck: settings.updateCheck,
+    notifications: settings.notifications,
     updateChannel: settings.updateChannel,
     defaultTaskClass: settings.defaultTaskClass,
     definitionLibrary: settings.definitionLibrary,
@@ -212,6 +213,7 @@ export function createSettingsService({
               ? current.terminalShell
               : patch.terminalShell,
           updateCheck: patch.updateCheck ?? current.updateCheck,
+          notifications: patch.notifications ?? current.notifications,
           updateChannel: patch.updateChannel ?? current.updateChannel,
           defaultTaskClass: patch.defaultTaskClass ?? current.defaultTaskClass,
           definitionLibrary,

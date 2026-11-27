@@ -138,6 +138,7 @@ export function rotationSettings(profile: PermissionProfile): SettingsFile {
     opencodeExecutable: null,
     terminalShell: null,
     updateCheck: false,
+    notifications: true,
     updateChannel: "stable",
     defaultTaskClass: "standard",
     definitionLibrary: null,
